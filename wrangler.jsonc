@@ -1,0 +1,35 @@
+{
+  // orbrun.app: a Worker that serves the static build and the gamedata proxy.
+  //
+  // Cloudflare's build settings must have Root directory = / (the monorepo
+  // root), because apps/orbrun depends on the workspace packages by name and
+  // on the root's vite: an `npm ci` inside apps/orbrun resolves neither.
+  //   Build command:  npm ci --include=dev && npm run build
+  //   Deploy command: npx wrangler deploy
+  //
+  // The `--include=dev` is required. The build image exports
+  // NPM_CONFIG_INCLUDE=prod and NPM_CONFIG_OMIT=dev, which outrank this repo's
+  // .npmrc, so a plain `npm ci` installs 8 packages and no vite. A CLI flag
+  // outranks the environment; setting NPM_CONFIG_INCLUDE=dev as a build
+  // variable in the dashboard works too. Note `npm ci`, not `npm install`: on the
+  // image's npm 10.9.2 a plain `npm install --include=dev` reports "up to date" and
+  // leaves the pruned tree alone. As a backstop the root `prebuild` script
+  // (tools/build/ensure-dev-deps.mjs) reinstalls when vite is missing.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orbrun",
+  "main": "apps/orbrun/worker/index.ts",
+  "compatibility_date": "2025-04-01",
+  "assets": {
+    "directory": "apps/orbrun/dist",
+    "binding": "ASSETS",
+    // the app routes on the hash (main.ts `applyRoute`), so any path that is
+    // not an asset is still the app shell
+    "not_found_handling": "single-page-application",
+    // without this the asset layer answers the proxy routes with index.html
+    // and the gamedata loader is handed HTML instead of JavaScript
+    "run_worker_first": ["/gamedata-proxy/*", "/morgue-proxy/*"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}

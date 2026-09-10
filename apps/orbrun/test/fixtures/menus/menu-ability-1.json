@@ -1,0 +1,119 @@
+{
+ "server": "wss://crawl.dcss.io/socket",
+ "version": "Dungeon Crawl Stone Soup 0.35-a0-994-g99d7c3def5",
+ "player": "steves",
+ "tag": "menu-ability",
+ "msgs": [
+  {
+   "msg": "menu",
+   "ui-centred": false,
+   "tag": "ability",
+   "flags": 265298,
+   "last_hovered": 1,
+   "title": {
+    "text": "<lightgrey> <white>Ability - do what?                  Cost                            Failure"
+   },
+   "more": "<lightgrey>[<white>?<lightgrey>] toggle between ability selection and description.",
+   "alt_more": "<lightgrey>[<white>?<lightgrey>] toggle between ability selection and description.",
+   "total_items": 5,
+   "chunk_start": 0,
+   "items": [
+    {
+     "text": " Invocations -    ",
+     "colour": 1,
+     "level": 1
+    },
+    {
+     "text": " X - Renounce Religion               None                            0%",
+     "q": 1,
+     "hotkeys": [
+      88
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 9885,
+       "tex": 5
+      }
+     ]
+    },
+    {
+     "text": " A - Potion Petition                 400 Gold                        0%",
+     "q": 1,
+     "hotkeys": [
+      65
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 9910,
+       "tex": 5
+      }
+     ]
+    },
+    {
+     "text": " B - Call Merchant                   1200 Gold                       0%",
+     "q": 1,
+     "hotkeys": [
+      66
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 9911,
+       "tex": 5
+      }
+     ]
+    },
+    {
+     "text": " C - Bribe Branch                    3000 Gold                       0%",
+     "q": 1,
+     "colour": 8,
+     "hotkeys": [
+      67
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 9912,
+       "tex": 5
+      },
+      {
+       "t": 10600,
+       "tex": 6
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "msg": "update_menu_items",
+   "chunk_start": 3,
+   "items": [
+    {
+     "text": " B - Call Merchant                   1200 Gold                       0%",
+     "q": 1,
+     "hotkeys": [
+      66
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 9911,
+       "tex": 5
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "msg": "menu_scroll",
+   "first": 0,
+   "last_hovered": 1,
+   "force": true
+  },
+  {
+   "msg": "close_menu"
+  }
+ ]
+}

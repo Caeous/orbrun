@@ -1,0 +1,168 @@
+{
+ "source": "crawl.dcss.io, spectating Belgor, dcss-0.34, recorded 2026-09-05 with tools/record/record.mjs; rows 2370-2385 of the session grouped by websocket frame (same t); map cells stripped, the message and input_mode facts are what this fixture pins",
+ "frames": [
+  {
+   "t": 293701,
+   "msgs": [
+    {
+     "msg": "input_mode",
+     "mode": 1
+    },
+    {
+     "msg": "player",
+     "hp": 110,
+     "poison_survival": 110,
+     "time": 115467,
+     "turn": 11489,
+     "pos": {
+      "x": -14,
+      "y": 50
+     },
+     "inv": {
+      "71": {
+       "quantity": 4,
+       "name": "4 scrolls of blinking",
+       "action_panel_order": 5,
+       "qty_field": "quantity",
+       "action_verb": "Read"
+      }
+     }
+    },
+    {
+     "msg": "msgs",
+     "messages": [
+      {
+       "text": "<darkgrey>A nearby plant withers and dies.<lightgrey>",
+       "turn": 11357,
+       "channel": 34
+      },
+      {
+       "text": "<darkgrey>A nearby fungus withers and dies.<lightgrey>",
+       "turn": 11359,
+       "channel": 34
+      },
+      {
+       "text": "<lightgrey>You see here <red>a parchment of Grave Claw<lightgrey>.",
+       "turn": 11387,
+       "channel": 21
+      },
+      {
+       "text": "<yellow>b - 4 scrolls of blinking<lightgrey> (gained 1)",
+       "turn": 11483,
+       "channel": 0
+      },
+      {
+       "text": "<lightred>You encounter a wraith.<lightgrey>",
+       "turn": 11488,
+       "channel": 31
+      }
+     ]
+    },
+    {
+     "msg": "map",
+     "vgrdc": {
+      "x": -14,
+      "y": 50
+     },
+     "cells": []
+    }
+   ]
+  },
+  {
+   "t": 294391,
+   "msgs": [
+    {
+     "msg": "input_mode",
+     "mode": 0
+    }
+   ]
+  },
+  {
+   "t": 294392,
+   "msgs": [
+    {
+     "msg": "player",
+     "pos": {
+      "x": -16,
+      "y": 50
+     }
+    },
+    {
+     "msg": "msgs",
+     "more": true,
+     "messages": [
+      {
+       "text": "<lightgrey>You rampage towards the wraith!",
+       "turn": 11489,
+       "channel": 0
+      },
+      {
+       "text": "<lightred>You encounter Josephine the Decaying Necromancer and a wraith.\nJosephine is wearing a +2 robe of fire resistance.<lightgrey>",
+       "turn": 11489,
+       "channel": 31
+      }
+     ]
+    },
+    {
+     "msg": "map",
+     "vgrdc": {
+      "x": -16,
+      "y": 50
+     },
+     "cells": []
+    },
+    {
+     "msg": "input_mode",
+     "mode": 5
+    }
+   ]
+  },
+  {
+   "t": 297036,
+   "msgs": [
+    {
+     "msg": "input_mode",
+     "mode": 0
+    },
+    {
+     "msg": "input_mode",
+     "mode": 1
+    },
+    {
+     "msg": "player",
+     "adjusted_noise": 169,
+     "time": 115477,
+     "turn": 11490
+    },
+    {
+     "msg": "msgs",
+     "more": false,
+     "messages": [
+      {
+       "text": "<lightgrey>Josephine shouts!",
+       "turn": 11489,
+       "channel": 8
+      }
+     ]
+    },
+    {
+     "msg": "map",
+     "cells": []
+    }
+   ]
+  },
+  {
+   "t": 297551,
+   "msgs": [
+    {
+     "msg": "input_mode",
+     "mode": 0
+    },
+    {
+     "msg": "input_mode",
+     "mode": 1
+    }
+   ]
+  }
+ ]
+}

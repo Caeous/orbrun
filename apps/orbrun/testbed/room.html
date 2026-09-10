@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orbrun room test bed</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #111; color: #ddd; font: 13px system-ui, sans-serif; }
+      #bed { display: grid; grid-template-columns: 1fr 380px; height: 100%; }
+      body.poster #bed { grid-template-columns: 1fr; }
+      body.poster #side { display: none; }
+      #view { position: relative; min-width: 0; background: #000; }
+      #view canvas.room { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      /* the app's own screen, laid over the room so the composition is judged through it */
+      #view .screen { pointer-events: none; background: none; }
+      #view .screen.off { display: none; }
+      #side { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-left: 1px solid #333; overflow: auto; font: 13px system-ui, sans-serif; color: #ddd; }
+      #side label { display: flex; align-items: center; gap: 8px; font: inherit; }
+      #side label span.v { min-width: 5em; text-align: right; font-variant-numeric: tabular-nums; color: #9cf; }
+      #side input[type=range] { flex: 1; }
+      #side textarea { width: 100%; height: 260px; background: #000; color: #ddd; font: 12px/1.25 ui-monospace, monospace; border: 1px solid #333; }
+      #side .hint { color: #888; }
+      #side .err { color: #f77; white-space: pre-wrap; }
+      #side .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      #side button { background: #222; color: #ddd; border: 1px solid #444; padding: 3px 8px; font: inherit; }
+      #map { position: relative; width: 360px; height: 240px; background: #000; border: 1px solid #333; }
+      #map canvas { position: absolute; left: 0; top: 0; image-rendering: pixelated; }
+      #stats { font-variant-numeric: tabular-nums; }
+    </style>
+  </head>
+  <body>
+    <div id="bed">
+      <div id="view">
+        <div class="screen home" id="overlay">
+          <div class="frame home-frame">
+            <div class="brand">
+              <div class="head"><h1 class="place">Orbrun</h1><div class="lede">Dungeon Crawl Stone Soup in first person.</div></div>
+              <div class="dungeon"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="side">
+        <div class="row">
+          <label><input id="menu" type="checkbox" checked /> Menu over the room</label>
+          <button id="faceN">Face north</button>
+          <button id="faceS">Face south</button>
+        </div>
+        <label>FOV <input id="fov" type="range" min="55" max="100" step="1" value="80" /><span class="v" id="fovV"></span></label>
+        <label>Eye height <input id="eye" type="range" min="0.3" max="0.9" step="0.02" value="0.6" /><span class="v" id="eyeV"></span></label>
+        <label>Pitch <input id="pitch" type="range" min="-25" max="15" step="1" value="-10" /><span class="v" id="pitchV"></span></label>
+        <label>Yaw <input id="yaw" type="range" min="0" max="360" step="1" value="0" /><span class="v" id="yawV"></span></label>
+        <label>Light x <input id="lx" type="range" min="0" max="30" step="1" value="0" /><span class="v" id="lxV"></span></label>
+        <label>Light y <input id="ly" type="range" min="0" max="30" step="1" value="0" /><span class="v" id="lyV"></span></label>
+        <div id="map"><canvas id="map2d"></canvas><canvas id="marks"></canvas></div>
+        <div class="hint">Top down, as the 2D renderer draws it: ◎ the eye and its heading, ☀ the light. Click a floor cell to put the light there.</div>
+        <textarea id="des" spellcheck="false"></textarea>
+        <div class="row"><button id="apply">Apply vault</button><span class="hint">the .des subset (packages/vault); Apply also reads the light back from the file</span></div>
+        <div class="err" id="err"></div>
+        <div class="hint" id="stats"></div>
+        <div class="hint">Drag the room to look. The tiles are the packed room atlas (public/room), so a name outside it fails here as it would in the app.</div>
+      </div>
+    </div>
+    <script type="module" src="./room.ts"></script>
+  </body>
+</html>

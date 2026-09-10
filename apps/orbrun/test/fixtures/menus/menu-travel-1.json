@@ -1,0 +1,90 @@
+{
+ "server": "wss://crawl.dcss.io/socket",
+ "version": "Dungeon Crawl Stone Soup 0.35-a0-994-g99d7c3def5",
+ "player": "steves",
+ "tag": "menu-travel",
+ "msgs": [
+  {
+   "msg": "menu",
+   "ui-centred": false,
+   "tag": "travel",
+   "flags": 1310786,
+   "last_hovered": 0,
+   "title": {
+    "text": "<white>Where to? (Tab - D:8 @ (x,y), ? - help) "
+   },
+   "more": "<lightgrey>[<white>Up<lightgrey>|<white>Down<lightgrey>] select  [<white>PgDn<lightgrey>|<white>><lightgrey>] page down  [<white>PgUp<lightgrey>|<white><<<lightgrey>] page up  [<white>Esc<lightgrey>] exit<lightgrey>        <lightgrey>[<white>XXX<lightgrey>]<lightgrey>",
+   "alt_more": "",
+   "total_items": 7,
+   "chunk_start": 0,
+   "items": [
+    {
+     "text": " D - Dungeon",
+     "q": 1,
+     "hotkeys": [
+      68,
+      100
+     ],
+     "level": 2
+    },
+    {
+     "text": " T - Temple",
+     "q": 1,
+     "hotkeys": [
+      84,
+      116
+     ],
+     "level": 2
+    },
+    {
+     "text": " L - Lair",
+     "q": 1,
+     "hotkeys": [
+      76,
+      108
+     ],
+     "level": 2
+    },
+    {
+     "text": " A - Shoals",
+     "q": 1,
+     "hotkeys": [
+      65,
+      97
+     ],
+     "level": 2
+    },
+    {
+     "text": " P - Snake Pit",
+     "q": 1,
+     "hotkeys": [
+      80,
+      112
+     ],
+     "level": 2
+    },
+    {
+     "text": " M - Slime Pits",
+     "q": 1,
+     "hotkeys": [
+      77,
+      109
+     ],
+     "level": 2
+    },
+    {
+     "text": " O - Orcish Mines",
+     "q": 1,
+     "hotkeys": [
+      79,
+      111
+     ],
+     "level": 2
+    }
+   ]
+  },
+  {
+   "msg": "close_menu"
+  }
+ ]
+}

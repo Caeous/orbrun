@@ -1,0 +1,62 @@
+# The Antechamber: the front end's room, a quiet hall before the descent.
+# A supported subset of DCSS .des (packages/vault); tile names are the
+# server's own (tileinfo). The eye stands at @ in the middle facing north,
+# across the hall to the down staircase in a recess of the north wall, a
+# granite statue either side of its mouth. The light stands between the
+# statues, so the stairs are the brightest thing in the room. To the east a
+# small pool, deep water with a sacred lotus afloat on it inside a shore
+# of shallows, a mangrove at one corner, bushes and fungus about the rim
+# and a cobweb in the corner beside it. The west side has no wall at all:
+# a wood of trees, some of them dead, stands on dark grass where it would
+# be, the dark showing between the trunks, toadstools in the shade, and a
+# dirt path leads away into it under a stone arch, a lantern by the arch.
+# Off the path a gravestone, a lantern of shadows left beside it.
+NAME: orbrun_antechamber
+TILE:  # = wall_brick_dark
+TILE:  c = wall_crystal_bookcase
+FTILE: . = floor_grey_dirt
+FTILE: w = dngn_deep_water
+FTILE: L = dngn_deep_water
+FTILE: T = floor_grass_dark
+FTILE: p = floor_dirt
+FTILE: A = floor_dirt
+FTILE: s = dngn_shallow_water
+FTILE: M = dngn_shallow_water
+FTILE: D = floor_grass_dark
+FTILE: G = floor_grass_dark
+FTILE: n = floor_grass_dark
+FTILE: t = floor_grass_dark
+KFEAT: > = dngn_stone_stairs_down
+KFEAT: 8 = dngn_granite_statue
+KFEAT: _ = dngn_altar_ecumenical
+KFEAT: { = dngn_fountain
+KFEAT: ^ = dngn_trap_web
+KFEAT: T = dngn_tree
+KFEAT: D = dngn_tree_dead
+KFEAT: M = dngn_mangrove
+KFEAT: A = dngn_stone_arch
+KFEAT: G = dngn_gravestone
+KFEAT: N = dngn_fountain_novelty_lantern
+KMONS: P = mons_plant
+KMONS: L = mons_sacred_lotus
+KMONS: B = mons_bush
+KMONS: f = mons_fungus
+KMONS: t = mons_toadstool
+KITEM: ! = potion_offset
+KITEM: ? = scroll
+KITEM: $ = gold05
+KITEM: n = misc_lantern_of_shadows
+EYE:   @ N
+LIGHT: l
+MAP
+      #############
+ TTTTT####.>.##cc##
+ TTTTTTBP.8l8^^..B#
+ TnG.TD_.!..?.sss.#
+ TppppA......$sLs.#
+ TT.TT..P..@..Mss.#
+ TTDTD.P.^..B....f#
+ TTTTD!.^B.{?.B..P#
+ TTTTTcccccccccccc#
+      #############
+ENDMAP

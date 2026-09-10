@@ -1,0 +1,6 @@
+/deck.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: no-cache
+
+/deck/*
+  Cache-Control: no-cache

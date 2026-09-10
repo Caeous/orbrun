@@ -1,0 +1,78 @@
+{
+ "server": "wss://crawl.dcss.io/socket",
+ "version": "Dungeon Crawl Stone Soup 0.34.1-4-g0e95e087e2",
+ "player": "Yoyanny",
+ "tag": "menu-prompt",
+ "msgs": [
+  {
+   "msg": "menu",
+   "ui-centred": false,
+   "tag": "prompt",
+   "flags": 262674,
+   "last_hovered": 1,
+   "title": {
+    "text": "<white>The barbs in your skin will harm you if you move. Continue? "
+   },
+   "more": "<lightgrey>[<white>Up<lightgrey>|<white>Down<lightgrey>] select  [<white>PgDn<lightgrey>|<white>><lightgrey>] page down  [<white>PgUp<lightgrey>|<white><<<lightgrey>] page up  [<white>Esc<lightgrey>] exit<lightgrey>        <lightgrey>[<white>XXX<lightgrey>]<lightgrey>",
+   "alt_more": "",
+   "total_items": 2,
+   "chunk_start": 0,
+   "items": [
+    {
+     "text": " Y - Yes",
+     "q": 1,
+     "hotkeys": [
+      89,
+      121
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 10057,
+       "tex": 5
+      }
+     ]
+    },
+    {
+     "text": " N - No",
+     "q": 1,
+     "hotkeys": [
+      78,
+      110
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 10058,
+       "tex": 5
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "msg": "update_menu_items",
+   "chunk_start": 0,
+   "items": [
+    {
+     "text": " Y - Yes",
+     "q": 1,
+     "hotkeys": [
+      89,
+      121
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 10057,
+       "tex": 5
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "msg": "close_menu"
+  }
+ ]
+}

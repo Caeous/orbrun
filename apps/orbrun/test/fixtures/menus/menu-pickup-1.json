@@ -1,0 +1,116 @@
+{
+ "server": "wss://crawl.dcss.io/socket",
+ "version": "Dungeon Crawl Stone Soup 0.34.1-4-g0e95e087e2",
+ "player": "z0id",
+ "tag": "menu-pickup",
+ "msgs": [
+  {
+   "msg": "menu",
+   "ui-centred": false,
+   "tag": "pickup",
+   "flags": 262924,
+   "last_hovered": -1,
+   "title": {
+    "text": "<white>Pick up what? 51/52 gear slots (_ for help)            "
+   },
+   "more": "<lightgrey>[<white>Up<lightgrey>|<white>Down<lightgrey>] select  [<white>PgDn<lightgrey>|<white>><lightgrey>] page down  [<white>PgUp<lightgrey>|<white><<<lightgrey>] page up  <lightgrey>             [<white>Esc<lightgrey>] exit\n<lightgrey>Letters toggle    [<white>.<lightgrey>|<white>Space<lightgrey>] toggle selected                               <lightgrey>[<white>XXX<lightgrey>]<lightgrey>",
+   "alt_more": "<lightgrey>[<white>Up<lightgrey>|<white>Down<lightgrey>] select  <lightgrey>                                                   [<white>Esc<lightgrey>] exit\n<lightgrey>Letters toggle    [<white>.<lightgrey>|<white>Space<lightgrey>] toggle selected                               <lightgrey>[<white>XXX<lightgrey>]<lightgrey>",
+   "total_items": 7,
+   "chunk_start": 0,
+   "items": [
+    {
+     "text": "Hand Weapons   (select all with <w>)</w><blue>)",
+     "colour": 1,
+     "level": 1
+    },
+    {
+     "text": " a - a +0 war axe",
+     "q": 1,
+     "hotkeys": [
+      97,
+      41
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 272,
+       "tex": 0
+      },
+      {
+       "t": 3671,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " b - a +0 war axe",
+     "q": 1,
+     "hotkeys": [
+      98,
+      41
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 272,
+       "tex": 0
+      },
+      {
+       "t": 3671,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": "Armour         (select all with <w>[</w><blue>)",
+     "colour": 1,
+     "level": 1
+    },
+    {
+     "text": " c - a +0 scale mail",
+     "q": 1,
+     "hotkeys": [
+      99,
+      91
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 272,
+       "tex": 0
+      },
+      {
+       "t": 3895,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": "Carrion",
+     "colour": 1,
+     "level": 1
+    },
+    {
+     "text": "     a goblin corpse",
+     "q": 1,
+     "colour": 8,
+     "level": 2,
+     "tiles": [
+      {
+       "t": 272,
+       "tex": 0
+      },
+      {
+       "t": 4740,
+       "tex": 4
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "msg": "close_menu",
+   "_reason": "hop"
+  }
+ ]
+}

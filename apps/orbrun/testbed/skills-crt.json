@@ -1,0 +1,97 @@
+[
+ {
+  "msg": "menu",
+  "type": "crt",
+  "tag": "skills",
+  "ui-centred": false
+ },
+ {
+  "msg": "txt",
+  "id": "menu_txt",
+  "lines": {
+   "0": "      <span class=\"fg1 bg0\">Skill           Level Cost   Apt       Skill           Level Cost   Apt",
+   "1": "  <span class=\"fg8 bg0\">a - Fighting         2.6   </span><span class=\"fg3 bg0\">3.0    </span><span class=\"fg15 bg0\">0    </span><span class=\"fg8 bg0\">i - Spellcasting     3.0   </span><span class=\"fg3 bg0\">4.8   </span><span class=\"fg15 bg0\">-1",
+   "2": "",
+   "3": "  <span class=\"fg8 bg0\">b - Maces &amp; Flails   0.0   </span><span class=\"fg3 bg0\">0.8   </span><span class=\"fg15 bg0\">+1    </span><span class=\"fg8 bg0\">j - Conjurations     6.0   </span><span class=\"fg3 bg0\">4.2   </span><span class=\"fg15 bg0\">+3",
+   "4": "  <span class=\"fg8 bg0\">c - Unarmed Combat   0.0   </span><span class=\"fg3 bg0\">0.8   </span><span class=\"fg15 bg0\">+1    k * Translocations   3.4   </span><span class=\"fg3 bg0\">5.7   </span><span class=\"fg15 bg0\">-2",
+   "5": "  <span class=\"fg8 bg0\">d - Throwing         0.0   </span><span class=\"fg3 bg0\">1.0    </span><span class=\"fg15 bg0\">0",
+   "6": "                                         <span class=\"fg8 bg0\">l - Evocations       0.0   </span><span class=\"fg3 bg0\">1.0    </span><span class=\"fg15 bg0\">0",
+   "7": "  <span class=\"fg8 bg0\">e - Ranged Weapons   0.0   </span><span class=\"fg3 bg0\">0.8   </span><span class=\"fg15 bg0\">+1",
+   "8": "",
+   "9": "  <span class=\"fg8 bg0\">f - Armour           0.0   </span><span class=\"fg3 bg0\">0.8   </span><span class=\"fg15 bg0\">+1",
+   "10": "  <span class=\"fg8 bg0\">g - Dodging          3.0   </span><span class=\"fg3 bg0\">3.4   </span><span class=\"fg15 bg0\">+1",
+   "11": "  <span class=\"fg8 bg0\">h - Stealth          2.0   </span><span class=\"fg3 bg0\">2.5   </span><span class=\"fg15 bg0\">+1",
+   "12": "",
+   "13": "",
+   "14": "",
+   "15": "",
+   "16": "",
+   "17": "",
+   "18": "",
+   "19": " <span class=\"fg7 bg0\">The relative cost of raising each skill is in </span><span class=\"fg3 bg0\">cyan</span><span class=\"fg7 bg0\">.",
+   "20": " <span class=\"fg7 bg0\">The species aptitude is in </span><span class=\"fg15 bg0\">white</span><span class=\"fg7 bg0\">.",
+   "21": "",
+   "22": " <span class=\"fg7 bg0\">[</span><span class=\"fg14 bg0\">?</span><span class=\"fg7 bg0\">] Help                [</span><span class=\"fg14 bg0\">=</span><span class=\"fg7 bg0\">] set a skill target",
+   "23": " <span class=\"fg7 bg0\">[</span><span class=\"fg14 bg0\">/</span><span class=\"fg7 bg0\">] </span><span class=\"fg8 bg0\">auto</span><span class=\"fg7 bg0\">|</span><span class=\"fg15 bg0\">manual </span><span class=\"fg7 bg0\">mode    [</span><span class=\"fg14 bg0\">*</span><span class=\"fg7 bg0\">] </span><span class=\"fg15 bg0\">useful</span><span class=\"fg7 bg0\">|</span><span class=\"fg8 bg0\">all </span><span class=\"fg7 bg0\">skills    [</span><span class=\"fg14 bg0\">!</span><span class=\"fg7 bg0\">] </span><span class=\"fg8 bg0\">training</span><span class=\"fg7 bg0\">|</span><span class=\"fg15 bg0\">cost</span><span class=\"fg7 bg0\">|</span><span class=\"fg8 bg0\">targets"
+  }
+ },
+ {
+  "msg": "txt",
+  "id": "menu_txt",
+  "lines": {
+   "3": "  <span class=\"fg8 bg0\">b - Maces &amp; Flails   0.0   </span><span class=\"fg3 bg0\">0.8   </span><span class=\"fg15 bg0\">+1    </span><span class=\"fg7 bg0\">j + Conjurations     6.0   </span><span class=\"fg3 bg0\">4.2   </span><span class=\"fg15 bg0\">+3"
+  }
+ },
+ {
+  "msg": "txt",
+  "id": "menu_txt",
+  "lines": {
+   "0": "      <span class=\"fg1 bg0\">Skill           Level Target Apt       Skill           Level Target Apt",
+   "1": "  <span class=\"fg8 bg0\">a - Fighting         2.6  3.0     </span><span class=\"fg15 bg0\">0    </span><span class=\"fg8 bg0\">i - Spellcasting     3.0  --     </span><span class=\"fg15 bg0\">-1",
+   "3": "  <span class=\"fg8 bg0\">b - Maces &amp; Flails   0.0  --     </span><span class=\"fg15 bg0\">+1    </span><span class=\"fg7 bg0\">j + Conjurations     6.0  </span><span class=\"fg8 bg0\">--     </span><span class=\"fg15 bg0\">+3",
+   "4": "  <span class=\"fg8 bg0\">c - Unarmed Combat   0.0  --     </span><span class=\"fg15 bg0\">+1    k * Translocations   3.4  4.0    -2",
+   "5": "  <span class=\"fg8 bg0\">d - Throwing         0.0  --      </span><span class=\"fg15 bg0\">0",
+   "6": "                                         <span class=\"fg8 bg0\">l - Evocations       0.0  --      </span><span class=\"fg15 bg0\">0",
+   "7": "  <span class=\"fg8 bg0\">e - Ranged Weapons   0.0  --     </span><span class=\"fg15 bg0\">+1",
+   "9": "  <span class=\"fg8 bg0\">f - Armour           0.0  --     </span><span class=\"fg15 bg0\">+1",
+   "10": "  <span class=\"fg8 bg0\">g - Dodging          3.0  --     </span><span class=\"fg15 bg0\">+1",
+   "11": "  <span class=\"fg8 bg0\">h - Stealth          2.0  --     </span><span class=\"fg15 bg0\">+1",
+   "22": " <span class=\"fg7 bg0\">[</span><span class=\"fg14 bg0\">?</span><span class=\"fg7 bg0\">] Help                [</span><span class=\"fg14 bg0\">a</span><span class=\"fg7 bg0\">-</span><span class=\"fg14 bg0\">z</span><span class=\"fg7 bg0\">] set skill target   [</span><span class=\"fg14 bg0\">-</span><span class=\"fg7 bg0\">] clear selected target",
+   "23": " <span class=\"fg7 bg0\">[</span><span class=\"fg14 bg0\">/</span><span class=\"fg7 bg0\">] </span><span class=\"fg8 bg0\">auto</span><span class=\"fg7 bg0\">|</span><span class=\"fg15 bg0\">manual </span><span class=\"fg7 bg0\">mode    [</span><span class=\"fg14 bg0\">*</span><span class=\"fg7 bg0\">] </span><span class=\"fg15 bg0\">useful</span><span class=\"fg7 bg0\">|</span><span class=\"fg8 bg0\">all </span><span class=\"fg7 bg0\">skills    [</span><span class=\"fg14 bg0\">!</span><span class=\"fg7 bg0\">] </span><span class=\"fg8 bg0\">training</span><span class=\"fg7 bg0\">|</span><span class=\"fg8 bg0\">cost</span><span class=\"fg7 bg0\">|</span><span class=\"fg15 bg0\">targets"
+  }
+ },
+ {
+  "msg": "input_mode",
+  "mode": 7
+ },
+ {
+  "msg": "txt",
+  "id": "menu_txt",
+  "lines": {
+   "3": "  <span class=\"fg8 bg0\">b - Maces &amp; Flails   0.0  --     </span><span class=\"fg15 bg0\">+1    </span><span class=\"fg7 bg0\">j + Conjurations     6.0  </span><span class=\"fg7 bg4\">0      </span><span class=\"fg15 bg0\">+3"
+  }
+ },
+ {
+  "msg": "txt",
+  "id": "menu_txt",
+  "lines": {
+   "3": "  <span class=\"fg8 bg0\">b - Maces &amp; Flails   0.0  --     </span><span class=\"fg15 bg0\">+1    </span><span class=\"fg7 bg0\">j + Conjurations     6.0  </span><span class=\"fg7 bg4\">8      </span><span class=\"fg15 bg0\">+3"
+  }
+ },
+ {
+  "msg": "input_mode",
+  "mode": 0
+ },
+ {
+  "msg": "txt",
+  "id": "menu_txt",
+  "lines": {
+   "3": "  <span class=\"fg8 bg0\">b - Maces &amp; Flails   0.0  --     </span><span class=\"fg15 bg0\">+1    </span><span class=\"fg7 bg0\">j + Conjurations     6.0  8.0    </span><span class=\"fg15 bg0\">+3",
+   "19": " <span class=\"fg7 bg0\">The current training targets, if any.",
+   "22": " <span class=\"fg7 bg0\">[</span><span class=\"fg14 bg0\">?</span><span class=\"fg7 bg0\">] Help                [</span><span class=\"fg14 bg0\">=</span><span class=\"fg7 bg0\">] set a skill target   [</span><span class=\"fg14 bg0\">-</span><span class=\"fg7 bg0\">] clear all targets"
+  }
+ },
+ {
+  "msg": "close_menu"
+ }
+]

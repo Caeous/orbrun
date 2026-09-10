@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "dist", "noEmit": false, "emitDeclarationOnly": true },
+  "include": ["src"],
+  "references": [{ "path": "../scene" }, { "path": "../scene-webtiles" }]
+}

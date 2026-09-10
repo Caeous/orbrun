@@ -1,0 +1,30 @@
+{
+  "name": "@orbrun/scene-webtiles",
+  "version": "0.1.0",
+  "description": "Builds an @orbrun/scene Scene from a WebTiles GameState and the server's gamedata: tile ranges, feature classification, monster list rules, the viewmodel",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Caeous/orbrun.git",
+    "directory": "packages/scene-webtiles"
+  },
+  "homepage": "https://github.com/Caeous/orbrun/tree/main/packages/scene-webtiles",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "@orbrun/webtiles": "*",
+    "@orbrun/gamedata": "*",
+    "@orbrun/scene": "*"
+  }
+}

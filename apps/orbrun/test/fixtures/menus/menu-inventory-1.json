@@ -1,0 +1,406 @@
+{
+ "server": "wss://crawl.dcss.io/socket",
+ "version": "Dungeon Crawl Stone Soup 0.34.1-4-g0e95e087e2",
+ "player": "Grivan",
+ "tag": "menu-inventory",
+ "msgs": [
+  {
+   "msg": "menu",
+   "ui-centred": false,
+   "tag": "inventory",
+   "flags": 2368002,
+   "last_hovered": -1,
+   "title": {
+    "text": "<white>Gear: 17/52 gear slots    (Left/Right/Tab to switch category)"
+   },
+   "more": "<lightgrey>[<white>Up<lightgrey>|<white>Down<lightgrey>] select  [<white>PgDn<lightgrey>|<white>><lightgrey>] page down  [<white>PgUp<lightgrey>|<white><<<lightgrey>] page up  [<white>Esc<lightgrey>] exit<lightgrey>        <lightgrey>[<white>XXX<lightgrey>]<lightgrey>",
+   "alt_more": "",
+   "total_items": 22,
+   "chunk_start": 0,
+   "items": [
+    {
+     "text": "Hand Weapons   (go to first with <w>)</w><blue>)",
+     "colour": 1,
+     "level": 1
+    },
+    {
+     "text": " g - the cursed +4 trident \"Ruined Unpleasantness\" (weapon) {Dev, Melee}",
+     "q": 1,
+     "colour": 12,
+     "hotkeys": [
+      103,
+      41
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 5211,
+       "tex": 4
+      },
+      {
+       "t": 3688,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " f - a +1 antimagic lajatang",
+     "q": 1,
+     "colour": 2,
+     "hotkeys": [
+      102,
+      41
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 3713,
+       "tex": 4
+      },
+      {
+       "t": 3756,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " k - a +0 partisan",
+     "q": 1,
+     "hotkeys": [
+      107,
+      41
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 3701,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " l - a +0 war axe of distortion",
+     "q": 1,
+     "colour": 2,
+     "hotkeys": [
+      108,
+      41
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 3672,
+       "tex": 4
+      },
+      {
+       "t": 3757,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " m - a +2 vampiric war axe",
+     "q": 1,
+     "colour": 2,
+     "hotkeys": [
+      109,
+      41
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 3672,
+       "tex": 4
+      },
+      {
+       "t": 3754,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " q - a +1 eveningstar of flaming",
+     "q": 1,
+     "colour": 2,
+     "hotkeys": [
+      113,
+      41
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 3616,
+       "tex": 4
+      },
+      {
+       "t": 3741,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": "Missiles       (go to first with <w>(</w><blue>)",
+     "colour": 1,
+     "level": 1
+    },
+    {
+     "text": " a - 34 stones",
+     "q": 34,
+     "hotkeys": [
+      97,
+      40
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 3786,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " c - 3 javelins",
+     "q": 3,
+     "hotkeys": [
+      99,
+      40
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 3850,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " d - 18 poisoned darts",
+     "q": 18,
+     "hotkeys": [
+      100,
+      40
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 3840,
+       "tex": 4
+      },
+      {
+       "t": 3774,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": "Armour         (go to first with <w>[</w><blue>)",
+     "colour": 1,
+     "level": 1
+    },
+    {
+     "text": " e - the cursed +0 cloak of the Unveiling Welkin (worn) {Will+, Elem, Sorc}",
+     "q": 1,
+     "colour": 12,
+     "hotkeys": [
+      101,
+      91
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 5211,
+       "tex": 4
+      },
+      {
+       "t": 3937,
+       "tex": 4
+      },
+      {
+       "t": 4016,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " j - the cursed orb \"Behold Eternity\" (worn) {Pyromania, Dev, Fort}",
+     "q": 1,
+     "colour": 12,
+     "hotkeys": [
+      106,
+      91
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 5211,
+       "tex": 4
+      },
+      {
+       "t": 3949,
+       "tex": 4
+      },
+      {
+       "t": 4049,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " o - the cursed +0 pair of gloves of the Revealing Sun (worn) {Elem, Bglg}",
+     "q": 1,
+     "colour": 12,
+     "hotkeys": [
+      111,
+      91
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 5211,
+       "tex": 4
+      },
+      {
+       "t": 3996,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": "Jewellery      (go to first with <w>\"=</w><blue>)",
+     "colour": 1,
+     "level": 1
+    },
+    {
+     "text": " h - the cursed ring of the Tethered Ennui (worn) {Int+6, Sorc, Dev}",
+     "q": 1,
+     "colour": 12,
+     "hotkeys": [
+      104,
+      61
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 5211,
+       "tex": 4
+      },
+      {
+       "t": 4194,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " i - the cursed ring of the Ruined Seer (worn) {MP+9, Range, Fort}",
+     "q": 1,
+     "colour": 12,
+     "hotkeys": [
+      105,
+      61
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 5211,
+       "tex": 4
+      },
+      {
+       "t": 4196,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " n - a ring of resist corrosion",
+     "q": 1,
+     "hotkeys": [
+      110,
+      61
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 4177,
+       "tex": 4
+      },
+      {
+       "t": 4205,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " p - a ring of wizardry",
+     "q": 1,
+     "hotkeys": [
+      112,
+      61
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 4171,
+       "tex": 4
+      },
+      {
+       "t": 4213,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": "Talismans      (go to first with <w>%</w><blue>)",
+     "colour": 1,
+     "level": 1
+    },
+    {
+     "text": " b - an inkwell talisman",
+     "q": 1,
+     "hotkeys": [
+      98,
+      37
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 4600,
+       "tex": 4
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "msg": "menu_scroll",
+   "first": 0,
+   "last_hovered": 6,
+   "force": true
+  },
+  {
+   "title": "q - a +1 eveningstar of flaming.",
+   "body": "<lightgrey>\n\nThe opposite of a morningstar. A balanced mace with a long shaft and a metal head covered in lethal spikes. \n\nBase accuracy: -1  Base damage: 15  Base attack delay: 1.5\nThis weapon's minimum attack delay (0.7) is reached at skill level 16.\n    Your skill: 0.2; use <white>(s)<lightgrey> to set 16.0 as a target for Maces & Flails.\n    At 100% training you would reach 16.0 in about 2.3 XLs.\n    Current attack delay: 1.4.\nDamage rating: 18 (Base 15 x 107% (Str) x 110% (Skill) + 1 (Ench)).\n\nFlame:     It burns victims, dealing an additional one-quarter of any damage\n           that pierces defenders' armour.\n\nThis weapon falls into the 'Maces & Flails' category. It is a one-handed weapon.\n\nIt can be maximally enchanted to +9.\n\nYou took it off a hell knight in a volcano.\n\nStash search prefixes: {inventory} {ego} {branded} {Maces & Flails} {one-handed} {flame} {melee weapon}\nMenu/colouring prefixes: identified enchanted ego melee weapon\n_________________\n\n<darkgrey>“It is said to have been the favourite weapon of the Norman priest, who,\n objecting to the shedding of blood, had no scruple about the dashing out of\n brains.”\n    -T. M. Allison, “The Flail and Kindred Tools (from a historical and\n     literary standpoint)”, _Archaeologia Aeliana_, Third Series, vol. IV.\n     1908.\n<lightgrey>SPELLSET_PLACEHOLDER",
+   "spellset": [],
+   "actions": "(w)ield, (d)rop, (=)adjust, (s)kill target, or (i)nscribe.",
+   "tiles": [
+    {
+     "t": 3616,
+     "tex": 4
+    },
+    {
+     "t": 3741,
+     "tex": 4
+    }
+   ],
+   "msg": "ui-push",
+   "type": "describe-item",
+   "ui-centred": false,
+   "generation_id": 112
+  },
+  {
+   "msg": "ui-pop"
+  },
+  {
+   "msg": "close_menu"
+  }
+ ]
+}

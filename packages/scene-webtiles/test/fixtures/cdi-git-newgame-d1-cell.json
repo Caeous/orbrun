@@ -1,0 +1,6 @@
+{
+  "recorded": "2026-09-05 spectating a turn-0 game on crawl.dcss.io (dcss-git, Dungeon Crawl Stone Soup 0.35-a0-995-g32aa59703e, gamedata 10685afda2bfd12ce0eebb245ebc0b79713f79d8) with tools/record/record.mjs picking the D:1 player with the fewest turns",
+  "what": "the `map` cell at the player's position (vgrdc 0,0; `player` pos 0,0) at the start of a new game: the D:1 exit under the player. `t.bg` 3096 resolves to DNGN_EXIT_DUNGEON in that gamedata's tileinfo-feat.js; `mf` 12 is MF_STAIR_UP (enums.js); the glyph is the player's `@`, not the feature's `<` (tileweb.cc _send_cell sends the screen glyph)",
+  "bgName": "DNGN_EXIT_DUNGEON",
+  "cell": {"x":0,"y":0,"f":60,"mf":12,"g":"@","col":87,"t":{"fg":531981,"bg":3096,"flv":{"f":8,"s":170},"doll":[[7975,32],[7933,32],[8051,32],[8137,32],[8947,32],[8516,32]],"mcache":null,"ov":[2716],"trans":false}}
+}

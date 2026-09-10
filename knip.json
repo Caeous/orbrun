@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    ".": { "entry": ["tools/build/*.mjs"] },
+    "apps/orbrun": { "entry": ["testbed/*.ts", "worker/index.ts"] },
+    "tools/record": { "entry": ["*.mjs"] },
+    "packages/scene-webtiles": { "ignore": ["test/fixtures/**"] }
+  }
+}

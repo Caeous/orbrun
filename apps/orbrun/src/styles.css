@@ -1,0 +1,3320 @@
+:root {
+  --ui-scale: 1;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'DejaVu Sans Mono', Menlo, Consolas, monospace;
+  /* how far a glyph of grid text hangs out of its cell, top and bottom (below, "Every line of grid text") */
+  --lip: 0.15em;
+  --panel: rgba(8, 10, 14, 0.78);
+  --panel-border: rgba(255, 255, 255, 0.12);
+  --accent: #ffd45c;
+  --danger: #ff5555;
+  /* the front end's palette: old gold on stone, parchment text */
+  --gold: #d8b45f;
+  --gold-bright: #f3d98a;
+  --ink: #e9e2d0;
+  --ink-dim: #9d9483;
+  /* the safe margin: the console's title-safe area, and a notch if there is one */
+  --safe-x: max(6vw, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+  --safe-y: max(7vh, env(safe-area-inset-top, 0px), env(safe-area-inset-bottom, 0px));
+  --color-0: #000000;
+  --color-1: #3b5bdb;
+  --color-2: #2bb34a;
+  --color-3: #21a1a1;
+  --color-4: #d33a3a;
+  --color-5: #b03cb0;
+  --color-6: #b9781f;
+  --color-7: #bfbfbf;
+  --color-8: #6e6e6e;
+  --color-9: #7f8fff;
+  --color-10: #7cff7c;
+  --color-11: #7cffff;
+  --color-12: #ff7c7c;
+  --color-13: #ff7cff;
+  --color-14: #ffff7c;
+  --color-15: #ffffff;
+  /* the stats bars' track (grid/stats.ts): style.css's darkgray over the black page WebTiles stands it on,
+     so the empty end of a bar stays dark on Orbrun's bare pane instead of glowing over the dungeon */
+  --stats-bar-track: color-mix(in srgb, var(--color-8) 45%, #000);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #000;
+  color: #ddd;
+  font-family: var(--font);
+  font-size: calc(15px * var(--ui-scale));
+  overflow: hidden;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.fg0 { color: var(--color-0); }
+.fg1 { color: var(--color-1); }
+.fg2 { color: var(--color-2); }
+.fg3 { color: var(--color-3); }
+.fg4 { color: var(--color-4); }
+.fg5 { color: var(--color-5); }
+.fg6 { color: var(--color-6); }
+.fg7 { color: var(--color-7); }
+.fg8 { color: var(--color-8); }
+.fg9 { color: var(--color-9); }
+.fg10 { color: var(--color-10); }
+.fg11 { color: var(--color-11); }
+.fg12 { color: var(--color-12); }
+.fg13 { color: var(--color-13); }
+.fg14 { color: var(--color-14); }
+.fg15 { color: var(--color-15); }
+.bg0 { background: var(--color-0); }
+.bg1 { background: var(--color-1); }
+.bg2 { background: var(--color-2); }
+.bg3 { background: var(--color-3); }
+.bg4 { background: var(--color-4); }
+.bg5 { background: var(--color-5); }
+.bg6 { background: var(--color-6); }
+.bg7 { background: var(--color-7); }
+.bg8 { background: var(--color-8); }
+.bg9 { background: var(--color-9); }
+.bg10 { background: var(--color-10); }
+.bg11 { background: var(--color-11); }
+.bg12 { background: var(--color-12); }
+.bg13 { background: var(--color-13); }
+.bg14 { background: var(--color-14); }
+.bg15 { background: var(--color-15); }
+
+/* ---------------------------------------------------------------- screens */
+
+/*
+ * The front end is a game's, not a page's: every screen is full bleed with
+ * a safe margin, its content a column of text items walked by one cursor
+ * bar, the button legend in the bottom corner, and the world behind it all
+ * (a real dungeon level, with embers in the air). Nothing is boxed; nothing is a button.
+ * Titles and items set in the console face, like the rest of the front end.
+ */
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.home,
+.lobby {
+  color: var(--ink);
+  background: radial-gradient(ellipse at 28% 32%, #17131f 0%, #09080d 58%, #030305 100%);
+}
+
+.home::before,
+.lobby::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* a dark backing for the words over the room, lighter in the middle where the room is looked at */
+  background: radial-gradient(ellipse at 50% 45%, rgba(5, 4, 9, 0.12) 0%, rgba(4, 3, 8, 0.45) 62%, rgba(2, 2, 4, 0.75) 100%);
+  z-index: 1;
+}
+/* the menu column gets a shade of its own, so the text never fights the level behind it */
+.home::before {
+  background:
+    linear-gradient(90deg, rgba(3, 2, 6, 0.88) 0%, rgba(3, 2, 6, 0.72) 34%, rgba(3, 2, 6, 0.22) 62%, rgba(3, 2, 6, 0.08) 100%),
+    linear-gradient(180deg, rgba(3, 2, 6, 0.45), transparent 25%, transparent 70%, rgba(3, 2, 6, 0.7));
+}
+
+/* the room behind the screen (room/view.ts): the Antechamber, drawn by the game's renderer; in once its first frame is drawn */
+canvas.room {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 900ms ease;
+  touch-action: none;
+  cursor: grab;
+}
+canvas.room.in {
+  opacity: 1;
+}
+/* the room at rest, as a picture (public/room/poster.jpg): what the menus stand on when the renderer is slow to come up, and after a lost context */
+img.room-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 600ms ease;
+}
+img.room-poster.up {
+  opacity: 1;
+}
+canvas.room:active {
+  cursor: grabbing;
+}
+@media (prefers-reduced-motion: reduce) {
+  canvas.room,
+  img.room-poster {
+    transition: none;
+  }
+}
+
+.frame {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: var(--safe-y) var(--safe-x);
+  display: flex;
+  flex-direction: column;
+  animation: frame-in 360ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+/* where the frame holds nothing, a press reaches the room behind it (a drag looks around); the words keep theirs */
+.frame {
+  pointer-events: none;
+}
+.frame > * {
+  pointer-events: auto;
+}
+.frame.wide {
+  max-width: 72rem;
+}
+.frame.still {
+  animation: none;
+}
+@keyframes frame-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* a screen's title and its line under it, in the console face; the game's white for the name of a place */
+.frame .title {
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  font-weight: bold;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--color-15);
+  margin: 0;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.25);
+}
+.frame .lede {
+  font-family: var(--mono);
+  color: var(--color-7);
+  margin: 0.4rem 0 1.6rem;
+  font-size: 1rem;
+}
+.note {
+  max-width: 34rem;
+}
+
+/* ---- the front end's maps */
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+@keyframes glyph-in {
+  from {
+    transform: scale(1.7);
+    filter: brightness(2.2);
+  }
+  to {
+    transform: none;
+    filter: none;
+  }
+}
+@keyframes seal {
+  from {
+    color: var(--color-6);
+    text-shadow: 0 0 10px rgba(185, 120, 31, 0.6);
+  }
+  to {
+    color: #46415a;
+    text-shadow: none;
+  }
+}
+
+/* ---- the home map (dungeon.ts): a corridor with a feature per choice */
+
+@keyframes you-step {
+  from {
+    transform: translateY(-3px);
+    filter: brightness(1.6);
+  }
+  to {
+    transform: none;
+    filter: none;
+  }
+}
+/* a screen's head, set as the game names a level, above the corridor */
+.brand .head {
+  margin-bottom: 0.2rem;
+}
+.brand .head .place {
+  font-family: var(--mono);
+  font-size: var(--fs, 1.2rem);
+  font-weight: bold;
+  letter-spacing: var(--fit, 0);
+  color: var(--color-15);
+  margin: 0;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.25);
+}
+.brand .head .lede {
+  font-family: var(--mono);
+  font-size: var(--fs, 1rem);
+  letter-spacing: var(--fit, 0);
+  color: var(--color-8);
+  margin: 0;
+}
+.brand > .error {
+  font-size: var(--fs, 1rem);
+  letter-spacing: var(--fit, 0);
+  margin: 0;
+}
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- menus: text items, one cursor */
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  align-items: stretch;
+}
+.menu.row {
+  flex-direction: row;
+  gap: 1rem;
+}
+
+.frame .item,
+.popup.ours .row {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.6rem 1.4rem 0.6rem 2.1rem;
+  margin: 0;
+  background: none;
+  border: 0;
+  color: var(--color-7);
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  font-weight: normal;
+  letter-spacing: 0;
+  text-transform: none;
+  text-align: left;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+.frame .item.small,
+.popup.ours .row {
+  font-size: 1rem;
+  padding: 0.45rem 1.2rem 0.45rem 2rem;
+}
+.frame .item .label,
+.popup.ours .row .label {
+  flex: 0 1 auto;
+}
+.frame .item .sub {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  font-weight: normal;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--color-8);
+  text-align: right;
+}
+/* the cursor: a bar that lights behind the item, and the player, who steps in before it */
+.frame .item::before,
+.popup.ours .row::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(216, 180, 95, 0.2), rgba(216, 180, 95, 0.05) 55%, transparent);
+  border-left: 2px solid var(--gold);
+  opacity: 0;
+  transform: scaleX(0.7);
+  transform-origin: left center;
+  transition: opacity 140ms ease, transform 180ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  pointer-events: none;
+}
+.frame .item .marker,
+.popup.ours .row .marker {
+  position: absolute;
+  left: 0.7rem;
+  top: 50%;
+  font-family: var(--mono);
+  font-weight: bold;
+  line-height: 1;
+  color: var(--color-7);
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.5);
+  transform: translate(-10px, -50%);
+  opacity: 0;
+  transition: opacity 120ms ease, transform 180ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.frame .item .marker::before,
+.popup.ours .row .marker::before {
+  content: '@';
+}
+.frame .item:hover,
+.popup.ours .row:hover {
+  color: var(--ink);
+}
+.frame .item.focused,
+.frame .item:focus-visible,
+.popup.ours .row.focused {
+  color: var(--gold-bright);
+  outline: none;
+  text-shadow: 0 0 16px rgba(216, 180, 95, 0.35);
+}
+.frame .item.focused::before,
+.popup.ours .row.focused::before {
+  opacity: 1;
+  transform: none;
+}
+.frame .item.focused .marker,
+.popup.ours .row.focused .marker {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+.frame .item.focused,
+.frame .item:focus-visible {
+  color: var(--color-15);
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.35);
+}
+.frame .item.focused .sub {
+  color: var(--color-7);
+}
+.frame .item.main {
+  color: var(--color-15);
+}
+.frame .item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---- text fields: prompts, answered in place as the game's are */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+}
+.field .caption {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  color: var(--color-7);
+}
+.frame input[type='text'],
+.frame input[type='password'],
+.frame input[type='email'],
+.frame input[type='search'] {
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 0;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(191, 191, 191, 0.25);
+  color: var(--color-15);
+  padding: 0.15em 0.2em;
+  font-family: var(--mono);
+  font-size: inherit;
+  letter-spacing: inherit;
+  outline: none;
+  caret-color: var(--color-15);
+  transition: border-color 140ms ease;
+}
+.frame input::placeholder {
+  color: var(--color-8);
+}
+.frame input:focus,
+.frame input.focused {
+  border-bottom-color: var(--color-7);
+}
+.field-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-top: 1rem;
+}
+.field-row .item {
+  width: auto;
+}
+.form .menu {
+  margin-top: 0.6rem;
+}
+
+.muted {
+  color: var(--ink-dim);
+  font-size: 0.9em;
+}
+
+.error {
+  font-family: var(--mono);
+  color: var(--color-12);
+  margin: 0.4rem 0 1rem;
+}
+
+/* ---- the front end's menus (menu.ts): readable lists over the room, one cursor */
+
+.frame.menu-frame {
+  --menu-action-size: 1.35rem;
+  --menu-note-size: 0.95rem;
+  --menu-row-height: 3.4rem;
+  --menu-label-inset: 2.5rem;
+  --menu-cursor-inset: 0.9rem;
+  --menu-highlight: linear-gradient(90deg, rgba(216, 180, 95, 0.2), rgba(216, 180, 95, 0.05) 55%, transparent);
+  justify-content: flex-start;
+  align-items: start;
+  overflow: hidden auto;
+}
+.frame.menu-frame .brand {
+  width: 38rem;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.frame.menu-frame .brand .head {
+  margin-bottom: 0.6rem;
+}
+.frame.menu-frame .menu {
+  gap: 0.3rem;
+}
+/* a group starts here: a little air above */
+.frame.menu-frame .item.gap,
+.frame.menu-frame .line.gap,
+.frame.menu-frame .line:has(> .item.gap) {
+  margin-top: 0.7rem;
+}
+/* the row's glyph in the margin, as the game marks a feature; the @ (the cursor) steps in front of it */
+.frame.menu-frame .item[data-marker]:not([data-marker=''])::after {
+  content: attr(data-marker);
+  position: absolute;
+  left: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--mono);
+  font-weight: bold;
+  line-height: 1;
+  color: var(--color-8);
+  transition: opacity 120ms ease;
+}
+.frame.menu-frame .item.focused::after {
+  opacity: 0;
+}
+.frame.menu-frame .item.main::after {
+  color: var(--color-7);
+}
+.frame.menu-frame .item.off {
+  opacity: 0.45;
+}
+/* a row and what stands beside it (an account's log out beside its name) */
+.frame.menu-frame .line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.2rem;
+}
+.frame.menu-frame .line > .item:first-child {
+  flex: 1 1 auto;
+  width: auto;
+}
+.frame.menu-frame .item.beside {
+  width: auto;
+  padding: 0.6rem 0.8rem;
+  color: var(--color-8);
+  font-size: 0.95rem;
+}
+.frame.menu-frame .item.beside::before {
+  border-left: 0;
+}
+.frame.menu-frame .item.beside.focused,
+.frame.menu-frame .item.beside:hover {
+  color: var(--color-15);
+}
+/* A title screen: unboxed game actions, with identity and information below.
+   Keep visual and focus order identical. */
+.frame.home-list .brand {
+  width: 38rem;
+  min-width: 0;
+  min-height: 100%;
+  gap: 0.65rem;
+}
+/* the title floats in the middle of the air above the menu: as far from the top as from Play */
+.frame.home-list .brand .head {
+  margin: auto 0;
+}
+/* the wordmark's own face, latin range only, self-hosted (public/fonts, from Google Fonts, OFL): Grenze Gotisch Bold */
+@font-face {
+  font-family: 'Grenze Gotisch';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/grenze-gotisch-700-latin.woff2') format('woff2');
+}
+.frame.home-list .brand .head .place {
+  font-family: 'Grenze Gotisch', var(--mono);
+  font-weight: 700;
+  font-size: clamp(3.75rem, 7.5vw, 6.5rem);
+  line-height: 1.1;
+  letter-spacing: 0;
+  color: var(--ink);
+  text-shadow: 0 2px 24px #000;
+}
+/* the Orb of Zot's own tile before the name (public/orb.png, cut from the pinned gamedata's main.png), scaled so its bright core (28 of the tile's 32px) matches the O's cap height (0.62em in Grenze Gotisch Bold) and sits on the baseline with the O's overshoot */
+.frame.home-list .brand .head .place::before {
+  content: '';
+  display: inline-block;
+  width: 0.71em;
+  height: 0.71em;
+  margin-right: 0.16em;
+  vertical-align: -0.055em;
+  background: url('/orb.png') center / contain no-repeat;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 10px rgba(185, 120, 31, 0.55)) drop-shadow(0 2px 8px #000);
+}
+.frame.home-list .brand .head .lede {
+  margin-top: 0.75rem;
+  max-width: 40ch;
+  font-family: var(--font);
+  font-size: 1.15rem;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+/* Xom's word under the lede: one line of godspeak per visit, in the god's own irreverent tone */
+.frame.home-list .brand .head .splash {
+  margin-top: 0.35rem;
+  max-width: 40ch;
+  font-family: var(--font);
+  font-size: 1rem;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--ink-dim);
+  opacity: 0.85;
+}
+.frame.home-list .brand .head .splash::before {
+  content: '“';
+}
+.frame.home-list .brand .head .splash::after {
+  content: '” — Xom';
+  font-style: normal;
+}
+/* One button language for all front-end screens, separate from gameplay popups. */
+.frame.menu-frame .item {
+  min-height: var(--menu-row-height);
+  padding: 0.7rem 1rem 0.7rem var(--menu-label-inset);
+  flex-wrap: wrap;
+  align-content: center;
+  column-gap: 1rem;
+  row-gap: 0.3rem;
+  border: 0;
+  background: none;
+  text-shadow: 0 2px 8px #000;
+}
+.frame.menu-frame .item .label {
+  font-size: var(--menu-action-size);
+  overflow-wrap: anywhere;
+}
+.frame.menu-frame .item .marker,
+.frame.menu-frame .item[data-marker]::after {
+  left: var(--menu-cursor-inset);
+  font-size: var(--menu-action-size);
+}
+.frame.menu-frame .item .sub {
+  font-family: var(--font);
+  color: var(--ink-dim);
+  font-size: var(--menu-note-size);
+  text-align: left;
+  margin-left: 0;
+  overflow-wrap: anywhere;
+}
+/* Every action shares the text column; secondary controls use the second. */
+.frame.menu-frame .menu-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 0.2rem;
+}
+.frame.menu-frame .menu-actions:has(.beside) {
+  grid-template-columns: minmax(0, 1fr) max-content;
+}
+.frame.menu-frame .menu-actions .line {
+  display: contents;
+}
+.frame.menu-frame .menu-actions .line > .item:first-child {
+  grid-column: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  width: 100%;
+}
+.frame.menu-frame .menu-actions .line > .item:first-child .label {
+  grid-area: 1 / 1;
+}
+.frame.menu-frame .menu-actions .line > .item:first-child .sub {
+  grid-area: 2 / 1;
+}
+/* Anchor each cursor to its label, including wrapped descriptions and settings. */
+.frame.menu-frame .menu-actions .line > .item:first-child .marker,
+.frame.menu-frame .menu-actions .line > .item:first-child::after,
+.frame.menu-frame .front-setting .marker,
+.frame.menu-frame .item.field-item .marker {
+  grid-area: 1 / 1;
+  position: relative;
+  align-self: center;
+  justify-self: start;
+  left: calc(var(--menu-cursor-inset) - var(--menu-label-inset));
+  top: auto;
+  transform: none;
+}
+.frame.menu-frame .menu-actions .line > .item:first-child .marker,
+.frame.menu-frame .front-setting .marker,
+.frame.menu-frame .item.field-item .marker {
+  transform: translateX(-10px);
+}
+.frame.menu-frame .menu-actions .line > .item:first-child:is(.focused, :focus-visible) .marker,
+.frame.menu-frame .settings .front-setting:is(.focused, :focus-visible) .marker,
+.frame.menu-frame .item.field-item:is(.focused, :focus-within) .marker {
+  transform: none;
+}
+.frame.menu-frame .item.beside {
+  grid-column: 2;
+  align-self: center;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0.6rem 0.5rem;
+}
+.frame.menu-frame .item.beside .label {
+  font-size: var(--menu-note-size);
+}
+.frame.menu-frame .item.beside:is(.focused, :focus-visible) {
+  outline: 1px solid var(--gold);
+  outline-offset: -1px;
+}
+.frame.menu-frame .item.main .label {
+  color: var(--gold-bright);
+}
+.frame.menu-frame .menu-actions > .line:first-child > .item.gap {
+  margin-top: 0;
+}
+/* Only the selected row lights up; hover changes text without a second backing. */
+.frame.menu-frame .item:is(.focused, :focus-visible) {
+  color: var(--gold-bright);
+  outline: none;
+}
+.frame.menu-frame .item::before {
+  border-left: 0;
+  background: var(--menu-highlight);
+}
+.frame.menu-frame .item:focus-visible::before {
+  opacity: 1;
+  transform: none;
+}
+.frame.menu-frame .item:is(.focused, :focus-visible) .marker {
+  color: var(--gold-bright);
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+.frame.menu-frame .item:focus-visible::after {
+  opacity: 0;
+}
+/* the account row: a dot before the name says where the login stands */
+.frame.home-list .item.conn .dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.5rem;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+.frame.home-list .item.conn.up .dot {
+  color: #6fbf73;
+}
+.frame.home-list .item.conn.wait .dot {
+  color: var(--gold);
+  animation: conn-wait 1.4s ease-in-out infinite;
+}
+.frame.home-list .item.conn.off .dot {
+  color: var(--ink-dim);
+  box-shadow: none;
+}
+.frame.home-list .item.conn.down .dot {
+  color: var(--color-12);
+}
+@keyframes conn-wait {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* the utilities: one line of chips, walked left and right, big enough for a thumb */
+.frame.menu-frame .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.frame.menu-frame .chips.gap {
+  margin-top: 0.7rem;
+}
+.frame.home-list .item.chip {
+  width: auto;
+  flex: 0 0 auto;
+  min-height: 2.9rem;
+  padding: 0.5rem 1rem 0.5rem 2rem;
+  font-size: 1rem;
+  border-radius: 2px;
+}
+.frame.home-list .item.chip .label {
+  font-size: 1rem;
+}
+.frame.home-list .item.chip .marker,
+.frame.home-list .item.chip[data-marker]::after {
+  left: 0.75rem;
+  font-size: 1rem;
+}
+
+.home-menu-help,
+.home-menu-help .menu-msg-reserve {
+  display: grid;
+}
+.home-menu-help > .menu-msg,
+.home-menu-help .menu-msg-reserve > span {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+.home-menu-help .menu-msg-reserve {
+  visibility: hidden;
+  pointer-events: none;
+}
+.frame.home-list .menu-msg {
+  min-height: 3em;
+  line-height: 1.5;
+  font-family: var(--font);
+  font-size: 0.95rem;
+  margin-top: 0.35rem;
+}
+.frame.menu-frame .legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
+  color: var(--ink-dim);
+}
+.menu-prompt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+.menu-prompt svg {
+  font-size: 1.4rem;
+}
+.menu-prompt kbd {
+  font: inherit;
+  color: var(--ink);
+  border: 1px solid #655e50;
+  border-radius: 3px;
+  padding: 0.15rem 0.35rem;
+}
+.home-footer {
+  padding-top: 0.75rem;
+}
+.frame.home-list .home-utilities {
+  flex-direction: row;
+  gap: 0.5rem;
+}
+.frame.home-list .home-utilities .item {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.65rem 0.5rem 0.65rem 1.6rem;
+  color: var(--ink-dim);
+}
+.frame.home-list .home-utilities .item:is(:hover, .focused, :focus-visible) {
+  color: var(--gold-bright);
+}
+.frame.home-list .home-utilities .item .label,
+.frame.home-list .home-utilities .item .sub {
+  font-size: 0.9rem;
+}
+.frame.home-list .home-utilities .item .marker {
+  left: 0.3rem;
+  font-size: 0.9rem;
+}
+.about-copy {
+  max-width: 46ch;
+  line-height: 1.6;
+  color: var(--ink-dim);
+}
+.about-links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.about-links a {
+  text-decoration: none;
+}
+/* a document (About, What's new, a morgue file): read in a region of its own under the head, as the roster is */
+.frame.menu-frame.doc-list {
+  overflow: hidden auto;
+}
+.frame.menu-frame.doc-list .brand {
+  width: 100%;
+  max-width: 60rem;
+  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.frame.menu-frame .doc-scroll {
+  flex: 0 1 auto;
+  background: rgba(6, 5, 10, 0.88);
+  min-height: calc(var(--menu-row-height) + 2.1rem);
+  margin-top: 0.6rem;
+  padding: 0.9rem 1.2rem;
+  overflow: clip auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(191, 191, 191, 0.25) transparent;
+  line-height: 1.55;
+}
+.doc-scroll .doc-wait,
+.doc-scroll .doc-failed {
+  margin: 0;
+  color: var(--ink-dim);
+}
+/* the server's text as it came, in the console face, wrapped so nothing scrolls sideways */
+.doc-scroll .doc-text {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  color: var(--color-14);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.doc {
+  max-width: 70ch;
+  color: var(--ink);
+}
+.doc > :first-child {
+  margin-top: 0;
+}
+.doc h2,
+.doc h3,
+.doc h4 {
+  font-family: var(--mono);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.4em 0 0.5em;
+}
+.doc h2 {
+  font-size: 1.2rem;
+  color: var(--color-14);
+}
+.doc h3 {
+  font-size: 1.05rem;
+}
+.doc h4 {
+  font-size: 1rem;
+  color: var(--ink-dim);
+}
+.doc p,
+.doc ul,
+.doc pre,
+.doc table {
+  margin: 0 0 0.9em;
+}
+.doc ul {
+  padding-left: 1.3em;
+}
+.doc li {
+  margin: 0.25em 0;
+}
+.doc li::marker {
+  color: var(--ink-dim);
+}
+.doc code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  color: var(--color-14);
+}
+.doc pre {
+  font-family: var(--mono);
+  font-size: 0.92rem;
+  padding: 0.6rem 0.8rem;
+  background: rgba(255, 255, 255, 0.05);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.doc pre code {
+  font-size: inherit;
+}
+.doc a {
+  color: var(--color-14);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.doc strong {
+  color: var(--ink);
+}
+.doc table {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.92rem;
+}
+.doc th,
+.doc td {
+  text-align: left;
+  padding: 0.25em 0.9em 0.25em 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  vertical-align: top;
+}
+.doc th {
+  color: var(--ink-dim);
+  font-weight: 600;
+}
+/* a phone, or a short window (a phone on its side, a small laptop): less air, the chips two to a line */
+@media (max-width: 600px), (max-height: 700px) {
+  .frame.menu-frame {
+    padding: max(1.25rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right)) max(1.25rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left));
+  }
+  .frame.home-list .brand .head {
+    margin: auto 0;
+  }
+  .frame.home-list .brand .head .place {
+    font-size: 2.6rem;
+  }
+  .frame.home-list .brand .head .lede {
+    margin-top: 0.4rem;
+    font-size: 1rem;
+  }
+  .frame.home-list .menu-msg {
+    min-height: 2.4em;
+  }
+  .home-footer {
+    padding-top: 0.5rem;
+  }
+}
+@media (max-width: 600px) {
+  /* on a phone the words stand right on the room: dim it so they read */
+  .frame.home-list {
+    background: linear-gradient(180deg, rgba(3, 2, 6, 0.55), rgba(3, 2, 6, 0.75));
+  }
+  .frame.home-list .item.chip {
+    flex: 1 1 calc(50% - 0.2rem);
+    min-width: 0;
+  }
+}
+/* a phone on its side: the head on one line, the menu right under it */
+@media (max-height: 460px) {
+  .frame.home-list .brand .head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    column-gap: 1rem;
+    margin: auto 0;
+  }
+  .frame.home-list .brand .head .place {
+    font-size: 2.2rem;
+  }
+  .frame.home-list .brand .head .lede {
+    margin-top: 0;
+    max-width: none;
+    font-size: 0.9rem;
+  }
+  .frame.home-list .brand .head .splash {
+    display: none;
+  }
+  .frame.home-list .menu-msg {
+    min-height: 1.5em;
+  }
+}
+
+/* Settings share the action rows, not the in-game popup's boxed/hotkey layout.
+   The panel keeps to the left, a little wider than the other menus for the value column, so the room
+   stays in view beside it: the camera rows change the room's eye as they are turned, and the player
+   sees the change before playing on it. The settings scroll in a region of their own under the head
+   and the rows, so the message line and the legend keep their place at the bottom */
+.frame.menu-frame.settings-list {
+  overflow: hidden auto;
+}
+.frame.menu-frame.settings-list .brand {
+  width: 44rem;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.frame.menu-frame .settings-scroll {
+  flex: 0 1 auto;
+  /* the same dark panel the roster stands on: the room never shows through the rows */
+  background: rgba(6, 5, 10, 0.88);
+  min-height: calc(var(--menu-row-height) + 2.1rem);
+  margin-top: 0.6rem;
+  overflow: clip auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(191, 191, 191, 0.25) transparent;
+}
+.frame.menu-frame .settings.menu.game {
+  margin: 0;
+  font-family: var(--mono);
+  background: none;
+  padding: 0.2rem 0 0.6rem;
+}
+.frame.menu-frame .settings.menu.game .title,
+.frame.menu-frame .settings.menu.game .more,
+.frame.menu-frame .settings.menu.game .hotkey,
+.frame.menu-frame .settings.menu.game .dash {
+  display: none;
+}
+.frame.menu-frame .settings.menu.game .body,
+.frame.menu-frame .settings.menu.game ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.frame.menu-frame .settings.menu.game li.group {
+  padding: 1.1rem 1rem 0.4rem var(--menu-label-inset);
+  color: var(--ink-dim);
+  font-size: var(--menu-note-size);
+}
+.frame.menu-frame .settings.menu.game li.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 24rem);
+  align-items: center;
+  gap: 0.3rem 1rem;
+  padding: 0.2rem 1rem 0.2rem var(--menu-label-inset);
+  scroll-margin: 0.2rem 0;
+  color: var(--color-7);
+}
+.frame.menu-frame .settings.menu.game li.row .label {
+  grid-area: 1 / 1;
+}
+.frame.menu-frame .settings.menu.game li.row .value {
+  grid-area: 1 / 2;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  font-size: var(--menu-note-size);
+}
+.frame.menu-frame .settings.menu.game li.row .val {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.frame.menu-frame .settings.menu.game li.row .arrow {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  color: var(--ink-dim);
+}
+.frame.menu-frame .settings.menu.game li.row:not(.off) .arrow:hover {
+  color: var(--gold-bright);
+  outline: 1px solid var(--gold);
+  outline-offset: -1px;
+}
+.frame.menu-frame .settings.menu.game li.row:is(.focused, :focus-visible) {
+  background: none;
+  outline: none;
+  color: var(--gold-bright);
+}
+.frame.menu-frame .settings.menu.game li.row:is(.focused, :focus-visible) .value,
+.frame.menu-frame .settings.menu.game li.row:is(.focused, :focus-visible) .arrow {
+  color: var(--gold-bright);
+}
+@media (max-width: 700px) {
+  .frame.menu-frame .settings.menu.game li.row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .frame.menu-frame .settings.menu.game li.row .value {
+    grid-area: 2 / 1;
+    width: 100%;
+  }
+}
+.frame.menu-frame .bindings-sheet.ours {
+  margin-top: 0.4rem;
+}
+/* a text field as a row: the prompt, the field after it */
+.frame.menu-frame .item.field-item {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  cursor: text;
+}
+.frame.menu-frame .item.field-item .label {
+  grid-area: 1 / 1;
+}
+.frame.menu-frame .item.field-item input {
+  grid-area: 2 / 1;
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+  min-height: 44px;
+  font-size: var(--menu-note-size);
+}
+/* the message line: what the row under the cursor is */
+.frame.menu-frame .menu-msg {
+  min-height: 1.5em;
+  margin-top: 0.8rem;
+  font-family: var(--mono);
+  font-size: 1rem;
+  color: var(--ink-dim);
+  max-width: 60ch;
+}
+.frame.menu-frame .menu-msg.said {
+  animation: msg-in 260ms ease-out both;
+}
+.frame.menu-frame .legend {
+  margin-top: 1.2rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--color-8);
+}
+.frame.menu-frame .notice {
+  font-family: var(--mono);
+  color: var(--color-14);
+  max-width: 60ch;
+}
+.frame.menu-frame .notice .actions {
+  display: flex;
+  gap: 1rem;
+}
+/* the roster: a table in the console face, the width of the screen, scrolling in a region of its own
+   under the head so the message line and the legend keep their place at the bottom */
+.frame.menu-frame.watch-list {
+  /* Short landscape windows may scroll the whole frame rather than clip controls. */
+  overflow: hidden auto;
+}
+.frame.menu-frame.watch-list .brand {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.frame.menu-frame .roster-scroll {
+  flex: 0 1 auto;
+  /* the table stands on a dark panel of its own, the head's shade: the room never shows through the rows, selected or not */
+  background: rgba(6, 5, 10, 0.88);
+  /* a short window keeps the head and a row or two in view rather than none */
+  min-height: calc(var(--menu-row-height) + 2.1rem);
+  margin-top: 0.6rem;
+  overflow: clip auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(191, 191, 191, 0.25) transparent;
+}
+.frame.menu-frame table.roster {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 1rem;
+  width: 100%;
+}
+.frame.menu-frame table.roster th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgb(8, 7, 12);
+  text-align: left;
+  font-weight: normal;
+  color: var(--color-8);
+  padding: 0.35rem 1.2rem 0.35rem 0.6rem;
+  white-space: nowrap;
+}
+/* the last column keeps its right padding inside the panel rather than hanging the table past it */
+.frame.menu-frame table.roster :is(th, td):last-child {
+  padding-right: 0.6rem;
+}
+.frame.menu-frame table.roster td {
+  padding: 0.3rem 1.2rem 0.3rem 0.6rem;
+  color: var(--color-7);
+  white-space: nowrap;
+  /* the cells sit on the row's centre line, where the cursor (@) stands */
+  vertical-align: middle;
+}
+.frame.menu-frame table.roster tr.game {
+  height: var(--menu-row-height);
+  cursor: pointer;
+  position: relative;
+  /* a row scrolled to stops under the sticky head, not behind it */
+  scroll-margin-top: 2.1rem;
+  /* the row draws its own cursor (the bar and the wash below), not the browser's ring */
+  outline: none;
+}
+.frame.menu-frame table.roster tr.game.idle td {
+  color: var(--color-8);
+}
+.frame.menu-frame table.roster tr.game:hover td {
+  color: var(--color-15);
+}
+.frame.menu-frame table.roster tr.game:is(.focused, :focus-visible) {
+  /* the same wash as a menu row's cursor bar, over the panel: the line stays dark */
+  background: var(--menu-highlight);
+}
+.frame.menu-frame table.roster tr.game:is(.focused, :focus-visible) td {
+  color: var(--gold-bright);
+}
+.frame.menu-frame table.roster :is(th, td).col-user {
+  position: relative;
+  padding-left: var(--menu-label-inset);
+}
+.frame.menu-frame table.roster td.col-user {
+  font-size: var(--menu-action-size);
+}
+.frame.menu-frame table.roster td.col-user::before {
+  content: '@';
+  position: absolute;
+  left: var(--menu-cursor-inset);
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  color: var(--gold-bright);
+}
+.frame.menu-frame table.roster tr.game:is(.focused, :focus-visible) td.col-user::before {
+  opacity: 1;
+}
+/* the milestone takes whatever width the other columns leave, and is cut short with an ellipsis rather than pushing the table past the screen */
+.frame.menu-frame table.roster th.col-milestone {
+  width: 100%;
+}
+.frame.menu-frame table.roster td.col-milestone {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* the details row: the columns the width hides, when the row is opened (right); each stands only while its column is hidden */
+.frame.menu-frame table.roster tr.details,
+.frame.menu-frame table.roster tr.details .d {
+  display: none;
+}
+.frame.menu-frame table.roster tr.details .d + .d::before {
+  content: ' · ';
+}
+.frame.menu-frame table.roster tr.details:not([hidden]) {
+  cursor: pointer;
+}
+.frame.menu-frame table.roster tr.details td {
+  padding-top: 0;
+  white-space: normal;
+  color: var(--color-8);
+  font-size: 0.9rem;
+}
+/* a middling width: who watches, the time played and the idle time fold into the details */
+@media (max-width: 1200px) {
+  .frame.menu-frame table.roster .col-specs,
+  .frame.menu-frame table.roster .col-time,
+  .frame.menu-frame table.roster .col-idle {
+    display: none;
+  }
+  .frame.menu-frame table.roster tr.details:not([hidden]) {
+    display: table-row;
+  }
+  .frame.menu-frame table.roster tr.details .d.col-specs,
+  .frame.menu-frame table.roster tr.details .d.col-time,
+  .frame.menu-frame table.roster tr.details .d.col-idle {
+    display: inline;
+  }
+}
+/* a narrow one: the rest of the extra columns too */
+@media (max-width: 900px) {
+  .frame.menu-frame table.roster th.extra,
+  .frame.menu-frame table.roster td.extra {
+    display: none;
+  }
+  .frame.menu-frame table.roster tr.details .d {
+    display: inline;
+  }
+  /* the four columns that stay share the width: tighter, and a long name is cut short rather than the table */
+  .frame.menu-frame table.roster th,
+  .frame.menu-frame table.roster td {
+    padding-right: 0.6rem;
+  }
+  .frame.menu-frame table.roster th.col-user {
+    width: 100%;
+  }
+  .frame.menu-frame table.roster td.col-user {
+    max-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+/* the arrivals held back: a line under the table, pressed (or Y) to bring them in */
+.frame.menu-frame .held {
+  appearance: none;
+  border: 0;
+  background: none;
+  min-height: 44px;
+  padding: 0.7rem 1rem 0.7rem var(--menu-label-inset);
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: var(--menu-action-size);
+  color: var(--gold-bright);
+  margin-top: 0.4rem;
+}
+.frame.menu-frame .held:is(:hover, :focus-visible) {
+  color: var(--gold-bright);
+  background: var(--menu-highlight);
+  outline: 1px solid var(--gold);
+  outline-offset: -1px;
+}
+.frame.menu-frame .hint.empty {
+  font-family: var(--mono);
+  color: var(--ink-dim);
+}
+/* ---- the button legend, bottom right */
+
+/* on the title screen the legend leaves the menu column and stands in the corner, over the room */
+.frame.home-list .legend {
+  position: absolute;
+  right: var(--safe-x);
+  bottom: var(--safe-y);
+  margin: 0;
+  justify-content: flex-end;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+.frame.home-list .legend:empty {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ lobby */
+
+@media (prefers-reduced-motion: reduce) {
+  .frame,
+  .backdrop .level,
+  .menu.reveal .item,
+  .dungeon .you {
+    animation: none;
+  }
+  .dungeon-msg.said {
+    animation: none;
+    opacity: 1;
+  }
+  .frame .item::before,
+  .frame .item .marker,
+  .popup.ours .row::before,
+  .popup.ours .row .marker {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------------ game */
+
+/* the game screen only: the roster's rows carry the class too (tr.game) and stand on the room */
+.screen.game {
+  background: #000;
+}
+
+.game canvas.view {
+  /* set on the view's cells by the grid host (game.ts relayout); left, top, width, height are inline */
+  position: absolute;
+  touch-action: none;
+  cursor: crosshair;
+  display: block;
+  /* The view draws one pixel per CSS pixel whatever the display's density
+     (game.ts `viewDpr`), so on a HiDPI screen the compositor is the thing that
+     scales it up. Left to itself it does that smoothly, which softens every
+     32-texel sprite edge in the frame; pixelated makes the upscale a clean
+     doubling, the way every other pixel-art canvas here is drawn. */
+  image-rendering: pixelated;
+}
+/* the probe the grid host measures a cell with: the one grid font */
+.game .grid-probe {
+  font-family: var(--mono);
+}
+/* an outgoing view lingering through the level-map morph: inert, above the new view */
+.game canvas.view.ghost {
+  pointer-events: none;
+  cursor: default;
+  will-change: transform, opacity;
+}
+
+/*
+ * The HUD on the one console grid (docs/console-grid.md). The grid host
+ * publishes the cell (--cw, --ch, --fs) and where the first cell sits
+ * (--gx, --gy); every block below is set on a rectangle of cells by
+ * hud.ts `layout`, so nothing floats and nothing is sized in rem.
+ */
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: var(--fs, 16px);
+  line-height: var(--ch, 19px);
+  color: var(--color-7); /* lightgray, as #stats and the messages inherit it */
+}
+
+.hud > * {
+  pointer-events: auto;
+  position: absolute;
+}
+
+/* one row of grid text: a line of cells, its spans painted full height so a bar's background fills the cell */
+.hud .line {
+  height: var(--ch, 19px);
+  line-height: var(--ch, 19px);
+  white-space: pre;
+  overflow: hidden;
+}
+.hud .line span {
+  display: inline-block;
+  height: var(--ch, 19px);
+  vertical-align: top;
+}
+.hud .line span[title] {
+  cursor: help;
+}
+
+/* a region that has stepped aside (the level map's rc options) stays off however it is laid out */
+.hud > [hidden] {
+  display: none !important;
+}
+
+/*
+ * The panes lie over the view (console-grid.md rule 1): each on its own
+ * cells. The monster rows stand on a dark translucent backing that keeps
+ * their bars and names legible over the dungeon without hiding it; the
+ * stats pane and the message pane are bare, their text shadowed instead, so
+ * the view stays open behind them.
+ */
+.hud .stats {
+  background: rgba(0, 0, 0, 0);
+  /* bare like the message pane: the text is shadowed instead of backed */
+  text-shadow:
+    0 0 3px #000,
+    0 1px 2px #000;
+}
+.hud .monsters .group {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+/* the right column (game.html #right_column less the stats pane): the minimap, then the monster list. The column itself takes
+   no pointer events: the view runs under it and the edge pips ride the view's edge below the panes. Clipped at its foot only:
+   a minimap grown by the "Minimap size" setting hangs off the column's right edge and reaches left over the view */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  overflow-x: visible;
+  overflow-y: clip;
+  pointer-events: none;
+}
+.sidebar > * {
+  width: 100%;
+  pointer-events: auto;
+}
+
+/* the WebTiles stats pane (player.js / game.html) as rows on its cells at the view's top-left corner; the widths are in grid/stats.ts */
+.stats {
+  overflow: hidden;
+}
+/* the portrait (hud.md): the player's cell on the pane's first rows, the title and god lines beside it */
+.stats canvas.portrait {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  image-rendering: pixelated;
+}
+.stats_caption {
+  color: var(--color-6); /* brown */
+}
+.degenerated_stat {
+  color: var(--color-14); /* yellow */
+}
+.zero_stat {
+  color: var(--color-12); /* lightred */
+}
+.boosted_stat {
+  color: var(--color-9); /* lightblue */
+}
+.degenerated_defense {
+  color: var(--color-4); /* red */
+}
+.boosted_defense {
+  color: var(--color-9); /* lightblue */
+}
+
+/* hp_colour / mp_colour / stat_colour names from the rc (style.css) */
+.colour_black { color: black; }
+.colour_blue { color: blue; }
+.colour_green { color: green; }
+.colour_cyan { color: cyan; }
+.colour_red { color: red; }
+.colour_magenta { color: magenta; }
+.colour_brown { color: brown; }
+.colour_lightgray { color: lightgray; }
+.colour_darkgray { color: darkgray; }
+.colour_lightblue { color: lightblue; }
+.colour_lightgreen { color: lightgreen; }
+.colour_lightcyan { color: lightcyan; }
+.colour_lightred { color: #ee9090; }
+.colour_lightmagenta { color: #ee90ee; }
+.colour_yellow { color: yellow; }
+.colour_white { color: white; }
+
+/* minimap.js: at the top of the right column, as wide as it or wider by the "Minimap size" setting (hud.ts layout sizes it, its right
+   edge on the column's); the renderer paints on a transparent backing, so the map stands bare over the view */
+canvas.minimap {
+  flex: none;
+  align-self: flex-end;
+  display: block;
+  background: transparent;
+  image-rendering: pixelated;
+  transform-origin: center;
+  /* the map is bare over the view like the stats and message panes, so its
+     cells are shadowed the way their text is, which the transparent backing
+     lets through. Lighter than the text's two-step drop: the cells are solid
+     blocks, not thin strokes, so they need less to sit off the view */
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+/* mid-morph into (or out of) the level map: above the rest of the HUD */
+canvas.minimap.morphing {
+  position: relative;
+  z-index: 4;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+/* the level map is open: the minimap has become it. Keeps its slot so the monster list holds still. */
+canvas.minimap.hidden {
+  visibility: hidden;
+}
+
+.monsters {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  overflow: hidden;
+  font-family: var(--font-lbl, var(--mono));
+  font-size: var(--font-lbl-size, inherit);
+}
+
+/* the Nearby setting hides the list when the edge pips say the same thing (hud.ts update); the display above would otherwise beat the [hidden] default */
+.monsters[hidden] {
+  display: none;
+}
+
+/* one row of the WebTiles #monster_list: sprites, glyph-mode health box, name; Orbrun's bearing arrow in front */
+.monsters .group {
+  display: flex;
+  gap: 0.4em;
+  align-items: center;
+  cursor: pointer;
+  white-space: nowrap;
+  padding-right: 0.4em;
+}
+
+.monsters .group .arrow {
+  font-family: var(--mono);
+  color: var(--accent);
+  min-width: 1.2em;
+  text-align: center;
+}
+
+.monsters .group canvas.picture {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.monsters .group .health {
+  display: inline-block;
+}
+.monsters .health.uninjured { background-color: #00aa00; }
+.monsters .health.lightly_damaged { background-color: #55ff55; }
+.monsters .health.moderately_damaged { background-color: #ffff55; }
+.monsters .health.heavily_damaged { background-color: #aa5500; }
+.monsters .health.severely_damaged { background-color: #ff5555; }
+.monsters .health.almost_dead { background-color: #aa0000; }
+
+/*
+ * Edge pips (hud.md "What is around you", pips.ts): a marker on the free
+ * view's edge for each monster or item in sight but out of the 3D frame. The
+ * layer takes no pointer events; each pip does (a tap faces it). The sprite
+ * is the thing itself and nothing else — no floor under it, no glow, no
+ * ring, no fading, just the sprite with its status icons and damage bar on a
+ * clear canvas: what the 3D view would have drawn, at the size it would have
+ * drawn it (--pip, set per pip by renderPips), so the ring round the view is
+ * to scale and looks like the frame it stands outside of.
+ */
+.hud .pips {
+  inset: 0;
+  pointer-events: none;
+  /* over the message pane, which comes later in the HUD: the pane is bare, and the pips ride the view's bottom edge through its rows */
+  z-index: 1;
+}
+.hud .pips .pip {
+  --pip: 24px;
+  position: absolute;
+  width: var(--pip);
+  height: var(--pip);
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: pointer;
+  overflow: visible;
+}
+.hud .pips .pip canvas.picture {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  image-rendering: pixelated;
+}
+
+/* monster_list.js attitude_classes and mthreat_classes, coloured as the official style.css */
+.monsters .name.hostile { color: #ff8a8a; }
+.monsters .name.neutral { color: #ffe08a; }
+.monsters .name.good_neutral { color: #d8ffa0; }
+.monsters .name.friendly { color: #8aff8a; }
+.monsters .name.trivial { opacity: 0.75; }
+.monsters .name.tough { font-weight: bold; }
+.monsters .name.nasty { font-weight: bold; text-decoration: underline; }
+.monsters .name.invisible { font-style: italic; }
+.monsters .group .ellipse {
+  color: #aaa;
+}
+
+/* the message pane (game.html #message_pane) on its rows along the bottom: the messages, then the --more-- row (grid/messages.ts); no backing, shadowed text */
+.messages {
+  overflow: hidden;
+  background: transparent;
+  text-shadow:
+    0 0 3px #000,
+    0 1px 2px #000;
+}
+/* a pending --more-- is a hard stop, and the pane says so where it stands: it goes
+   black as #message_pane does in WebTiles, so the stopped text is the one thing to
+   read, and takes a plain light ring around its cells until the player acknowledges
+   it. The ring is an outline, not a border, so the pane keeps its cells and nothing
+   rewraps, and it sits flush on them: square, still, no gap, as the console it
+   stands for. */
+.messages.more {
+  background: #000;
+  text-shadow: none;
+  outline: 1px solid rgba(255, 255, 255, 0.45);
+  outline-offset: 0;
+}
+/* the player can dismiss it: a click on the pane sends space (hud.ts). A spectator cannot, so its pane takes none */
+.messages.more.dismissable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.messages .line.more {
+  color: var(--color-7);
+}
+
+.messages input.text {
+  background: #111;
+  border: 1px solid #666;
+  color: #fff;
+  font: inherit;
+  padding: 0 0.3em;
+  min-width: 12em;
+}
+
+/*
+ * The prompt strip (hud.ts renderBar), over the bottom rows of the view. It
+ * is set in the HUD's own mono at the grid's size so it reads as one more
+ * line of the terminal, not a control card laid over it. At rest it is a
+ * few centred prompts the situation created; with a trigger held it is the
+ * layer's table in controller clusters, tinted by the layer.
+ */
+.actionbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  padding: 0.25rem 0.5rem;
+  line-height: 1.2;
+  /* the stats pane's backing, so the chips and the pane read as one surface */
+  --chip-bg: rgba(0, 0, 0, 0.55);
+  --chip-line: rgba(255, 255, 255, 0.12);
+  --layer-tint: var(--accent);
+}
+.actionbar[hidden] {
+  display: none;
+}
+
+/* a held trigger recolours the strip: the change of layer is felt before it is read */
+.actionbar.layer-macro {
+  --layer-tint: #7fb3ff;
+}
+.actionbar.layer-info {
+  --layer-tint: #8ee6b0;
+}
+
+/* the held trigger and the name of its layer */
+.actionbar .layer {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  color: var(--layer-tint);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-size: 0.85em;
+  padding: 0.15em 0.55em;
+  border: 1px solid color-mix(in srgb, var(--layer-tint) 55%, transparent);
+  border-radius: 3px;
+  background: var(--chip-bg);
+}
+.actionbar .layer svg {
+  font-size: 1.15em;
+  color: var(--layer-tint);
+}
+
+/* one cluster of the controller: face, shoulders, sticks, system */
+.actionbar .group {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0.35rem;
+  padding-left: 0.6rem;
+  border-left: 1px solid var(--chip-line);
+}
+.actionbar .group:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+/* the resting strip is a sentence or two, not a table: no dividers between the clusters */
+.actionbar.contextual .group {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.actionbar .chip,
+.prompts .chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-line);
+  border-radius: 4px;
+  padding: 0.1em 0.7em 0.1em 0.25em;
+  cursor: pointer;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 90ms ease;
+}
+.actionbar .chip:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+/*
+ * The contextual prompts: a stack in the bottom-right corner of the view,
+ * growing upward from the interact prompt on its last row. No boxes:
+ * shadowed text like the messages, the glyph or key cap at the edge so they
+ * line up in one column, the label to its left.
+ */
+.actionbar.contextual {
+  flex-direction: column-reverse;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 0.2em;
+  /* a cell in from the edge, and left of the first-person weapon when one is drawn there (hud.ts keepClear) */
+  padding: 0 calc(var(--cw, 10px) + var(--hands-inset, 0px)) 0.15em 0;
+  transition: padding-right 200ms ease;
+  pointer-events: none;
+}
+.actionbar.contextual .group {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.actionbar .chip,
+.prompts .chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-line);
+  border-radius: 4px;
+  padding: 0.1em 0.7em 0.1em 0.25em;
+  cursor: pointer;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 90ms ease;
+}
+.actionbar .chip:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+/*
+ * The contextual prompts: a stack in the bottom-right corner of the view,
+ * growing upward from the interact prompt on its last row. No boxes:
+ * shadowed text like the messages, the glyph or key cap at the edge so they
+ * line up in one column, the label to its left.
+ */
+.actionbar.contextual {
+  flex-direction: column-reverse;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 0.2em;
+  /* a cell in from the edge, and left of the first-person weapon when one is drawn there (hud.ts keepClear) */
+  padding: 0 calc(var(--cw, 10px) + var(--hands-inset, 0px)) 0.15em 0;
+  transition: padding-right 200ms ease;
+  pointer-events: none;
+}
+.actionbar.contextual .group {
+  display: contents;
+}
+.actionbar.contextual .chip {
+  pointer-events: auto;
+  flex-direction: row-reverse;
+  gap: 0.55em;
+  padding: 0.05em 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  text-shadow:
+    0 0 3px #000,
+    0 1px 2px rgba(0, 0, 0, 0.85);
+}
+.actionbar.contextual .chip.teaching {
+  pointer-events: none;
+  cursor: default;
+}
+.actionbar.contextual .chip:hover {
+  border: 0;
+}
+.actionbar.contextual .chip .text {
+  align-items: flex-end;
+}
+.actionbar.contextual .chip .key {
+  font-size: 1.45em;
+}
+/* a named pile ("a +0 mace; a +2 robe of positive energy") is one line, cut with an ellipsis; the tooltip has it whole */
+.actionbar.contextual .chip .label,
+.actionbar.contextual .chip .hold {
+  max-width: 22em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the label is one more line of the HUD: its mono, its size, its weight */
+.actionbar.contextual .chip .label {
+  font: inherit;
+}
+.actionbar.contextual .chip .hold {
+  color: rgba(255, 255, 255, 0.6);
+}
+/* a keyboard key cap the situation just created slides in from the edge; one that stayed keeps still (hud.ts renderBar keeps its node). Pad glyphs never slide: they appear in place (hud.ts chip) */
+.actionbar.contextual .chip.enter {
+  animation: prompt-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes prompt-in {
+  from {
+    opacity: 0;
+    transform: translateX(0.6em);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* the glyph */
+.actionbar .chip .key {
+  position: relative;
+  display: inline-flex;
+  font-size: 1.3em;
+}
+.actionbar .chip svg,
+.prompts .chip svg {
+  display: block;
+  font-size: 1.3em;
+  color: #fff;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+}
+
+.actionbar .chip .text {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.actionbar .chip .label {
+  white-space: nowrap;
+}
+.actionbar .chip .hold,
+.bindings-sheet .hold,
+.prompts .hold {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.78em;
+  white-space: nowrap;
+}
+.actionbar .chip .hold svg,
+.bindings-sheet .hold svg {
+  font-size: 0.95em;
+  color: currentColor;
+  filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actionbar .chip,
+  .actionbar .chip.enter,
+  .actionbar.contextual {
+    transition: none;
+    animation: none;
+  }
+}
+
+.status-line {
+  position: absolute;
+  left: 50%;
+  top: 12%;
+  transform: translateX(-50%);
+  background: rgba(80, 20, 20, 0.85);
+  color: #fff;
+  padding: 0.3em 0.8em;
+  border-radius: 4px;
+  pointer-events: none;
+  animation: fadeout 3s forwards;
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 40;
+}
+
+/* something of the server's is up under the veil (the launcher's save-transfer
+   question): the veil drops below the overlay stack and stops taking clicks,
+   and its line steps aside, out of the dialog's way (game.ts loop) */
+.loading.behind {
+  z-index: 15;
+  pointer-events: none;
+  justify-content: flex-start;
+  padding-top: 8%;
+}
+
+/* -------------------------------------------------------------- overlays */
+
+.overlay-stack {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.popup {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(10, 10, 14, 0.96);
+  border: 1px solid #555;
+  border-radius: 6px;
+  color: #ddd;
+  font-family: var(--mono);
+  font-size: 0.95em;
+  max-width: min(94vw, 78rem);
+  max-height: 88vh;
+  min-width: 24rem;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.7);
+}
+
+.popup.hidden {
+  display: none;
+}
+
+.popup .title,
+.popup .header {
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid #333;
+  white-space: pre-wrap;
+  display: flex;
+  gap: 0.6em;
+  align-items: center;
+}
+
+.popup .body {
+  padding: 0.5rem 0.8rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.popup .body pre {
+  margin: 0 0 0.6em;
+  font: inherit;
+  white-space: pre-wrap;
+}
+
+.popup .footer,
+.popup .more,
+.popup .actions {
+  padding: 0.4rem 0.8rem;
+  border-top: 1px solid #333;
+  white-space: pre-wrap;
+  color: #aaa;
+}
+
+.popup .actions span[data-hotkey] {
+  color: #fff;
+  cursor: pointer;
+}
+
+.popup ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.popup li {
+  padding: 0.05em 0.4em;
+  white-space: pre-wrap;
+  display: flex;
+  gap: 0.4em;
+  align-items: center;
+  min-height: 1.3em;
+}
+
+.popup li.level0,
+.popup li.level1 {
+  color: #fff;
+  font-weight: bold;
+  margin-top: 0.3em;
+}
+
+.popup li.selectable {
+  cursor: pointer;
+}
+
+.popup li.hovered {
+  background: rgba(255, 212, 92, 0.2);
+  outline: 1px solid rgba(255, 212, 92, 0.6);
+}
+
+/* the more line's switches (the shop's [!] buy|examine, [/] sort, [Enter] buy):
+   targets of their own, so the cursor walks off the last row onto them */
+.popup .more .more-hot {
+  cursor: pointer;
+  border-radius: 3px;
+  outline: 1px solid transparent;
+}
+.popup .more .more-hot:hover {
+  outline-color: rgba(255, 212, 92, 0.35);
+}
+.popup .more .more-hot.hovered {
+  background: rgba(255, 212, 92, 0.2);
+  outline: 1px solid rgba(255, 212, 92, 0.6);
+}
+
+.popup li.preselected {
+  background: rgba(60, 120, 255, 0.2);
+}
+
+/* Orbrun's own row on a server menu (the game menu's settings): the glyph
+   stands in the tile column, so the row lines up with the server's */
+.popup li .tile-glyph {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: #d0a95c;
+}
+
+.popup canvas.tile {
+  image-rendering: pixelated;
+  vertical-align: middle;
+  flex: none;
+}
+
+.popup .crt {
+  padding: 0.5rem 0.8rem;
+  white-space: pre;
+  overflow: auto;
+  font-family: var(--mono);
+}
+
+/* one element per CRT line so a cursor marker can sit over a row, measured in ch */
+.crt .crt-line {
+  position: relative;
+  min-height: 1.2em;
+  line-height: 1.2em;
+}
+.crt .crt-hot {
+  position: absolute;
+  top: 0;
+  height: 1.2em;
+  border-radius: 3px;
+  cursor: pointer;
+  outline: 1px solid transparent;
+}
+.crt .crt-hot:hover {
+  outline-color: rgba(255, 212, 92, 0.35);
+}
+
+/* the focus layer's one highlight, whatever the overlay */
+.popup .focused,
+.crt .crt-hot.focused {
+  background: rgba(255, 212, 92, 0.2);
+  outline: 1px solid rgba(255, 212, 92, 0.6);
+  border-radius: 3px;
+}
+.popup .actions span[data-hotkey].focused,
+.popup .footer.pane-switch.focused {
+  padding: 0 0.2em;
+}
+.popup .footer.pane-switch {
+  cursor: pointer;
+}
+
+/* prompt card: yes/no and multi-choice prompts in the middle of the view, the lead-up
+   lines above the question, one chip per answer wearing the button that fires it
+   (a --more-- has no card: the message pane rings itself where it stands, .messages.more) */
+.prompt-card {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: fit-content;
+  height: fit-content;
+  background: rgba(10, 10, 14, 0.94);
+  border: 1px solid #555;
+  border-radius: 8px;
+  color: #ddd;
+  font-family: var(--mono);
+  padding: 0.9rem 1.2rem 1rem;
+  min-width: 22rem;
+  max-width: min(94vw, 48rem);
+  pointer-events: auto;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.7);
+  animation: frame-in 160ms ease both;
+}
+.prompt-card .text {
+  white-space: pre-wrap;
+  color: #fff;
+  font-size: 1.05em;
+  margin-bottom: 0.8rem;
+}
+.prompt-card .chips {
+  display: flex;
+  gap: 0.6em;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.prompt-card .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.35em 0.9em 0.35em 0.6em;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1.05em;
+}
+.prompt-card .chip svg {
+  font-size: 1.3em;
+  flex: none;
+}
+/* the keyboard spoke last: the hotkey as a key cap where the pad's glyph would be */
+.prompt-card .chip kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5em;
+  height: 1.5em;
+  padding: 0 0.3em;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.85em;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  background: #15171c;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  flex: none;
+}
+/* a prompt that is only its options: the verb heads the chips instead of a question line repeating them */
+.prompt-card .chips .lead {
+  display: inline-flex;
+  align-items: center;
+  color: #fff;
+  font-size: 1.05em;
+  margin-right: 0.2em;
+}
+.prompt-card .chip:hover {
+  border-color: #777;
+}
+.prompt-card .chip.focused {
+  background: rgba(255, 212, 92, 0.2);
+  outline: 1px solid rgba(255, 212, 92, 0.6);
+  border-color: transparent;
+}
+/* the keyboard has taken the cursor: Enter now fires the lit chip */
+.prompt-card.armed .chip.focused {
+  outline-width: 2px;
+}
+/* the letter picker (overlays.ts letterGrid): a-m / n-z / A-M / N-Z, one chip per inventory letter */
+.prompt-card .letters {
+  display: grid;
+  grid-template-columns: repeat(13, 2em);
+  gap: 0.3em;
+  justify-content: center;
+}
+.prompt-card .chip.letter {
+  justify-content: center;
+  padding: 0.3em 0;
+  font-weight: 700;
+  color: #888;
+  position: relative;
+}
+/* the letter holds something: the name shows under the grid when the cursor lands on it */
+.prompt-card .chip.letter.held {
+  color: #fff;
+  border-color: #666;
+}
+/* the letter being moved */
+.prompt-card .chip.letter.from {
+  color: #ffd45c;
+  border-color: rgba(255, 212, 92, 0.6);
+}
+.prompt-card .slot {
+  margin-top: 0.7rem;
+  text-align: center;
+  color: #ddd;
+  min-height: 1.4em;
+}
+.prompt-card .slot b {
+  color: #fff;
+  margin-right: 0.6em;
+}
+.prompt-card .slot .empty {
+  color: #777;
+  font-style: italic;
+}
+
+.popup .describe-canvas {
+  image-rendering: pixelated;
+}
+
+/*
+ * Describe popups keep the official client's measure and spell list: the text
+ * is written for 80 columns (style.css `.describe-monster { width: 80ch }`),
+ * and a spellset lays its entries two to a row, each with its icon, the title
+ * taking the room left over and the effect and range closing the line.
+ */
+.popup:is(.type-describe-generic, .type-describe-item, .type-describe-spell, .type-describe-cards, .type-describe-monster, .type-describe-god, .type-describe-feature-wide) {
+  max-width: min(94vw, 82ch);
+}
+
+.popup .spellset {
+  margin: 0.5em 0;
+}
+.popup .spellset ol {
+  display: flex;
+  flex-wrap: wrap;
+}
+.popup .spellset li {
+  box-sizing: border-box;
+  flex: 0 0 50%;
+  max-width: 50%;
+  gap: 0.3em;
+  padding: 0.05em 0;
+}
+.popup .spellset li .title {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.popup .spellset li .effect,
+.popup .spellset li .range {
+  flex: none;
+}
+.popup .spellset li .effect:empty,
+.popup .spellset li .range:empty {
+  display: none;
+}
+
+/* a god's overview: its description, the Title/Favour table, then its powers with their costs */
+.popup .desc,
+.popup .god-favour,
+.popup .god-powers {
+  margin: 1em 0;
+}
+.popup .god-favour td {
+  padding-right: 0.6em;
+}
+.popup .god-powers > .power {
+  display: flex;
+  gap: 1em;
+}
+.popup .god-powers > .power > :first-child {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.popup .god-powers > .power > :last-child {
+  white-space: pre;
+}
+.popup .tbl {
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.newgame .grid {
+  display: grid;
+  gap: 0.2em 0.6em;
+  padding: 0.5rem 0.8rem;
+  grid-auto-flow: row;
+}
+
+.newgame .button {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.1em 0.4em;
+  cursor: pointer;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.newgame .button.selected,
+.newgame .button.focused {
+  background: rgba(255, 212, 92, 0.25);
+  outline: 1px solid var(--accent);
+}
+
+.newgame .label {
+  color: #fff;
+  font-weight: bold;
+  grid-column: 1 / -1;
+  margin-top: 0.4em;
+}
+
+/* style.css .paneset: the panes share one grid cell, so the block is as tall and wide as the longest description
+   and the popup holds still while the cursor moves (ui-layouts.js focus_button only switches the current pane) */
+.newgame .descriptions {
+  display: grid;
+  padding: 0.4rem 0.8rem;
+  border-top: 1px solid #333;
+  color: #bbb;
+  min-height: 3em;
+  max-width: 70ch;
+  white-space: pre-wrap;
+}
+.newgame .descriptions .pane {
+  grid-row: 1;
+  grid-column: 1;
+  visibility: hidden;
+}
+.newgame .descriptions .pane.current {
+  visibility: visible;
+}
+
+.newgame .sub {
+  border-top: 1px solid #333;
+}
+
+.newgame .hlc-1 {
+  color: var(--color-9);
+}
+.newgame .hlc-2 {
+  color: var(--color-10);
+}
+.newgame .hlc-4 {
+  color: var(--color-12);
+}
+.newgame .hlc-14 {
+  color: var(--color-14);
+}
+
+.dialog-html {
+  padding: 1rem;
+  /* the server's html lays itself out (its buttons float): a block box, not the
+     popup's column, or every button would stretch across the card */
+  display: block;
+}
+
+.dialog-html::after {
+  content: '';
+  display: block;
+  clear: both;
+}
+
+/* the dialog's html is the server's own (client.js injects it verbatim): its
+   bare buttons get the look of ours so the cursor's highlight reads on them */
+.dialog-html button,
+.dialog-html input[type='button'],
+.dialog-html input[type='submit'] {
+  font: inherit;
+  color: #ddd;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  padding: 0.2em 1.2em;
+  margin: 0.3em 0.3em 0 0;
+  cursor: pointer;
+}
+
+.palette .list {
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.palette .item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 0.15em 0.5em;
+  cursor: pointer;
+}
+
+.palette .item.focused {
+  background: rgba(255, 212, 92, 0.2);
+}
+
+.palette .cat {
+  color: #888;
+  font-size: 0.85em;
+}
+
+.palette input {
+  width: 100%;
+  background: #111;
+  border: 1px solid #444;
+  color: #fff;
+  padding: 0.3em 0.5em;
+}
+
+.palette .cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+  padding: 0.3rem 0.8rem 0;
+}
+
+.palette .chip {
+  padding: 0.1em 0.6em;
+  border: 1px solid #444;
+  border-radius: 1em;
+  color: #999;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.palette .chip.current {
+  color: #fff;
+  border-color: var(--accent);
+  background: rgba(255, 212, 92, 0.2);
+}
+
+/* the menu more line is hidden while the server gives it nothing to say */
+.popup .more.hidden {
+  display: none;
+}
+
+.popup .title input.text,
+.popup .seed-input input.text {
+  background: #111;
+  border: 1px solid #444;
+  color: #fff;
+  padding: 0.15em 0.4em;
+  font: inherit;
+  flex: 1 1 8em;
+  min-width: 6em;
+}
+
+.popup .seed-input {
+  display: flex;
+  gap: 0.5em;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.popup .seed-input .btn {
+  padding: 0.15em 0.6em;
+}
+
+/* the lobby keyboard sits over the screen like the game one over the overlays */
+.screen > .osk {
+  z-index: 30;
+}
+
+.screen form.row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.screen form.row input {
+  flex: 1 1 auto;
+}
+
+.bindings-sheet table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.bindings-sheet th {
+  text-align: left;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
+  padding: 0.2em 0.6em 0.4em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  vertical-align: middle;
+}
+.bindings-sheet th .key {
+  display: inline-flex;
+  vertical-align: middle;
+  font-size: 1.25em;
+}
+.bindings-sheet th.layer-macro {
+  color: #7fb3ff;
+}
+.bindings-sheet th.layer-info {
+  color: #8ee6b0;
+}
+.bindings-sheet td {
+  padding: 0.3em 0.6em;
+  vertical-align: middle;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.bindings-sheet td.key {
+  width: 2.4em;
+  font-size: 1.35em;
+  line-height: 0;
+}
+.bindings-sheet td.key svg {
+  display: block;
+  margin: 0 auto;
+}
+.bindings-sheet td.none {
+  color: rgba(255, 255, 255, 0.25);
+  text-align: center;
+}
+.bindings-sheet td .tap {
+  display: block;
+}
+.bindings-sheet td .hold {
+  display: inline-flex;
+}
+.bindings-sheet .body p .hold {
+  vertical-align: middle;
+}
+
+/* the WebTiles chat box (client.html #chat, chat.js): caption, spectator list, history, input */
+.chat {
+  /* at the foot of the sidebar's cells (game.ts relayout sets left, width and bottom) */
+  position: absolute;
+  max-height: 40vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 0.8em;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  z-index: 30;
+}
+.chat a {
+  color: #9cf;
+  text-decoration: none;
+}
+.chat .chat_head {
+  /* caption on the left, (-) on the right, on one line (client.html floats the button;
+     floats are ignored inside this flex column) */
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5em;
+}
+.chat .chat_hide_button {
+  flex: none;
+}
+.chat .chat_caption {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.chat .message_count.has_new {
+  color: #ff5;
+}
+.chat .chat_body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.chat .spectator_list {
+  color: #aaa;
+}
+.chat .chat_history_container {
+  flex: 1;
+  min-height: 4em;
+  max-height: 28vh;
+  overflow-y: auto;
+  margin: 0.2em 0;
+  padding-right: 0.2em;
+}
+.chat .chat_sender {
+  color: #fff;
+  font-weight: bold;
+}
+.chat .chat_automated {
+  color: #f5f;
+}
+.chat input.chat_input {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  background: #000;
+  color: #fff;
+  border: 1px solid #444;
+  padding: 0.15em 0.3em;
+}
+.chat .chat_login_text {
+  color: #aaa;
+}
+.chat .osk,
+.chat .chat_read_hints {
+  margin-top: 0.3rem;
+}
+.chat_hidden {
+  /* the folded chat's (+): the sidebar's bottom-right corner */
+  position: absolute;
+  right: var(--gx, 0px);
+  bottom: var(--gy, 0px);
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 4px;
+  padding: 0 0.5rem;
+  z-index: 30;
+}
+.chat_hidden a {
+  color: #9cf;
+  text-decoration: none;
+}
+
+@media (max-width: 900px) {
+  .stats {
+    width: 17rem;
+  }
+  .monsters .group .name {
+    max-width: 10em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .frame .item {
+    font-size: 1.1rem;
+  }
+  :root {
+    --safe-x: max(4vw, env(safe-area-inset-left, 0px));
+    --safe-y: max(4vh, env(safe-area-inset-top, 0px));
+  }
+}
+
+/* rc font overrides apply to text off the grid; the grid's own rows keep the one grid font (console-grid.md) */
+.crt {
+  font-family: var(--font-crt, var(--mono));
+  font-size: var(--font-crt-size, inherit);
+}
+
+/* consumables action panel (action_panel.js). The official client floats it over the top-left corner of #dungeon, where
+   Orbrun's stats pane already is; here it stands in the strip along the top of the view between the stats pane and the
+   minimap (grid/panel.ts), centred in it — hud.ts puts its left edge on the middle of the strip and this pulls it back by
+   half its own width, so the box is exactly what it draws and the edge pips step round the panel, not the strip. */
+/* left aligned in its strip, where action_panel.js stands the panel in the dungeon's top-left corner */
+.action-panel {
+  display: flex;
+  align-items: flex-start;
+  pointer-events: auto;
+}
+.action-panel.hidden {
+  display: none;
+}
+/* style.css #action-panel: the brown border and 3px corners the official client draws round the panel */
+.action-panel canvas.action-canvas {
+  display: block;
+  image-rendering: pixelated;
+  background: rgba(0, 0, 0, 0.55);
+  border: 2px solid #7d623c;
+  border-radius: 3px;
+}
+/* style.css #action-panel-placeholder: the small bordered box the X leaves behind, a `+` a character wide in it.
+   The official client insets it 5px into the dungeon while the panel itself sits in the corner, which lands the `+`
+   in the middle of the cell the X had; the same margin does it here, the panel standing in its strip. */
+.action-panel button.placeholder {
+  margin: 5px;
+  font-family: inherit;
+  font-size: small;
+  /* the box comes out 25x27, as the official client's does: its content is 1em across and the 15px line box
+     DejaVu Sans Mono gives `small` down. Pinned rather than left to `normal`, which is a pixel taller in the
+     HUD's own font. */
+  line-height: 15px;
+  /* style.css a:link: the `+` is a bold white link, lightgrey under the pointer */
+  color: #fff;
+  font-weight: bold;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid #7d623c;
+  border-radius: 0;
+  width: 1em;
+  padding: 5px;
+  box-sizing: content-box;
+  text-align: center;
+  cursor: pointer;
+}
+.action-panel button.placeholder:hover {
+  color: lightgrey;
+}
+
+/* mouse_control.js #tooltip and the action panel's item tooltip */
+.tooltip {
+  position: absolute;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.9);
+  color: #fff;
+  border: 1px solid #666;
+  padding: 0.2em 0.5em;
+  font-size: 0.85em;
+  pointer-events: none;
+  max-width: 20rem;
+}
+
+/* text cursor while the game reads a line in the message pane (messages.js) */
+.messages .text-cursor {
+  animation: blink 1s steps(1) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+.monsters .group .name.invisible-desc {
+  font-style: italic;
+  opacity: 0.85;
+}
+
+/* ------------------------------------------------- Orbrun's own overlays */
+
+/*
+ * The pause menu, settings, controls sheet, command palette and keyboard
+ * are Orbrun's, so they get the front end's look: a dark plate with a gold
+ * hairline and corner marks, small caps captions, text rows under one cursor.
+ * Server popups (menus, describe, CRT screens) keep the `.popup` look.
+ */
+.popup.ours {
+  font-family: var(--font);
+  font-size: 1em;
+  color: var(--ink);
+  background: linear-gradient(180deg, rgba(14, 12, 20, 0.96), rgba(7, 6, 11, 0.97));
+  border: 1px solid rgba(216, 180, 95, 0.32);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7), 0 30px 90px rgba(0, 0, 0, 0.75);
+  min-width: 26rem;
+  animation: popup-in 200ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes popup-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+/* corner marks */
+.popup.ours::before,
+.popup.ours::after {
+  content: '';
+  position: absolute;
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 1px solid var(--gold);
+  pointer-events: none;
+  opacity: 0.8;
+}
+.popup.ours::before {
+  top: -1px;
+  left: -1px;
+  border-right: 0;
+  border-bottom: 0;
+}
+.popup.ours::after {
+  right: -1px;
+  bottom: -1px;
+  border-left: 0;
+  border-top: 0;
+}
+
+.popup.ours .header {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--gold);
+  padding: 0.85rem 1.3rem 0.7rem;
+  border-bottom: 1px solid rgba(216, 180, 95, 0.2);
+}
+
+.popup.ours .footer {
+  padding: 0.5rem 1.3rem 0.7rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--ink-dim);
+  font-size: 0.82rem;
+}
+
+/* the pause menu takes the screen: the world dims and blurs behind it */
+.overlay-stack:has(> .popup.sysmenu),
+.overlay-stack.dim {
+  background: radial-gradient(ellipse at center, rgba(3, 2, 6, 0.5), rgba(3, 2, 6, 0.86));
+  backdrop-filter: blur(3px) saturate(0.7);
+  -webkit-backdrop-filter: blur(3px) saturate(0.7);
+  animation: dim-in 220ms ease both;
+}
+@keyframes dim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/*
+ * The pause menu and the settings are drawn as the game draws its own
+ * menus (the `.popup.menu` look of a server menu): a title line, a letter
+ * per item, the hovered line lit. Left and right, or the letter, change a
+ * setting; the footer says so the way a menu's `more` line does.
+ */
+.popup.menu.game {
+  min-width: 26rem;
+  animation: popup-in 200ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.menu.game .title {
+  color: #fff;
+  font-weight: bold;
+}
+.menu.game .body {
+  padding: 0.3rem 0.4rem;
+}
+.menu.game li.row {
+  padding: 0.22em 0.6em;
+  gap: 0;
+  cursor: pointer;
+}
+.menu.game li.row .hotkey {
+  color: #fff;
+  width: 1.2em;
+  text-align: right;
+}
+.menu.game li.row .dash {
+  color: #aaa;
+  margin: 0 0.5em;
+}
+.menu.game li.row .value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  margin-left: auto;
+  padding-left: 2em;
+  color: var(--color-7);
+}
+.menu.game li.row .value .val {
+  min-width: 10em;
+  text-align: center;
+}
+.menu.game li.row .arrow {
+  color: #666;
+  transition: color 120ms ease;
+  cursor: pointer;
+  padding: 0 0.35em;
+}
+.menu.game li.row:not(.off) .arrow:hover {
+  color: #fff;
+}
+.menu.game li.row.focused {
+  background: rgba(255, 212, 92, 0.2);
+  outline: 1px solid rgba(255, 212, 92, 0.6);
+  color: #fff;
+}
+.menu.game li.row.focused .value {
+  color: #fff;
+}
+.menu.game li.row.focused .arrow {
+  color: var(--accent);
+}
+/* a setting that does nothing as things stand: dark grey, as the game draws an item that cannot be taken */
+.menu.game li.row.off .label,
+.menu.game li.row.off .value,
+.menu.game li.row.off.focused .label,
+.menu.game li.row.off.focused .value {
+  color: var(--color-8);
+}
+.menu.game li.row.off .arrow,
+.menu.game li.row.off.focused .arrow {
+  color: #444;
+}
+.menu.game li.row.action {
+  margin-top: 0.3em;
+}
+/* a group of settings: its name, a line of its own, not a row the cursor takes */
+.menu.game li.group {
+  list-style: none;
+  padding: 0.7em 0.6em 0.2em;
+  color: var(--color-8);
+  font-size: 0.85em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.menu.game li.group:first-child {
+  padding-top: 0.2em;
+}
+.popup.sysmenu {
+  min-width: 22rem;
+}
+
+/* Command tabs keep the same shell and share a grid cell so their size stays steady. */
+.popup.command-menu {
+  min-width: min(28rem, 92vw);
+}
+.command-menu.tabbed .body,
+.command-menu .command-hints {
+  display: grid;
+}
+.command-menu.tabbed .body > ol,
+.command-menu .command-hints > .command-hint {
+  grid-area: 1 / 1;
+  align-self: start;
+}
+.command-menu .inactive {
+  visibility: hidden;
+  pointer-events: none;
+}
+.command-menu .command-tabs {
+  display: flex;
+  gap: 0.3rem;
+  padding: 0.5rem 0.8rem 0;
+}
+.command-menu .command-tabs button {
+  flex: 1;
+  padding: 0.35rem 0.6rem;
+  color: var(--ink-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font: inherit;
+  cursor: pointer;
+}
+.command-menu .command-tabs button:is(:hover, :focus-visible) {
+  color: var(--ink);
+}
+.command-menu .command-tabs button.current {
+  color: var(--accent);
+  border-color: currentColor;
+}
+.command-menu .command-hint {
+  padding: 0.35rem 0.8rem 0.5rem;
+  border-bottom: 1px solid #333;
+  color: var(--ink-dim);
+  font-size: 0.85em;
+}
+.command-menu .body {
+  padding: 0.4rem 0.4rem 0.5rem;
+}
+.command-menu li.row .label {
+  flex: 1 1 auto;
+}
+.command-menu li.row .hotkey {
+  flex: none;
+  width: auto;
+  min-width: 4.5ch;
+  margin-left: 1.5em;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  text-align: right;
+}
+.command-menu li.row.focused .hotkey {
+  color: #fff;
+}
+/* the palette and More rows stand apart from the commands, under a rule; the Orbrun menu's runs the same way */
+.command-menu li.row.sep,
+.sysmenu li.row.sep {
+  margin-top: 0.45em;
+  padding-top: 0.45em;
+  border-top: 1px solid #333;
+}
+.command-menu .more svg {
+  width: 1.2em;
+  height: 1.2em;
+  vertical-align: middle;
+}
+/* a tap-or-hold button held down (B: Wait, hold for Rest): its prompt's hold ring fills over HOLD_MS and the hold's label warms to gold (hud.ts showHold sets --hold) */
+.actionbar.contextual .chip.holding .hold {
+  color: color-mix(in srgb, var(--gold) calc(var(--hold, 0) * 100%), rgba(255, 255, 255, 0.6));
+}
+.actionbar.contextual .chip.holding .hold svg path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--hold, 0));
+}
+
+/* the controls sheet */
+.popup.bindings-sheet {
+  min-width: 40rem;
+}
+.popup.bindings-sheet .body {
+  padding: 0.4rem 1rem;
+}
+.popup.bindings-sheet th {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  border-bottom: 1px solid rgba(216, 180, 95, 0.2);
+}
+.popup.bindings-sheet td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.popup.bindings-sheet .body p {
+  color: var(--ink-dim);
+  font-size: 0.85rem;
+}
+
+/* the command palette: a filter line, category chips, the list */
+.popup.palette {
+  min-width: 34rem;
+}
+.popup.palette .cats {
+  padding: 0.6rem 1.3rem 0;
+}
+.popup.palette .chip {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  color: var(--ink-dim);
+  padding: 0.2em 0.7em;
+}
+.popup.palette .chip.current {
+  color: var(--gold-bright);
+  border-color: rgba(216, 180, 95, 0.6);
+  background: rgba(216, 180, 95, 0.12);
+}
+.popup.palette input {
+  background: rgba(255, 255, 255, 0.035);
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--ink);
+  padding: 0.5rem 0.6rem;
+  font-size: 1.05rem;
+  outline: none;
+}
+.popup.palette input:focus {
+  border-bottom-color: var(--gold);
+}
+.popup.palette .list {
+  padding: 0.3rem 0 0.5rem;
+}
+.popup.palette .item {
+  position: relative;
+  padding: 0.38rem 1.3rem 0.38rem 1.6rem;
+  color: var(--ink);
+}
+.popup.palette .item .cat {
+  color: var(--ink-dim);
+}
+.popup.palette .item.focused {
+  background: linear-gradient(90deg, rgba(216, 180, 95, 0.2), rgba(216, 180, 95, 0.05) 55%, transparent);
+  box-shadow: inset 2px 0 0 var(--gold);
+  color: var(--gold-bright);
+}
+
+/* the on-screen keyboard */
+.osk {
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, rgba(14, 12, 20, 0.97), rgba(7, 6, 11, 0.97));
+  border: 1px solid rgba(216, 180, 95, 0.32);
+  border-radius: 2px;
+  padding: 0.6rem;
+  pointer-events: auto;
+  font-family: var(--mono);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7), 0 24px 70px rgba(0, 0, 0, 0.7);
+  z-index: 30;
+}
+
+.osk .preview {
+  padding: 0.3rem 0.5rem;
+  margin-bottom: 0.5rem;
+  background: rgba(255, 255, 255, 0.035);
+  border-bottom: 1px solid var(--gold);
+  min-height: 1.6em;
+  color: #fff;
+}
+
+.osk .keys {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+}
+.osk .keys .row {
+  display: flex;
+  gap: 0.2em;
+}
+.osk .keys .key {
+  width: 2.1em;
+  flex: none;
+}
+
+.osk .key {
+  height: 2.1em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+
+/* a prompt's own keys over the letters (osk.ts OskTarget.extras): the key and what it does */
+.osk .extras {
+  display: flex;
+  gap: 0.4em;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 0.4em;
+}
+.osk .extras .key {
+  width: auto;
+  padding: 0 0.7em;
+}
+.osk .extras .key b {
+  color: #ffd45c;
+}
+.osk .key.focused {
+  background: rgba(216, 180, 95, 0.28);
+  box-shadow: inset 0 0 0 1px var(--gold), 0 0 12px rgba(216, 180, 95, 0.35);
+  color: #fff;
+}
+/* the hint line, as a dialog's .more: glyphs for the buttons, the keys spelled at the end */
+.osk .more,
+.chat .chat_read_hints {
+  margin-top: 0.4rem;
+  padding: 0.4rem 0 0;
+  border-top: 1px solid #333;
+  color: #aaa;
+  font-size: 0.85rem;
+}
+.osk .osk-prompt,
+.chat .chat_read_hints .osk-prompt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  white-space: nowrap;
+}
+.osk .osk-prompt svg,
+.chat .chat_read_hints .osk-prompt svg {
+  width: 1.2em;
+  height: 1.2em;
+  vertical-align: middle;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popup.ours,
+  .popup.menu.game,
+  .overlay-stack:has(> .popup.sysmenu),
+  .overlay-stack.dim {
+    animation: none;
+  }
+}
+/* how the last game ended: a screen of its own, the server's words in the console face */
+.exit-report {
+  font-family: var(--mono);
+  color: var(--color-14);
+  max-width: 60ch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.exit-report .exit-why {
+  margin: 0;
+}
+.exit-report .exit-message {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+}
+.exit-report .exit-links a {
+  text-decoration: none;
+}

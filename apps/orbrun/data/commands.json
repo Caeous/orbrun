@@ -1,0 +1,1053 @@
+[
+  {
+    "id": "CMD_EXPLORE",
+    "label": "Autoexplore",
+    "category": "travel",
+    "mode": "command",
+    "key": "o"
+  },
+  {
+    "id": "CMD_INTERLEVEL_TRAVEL",
+    "label": "Travel",
+    "category": "travel",
+    "mode": "command",
+    "key": "G"
+  },
+  {
+    "id": "CMD_DISPLAY_MAP",
+    "label": "Level map",
+    "category": "travel",
+    "mode": "command",
+    "key": "X"
+  },
+  {
+    "id": "CMD_GO_UPSTAIRS",
+    "label": "Go up stairs",
+    "category": "travel",
+    "mode": "command",
+    "key": "<"
+  },
+  {
+    "id": "CMD_GO_DOWNSTAIRS",
+    "label": "Go down stairs",
+    "category": "travel",
+    "mode": "command",
+    "key": ">"
+  },
+  {
+    "id": "CMD_DISPLAY_OVERMAP",
+    "label": "Dungeon overview",
+    "category": "travel",
+    "mode": "command",
+    "key": "\u000f"
+  },
+  {
+    "id": "CMD_FIX_WAYPOINT",
+    "label": "Set waypoint",
+    "category": "travel",
+    "mode": "command",
+    "key": "\u0017"
+  },
+  {
+    "id": "CMD_CLEAR_MAP",
+    "label": "Clear level map",
+    "category": "travel",
+    "mode": "command",
+    "key": "\u0003"
+  },
+  {
+    "id": "CMD_ANNOTATE_LEVEL",
+    "label": "Annotate level",
+    "category": "travel",
+    "mode": "command",
+    "key": "!"
+  },
+  {
+    "id": "CMD_EXPLORE_MODE",
+    "label": "Explore mode (wizard)",
+    "category": "travel",
+    "mode": "command",
+    "key": "+"
+  },
+  {
+    "id": "CMD_REST",
+    "label": "Rest / search",
+    "category": "action",
+    "mode": "command",
+    "key": "5"
+  },
+  {
+    "id": "CMD_WAIT",
+    "label": "Wait a turn",
+    "category": "action",
+    "mode": "command",
+    "key": "s"
+  },
+  {
+    "id": "CMD_AUTOFIGHT",
+    "label": "Autofight",
+    "category": "action",
+    "mode": "command",
+    "key": "\t"
+  },
+  {
+    "id": "CMD_AUTOFIRE",
+    "label": "Autofire (fire at nearest)",
+    "category": "action",
+    "mode": "command",
+    "key": "p",
+    "note": "also Shift-Tab"
+  },
+  {
+    "id": "CMD_PRIMARY_ATTACK",
+    "label": "Attack (primary) in a direction",
+    "category": "action",
+    "mode": "command",
+    "key": "v"
+  },
+  {
+    "id": "CMD_OPEN_DOOR",
+    "label": "Open door",
+    "category": "action",
+    "mode": "command",
+    "key": "O"
+  },
+  {
+    "id": "CMD_CLOSE_DOOR",
+    "label": "Close door",
+    "category": "action",
+    "mode": "command",
+    "key": "C"
+  },
+  {
+    "id": "CMD_SHOUT",
+    "label": "Shout / order allies",
+    "category": "action",
+    "mode": "command",
+    "key": "t"
+  },
+  {
+    "id": "CMD_REPEAT_CMD",
+    "label": "Repeat a command",
+    "category": "action",
+    "mode": "command",
+    "key": "0"
+  },
+  {
+    "id": "CMD_PREV_CMD_AGAIN",
+    "label": "Repeat previous command",
+    "category": "action",
+    "mode": "command",
+    "key": "`"
+  },
+  {
+    "id": "CMD_TOGGLE_AUTOPICKUP",
+    "label": "Toggle autopickup",
+    "category": "action",
+    "mode": "command",
+    "key": "\u0001"
+  },
+  {
+    "id": "CMD_IGNORE_INVISIBLE",
+    "label": "Ignore invisible monster",
+    "category": "action",
+    "mode": "command",
+    "key": "\u0014"
+  },
+  {
+    "id": "CMD_FULL_VIEW",
+    "label": "Full view of visible monsters/items",
+    "category": "action",
+    "mode": "command",
+    "key": "\u0018"
+  },
+  {
+    "id": "CMD_LOOK_AROUND",
+    "label": "Look around",
+    "category": "action",
+    "mode": "command",
+    "key": "x"
+  },
+  {
+    "id": "CMD_PICKUP",
+    "label": "Pick up",
+    "category": "items",
+    "mode": "command",
+    "key": ","
+  },
+  {
+    "id": "CMD_DROP",
+    "label": "Drop",
+    "category": "items",
+    "mode": "command",
+    "key": "d"
+  },
+  {
+    "id": "CMD_DROP_LAST",
+    "label": "Drop last picked up",
+    "category": "items",
+    "mode": "command",
+    "key": "D"
+  },
+  {
+    "id": "CMD_DISPLAY_INVENTORY",
+    "label": "Inventory",
+    "category": "items",
+    "mode": "command",
+    "key": "i"
+  },
+  {
+    "id": "CMD_WIELD_WEAPON",
+    "label": "Wield",
+    "category": "items",
+    "mode": "command",
+    "key": "w"
+  },
+  {
+    "id": "CMD_WEAPON_SWAP",
+    "label": "Swap weapons",
+    "category": "items",
+    "mode": "command",
+    "key": "'"
+  },
+  {
+    "id": "CMD_EQUIP",
+    "label": "Equip",
+    "category": "items",
+    "mode": "command",
+    "key": "e"
+  },
+  {
+    "id": "CMD_UNEQUIP",
+    "label": "Unequip",
+    "category": "items",
+    "mode": "command",
+    "key": "c"
+  },
+  {
+    "id": "CMD_WEAR_ARMOUR",
+    "label": "Wear armour",
+    "category": "items",
+    "mode": "command",
+    "key": "W"
+  },
+  {
+    "id": "CMD_REMOVE_ARMOUR",
+    "label": "Take off armour",
+    "category": "items",
+    "mode": "command",
+    "key": "T"
+  },
+  {
+    "id": "CMD_WEAR_JEWELLERY",
+    "label": "Put on jewellery",
+    "category": "items",
+    "mode": "command",
+    "key": "P"
+  },
+  {
+    "id": "CMD_REMOVE_JEWELLERY",
+    "label": "Remove jewellery",
+    "category": "items",
+    "mode": "command",
+    "key": "R"
+  },
+  {
+    "id": "CMD_QUAFF",
+    "label": "Quaff",
+    "category": "items",
+    "mode": "command",
+    "key": "q"
+  },
+  {
+    "id": "CMD_READ",
+    "label": "Read",
+    "category": "items",
+    "mode": "command",
+    "key": "r"
+  },
+  {
+    "id": "CMD_EVOKE",
+    "label": "Evoke",
+    "category": "items",
+    "mode": "command",
+    "key": "V"
+  },
+  {
+    "id": "CMD_QUIVER_ITEM",
+    "label": "Quiver an item or action",
+    "category": "items",
+    "mode": "command",
+    "key": "Q"
+  },
+  {
+    "id": "CMD_CYCLE_QUIVER_FORWARD",
+    "label": "Next quiver action",
+    "category": "items",
+    "mode": "command",
+    "key": ")"
+  },
+  {
+    "id": "CMD_CYCLE_QUIVER_BACKWARD",
+    "label": "Previous quiver action",
+    "category": "items",
+    "mode": "command",
+    "key": "("
+  },
+  {
+    "id": "CMD_SWAP_QUIVER_RECENT",
+    "label": "Swap to recent quiver action",
+    "category": "items",
+    "mode": "command",
+    "key": "]"
+  },
+  {
+    "id": "CMD_INSCRIBE_ITEM",
+    "label": "Inscribe item",
+    "category": "items",
+    "mode": "command",
+    "key": "{"
+  },
+  {
+    "id": "CMD_ADJUST_INVENTORY",
+    "label": "Adjust inventory letters",
+    "category": "items",
+    "mode": "command",
+    "key": "="
+  },
+  {
+    "id": "CMD_LIST_ARMOUR",
+    "label": "List armour",
+    "category": "items",
+    "mode": "command",
+    "key": "["
+  },
+  {
+    "id": "CMD_LIST_JEWELLERY",
+    "label": "List jewellery",
+    "category": "items",
+    "mode": "command",
+    "key": "\""
+  },
+  {
+    "id": "CMD_LIST_GOLD",
+    "label": "Show gold",
+    "category": "items",
+    "mode": "command",
+    "key": "$"
+  },
+  {
+    "id": "CMD_DISPLAY_KNOWN_OBJECTS",
+    "label": "Known items",
+    "category": "items",
+    "mode": "command",
+    "key": "\\"
+  },
+  {
+    "id": "CMD_DISPLAY_RUNES",
+    "label": "Runes collected",
+    "category": "items",
+    "mode": "command",
+    "key": "}"
+  },
+  {
+    "id": "CMD_INSPECT_FLOOR",
+    "label": "Inspect the floor",
+    "category": "items",
+    "mode": "command",
+    "key": ";"
+  },
+  {
+    "id": "CMD_SEARCH_STASHES",
+    "label": "Search stashes",
+    "category": "items",
+    "mode": "command",
+    "key": "\u0006"
+  },
+  {
+    "id": "CMD_FIRE",
+    "label": "Fire",
+    "category": "combat",
+    "mode": "command",
+    "key": "f"
+  },
+  {
+    "id": "CMD_FIRE_ITEM_NO_QUIVER",
+    "label": "Fire / throw an item",
+    "category": "combat",
+    "mode": "command",
+    "key": "F"
+  },
+  {
+    "id": "CMD_CAST_SPELL",
+    "label": "Cast spell",
+    "category": "magic",
+    "mode": "command",
+    "key": "z"
+  },
+  {
+    "id": "CMD_FORCE_CAST_SPELL",
+    "label": "Cast spell (force)",
+    "category": "magic",
+    "mode": "command",
+    "key": "Z"
+  },
+  {
+    "id": "CMD_MEMORISE_SPELL",
+    "label": "Memorise spell",
+    "category": "magic",
+    "mode": "command",
+    "key": "M"
+  },
+  {
+    "id": "CMD_DISPLAY_SPELLS",
+    "label": "Spell list",
+    "category": "magic",
+    "mode": "command",
+    "key": "I"
+  },
+  {
+    "id": "CMD_USE_ABILITY",
+    "label": "Use ability",
+    "category": "magic",
+    "mode": "command",
+    "key": "a"
+  },
+  {
+    "id": "CMD_DISPLAY_RELIGION",
+    "label": "Religion",
+    "category": "religion",
+    "mode": "command",
+    "key": "^"
+  },
+  {
+    "id": "CMD_DISPLAY_CHARACTER_STATUS",
+    "label": "Character status",
+    "category": "info",
+    "mode": "command",
+    "key": "@"
+  },
+  {
+    "id": "CMD_RESISTS_SCREEN",
+    "label": "Resistances / equipment",
+    "category": "info",
+    "mode": "command",
+    "key": "%"
+  },
+  {
+    "id": "CMD_DISPLAY_SKILLS",
+    "label": "Skills",
+    "category": "info",
+    "mode": "command",
+    "key": "m"
+  },
+  {
+    "id": "CMD_DISPLAY_MUTATIONS",
+    "label": "Mutations",
+    "category": "info",
+    "mode": "command",
+    "key": "A"
+  },
+  {
+    "id": "CMD_EXPERIENCE_CHECK",
+    "label": "Experience check",
+    "category": "info",
+    "mode": "command",
+    "key": "E"
+  },
+  {
+    "id": "CMD_SHOW_TERRAIN",
+    "label": "Show terrain only",
+    "category": "info",
+    "mode": "command",
+    "key": "|"
+  },
+  {
+    "id": "CMD_READ_MESSAGES",
+    "label": "Read messages",
+    "category": "info",
+    "mode": "command",
+    "key": "_"
+  },
+  {
+    "id": "CMD_REPLAY_MESSAGES",
+    "label": "Replay messages",
+    "category": "info",
+    "mode": "command",
+    "key": "\u0010"
+  },
+  {
+    "id": "CMD_MAKE_NOTE",
+    "label": "Make a note",
+    "category": "info",
+    "mode": "command",
+    "key": ":"
+  },
+  {
+    "id": "CMD_CHARACTER_DUMP",
+    "label": "Character dump",
+    "category": "info",
+    "mode": "command",
+    "key": "#"
+  },
+  {
+    "id": "CMD_DISPLAY_COMMANDS",
+    "label": "Help",
+    "category": "info",
+    "mode": "command",
+    "key": "?"
+  },
+  {
+    "id": "CMD_GAME_MENU",
+    "label": "Game menu",
+    "category": "system",
+    "mode": "command",
+    "key": "~"
+  },
+  {
+    "id": "CMD_SAVE_GAME",
+    "label": "Save and exit",
+    "category": "system",
+    "mode": "command",
+    "key": "S"
+  },
+  {
+    "id": "CMD_SAVE_GAME_NOW",
+    "label": "Save without prompt",
+    "category": "system",
+    "mode": "command",
+    "key": "\u0013"
+  },
+  {
+    "id": "CMD_QUIT",
+    "label": "Quit (abandon character)",
+    "category": "system",
+    "mode": "command",
+    "key": "\u0011"
+  },
+  {
+    "id": "CMD_MACRO_MENU",
+    "label": "Macro menu",
+    "category": "system",
+    "mode": "command",
+    "key": "\u0004"
+  },
+  {
+    "id": "CMD_MACRO_ADD",
+    "label": "Add macro",
+    "category": "system",
+    "mode": "command",
+    "key": "\u0005"
+  },
+  {
+    "id": "CMD_REDRAW_SCREEN",
+    "label": "Redraw screen",
+    "category": "system",
+    "mode": "command",
+    "key": "\u0012"
+  },
+  {
+    "id": "CMD_EDIT_PLAYER_TILE",
+    "label": "Edit player tile",
+    "category": "system",
+    "mode": "command",
+    "key": "-"
+  },
+  {
+    "id": "CMD_WIZARD",
+    "label": "Wizard mode",
+    "category": "system",
+    "mode": "command",
+    "key": "&"
+  },
+  {
+    "id": "CMD_MAP_HELP",
+    "label": "Help",
+    "category": "info",
+    "mode": "levelmap",
+    "key": "?"
+  },
+  {
+    "id": "CMD_MAP_EXIT_MAP",
+    "label": "Exit map",
+    "category": "navigate",
+    "mode": "levelmap",
+    "key": "\u001b"
+  },
+  {
+    "id": "CMD_MAP_GOTO_TARGET",
+    "label": "Travel to cursor",
+    "category": "navigate",
+    "mode": "levelmap",
+    "key": "."
+  },
+  {
+    "id": "CMD_MAP_FIND_YOU",
+    "label": "Find you",
+    "category": "find",
+    "mode": "levelmap",
+    "key": "@"
+  },
+  {
+    "id": "CMD_MAP_FIND_UPSTAIR",
+    "label": "Find up stairs",
+    "category": "find",
+    "mode": "levelmap",
+    "key": "<"
+  },
+  {
+    "id": "CMD_MAP_FIND_DOWNSTAIR",
+    "label": "Find down stairs",
+    "category": "find",
+    "mode": "levelmap",
+    "key": ">"
+  },
+  {
+    "id": "CMD_MAP_FIND_PORTAL",
+    "label": "Find portal",
+    "category": "find",
+    "mode": "levelmap",
+    "key": "\t"
+  },
+  {
+    "id": "CMD_MAP_FIND_TRAP",
+    "label": "Find trap",
+    "category": "find",
+    "mode": "levelmap",
+    "key": "^"
+  },
+  {
+    "id": "CMD_MAP_FIND_ALTAR",
+    "label": "Find altar",
+    "category": "find",
+    "mode": "levelmap",
+    "key": "_"
+  },
+  {
+    "id": "CMD_MAP_FIND_EXCLUDED",
+    "label": "Find exclusion",
+    "category": "find",
+    "mode": "levelmap",
+    "key": "E"
+  },
+  {
+    "id": "CMD_MAP_FIND_WAYPOINT",
+    "label": "Find waypoint",
+    "category": "find",
+    "mode": "levelmap",
+    "key": "F"
+  },
+  {
+    "id": "CMD_MAP_FIND_STASH",
+    "label": "Find stash",
+    "category": "find",
+    "mode": "levelmap",
+    "key": "I"
+  },
+  {
+    "id": "CMD_MAP_FIND_STASH_REVERSE",
+    "label": "Find stash (reverse)",
+    "category": "find",
+    "mode": "levelmap",
+    "key": "O"
+  },
+  {
+    "id": "CMD_MAP_PREV_LEVEL",
+    "label": "Previous level",
+    "category": "levels",
+    "mode": "levelmap",
+    "key": "["
+  },
+  {
+    "id": "CMD_MAP_NEXT_LEVEL",
+    "label": "Next level",
+    "category": "levels",
+    "mode": "levelmap",
+    "key": "]"
+  },
+  {
+    "id": "CMD_MAP_GOTO_LEVEL",
+    "label": "Go to level",
+    "category": "levels",
+    "mode": "levelmap",
+    "key": "G"
+  },
+  {
+    "id": "CMD_MAP_ADD_WAYPOINT",
+    "label": "Add waypoint",
+    "category": "marks",
+    "mode": "levelmap",
+    "key": "w"
+  },
+  {
+    "id": "CMD_MAP_EXCLUDE_AREA",
+    "label": "Toggle travel exclusion",
+    "category": "marks",
+    "mode": "levelmap",
+    "key": "e"
+  },
+  {
+    "id": "CMD_MAP_EXCLUDE_RADIUS",
+    "label": "Change exclusion radius",
+    "category": "marks",
+    "mode": "levelmap",
+    "key": "R"
+  },
+  {
+    "id": "CMD_MAP_CLEAR_EXCLUDES",
+    "label": "Clear all exclusions",
+    "category": "marks",
+    "mode": "levelmap",
+    "key": "\u0005"
+  },
+  {
+    "id": "CMD_MAP_ANNOTATE_LEVEL",
+    "label": "Annotate level",
+    "category": "marks",
+    "mode": "levelmap",
+    "key": "!"
+  },
+  {
+    "id": "CMD_MAP_EXPLORE",
+    "label": "Autoexplore from here",
+    "category": "navigate",
+    "mode": "levelmap",
+    "key": "o"
+  },
+  {
+    "id": "CMD_MAP_DESCRIBE",
+    "label": "Describe cell",
+    "category": "info",
+    "mode": "levelmap",
+    "key": "v"
+  },
+  {
+    "id": "CMD_MAP_TOGGLE_TITLE",
+    "label": "Toggle title",
+    "category": "info",
+    "mode": "levelmap",
+    "key": "="
+  },
+  {
+    "id": "CMD_MAP_SCROLL_UP",
+    "label": "Scroll map up",
+    "category": "navigate",
+    "mode": "levelmap",
+    "key": "-"
+  },
+  {
+    "id": "CMD_MAP_SCROLL_DOWN",
+    "label": "Scroll map down",
+    "category": "navigate",
+    "mode": "levelmap",
+    "key": "+"
+  },
+  {
+    "id": "CMD_MAP_ZOOM_IN",
+    "label": "Zoom in",
+    "category": "navigate",
+    "mode": "levelmap",
+    "key": "}"
+  },
+  {
+    "id": "CMD_MAP_ZOOM_OUT",
+    "label": "Zoom out",
+    "category": "navigate",
+    "mode": "levelmap",
+    "key": "{"
+  },
+  {
+    "id": "CMD_MAP_CLEAR_MAP",
+    "label": "Clear map",
+    "category": "marks",
+    "mode": "levelmap",
+    "key": "\u0003"
+  },
+  {
+    "id": "CMD_MAP_FORGET",
+    "label": "Forget map",
+    "category": "marks",
+    "mode": "levelmap",
+    "key": "\u0006"
+  },
+  {
+    "id": "CMD_MAP_UNFORGET",
+    "label": "Unforget map",
+    "category": "marks",
+    "mode": "levelmap",
+    "key": "\u0015"
+  },
+  {
+    "id": "CMD_TARGET_HELP",
+    "label": "Help",
+    "category": "info",
+    "mode": "targeting",
+    "key": "?"
+  },
+  {
+    "id": "CMD_TARGET_CANCEL",
+    "label": "Cancel",
+    "category": "select",
+    "mode": "targeting",
+    "key": "\u001b"
+  },
+  {
+    "id": "CMD_TARGET_SELECT",
+    "label": "Select target",
+    "category": "select",
+    "mode": "targeting",
+    "key": "\r"
+  },
+  {
+    "id": "CMD_TARGET_SELECT_ENDPOINT",
+    "label": "Select (stop at target)",
+    "category": "select",
+    "mode": "targeting",
+    "key": "."
+  },
+  {
+    "id": "CMD_TARGET_SELECT_FORCE",
+    "label": "Select (force)",
+    "category": "select",
+    "mode": "targeting",
+    "key": "!"
+  },
+  {
+    "id": "CMD_TARGET_SELECT_FORCE_ENDPOINT",
+    "label": "Select (force, stop at target)",
+    "category": "select",
+    "mode": "targeting",
+    "key": "@"
+  },
+  {
+    "id": "CMD_TARGET_SELECT_ACTION",
+    "label": "Choose a different action",
+    "category": "select",
+    "mode": "targeting",
+    "key": "Q"
+  },
+  {
+    "id": "CMD_TARGET_CYCLE_FORWARD",
+    "label": "Next target",
+    "category": "cycle",
+    "mode": "targeting",
+    "key": "+"
+  },
+  {
+    "id": "CMD_TARGET_CYCLE_BACK",
+    "label": "Previous target",
+    "category": "cycle",
+    "mode": "targeting",
+    "key": "-"
+  },
+  {
+    "id": "CMD_TARGET_OBJ_CYCLE_FORWARD",
+    "label": "Next object",
+    "category": "cycle",
+    "mode": "targeting",
+    "key": "*"
+  },
+  {
+    "id": "CMD_TARGET_OBJ_CYCLE_BACK",
+    "label": "Previous object",
+    "category": "cycle",
+    "mode": "targeting",
+    "key": "/"
+  },
+  {
+    "id": "CMD_TARGET_CYCLE_QUIVER_FORWARD",
+    "label": "Next quiver action",
+    "category": "cycle",
+    "mode": "targeting",
+    "key": ")"
+  },
+  {
+    "id": "CMD_TARGET_CYCLE_QUIVER_BACKWARD",
+    "label": "Previous quiver action",
+    "category": "cycle",
+    "mode": "targeting",
+    "key": "("
+  },
+  {
+    "id": "CMD_TARGET_DESCRIBE",
+    "label": "Describe",
+    "category": "info",
+    "mode": "targeting",
+    "key": "v"
+  },
+  {
+    "id": "CMD_TARGET_FULL_DESCRIBE",
+    "label": "Full description",
+    "category": "info",
+    "mode": "targeting",
+    "key": "\u0018"
+  },
+  {
+    "id": "CMD_TARGET_TOGGLE_BEAM",
+    "label": "Toggle beam path",
+    "category": "info",
+    "mode": "targeting",
+    "key": ":"
+  },
+  {
+    "id": "CMD_TARGET_CYCLE_BEAM",
+    "label": "Cycle beam path",
+    "category": "info",
+    "mode": "targeting",
+    "key": "\u0003"
+  },
+  {
+    "id": "CMD_TARGET_EXCLUDE",
+    "label": "Toggle travel exclusion",
+    "category": "marks",
+    "mode": "targeting",
+    "key": "e"
+  },
+  {
+    "id": "CMD_TARGET_GET",
+    "label": "Pick up item here",
+    "category": "marks",
+    "mode": "targeting",
+    "key": "g"
+  },
+  {
+    "id": "CMD_TARGET_FIND_YOU",
+    "label": "Find you",
+    "category": "find",
+    "mode": "targeting",
+    "key": "r"
+  },
+  {
+    "id": "CMD_TARGET_FIND_UPSTAIR",
+    "label": "Find up stairs",
+    "category": "find",
+    "mode": "targeting",
+    "key": "<"
+  },
+  {
+    "id": "CMD_TARGET_FIND_DOWNSTAIR",
+    "label": "Find down stairs",
+    "category": "find",
+    "mode": "targeting",
+    "key": ">"
+  },
+  {
+    "id": "CMD_TARGET_FIND_PORTAL",
+    "label": "Find portal",
+    "category": "find",
+    "mode": "targeting",
+    "key": "\t"
+  },
+  {
+    "id": "CMD_TARGET_FIND_TRAP",
+    "label": "Find trap",
+    "category": "find",
+    "mode": "targeting",
+    "key": "^"
+  },
+  {
+    "id": "CMD_TARGET_FIND_ALTAR",
+    "label": "Find altar",
+    "category": "find",
+    "mode": "targeting",
+    "key": "_"
+  },
+  {
+    "id": "CMD_MENU_HELP",
+    "label": "Help",
+    "category": "info",
+    "mode": "menu",
+    "key": "?"
+  },
+  {
+    "id": "CMD_MENU_EXIT",
+    "label": "Close",
+    "category": "navigate",
+    "mode": "menu",
+    "key": "\u001b"
+  },
+  {
+    "id": "CMD_MENU_SELECT",
+    "label": "Select",
+    "category": "select",
+    "mode": "menu",
+    "key": "\r"
+  },
+  {
+    "id": "CMD_MENU_PAGE_UP",
+    "label": "Page up",
+    "category": "navigate",
+    "mode": "menu",
+    "key": "<"
+  },
+  {
+    "id": "CMD_MENU_PAGE_DOWN",
+    "label": "Page down",
+    "category": "navigate",
+    "mode": "menu",
+    "key": ">"
+  },
+  {
+    "id": "CMD_MENU_SCROLL_TO_TOP",
+    "label": "Scroll to top",
+    "category": "navigate",
+    "mode": "menu",
+    "ck": "CK_HOME"
+  },
+  {
+    "id": "CMD_MENU_SCROLL_TO_END",
+    "label": "Scroll to end",
+    "category": "navigate",
+    "mode": "menu",
+    "ck": "CK_END"
+  },
+  {
+    "id": "CMD_MENU_SEARCH",
+    "label": "Filter",
+    "category": "navigate",
+    "mode": "menu",
+    "key": "\u0006"
+  },
+  {
+    "id": "CMD_MENU_CYCLE_MODE",
+    "label": "Cycle mode",
+    "category": "navigate",
+    "mode": "menu",
+    "key": "!"
+  },
+  {
+    "id": "CMD_MENU_CYCLE_HEADERS",
+    "label": "Cycle headers / select all",
+    "category": "select",
+    "mode": "menu",
+    "key": ","
+  },
+  {
+    "id": "CMD_MENU_EXAMINE",
+    "label": "Examine",
+    "category": "info",
+    "mode": "menu",
+    "key": "\\"
+  },
+  {
+    "id": "CMD_MENU_INVERT_SELECTION",
+    "label": "Invert selection",
+    "category": "select",
+    "mode": "menu",
+    "key": "*"
+  },
+  {
+    "id": "CMD_MENU_CLEAR_SELECTION",
+    "label": "Clear selection",
+    "category": "select",
+    "mode": "menu",
+    "key": "-"
+  },
+  {
+    "id": "CMD_MENU_TOGGLE_SELECTED",
+    "label": "Toggle selected",
+    "category": "select",
+    "mode": "menu",
+    "key": "."
+  }
+]

@@ -1,0 +1,152 @@
+{
+ "server": "wss://crawl.dcss.io/socket",
+ "version": "Dungeon Crawl Stone Soup 0.35-a0-994-g99d7c3def5",
+ "player": "steves",
+ "tag": "menu-use_item",
+ "msgs": [
+  {
+   "msg": "menu",
+   "ui-centred": false,
+   "tag": "use_item",
+   "flags": 262722,
+   "last_hovered": 1,
+   "title": {
+    "text": "<white>Evoke which item?"
+   },
+   "more": "<lightgrey>\n[<white>!<lightgrey>] read|quaff|<white>evoke<lightgrey>                                      [<white>?<lightgrey>] describe selected",
+   "alt_more": "<lightgrey>\n[<white>!<lightgrey>] read|quaff|<white>evoke<lightgrey>                                      [<white>?<lightgrey>] describe selected",
+   "total_items": 6,
+   "chunk_start": 0,
+   "items": [
+    {
+     "text": "Wands",
+     "colour": 1,
+     "level": 1
+    },
+    {
+     "text": " a - a wand of flame (21)",
+     "q": 1,
+     "hotkeys": [
+      97
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 4144,
+       "tex": 4
+      },
+      {
+       "t": 4154,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " c - a wand of warping (7)",
+     "q": 1,
+     "hotkeys": [
+      99
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 4151,
+       "tex": 4
+      },
+      {
+       "t": 4179,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " d - a wand of digging (4)",
+     "q": 1,
+     "hotkeys": [
+      100
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 4148,
+       "tex": 4
+      },
+      {
+       "t": 4165,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " e - a wand of paralysis (32)",
+     "q": 1,
+     "hotkeys": [
+      101
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 4149,
+       "tex": 4
+      },
+      {
+       "t": 4160,
+       "tex": 4
+      }
+     ]
+    },
+    {
+     "text": " f - a wand of mindburst (42)",
+     "q": 1,
+     "hotkeys": [
+      102
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 4148,
+       "tex": 4
+      },
+      {
+       "t": 4173,
+       "tex": 4
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "msg": "update_menu_items",
+   "chunk_start": 2,
+   "items": [
+    {
+     "text": " c + a wand of warping (7)",
+     "q": 1,
+     "hotkeys": [
+      99
+     ],
+     "level": 2,
+     "tiles": [
+      {
+       "t": 4151,
+       "tex": 4
+      },
+      {
+       "t": 4179,
+       "tex": 4
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "msg": "menu_scroll",
+   "first": 0,
+   "last_hovered": 1,
+   "force": true
+  },
+  {
+   "msg": "close_menu"
+  }
+ ]
+}

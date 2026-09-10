@@ -1,0 +1,47 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist-types",
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "resolveJsonModule": true,
+    "types": [
+      "node",
+      "vite/client"
+    ]
+  },
+  "include": [
+    "src",
+    "testbed",
+    "src/room/*.des",
+    "testbed/*.json",
+    "data/*.json",
+    "vite.config.ts",
+    "gamedata-proxy.ts",
+    "worker"
+  ],
+  "references": [
+    {
+      "path": "../../packages/scene"
+    },
+    {
+      "path": "../../packages/webtiles"
+    },
+    {
+      "path": "../../packages/gamedata"
+    },
+    {
+      "path": "../../packages/scene-webtiles"
+    },
+    {
+      "path": "../../packages/render-2d"
+    },
+    {
+      "path": "../../packages/render-3d"
+    },
+    {
+      "path": "../../packages/vault"
+    }
+  ]
+}

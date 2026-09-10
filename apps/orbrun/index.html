@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- viewport-fit=cover: the dungeon view runs to the edges, under the
+         status bar and any cutout, and the HUD uses env(safe-area-inset-*). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="color-scheme" content="dark" />
+    <title>Orbrun — Play DCSS in first person on a controller (Dungeon Crawl Stone Soup)</title>
+    <meta
+      name="description"
+      content="Play DCSS (Dungeon Crawl Stone Soup) in first person with a gamepad. Orbrun is an unofficial WebTiles client for public DCSS servers, built for controllers and handhelds, with the Steam Deck first. Runs in the browser: your account, your rc file, your keys."
+    />
+    <!-- Canonical / social URLs point at the project's official deployment.
+         Forks deployed elsewhere should update the domain below. -->
+    <link rel="canonical" href="https://orbrun.app/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Orbrun" />
+    <meta property="og:title" content="Orbrun — Dungeon Crawl Stone Soup in first person" />
+    <meta
+      property="og:description"
+      content="An unofficial DCSS client that puts you inside the dungeon: first-person 3D, full gamepad support, Steam Deck ready. Connects to public WebTiles servers."
+    />
+    <meta property="og:url" content="https://orbrun.app/" />
+    <!-- the front room at rest (tools/build/poster.mjs), the same picture the menus stand on before WebGL is up -->
+    <meta property="og:image" content="https://orbrun.app/room/poster.jpg" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="720" />
+    <meta property="og:image:alt" content="A stone hall in Dungeon Crawl Stone Soup's tiles: a down staircase between two granite statues, plants, an altar and a fountain" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Orbrun — Dungeon Crawl Stone Soup in first person" />
+    <meta
+      name="twitter:description"
+      content="An unofficial DCSS client that puts you inside the dungeon: first-person 3D, full gamepad support, Steam Deck ready."
+    />
+    <meta name="twitter:image" content="https://orbrun.app/room/poster.jpg" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Orbrun",
+        "url": "https://orbrun.app/",
+        "description": "Unofficial first-person client for Dungeon Crawl Stone Soup (DCSS). Connects to public WebTiles servers; built for gamepads and handhelds, Steam Deck first.",
+        "applicationCategory": "GameApplication",
+        "operatingSystem": "SteamOS, Linux, Windows, macOS, any modern browser",
+        "browserRequirements": "Requires JavaScript and WebGL",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "sameAs": ["https://github.com/Caeous/orbrun"]
+      }
+    </script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preload" as="image" href="/room/poster.jpg" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <noscript>
+      <main style="max-width:680px;margin:0 auto;padding:3rem 1.5rem;font-family:system-ui,-apple-system,sans-serif;color:#e7e2da;background:#000;line-height:1.6">
+        <h1>Orbrun — Dungeon Crawl Stone Soup in first person</h1>
+        <p>
+          Orbrun is an unofficial first-person client for
+          <a href="https://crawl.develz.org" style="color:#d08a3e">Dungeon Crawl Stone Soup (DCSS)</a>.
+          It connects to public WebTiles servers with the same protocol as the
+          official client, renders the dungeon in 3D, and is built to be played
+          with a gamepad — on a Steam Deck, a handheld, or a desktop.
+          JavaScript and WebGL are required to play.
+        </p>
+        <p><a href="https://github.com/Caeous/orbrun" style="color:#d08a3e">Read more about Orbrun →</a></p>
+      </main>
+    </noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

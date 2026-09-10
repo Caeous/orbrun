@@ -1,0 +1,19 @@
+.DS_Store
+node_modules/
+dist/
+coverage/
+.vitest/
+.env
+.env.*
+!.env.example
+.claude/
+scratchpad/
+*.tsbuildinfo
+dist-types/
+__pycache__/
+.wrangler/
+
+# Local-only docs
+docs/
+AGENTS.md
+CLAUDE.md

@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/scene" },
+    { "path": "packages/webtiles" },
+    { "path": "packages/gamedata" },
+    { "path": "packages/scene-webtiles" },
+    { "path": "packages/render-2d" },
+    { "path": "packages/render-3d" },
+    { "path": "packages/vault" },
+    { "path": "apps/orbrun" }
+  ]
+}
