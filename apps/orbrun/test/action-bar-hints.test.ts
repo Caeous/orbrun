@@ -92,18 +92,18 @@ describe('a hold in progress fills its prompt', () => {
     const hud = new Hud(host, { onSelectMonster() {}, onBarAction() {}, onMinimapClick() {}, onPanelItem() {}, onPanelShow() {} })
     const inner = hud as unknown as { renderBar(c: Context, k: string, spectating: boolean, device: string, hints: boolean): void; showHold(h: { button: string; fraction: number } | null): void; actionbar: HTMLElement }
     inner.renderBar(ctx({ injured: true }), 'xbox', false, 'pad', true)
-    const chip = inner.actionbar.querySelector('.chip.B') as HTMLElement
+    const chip = inner.actionbar.querySelector('.chip.LB') as HTMLElement
     expect(chip.querySelector('.hold')?.textContent).toBe('Rest')
     expect(chip.querySelector('.hold path')?.getAttribute('pathLength')).toBe('1')
-    inner.showHold({ button: 'B', fraction: 0.5 })
+    inner.showHold({ button: 'LB', fraction: 0.5 })
     expect(chip.classList.contains('holding')).toBe(true)
     expect(chip.style.getPropertyValue('--hold')).toBe('0.5')
-    inner.showHold({ button: 'B', fraction: 1.5 })
+    inner.showHold({ button: 'LB', fraction: 1.5 })
     expect(chip.style.getPropertyValue('--hold')).toBe('1')
     inner.showHold(null)
     expect(chip.classList.contains('holding')).toBe(false)
     expect(chip.style.getPropertyValue('--hold')).toBe('')
-    expect(inner.actionbar.querySelector('.chip.B')).toBe(chip)
+    expect(inner.actionbar.querySelector('.chip.LB')).toBe(chip)
   })
 })
 

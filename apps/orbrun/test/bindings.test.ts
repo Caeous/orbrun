@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Keys, MouseMode, initialState, type MenuState } from '@orbrun/webtiles'
-import { actionLabel, armsTapOrHold, barLabels, bindingTable, contextualLabel, holdAction, NO_ACTION, promptLabels, resolve } from '../src/bindings'
+import { actionLabel, armsTapOrHold, barLabels, bindingTable, contextualLabel, controlSheet, holdAction, NO_ACTION, promptLabels, resolve } from '../src/bindings'
 import { deriveMode, readiedAction, shopContext, type Context } from '../src/context'
 import commands from '../data/commands.json'
 
@@ -194,10 +194,10 @@ describe('direct command controls', () => {
   const ogre = { kind: 'monster' as const, monster: { id: 1, name: 'ogre' } as never, hostile: true, label: 'ogre' }
   it('a tap-or-hold binding waits for release, then splits on HOLD_MS', () => {
     const c = ctx({})
-    expect(resolve({ type: 'press', button: 'B', t: 0 }, c)).toBeNull()
-    expect(resolve({ type: 'release', button: 'B', t: 100, held: 100 }, c)).toMatchObject({ seq: [{ text: '.' }] })
-    expect(resolve({ type: 'release', button: 'B', t: 900, held: 900 }, c)).toBeNull()
-    expect(holdAction('B', c)).toMatchObject({ seq: [{ text: '5' }] })
+    expect(resolve({ type: 'press', button: 'LB', t: 0 }, c)).toBeNull()
+    expect(resolve({ type: 'release', button: 'LB', t: 100, held: 100 }, c)).toMatchObject({ seq: [{ text: '.' }] })
+    expect(resolve({ type: 'release', button: 'LB', t: 900, held: 900 }, c)).toBeNull()
+    expect(holdAction('LB', c)).toMatchObject({ seq: [{ text: '5' }] })
   })
   it('a press that acted at once never becomes a tap when the server changes mode under it', () => {
     // A on a --more-- while standing on stairs: space goes on press, the
@@ -213,7 +213,8 @@ describe('direct command controls', () => {
     const command = ctx({ under: stairsUp })
     expect(contextualLabel(command)).toBe('Ascend')
     expect(armsTapOrHold('A', command)).toBe(false)
-    expect(armsTapOrHold('B', command)).toBe(true)
+    expect(armsTapOrHold('LB', command)).toBe(true)
+    expect(armsTapOrHold('B', command)).toBe(false)
     expect(armsTapOrHold('Y', command)).toBe(false)
     expect(resolve({ type: 'press', button: 'Y', t: 0 }, command)).toMatchObject({ seq: [{ text: 'i' }] })
     expect(resolve({ type: 'release', button: 'Y', t: 100, held: 100 }, command)).toBeNull()
@@ -250,17 +251,17 @@ describe('direct command controls', () => {
       expect(resolve({ type: 'dirRepeat', source: 'dpad', dir: 4, n: 1 }, ctx({ layer }))).toEqual({ kind: 'step', dir: 4, turns: true, held: true })
     }
   })
-  it('offers wait/rest on B only while hurt with nothing in view', () => {
+  it('offers wait/rest on LB only while hurt with nothing in view', () => {
     const hurt = ctx({ injured: true })
-    const b = promptLabels(hurt).find((l) => l.button === 'B')!
+    const b = promptLabels(hurt).find((l) => l.button === 'LB')!
     expect(b).toMatchObject({ label: 'Wait one turn', hold: 'Rest', contextual: true })
     // whole: nothing to rest for
-    expect(promptLabels(ctx({})).find((l) => l.button === 'B')).toBeUndefined()
+    expect(promptLabels(ctx({})).find((l) => l.button === 'LB')).toBeUndefined()
     // a hostile in view: resting is not the move, so autofight takes the corner instead
     const fight = ctx({ injured: true, hostilesInView: 1 })
-    expect(promptLabels(fight).find((l) => l.button === 'B')).toBeUndefined()
+    expect(promptLabels(fight).find((l) => l.button === 'LB')).toBeUndefined()
     // not outside command mode
-    expect(promptLabels(ctx({ injured: true, mode: 'menu' })).find((l) => l.button === 'B')).toBeUndefined()
+    expect(promptLabels(ctx({ injured: true, mode: 'menu' })).find((l) => l.button === 'LB')).toBeUndefined()
   })
   it('shows the server-provided readied action on LT', () => {
     const c = ctx({ readiedAction: 'Stone Arrow' })
@@ -303,19 +304,25 @@ describe('direct command controls', () => {
   it('inventory, explore and commands have direct buttons; no stick clicks are needed', () => {
     const t = bindingTable(ctx({}))
     expect(t.Y).toMatchObject({ seq: [{ text: 'i' }] })
-    expect(t.LB).toEqual({ kind: 'examine' })
+    expect(t.R3).toEqual({ kind: 'examine' })
     expect(t.X).toMatchObject({ seq: [{ text: 'o' }] })
     expect(t.RB).toEqual({ kind: 'ui', op: 'commands' })
-    expect(t.B).toMatchObject({ kind: 'hold', tap: { seq: [{ text: '.' }] }, hold: { seq: [{ text: '5' }] } })
+    expect(t.LB).toMatchObject({ kind: 'hold', tap: { seq: [{ text: '.' }] }, hold: { seq: [{ text: '5' }] } })
     expect(t.L3).toBeUndefined()
-    expect(t.R3).toBeUndefined()
+    expect(t.B).toMatchObject({ seq: [{ key: Keys.ESC }] })
   })
-  it('LB examines once on press without repeating or acting on release', () => {
+  it('the controls sheet describes Cancel, LB wait/rest and R3 examine', () => {
+    const sheet = controlSheet()
+    expect(sheet.find((r) => r.button === 'B')?.action).toEqual({ tap: 'Cancel' })
+    expect(sheet.find((r) => r.button === 'LB')?.action).toEqual({ tap: 'Wait one turn', hold: 'Rest' })
+    expect(sheet.find((r) => r.button === 'R3')?.action).toEqual({ tap: 'Examine' })
+  })
+  it('R3 examines once on press without repeating or acting on release', () => {
     const c = ctx({})
-    expect(resolve({ type: 'press', button: 'LB', t: 0 }, c)).toEqual({ kind: 'examine' })
-    expect(armsTapOrHold('LB', c)).toBe(false)
-    expect(resolve({ type: 'repeat', button: 'LB', n: 1 }, c)).toBeNull()
-    expect(resolve({ type: 'release', button: 'LB', t: 100, held: 100 }, c)).toBeNull()
+    expect(resolve({ type: 'press', button: 'R3', t: 0 }, c)).toEqual({ kind: 'examine' })
+    expect(armsTapOrHold('R3', c)).toBe(false)
+    expect(resolve({ type: 'repeat', button: 'R3', n: 1 }, c)).toBeNull()
+    expect(resolve({ type: 'release', button: 'R3', t: 100, held: 100 }, c)).toBeNull()
   })
   it('A is only ever contextual: no bare step, no attack', () => {
     expect(contextualLabel(ctx({}))).toBe(NO_ACTION)

@@ -7,7 +7,7 @@ import type { CameraController } from '../src/camera'
 import type { Context } from '../src/context'
 
 /**
- * LB: examine. Crawl's look mode (directn.cc `_look_around_target`) starts
+ * R3: examine. Crawl's look mode (directn.cc `_look_around_target`) starts
  * its cursor on the player, so the runner sends `x`, and, once the server
  * has opened the mode with its cursor on the player, one direction key
  * moves it to the cell ahead, so A (`v`, CMD_TARGET_DESCRIBE) describes what

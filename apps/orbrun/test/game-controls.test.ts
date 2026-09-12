@@ -37,57 +37,85 @@ beforeEach(() => {
 })
 
 describe('direct game input', () => {
-  it('waits on B release, never on press', () => {
+  it('B sends Escape once on press, never waits or rests', () => {
     const h = harness()
     h.event({ type: 'press', button: 'B', t: 0 })
+    h.screen.fireHolds(HOLD_MS)
+    h.event({ type: 'repeat', button: 'B', n: 1 })
+    h.event({ type: 'release', button: 'B', t: 1000, held: 1000 })
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'keys', seq: [{ key: 27 }], label: 'Cancel' })
+  })
+
+  it('B cancels a pending LB rest without spending a turn', () => {
+    const h = harness()
+    h.event({ type: 'press', button: 'LB', t: 0 })
+    h.event({ type: 'press', button: 'B', t: 100 })
+    h.screen.fireHolds(HOLD_MS)
+    h.event({ type: 'release', button: 'LB', t: 500, held: 500 })
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'keys', seq: [{ key: 27 }], label: 'Cancel' })
+  })
+
+  it('R3 opens examine without repeating into the resulting targeting mode', () => {
+    const h = harness()
+    h.event({ type: 'press', button: 'R3', t: 0 })
+    h.ctx.mode = 'targeting'
+    h.ctx.examining = true
+    h.event({ type: 'repeat', button: 'R3', n: 1 })
+    h.event({ type: 'release', button: 'R3', t: 1000, held: 1000 })
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'examine' })
+  })
+
+  it('waits on LB release, never on press', () => {
+    const h = harness()
+    h.event({ type: 'press', button: 'LB', t: 0 })
     h.screen.fireHolds(100)
     expect(h.execute).not.toHaveBeenCalled()
-    h.event({ type: 'release', button: 'B', t: 150, held: 150 })
+    h.event({ type: 'release', button: 'LB', t: 150, held: 150 })
     expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: '.' }] }))
   })
 
-  it('reports how far a held B has come towards the rest, for its corner prompt, and nothing once released or fired', () => {
+  it('reports how far a held LB has come towards the rest, for its corner prompt, and nothing once released or fired', () => {
     const h = harness()
-    h.event({ type: 'press', button: 'B', t: 0 })
+    h.event({ type: 'press', button: 'LB', t: 0 })
     h.screen.fireHolds(HOLD_MS / 4)
-    expect(h.screen.holding).toEqual({ button: 'B', fraction: 0.25 })
+    expect(h.screen.holding).toEqual({ button: 'LB', fraction: 0.25 })
     h.screen.fireHolds(HOLD_MS)
     expect(h.screen.holding).toBeNull()
-    h.event({ type: 'release', button: 'B', t: HOLD_MS, held: HOLD_MS })
-    h.event({ type: 'press', button: 'B', t: 1000 })
+    h.event({ type: 'release', button: 'LB', t: HOLD_MS, held: HOLD_MS })
+    h.event({ type: 'press', button: 'LB', t: 1000 })
     h.screen.fireHolds(1100)
     expect(h.screen.holding).not.toBeNull()
-    h.event({ type: 'release', button: 'B', t: 1150, held: 150 })
+    h.event({ type: 'release', button: 'LB', t: 1150, held: 150 })
     expect(h.screen.holding).toBeNull()
   })
 
   it('rests once at the hold threshold, with no wait before or after it', () => {
     const h = harness()
-    h.event({ type: 'press', button: 'B', t: 0 })
+    h.event({ type: 'press', button: 'LB', t: 0 })
     h.screen.fireHolds(HOLD_MS - 1)
     expect(h.execute).not.toHaveBeenCalled()
     h.screen.fireHolds(HOLD_MS)
     h.screen.fireHolds(HOLD_MS * 2)
-    h.event({ type: 'release', button: 'B', t: 1000, held: 1000 })
+    h.event({ type: 'release', button: 'LB', t: 1000, held: 1000 })
     expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: '5' }] }))
   })
 
   it('a mode change cancels a pending rest instead of turning a prompt into gameplay', () => {
     const h = harness()
-    h.event({ type: 'press', button: 'B', t: 0 })
+    h.event({ type: 'press', button: 'LB', t: 0 })
     h.ctx.mode = 'menu'
     h.screen.fireHolds(HOLD_MS)
     h.ctx.mode = 'command'
-    h.event({ type: 'release', button: 'B', t: 200, held: 200 })
+    h.event({ type: 'release', button: 'LB', t: 200, held: 200 })
     expect(h.execute).not.toHaveBeenCalled()
   })
 
   it('another action cancels a pending hold', () => {
     const h = harness()
-    h.event({ type: 'press', button: 'B', t: 0 })
+    h.event({ type: 'press', button: 'LB', t: 0 })
     h.event({ type: 'press', button: 'RT', t: 100 })
     h.screen.fireHolds(HOLD_MS)
-    h.event({ type: 'release', button: 'B', t: 500, held: 500 })
+    h.event({ type: 'release', button: 'LB', t: 500, held: 500 })
     expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'fight' })
   })
 
@@ -109,6 +137,23 @@ describe('direct game input', () => {
       }
     },
   )
+
+  it.each([false, true])('LB paging a menu cannot wait or rest after it closes (client: %s)', (client) => {
+    for (const held of [100, HOLD_MS * 2]) {
+      const h = harness()
+      h.overlays.hasClientOverlay = client
+      h.ctx.mode = client ? 'command' : 'menu'
+      h.event({ type: 'press', button: 'LB', t: 0 })
+      if (client) expect(h.overlays.clientOverlayInput).toHaveBeenCalledExactlyOnceWith('bumperPrev')
+      else expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'menu', op: 'sectionPrev' })
+      h.execute.mockClear()
+      h.overlays.hasClientOverlay = false
+      h.ctx.mode = 'command'
+      h.screen.fireHolds(held)
+      h.event({ type: 'release', button: 'LB', t: held, held })
+      expect(h.execute).not.toHaveBeenCalled()
+    }
+  })
 
   it('B closing a client menu cannot wait or rest on release', () => {
     const h = harness()

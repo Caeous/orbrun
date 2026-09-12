@@ -39,7 +39,19 @@ describe('adaptive gamepad teaching', () => {
     h.lookedBy(0.01)
     expect(h.knows('look')).toBe(false)
     h.lookedBy(0.3)
-    expect(teaching(h).map((l) => l.button)).toEqual(['LB'])
+    expect(teaching(h).map((l) => l.button)).toEqual(['R3'])
+  })
+
+  it('teaches examine on R3 and wait/rest on LB, never B', () => {
+    const h = new GamepadHints()
+    basics(h)
+    expect(teaching(h)).toMatchObject([{ button: 'R3', label: 'Examine' }])
+    h.attempt(bindingTable(ctx()).R3!, ctx(), evidence(), 0)
+    h.observe(evidence({ mode: 'targeting' }), 10)
+    h.attempt(bindingTable(ctx()).SELECT!, ctx(), evidence(), 20)
+    h.observe(evidence({ clientOverlay: true }), 30)
+    expect(teaching(h)).toMatchObject([{ button: 'LB', label: 'Wait one turn', hold: 'Rest' }])
+    expect(padLesson(bindingTable(ctx()).B!, ctx())).toBeNull()
   })
 
   it('remembers learned actions across screens, runs and controller families', () => {
@@ -48,7 +60,7 @@ describe('adaptive gamepad teaching', () => {
     const nextRun = new GamepadHints()
     expect(nextRun.knows('move')).toBe(true)
     expect(nextRun.knows('look')).toBe(true)
-    expect(teaching(nextRun).map((l) => l.button)).toEqual(['LB'])
+    expect(teaching(nextRun).map((l) => l.button)).toEqual(['R3'])
     nextRun.reset()
     expect(teaching(new GamepadHints()).map((l) => l.button)).toEqual(['LSTICK', 'RSTICK'])
   })
@@ -61,7 +73,7 @@ describe('adaptive gamepad teaching', () => {
     expect(h.prompts(door, 'contextual').map((l) => l.label)).toEqual(['Open door'])
     expect(h.prompts(door, 'off')).toEqual([])
     expect(teaching(h, ctx({ hostilesInView: 1 }))).toEqual([])
-    expect(teaching(h).map((l) => l.button)).toEqual(['LB']) // switching modes did not erase progress
+    expect(teaching(h).map((l) => l.button)).toEqual(['R3']) // switching modes did not erase progress
   })
 
   it.each(['spectating', 'lobby', 'ended', 'macro', 'text'] as const)('does not teach in %s', (mode) => {

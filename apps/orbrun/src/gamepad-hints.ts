@@ -133,7 +133,7 @@ export class GamepadHints {
       if (!this.knows('look')) teaching.push(tip('RSTICK', 'Look around', { kind: 'look', dx: 0, dy: 0 }))
       if (!teaching.length) {
         const table = bindingTable(ctx)
-        for (const button of ['LB', 'SELECT', 'B'] as const) {
+        for (const button of ['R3', 'SELECT', 'LB'] as const) {
           const a = table[button]
           if (!a) continue
           if (a.kind === 'hold') {

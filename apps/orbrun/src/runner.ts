@@ -464,7 +464,7 @@ export class Runner {
   }
 
   /**
-   * LB: examine. In command mode it opens look mode (`x`); the cursor starts
+   * R3: examine. In command mode it opens look mode (`x`); the cursor starts
    * on the player (directn.cc `_look_around_target`), and the cell faced goes
    * out with the key (`send`), `startAimAhead` covering a miss. In look
    * mode the same button describes the cell under the cursor (`v`,

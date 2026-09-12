@@ -73,10 +73,11 @@ exit) is on the HUD; while spectating, Escape opens it.
   diagonals strafe; hold to run. Right stick looks.
 - **A** does what the situation calls for: takes the stairs underfoot, opens
   or closes the door ahead, attacks, picks up, steps.
-- **B** waits a turn; hold to rest. In a menu, B backs out.
+- **B** cancels or backs out; in play it sends Escape.
 - **X** autoexplores. In a menu, X describes the row under the cursor.
 - **Y** opens the inventory.
-- **LB** examines; the cursor opens on the cell ahead and the d-pad walks it.
+- **LB** waits a turn; hold to rest.
+- **R3** (right-stick click) examines; the cursor opens on the cell ahead and the d-pad walks it.
 - **RB** opens the Actions menu.
 - **LT** fires your readied action; tap again to let it fly.
 - **RT** autofights.

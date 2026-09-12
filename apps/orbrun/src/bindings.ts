@@ -95,13 +95,14 @@ export const LEVEL_MAP: Action = k('X', 'Level map')
 /** Direct controls: no trigger layers, and only wait/rest uses a hold. */
 const COMMAND: Partial<Record<Button, Action>> = {
   A: { kind: 'contextual' },
-  B: hold(k('.', 'Wait one turn'), k('5', 'Rest')),
+  B: ESC,
   X: k('o', 'Autoexplore'),
   Y: k('i', 'Inventory'),
-  LB: { kind: 'examine' },
+  LB: hold(k('.', 'Wait one turn'), k('5', 'Rest')),
   RB: { kind: 'ui', op: 'commands' },
   LT: { kind: 'fire' },
   RT: { kind: 'fight' },
+  R3: { kind: 'examine' },
   SELECT: { kind: 'ui', op: 'travel' },
   // the way out of a game from the pad: the Orbrun menu, with Save and exit on it
   START: SYSTEM,
@@ -421,7 +422,7 @@ function menuRowExamines(m: MenuContext): boolean {
   return i !== undefined && i >= 0 && m.hoverable.includes(i) && !!menu.items[i]?.hotkeys?.length
 }
 
-/** The wait (`.`) or rest (`5`) key on its own, as the B tap-or-hold sends them. */
+/** The wait (`.`) or rest (`5`) key on its own, as the LB tap-or-hold sends them. */
 function isRest(a: Action): boolean {
   return a.kind === 'keys' && a.seq.length === 1 && 'text' in a.seq[0] && (a.seq[0].text === '.' || a.seq[0].text === '5')
 }
@@ -616,8 +617,8 @@ export function contextualLabel(ctx: Context, alt = false): string {
 /**
  * Whether a press of `button` now opens a tap-or-hold decision. The decision
  * is taken on release (or after HOLD_MS), by which time the server may have
- * changed mode: B under a `--more--` sends space on press, the prompt clears,
- * and the release lands in command mode where B is wait/rest. Only a
+ * changed mode: LB in a menu pages on press, the menu closes,
+ * and the release lands in command mode where LB is wait/rest. Only a
  * press that began as a tap-or-hold may fire a tap or a hold, so a button that
  * already acted on press does nothing more (game.ts `pad`).
  */
