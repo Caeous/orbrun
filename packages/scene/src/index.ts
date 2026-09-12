@@ -147,6 +147,14 @@ export interface SceneCell {
   /** Decals on a wall or closed door face (blood splatter, silence). */
   wallOverlays?: TileId[]
   /**
+   * The translucent marks among `overlays` and `wallOverlays`: crawl's
+   * travel-exclusion X, a tile whose every texel is see-through (a black body
+   * at two-thirds alpha, red edges at under half). 2D blends it. 3D draws it
+   * blended too, over its floor or wall face: under the level's opaque alpha
+   * test the red edges vanish and the body prints as solid black.
+   */
+  translucent?: TileId[]
+  /**
    * Cell markers drawn above everything at the cell: travel-trail arrows, the
    * "new stairs" badge, exclusion marks on unseen cells, rampage hints.
    */
@@ -294,6 +302,7 @@ export function cellLayoutEquals(a: SceneCell, b: SceneCell): boolean {
   if (a.featureTile !== b.featureTile || a.stance !== b.stance || a.wallStyle !== b.wallStyle) return false
   if (!sameIds(a.underlays, b.underlays) || !sameIds(a.overlays, b.overlays) || !sameIds(a.icons, b.icons)) return false
   if (!sameIds(a.wallOverlays, b.wallOverlays) || !sameIds(a.wallShadows, b.wallShadows) || !sameIds(a.shorelines, b.shorelines)) return false
+  if (!sameIds(a.translucent, b.translucent)) return false
   if (a.trail?.from !== b.trail?.from || a.trail?.to !== b.trail?.to) return false
   const fa = a.flash, fb = b.flash
   if (fa !== fb && (!fa || !fb || fa.r !== fb.r || fa.g !== fb.g || fa.b !== fb.b || fa.a !== fb.a)) return false

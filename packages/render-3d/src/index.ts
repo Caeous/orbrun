@@ -117,10 +117,14 @@ const EYE_MAX = 0.9
 // there within THIRD_PITCH_MIN..MAX: under a lid there is no more to see.
 // THIRD_H is the default; the `camHeight` option (the Camera height setting,
 // and Shift+wheel) moves it between THIRD_MIN_H, low enough to read as a
-// follow-cam at the doll's waist, and THIRD_MAX_H, just under the lid.
+// follow-cam at the doll's waist, and THIRD_MAX_H, well over the lid. Over
+// the lid (above LID_H) the level is built without its lids and with every
+// wall capped, so the shot looks down into it as onto a model, and nothing
+// on the way to the doll needs cutting down.
 const THIRD_H = 0.75
 const THIRD_MIN_H = 0.25
-const THIRD_MAX_H = 0.9
+const THIRD_MAX_H = 3
+const LID_H = 1
 const THIRD_AHEAD = 2
 /**
  * How far back along the facing line the camera stands, in cells: the
@@ -137,7 +141,9 @@ const THIRD_BACK = 0.7
 const THIRD_MIN_BACK = 0.25
 const THIRD_MAX_BACK = ORBIT_BACK
 const THIRD_SHOULDER = 0.35
-const THIRD_PITCH_MIN = -(Math.PI / 180) * 40
+// the glance runs from a look straight down to a look a little up; under the
+// lid the rest pitch keeps it in the lower part of that range on its own
+const THIRD_PITCH_MIN = -(Math.PI / 180) * 85
 const THIRD_PITCH_MAX = (Math.PI / 180) * 20
 /**
  * The player's own doll is drawn at this fraction of the height the builder
@@ -310,6 +316,12 @@ interface AtlasEntry {
   wallMat: THREE.MeshBasicMaterial
   /** Upright features (statues, trees, altars): the level material without the wall's back-face cull. */
   featMat: THREE.MeshBasicMaterial
+  /**
+   * Translucent decals (the travel-exclusion X): the level material blended
+   * instead of alpha-tested, drawn after the level over the floor or wall face
+   * it marks, without writing depth.
+   */
+  decalMat: THREE.MeshBasicMaterial
   /** Ghost pass, remembered knowledge: sprite fragments the level hides, faded by depth gap. */
   ghostMat: THREE.ShaderMaterial
   /** The same for a cell in view: stronger, and over `GHOST_FADE_VISIBLE`, so what the server shows keeps its ghost however deep behind the wall it stands. */
@@ -481,6 +493,8 @@ export class Render3d implements MapRenderer {
   /** Flat materials for the bars' rects, one per colour and alpha. */
   private barMats = new Map<string, THREE.MeshBasicMaterial>()
   private plinths = new Set<CellKey>()
+  /** Third person: the camera stands over the lid, so the level is built without lids and with capped walls (II.11). */
+  private aboveLid = false
   /** Third person: the shot the level was last built for, and the occluders it lowers (II.11). */
   private shot: OrbitShot | null = null
   /** Third person: how far behind the player the camera stands this frame, and the cells the way there cut (II.11). */
@@ -567,13 +581,17 @@ export class Render3d implements MapRenderer {
    * (statue, tree, plant) hides a monster exactly as masonry does, and the
    * ghost pass (II.4) is the one rule that shows it again.
    */
-  private makeLevelMaterial(tex: THREE.Texture, feature = false): THREE.MeshBasicMaterial {
+  private makeLevelMaterial(tex: THREE.Texture, feature = false, blended = false): THREE.MeshBasicMaterial {
     // Opaque both ways: every fragment is all-or-nothing under the alpha test,
     // so the level takes the opaque pass (front to back, no blending, the
     // depth test rejecting what a nearer wall hides before it is shaded) and
     // writes the depth the ghost pass reads. An upright sprite is seen from
     // either side, so it keeps both faces and a sprite-sized alpha test.
-    const m = new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, alphaTest: feature ? 0.1 : 0.5, side: THREE.DoubleSide })
+    // A blended decal keeps its texels' alpha instead: it is see-through art
+    // laid on geometry already drawn, so it neither needs nor writes depth of its own.
+    const m = blended
+      ? new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.02, depthWrite: false, side: THREE.DoubleSide })
+      : new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, alphaTest: feature ? 0.1 : 0.5, side: THREE.DoubleSide })
     if (feature) m.defines = { UPRIGHT_SPRITE: '' }
     const su = this.shadeUniforms
     m.onBeforeCompile = (shader) => {
@@ -734,6 +752,7 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
       a.texture.dispose()
       a.wallMat.dispose()
       a.featMat.dispose()
+      a.decalMat.dispose()
       a.ghostMat.dispose()
       a.ghostVisibleMat.dispose()
       a.bbMat.dispose()
@@ -766,6 +785,7 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
       height: h,
       wallMat: this.makeLevelMaterial(tex),
       featMat: this.makeLevelMaterial(tex, true),
+      decalMat: this.makeLevelMaterial(tex, false, true),
       bbMat: new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide, depthWrite: true }),
       // A fragment draws only where the level's depth image is nearer, i.e.
       // exactly the part of the sprite the geometry hides, fading with the
@@ -941,12 +961,20 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
     const fo = this.fo()
     const classAt = sceneClassAt(scene)
     const builders = new Map<string, GeoBuilder>()
+    const decalBuilders = new Map<string, GeoBuilder>()
     const voids = new GeoBuilder()
     const flash = new GeoBuilder()
     const tint = scene.level.tint
     const get = (name: string) => {
       let b = builders.get(name)
       if (!b) builders.set(name, (b = new GeoBuilder()))
+      return b
+    }
+    /** The blended builder for a translucent decal (SceneCell.translucent), else the level's. */
+    const getDecal = (name: string, cell: SceneCell, id: number) => {
+      if (!cell.translucent?.includes(id)) return get(name)
+      let b = decalBuilders.get(name)
+      if (!b) decalBuilders.set(name, (b = new GeoBuilder()))
       return b
     }
     const tileOf = (id: number) => {
@@ -956,10 +984,13 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
       if (!a) return null
       return { r, a, uv: this.uvFor(r, a) }
     }
-    const levelCeiling = scene.level.ceilingTile !== null ? tileOf(scene.level.ceilingTile) : null
+    // over the lid there is no lid: the camera looks down into the level, and every wall gets a cap instead
+    const lids = !this.aboveLid
+    const levelCeiling = lids && scene.level.ceilingTile !== null ? tileOf(scene.level.ceilingTile) : null
     const ceilingCache = new Map<number, ReturnType<typeof tileOf>>()
-    /** The lid over an open cell: its own nearby-wall tile, else the level's. */
+    /** The lid over an open cell: its own nearby-wall tile, else the level's; none over the lid. */
     const ceilingOf = (c: SceneCell | undefined) => {
+      if (!lids) return null
       if (scene.level.sky !== 'none') return null
       if (!c || c.ceilingTile === undefined) return levelCeiling
       let t = ceilingCache.get(c.ceilingTile)
@@ -1003,7 +1034,7 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
             const c = ot.r.cell
             const x0 = x + ot.r.ox / c, x1 = x + (ot.r.ox + ot.r.w) / c
             const z0 = y + ot.r.oy / c, z1 = y + (ot.r.oy + ot.r.h) / c
-            get(ot.r.atlas).at(x, y).quad([[x0, lift, z1], [x1, lift, z1], [x1, lift, z0], [x0, lift, z0]], ot.uv, 1, tint)
+            getDecal(ot.r.atlas, cell, id).at(x, y).quad([[x0, lift, z1], [x1, lift, z1], [x1, lift, z0], [x0, lift, z0]], ot.uv, 1, tint)
           }
           if (cell.underlays) for (const o of cell.underlays) decal(o, 0.002)
           if (cell.featureTile !== undefined && !stands(cell)) decal(cell.featureTile, 0.004)
@@ -1114,7 +1145,7 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
                 const fv = (wy: number) => lerp(ot.uv.v0, ot.uv.v1, (1 - wy - ot.r.oy / c) / (ot.r.h / c))
                 const ouv = { u0: fu(flip ? 1 - tB : tA), u1: fu(flip ? 1 - tA : tB), v0: fv(yB), v1: fv(yA) }
                 const pd = facePoints(d, tA, tB, depth, yA, yB).map(([px, py, pz]) => [px + nx, py, pz + nz] as [number, number, number])
-                get(ot.r.atlas).at(x, y).quad(pd, ouv, faceShade, tint, undefined, true)
+                getDecal(ot.r.atlas, cell, o).at(x, y).quad(pd, ouv, faceShade, tint, undefined, true)
               }
             }
           } else {
@@ -1215,8 +1246,10 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
           const tri: [number, number][] = (i & 1) === i >> 1 ? [C, A, Bp, Bp] : [C, Bp, A, A]
           patch(tri, i >> 1 ? s : n)
         }
-        // top of a plinth: the body outline at plinth height
-        if (h < 1) {
+        // top of a plinth: the body outline at plinth height; over the lid
+        // every wall is capped the same way, at its full height, so the
+        // level reads as solid blocks from above rather than open boxes
+        if (h < 1 || !lids) {
           const outline: [number, number][] = []
           for (const i of [0, 1, 3, 2]) {
             const [cx, cz] = cornerPt(i)
@@ -1255,6 +1288,16 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
       const mesh = new THREE.Mesh(geo, a.wallMat)
       this.levelGroup.add(mesh)
       this.pickMeshes.push(mesh)
+    }
+    // translucent decals after the level, blended over the faces they mark
+    for (const [name, gb] of decalBuilders) {
+      const geo = gb.build()
+      if (!geo) continue
+      const a = this.atlas(name)
+      if (!a) continue
+      const mesh = new THREE.Mesh(geo, a.decalMat)
+      mesh.renderOrder = 1
+      this.levelGroup.add(mesh)
     }
     const vg = voids.build()
     if (vg) this.levelGroup.add(new THREE.Mesh(vg, this.voidMat))
@@ -1500,6 +1543,10 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
     // third person: the shot follows the facing goal, and a change of camera
     // cell or of the walls it cuts rebuilds the level with them lowered
     const shot = this.opts.view === 'third' ? orbitShot(scene, cam.facing) : null
+    // over the lid nothing stands between the camera and the doll: the walls
+    // are a cell high and the camera looks down over them, so none is cut
+    const aboveLid = !!shot && this.thirdHeight() > LID_H
+    if (shot && aboveLid) shot.cut = []
     // ...and so does the ground the camera really stands on: mid-turn and after
     // a free look the eye is off the facing line, and whatever it stands in or
     // looks across there comes down too, or pulls the camera in if never seen
@@ -1507,11 +1554,13 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
       const dist = Math.hypot(shot.x - scene.player.x, shot.y - scene.player.y)
       const back = Math.max(THIRD_MIN_BACK, Math.min(this.opts.camDistance, THIRD_MAX_BACK, dist))
       this.approach = cameraApproach(scene, cam.yaw, back, THIRD_MIN_BACK)
+      if (aboveLid) this.approach.cut = []
     }
-    const cutKey = shot ? `${shot.x},${shot.y}:${shot.cut.join(',')}|${this.approach.cut.join(',')}` : ''
+    const cutKey = shot ? `${shot.x},${shot.y}:${shot.cut.join(',')}|${this.approach.cut.join(',')}|${aboveLid ? 'over' : 'under'}` : ''
     if (cutKey !== this.cutKey) {
       this.cutKey = cutKey
       this.shot = shot
+      this.aboveLid = aboveLid
       this.builtRevision = -1
       this.builtLayout = -1
     }
@@ -1554,6 +1603,11 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
     this.renderViewmodel(r, scene)
   }
 
+  /** The third-person camera's height, clamped to its range. */
+  private thirdHeight(): number {
+    return Math.max(THIRD_MIN_H, Math.min(THIRD_MAX_H, this.opts.camHeight))
+  }
+
   /**
    * Third person (II.11). The camera swings on an arc about the player's
    * cell at the shot's distance, so at rest (yaw on a heading) it stands at
@@ -1567,7 +1621,7 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
     const fx = Math.sin(cam.yaw), fz = -Math.cos(cam.yaw)
     const back = this.approach.back
     const ex = px - fx * back, ez = pz - fz * back
-    const eh = Math.max(THIRD_MIN_H, Math.min(THIRD_MAX_H, this.opts.camHeight))
+    const eh = this.thirdHeight()
     this.cam.position.set(ex, eh, ez)
     // aim point: ahead along facing, offset to the right (right = (cos yaw, sin yaw))
     const ax = px + fx * THIRD_AHEAD + Math.cos(cam.yaw) * THIRD_SHOULDER

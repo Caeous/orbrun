@@ -173,6 +173,24 @@ describe('buildScene on a recorded level', () => {
     expect(cell.shorelines).not.toContain(shoals)
     expect(cell.wallShadows).toEqual([shadow])
   })
+  it('names the travel-exclusion marks as translucent, on a floor and on a wall face, so 3D blends them instead of alpha-testing them to black', () => {
+    const st = initialState()
+    for (const m of fixtureMessages()) reduce(st, m)
+    const excl = gd.dngn.id('TRAVEL_EXCLUSION_BG')!
+    const centre = gd.dngn.id('TRAVEL_EXCLUSION_CENTRE_BG')!
+    const floor = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value < gd.ranges.floorMax)!
+    const wall = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value >= gd.ranges.floorMax && gd.bg(c.t.bg).value < gd.ranges.wallMax)!
+    // enums.js bg_flags: TRAV_EXCL 0x00400000, EXCL_CTR 0x00800000
+    st.map.cells.set(cellKey(floor.x, floor.y), { ...floor, t: { ...floor.t, bg: gd.bg(floor.t!.bg).value | 0x00800000 } })
+    st.map.cells.set(cellKey(wall.x, wall.y), { ...wall, t: { ...wall.t, bg: gd.bg(wall.t!.bg).value | 0x00400000 } })
+    const scene = buildScene(st, gd)
+    const f = scene.cells.get(cellKey(floor.x, floor.y))!
+    expect(f.overlays).toContain(centre)
+    expect(f.translucent).toEqual([centre])
+    const w = scene.cells.get(cellKey(wall.x, wall.y))!
+    expect(w.wallOverlays).toContain(excl)
+    expect(w.translucent).toEqual([excl])
+  })
   it('names a shop by its wares, the only thing the tile says about it (tilepick.cc tileidx_shop)', () => {
     const st = initialState()
     for (const m of fixtureMessages()) reduce(st, m)

@@ -739,12 +739,14 @@ function decorate(cell: SceneCell, t: CellTiles, bgw: FlagWord, gd: Gamedata) {
   const icons: number[] = []
   const shadows: number[] = []
   const shores: number[] = []
+  const translucent: number[] = []
   // decals on the bg tile itself: on the wall face for walls, over the floor otherwise
   const push = (id: number | undefined) => {
     if (id !== undefined && id > 0) {
       ;(onWall ? wall : over).push(id)
       if (!onWall && ids.isWallShadow(id)) shadows.push(id)
       if (!onWall && ids.isShoreline(id)) shores.push(id)
+      if (id === D.TRAVEL_EXCLUSION_BG || id === D.TRAVEL_EXCLUSION_CENTRE_BG) translucent.push(id)
     }
   }
   const ov = t.ov || []
@@ -858,6 +860,7 @@ function decorate(cell: SceneCell, t: CellTiles, bgw: FlagWord, gd: Gamedata) {
   if (shadows.length) cell.wallShadows = shadows
   if (shores.length) cell.shorelines = shores
   if (wall.length) cell.wallOverlays = wall
+  if (translucent.length) cell.translucent = translucent
   if (icons.length) cell.icons = icons
 }
 
