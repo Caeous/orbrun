@@ -1,4 +1,4 @@
-import { barLabels, bindingTable, promptLabels, type Action, type BindingLabel } from './bindings'
+import { barLabels, bindingTable, promptLabels, threatened, type Action, type BindingLabel } from './bindings'
 import type { Context } from './context'
 
 /**
@@ -9,7 +9,7 @@ import type { Context } from './context'
  */
 export type HintMode = 'adaptive' | 'contextual' | 'off'
 const STORAGE_KEY = 'orbrun.gamepad-learning.v1'
-const LESSONS = ['move', 'look', 'commands', 'inventory', 'explore', 'examine', 'travel', 'wait', 'rest', 'navigate', 'target-cursor', 'map-cursor'] as const
+const LESSONS = ['move', 'look', 'commands', 'inventory', 'explore', 'examine', 'travel', 'wait', 'rest', 'navigate', 'target-cursor', 'map-cursor', 'fight'] as const
 export type PadLesson = (typeof LESSONS)[number]
 const STEPS_TO_LEARN = 3
 const LOOK_TO_LEARN = 0.3 // radians of actual camera movement, not stick polling ticks
@@ -30,6 +30,7 @@ export interface PadHintEvidence {
 /** Stable action identities, deliberately independent of button, direction and controller family. */
 export function padLesson(a: Action, ctx: Context): PadLesson | null {
   if (ctx.mode === 'command') {
+    if (a.kind === 'fight') return 'fight'
     if (a.kind === 'ui' && (a.op === 'commands' || a.op === 'travel')) return a.op
     if (a.kind === 'examine') return 'examine'
     if (a.kind === 'keys' && a.seq.length === 1 && 'text' in a.seq[0]) {
@@ -107,7 +108,8 @@ export class GamepadHints {
       case 'inventory': worked = after.mode === 'menu' && b.mode !== 'menu'; break
       case 'examine': worked = after.mode === 'targeting' && b.mode !== 'targeting'; break
       case 'explore': worked = after.x !== b.x || after.y !== b.y; break
-      case 'wait': case 'rest': worked = after.turn > b.turn; break
+      // autofight either swings or takes a step toward the threat; both spend the turn
+      case 'wait': case 'rest': case 'fight': worked = after.turn > b.turn; break
       case 'navigate': worked = after.mode === b.mode && after.focus !== b.focus; break
       case 'target-cursor': case 'map-cursor': worked = after.mode === b.mode && after.cursor !== b.cursor; break
     }
@@ -128,7 +130,13 @@ export class GamepadHints {
 
     const tip = (button: BindingLabel['button'], label: string, action: Action): BindingLabel => ({ button, label, action, contextual: false, teaching: true })
     let teaching: BindingLabel[] = []
-    if (ctx.mode === 'command' && ctx.hostilesInView === 0) {
+    if (ctx.mode === 'command' && threatened(ctx)) {
+      // The one thing worth teaching mid-fight, and only until it has been used once.
+      if (!this.knows('fight')) {
+        const l = all.find((l) => l.button === 'RT')
+        if (l) teaching.push({ ...l, teaching: true })
+      }
+    } else if (ctx.mode === 'command' && ctx.hostilesInView === 0) {
       if (!this.knows('move')) teaching.push(tip('LSTICK', 'Move', { kind: 'step', dir: 0 }))
       if (!this.knows('look')) teaching.push(tip('RSTICK', 'Look around', { kind: 'look', dx: 0, dy: 0 }))
       if (!teaching.length) {

@@ -382,8 +382,10 @@ function isContextual(a: Action, ctx: Context): boolean {
     case 'contextual':
       return contextualLabel(ctx, a.alt) !== NO_ACTION
     case 'fight':
-      // a hostile ahead is the attack; one in view is what autofight is for
-      return threatened(ctx)
+      // Autofight means the same thing every turn, so it is a lesson, not a
+      // standing prompt (gamepad-hints). What the situation names is the bump
+      // attack on the thing ahead, which promptLabels adds itself.
+      return false
     case 'examine':
       // In look mode the cursor rests on something the server named.
       return ctx.mode === 'targeting' && !!ctx.examining
@@ -448,7 +450,7 @@ function isQuiverCycle(a: Action): boolean {
 }
 
 /** Something worth attacking: a hostile ahead, or one in view for autofight to pick. */
-function threatened(ctx: Context): boolean {
+export function threatened(ctx: Context): boolean {
   return (ctx.ahead.kind === 'monster' && ctx.ahead.hostile) || ctx.hostilesInView > 0
 }
 

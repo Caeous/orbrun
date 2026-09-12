@@ -472,9 +472,9 @@ describe('the action bar shows only what the situation created', () => {
     expect(show(ctx({}))).toEqual([])
     expect(barLabels(ctx({})).length).toBeGreaterThan(5)
   })
-  it('a hostile ahead shows a forward attack separately from RT autofight', () => {
+  it('a hostile ahead shows the forward attack; autofight is a lesson, not a standing prompt', () => {
     const c = ctx({ ahead: goblin, hostilesInView: 1 })
-    expect(show(c)).toEqual(['RT Autofight', 'LSTICK_UP Attack goblin'])
+    expect(show(c)).toEqual(['LSTICK_UP Attack goblin'])
     const attack = promptLabels(c).find((l) => l.button === 'LSTICK_UP')!
     expect(attack.action).toMatchObject({ kind: 'step', dir: 0 })
     expect(resolve({ type: 'dir', source: 'lstick', dir: 0 }, c)).toMatchObject(attack.action)
@@ -485,8 +485,8 @@ describe('the action bar shows only what the situation created', () => {
       expect(promptLabels(ctx({ mode, ahead: goblin, hostilesInView: 1 })).some((l) => l.button === 'LSTICK_UP')).toBe(false)
     }
   })
-  it('a hostile in view but not ahead is what autofight is for', () => {
-    expect(show(ctx({ hostilesInView: 2 }))).toEqual(['RT Autofight'])
+  it('a hostile in view but not ahead leaves the corner to the pad lessons (gamepad-hints teaches RT)', () => {
+    expect(show(ctx({ hostilesInView: 2 }))).toEqual([])
   })
   it('the D:1 exit prompts Leave dungeon, never Enter or Ascend: `<` there asks to give up the game (main.cc _prompt_stairs)', () => {
     const exit = { kind: 'feature' as const, feature: { type: 'stairs' as const, dir: 'up' as const, exit: true }, label: 'exit from the dungeon' }
@@ -507,7 +507,7 @@ describe('the action bar shows only what the situation created', () => {
   })
   it('old layer values do not reveal modifier controls', () => {
     expect(show(ctx({ layer: 'macro' }))).toEqual([])
-    expect(show(ctx({ layer: 'info', hostilesInView: 1 }))).toEqual(['RT Autofight'])
+    expect(show(ctx({ layer: 'info', hostilesInView: 1 }))).toEqual([])
   })
   it('a menu shows Start to confirm; a shop shows its marks and what Enter buys', () => {
     const menu = { menu: { tag: 'inv', type: 'menu', items: [], flags: 0 } as never, hoverable: [], arrowsSelect: false, multiselect: false, wrap: false }

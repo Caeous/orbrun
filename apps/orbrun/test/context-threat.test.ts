@@ -50,14 +50,13 @@ describe('plants are not hostiles worth fighting', () => {
     expect(promptLabels(ctx).find((l) => l.button === 'LSTICK_UP')).toBeUndefined()
   })
 
-  it('a plant ahead with a rat in view: RT is Autofight, so Tab goes to the rat', () => {
+  it('a plant ahead with a rat in view: no Attack prompt, since Tab would go to the rat', () => {
     const st = playing()
     const scene = room()
     monster(scene, 4, 3, 'plant', true)
     monster(scene, 7, 7, 'rat')
     const ctx = deriveContext(st, scene, cam, 'micro')
     expect(ctx.hostilesInView).toBe(1)
-    expect(promptLabels(ctx).find((l) => l.button === 'RT')?.label).toBe('Autofight')
     expect(promptLabels(ctx).find((l) => l.button === 'LSTICK_UP')).toBeUndefined()
   })
 
@@ -83,6 +82,7 @@ describe('plants are not hostiles worth fighting', () => {
     const ctx = deriveContext(st, scene, cam, 'micro')
     expect(ctx.ahead).toMatchObject({ kind: 'monster', hostile: true, label: 'rat' })
     expect(promptLabels(ctx).find((l) => l.button === 'LSTICK_UP')?.label).toBe('Attack rat')
-    expect(promptLabels(ctx).find((l) => l.button === 'RT')?.label).toBe('Autofight')
+    // autofight means the same thing every turn: the pad lessons teach RT, the corner does not hold it
+    expect(promptLabels(ctx).find((l) => l.button === 'RT')).toBeUndefined()
   })
 })

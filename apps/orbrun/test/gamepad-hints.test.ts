@@ -65,14 +65,15 @@ describe('adaptive gamepad teaching', () => {
     expect(teaching(new GamepadHints()).map((l) => l.button)).toEqual(['LSTICK', 'RSTICK'])
   })
 
-  it('never retires contextual interactions and does not stack unrelated lessons during combat', () => {
+  it('never retires contextual interactions and teaches only autofight during combat', () => {
     const h = new GamepadHints()
     basics(h)
     const door = ctx({ ahead: { kind: 'door-closed', label: 'door' } })
     expect(h.prompts(door, 'adaptive').find((l) => l.button === 'A')?.label).toBe('Open door')
     expect(h.prompts(door, 'contextual').map((l) => l.label)).toEqual(['Open door'])
     expect(h.prompts(door, 'off')).toEqual([])
-    expect(teaching(h, ctx({ hostilesInView: 1 }))).toEqual([])
+    // a threat in view: the one lesson worth having mid-fight, and nothing else stacked on it
+    expect(teaching(h, ctx({ hostilesInView: 1 })).map((l) => [l.button, l.label])).toEqual([['RT', 'Autofight']])
     expect(teaching(h).map((l) => l.button)).toEqual(['R3']) // switching modes did not erase progress
   })
 
@@ -142,6 +143,18 @@ describe('nothing standing: only the context and the lessons', () => {
     expect(new Set(prompts.map((l) => l.button)).size).toBe(prompts.length)
   })
 
+  it('retires the autofight lesson once a fight has actually taken a turn', () => {
+    const h = new GamepadHints()
+    const combat = ctx({ hostilesInView: 1 })
+    expect(teaching(h, combat).map((l) => l.button)).toEqual(['RT'])
+    h.attempt({ kind: 'fight' }, combat, evidence(), 0)
+    h.observe(evidence({ turn: 2 }), 100)
+    expect(h.knows('fight')).toBe(true)
+    expect(teaching(h, combat)).toEqual([])
+    // and never in Contextual only or Off, where lessons do not run at all
+    expect(h.prompts(combat, 'contextual')).toEqual([])
+  })
+
   it('shows nothing in Contextual only or Off with nothing in front of you', () => {
     const h = new GamepadHints()
     expect(h.prompts(ctx(), 'contextual')).toEqual([])
@@ -158,6 +171,8 @@ describe('successful outcomes, not button presses', () => {
     ['explore', keys('o'), { x: 11 }],
     ['wait', keys('.'), { turn: 2 }],
     ['rest', keys('5'), { turn: 2 }],
+    // autofight either swings or steps toward the threat; either way the turn moves on
+    ['fight', { kind: 'fight' }, { turn: 2 }],
   ] as const)('only learns %s after its outcome', (id, a, outcome) => {
     const h = new GamepadHints()
     h.attempt(a, ctx(), evidence(), 0)

@@ -34,7 +34,8 @@ describe('forward attack hints', () => {
     expect(attack.querySelector('.label')?.textContent).toBe('Attack goblin')
     expect(attack.querySelector('svg')).not.toBeNull()
     expect(pad.querySelector('.chip.L3')).toBeNull()
-    expect(pad.querySelector('.chip.RT .label')?.textContent).toBe('Autofight')
+    // autofight is a lesson of the hints, not a chip the situation creates
+    expect(pad.querySelector('.chip.RT')).toBeNull()
   })
 
   it('shows nothing to the keyboard or the mouse, with hints off, or to a spectator', () => {
@@ -55,7 +56,7 @@ describe('forward attack hints', () => {
     expect(inner.actionbar.querySelector('.chip.LSTICK_UP .label')?.textContent).toBe('Attack orc')
     inner.renderBar(ctx({ hostilesInView: 1 }), 'xbox', false, 'pad', true)
     expect(inner.actionbar.querySelector('.chip.LSTICK_UP')).toBeNull()
-    expect(inner.actionbar.querySelector('.chip.RT .label')?.textContent).toBe('Autofight')
+    expect(inner.actionbar.querySelector('.chip.RT')).toBeNull()
   })
 })
 
