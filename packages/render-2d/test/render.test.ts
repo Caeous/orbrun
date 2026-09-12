@@ -203,9 +203,9 @@ describe('Render2d draw order', () => {
     expect(rects.filter((k) => k === 'stroke')).toHaveLength(2)
   })
 
-  it('draws the facing wedge as far as wedgeReach cells, and leaves the grid out when the cursor says so', () => {
+  it('draws no facing wedge from the player, and leaves the grid out when the cursor says so', () => {
     const { canvas, rects, arcs } = fakeCanvas()
-    const r = new Render2d({ cellSize: 16, follow: true, wedgeReach: 2.5, wedgeAlpha: 0.4 })
+    const r = new Render2d({ cellSize: 16, follow: true })
     r.mount(canvas)
     r.setTiles(tiles)
     r.resize(96, 96, 1)
@@ -213,7 +213,7 @@ describe('Render2d draw order', () => {
     r.setCamera(makeCamera(1, 1, 0))
     r.setCursor({ x: 1, y: 1, mode: 'target', grid: false })
     r.render()
-    expect(arcs).toEqual([40])
+    expect(arcs).toEqual([])
     // only the cursor's own outline, no grid over the known cells
     expect(rects.filter((k) => k === 'stroke')).toHaveLength(1)
   })
@@ -224,20 +224,29 @@ describe('Render2d draw order', () => {
     r.mount(canvas)
     r.setTiles(tiles)
     r.resize(30, 30, 1)
-    const scene = sceneWith([floor(1, 1), floor(2, 1)])
+    // a fountain stands on the cell east of the player
+    const scene = sceneWith([floor(1, 1), floor(2, 1, { featureTile: 300 })])
     scene.billboards.push({ x: 2, y: 1, tile: 500, kind: 'monster', height: 0.8 })
     r.setScene(scene)
     r.setCamera(makeCamera(1, 1, Math.PI / 2))
     r.setCursor({ x: 2, y: 1, mode: 'target', tile: 950, grid: false })
     r.render()
-    // the map's turn, then the sprite and the cursor icon each turned back
-    expect(rotates).toEqual([-Math.PI / 2, Math.PI / 2, Math.PI / 2])
+    // the map's turn, then the fountain, the sprite and the cursor icon each turned back
+    expect(rotates).toEqual([-Math.PI / 2, Math.PI / 2, Math.PI / 2, Math.PI / 2])
     // the cell east of the player is still drawn at its map position; the turn is the canvas's
-    expect(draws).toEqual([100, 100, 500, 950])
+    expect(draws).toEqual([100, 100, 300, 500, 950])
     expect(images[1]).toMatchObject({ dx: 20, dy: 10 })
     // north up: nothing turns
     rotates.length = 0
     r.setOptions({ up: 0 })
+    r.render()
+    expect(rotates).toEqual([])
+    // an easing heading stands in for `up`, at any angle; null hands the top back
+    r.setOptions({ upYaw: 0.3 })
+    r.render()
+    expect(rotates).toEqual([-0.3, 0.3, 0.3, 0.3])
+    rotates.length = 0
+    r.setOptions({ upYaw: null })
     r.render()
     expect(rotates).toEqual([])
     // a wide canvas turned a quarter turn shows cells above and below the player that lie

@@ -151,14 +151,6 @@ export function minimapBox(sideW: number, sideH: number, gridW: number, tiles: n
   const rows = Math.min(oddUp((cols * MAP_ROWS) / MAP_COLS), oddDown(Math.floor(sideH * MINIMAP_TALLEST) / px))
   return { w: cols * px, h: rows * px }
 }
-/**
- * The minimap's facing wedge: a short, faint hint of where the camera looks,
- * not a searchlight over the map. The level map (X) is the minimap grown
- * fullscreen, so it borrows these too (game.ts `applyServerOptions`).
- */
-export const MINIMAP_WEDGE_REACH = 2.5
-export const MINIMAP_WEDGE_ALPHA = 0.4
-
 export class Hud {
   root: HTMLElement
   /** the right column (game.html `#right_column`): the stats pane, the minimap, the monster list, on the sidebar's cells */
@@ -199,11 +191,7 @@ export class Hud {
   private statusAt: { right: number; top: number } | null = null
   private statusKey = ''
   /** the minimap's unexplored ground is the same translucent backing as the stats pane, since it lies over the view too */
-  private minimap = new Render2d({ mode: 'tiles', cellSize: MINIMAP_CELL_DEFAULT, follow: true, background: 'rgba(0, 0, 0, 0)', wedgeReach: MINIMAP_WEDGE_REACH, wedgeAlpha: MINIMAP_WEDGE_ALPHA })
-  /** Horizontal field of view (degrees) for the minimap wedge. */
-  setFov(deg: number) {
-    this.minimap.setOptions({ fov: deg })
-  }
+  private minimap = new Render2d({ mode: 'tiles', cellSize: MINIMAP_CELL_DEFAULT, follow: true, background: 'rgba(0, 0, 0, 0)' })
   /**
    * The server's cursor (targeting, `x` examine, level map) on the minimap
    * too, so the player sees where they are pointing on the map as well as in
@@ -215,6 +203,12 @@ export class Hud {
   }
   /** What the minimap was last drawn for; empty when it must draw again (a resize, a morph, a new cursor). */
   private minimapKey = ''
+  /**
+   * The heading up the minimap, in radians (camera `mapYaw`): eases toward
+   * the grid heading in step with the view, so the map turns as snappily as
+   * the scene. The game loop sets it before each `update`.
+   */
+  minimapUp = 0
   private minimapTiles: Gamedata | null = null
   /** The level map is open: the minimap has morphed into it and stays out of sight. */
   private minimapHidden = false
@@ -1041,7 +1035,7 @@ export class Hud {
     if (this.minimapHidden || !this.minimapSize.w) return
     // the map is a full redraw of every known cell: only when something it shows moved.
     // The rc's palette rides `rev.player` (state.ts: `options` and `set_option` bump it).
-    const key = `${scene.revision}|${cam.x},${cam.y},${cam.yaw}|${state.rev.player}|${gd?.version}`
+    const key = `${scene.revision}|${cam.x},${cam.y},${cam.yaw},${this.minimapUp}|${state.rev.player}|${gd?.version}`
     if (key === this.minimapKey) return
     this.minimapKey = key
     const opts = state.options
@@ -1060,9 +1054,11 @@ export class Hud {
       mode,
       // the map turns with the player, to the heading an aim's keys read
       // against (camera gridFacing): a compass facing is straight up, a
-      // diagonal shows its left-hand compass heading up, so the wedge leans
-      // 45 degrees right and `k` in an aim walks the cursor up the map
+      // diagonal shows its left-hand compass heading up, so `k` in an aim
+      // walks the cursor up the map.
+      // It gets there with the view's own easing (camera mapYaw), not a snap.
       up: gridFacingOf(cam.facing),
+      upYaw: this.minimapUp,
       mfColours,
       filterScaling: opts.tile_filter_scaling === true,
       glyphFont: typeof opts.glyph_mode_font === 'string' && opts.glyph_mode_font ? opts.glyph_mode_font : 'monospace',

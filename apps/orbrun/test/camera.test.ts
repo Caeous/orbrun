@@ -413,6 +413,38 @@ describe('facing what stopped the walk (nearby-danger.cc mons_is_safe)', () => {
   })
 })
 
+describe('the minimap heading', () => {
+  it('eases toward the grid heading in step with the view, snapping only under reduced motion', () => {
+    const c = new CameraController()
+    c.setFacing(0, true)
+    expect(c.mapYaw).toBe(0)
+    // a quarter turn east: the map lags the same way the view does
+    c.setFacing(2)
+    expect(c.mapYaw).toBe(0)
+    expect(c.update(0.02)).toBe(true)
+    // a little ahead of the view, so it settles first
+    expect(c.mapYaw).toBeGreaterThan(c.camera.yaw)
+    for (let i = 0; i < 100; i++) c.update(0.02)
+    expect(c.mapYaw).toBeCloseTo(Math.PI / 2)
+    expect(c.update(0.02)).toBe(false)
+    // a diagonal reads its left-hand compass heading up the map: from east to
+    // south-east the view turns 45 degrees and the map stays put
+    c.setFacing(3)
+    for (let i = 0; i < 100; i++) c.update(0.02)
+    expect(c.camera.yaw).toBeCloseTo((3 * Math.PI) / 4)
+    expect(c.mapYaw).toBeCloseTo(Math.PI / 2)
+    // reduced motion: straight there
+    const r = cam(0)
+    r.setFacing(4)
+    expect(r.mapYaw).toBeCloseTo(Math.PI)
+    // a restored view starts the map on its heading with no easing
+    const b = new CameraController()
+    b.restore({ yaw: 1.9, pitch: 0 })
+    expect(b.mapYaw).toBeCloseTo(Math.PI / 2)
+    expect(b.update(0.1)).toBe(false)
+  })
+})
+
 describe('an aim reads its keys against the grid in view', () => {
   it('gridFacing is a compass facing itself, and a diagonal one is read from its left-hand axis', () => {
     for (const f of [0, 2, 4, 6] as const) expect(cam(f).gridFacing).toBe(f)

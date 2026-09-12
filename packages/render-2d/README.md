@@ -7,8 +7,5 @@ Orbrun also uses it for the minimap: `mode: 'minimap'` draws solid colour
 blocks in the official client's minimap palette, and `'tiles'`, `'glyphs'`
 and `'hybrid'` draw the level itself.
 
-`horizontalFov(verticalDeg, aspect)` is here so a top-down view can draw the
-same field-of-view wedge the first-person camera sees.
-
 Depends on `@orbrun/scene`. Part of
 [Orbrun](https://github.com/Caeous/orbrun). AGPL-3.0-or-later.

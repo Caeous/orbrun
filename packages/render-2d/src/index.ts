@@ -17,8 +17,7 @@ import {
 /**
  * @orbrun/render-2d
  *
- * Top-down tile grid on Canvas 2D. Draws the camera's field of view as a
- * translucent wedge from the player. Also serves as the minimap and level map
+ * Top-down tile grid on Canvas 2D. Also serves as the minimap and level map
  * surface.
  */
 
@@ -70,26 +69,21 @@ export interface Render2dOptions {
    * the monsters' damage-bar style.
    */
   minibars?: Minibars | null
-  /** Horizontal field of view in degrees, drawn as a wedge from the player. Default 90. */
-  fov?: number
-  /** How far the field-of-view wedge reaches from the player, in cells. Default 8. */
-  wedgeReach?: number
-  /** Opacity scale for the wedge, 0..1: 1 is the main view's marker, less makes a quieter one for a minimap. Default 1. */
-  wedgeAlpha?: number
   /**
    * The compass heading drawn at the top: north (0) by default, the map as
    * WebTiles lays it out. A minimap that turns with the player passes the
    * heading they face; the map turns about the cell the view is centred on
    * (the player), in whole quarter turns, so cells stay square. Sprites,
-   * glyphs and the cursor's icon stay upright over the turned ground.
+   * glyphs, the cursor's icon and the features standing on cells (fountains,
+   * altars, stairs) stay upright over the turned ground.
    */
   up?: Dir8
-}
-
-/** Horizontal field of view (degrees) from a vertical one and a viewport aspect ratio. */
-export function horizontalFov(verticalDeg: number, aspect: number): number {
-  const v = (verticalDeg * Math.PI) / 180
-  return (2 * Math.atan(Math.tan(v / 2) * Math.max(0.1, aspect)) * 180) / Math.PI
+  /**
+   * The heading at the top in radians (north 0, clockwise), for a map that
+   * eases between headings as the view turns: while set it stands in for
+   * `up`. Null hands the top back to `up`.
+   */
+  upYaw?: number | null
 }
 
 /** Default terminal palette, as the official stylesheet. */
@@ -162,10 +156,8 @@ export class Render2d implements MapRenderer {
       glyphFont: opts.glyphFont ?? 'monospace',
       glyphColours: opts.glyphColours ?? TERM_COLOURS,
       minibars: opts.minibars ?? null,
-      fov: opts.fov ?? 90,
-      wedgeReach: opts.wedgeReach ?? 8,
-      wedgeAlpha: opts.wedgeAlpha ?? 1,
       up: opts.up ?? 0,
+      upYaw: opts.upYaw ?? null,
     }
   }
 
@@ -181,10 +173,8 @@ export class Render2d implements MapRenderer {
     if (opts.glyphFont !== undefined) this.opts.glyphFont = opts.glyphFont
     if (opts.glyphColours !== undefined) this.opts.glyphColours = opts.glyphColours
     if (opts.minibars !== undefined) this.opts.minibars = opts.minibars
-    if (opts.fov !== undefined) this.opts.fov = opts.fov
-    if (opts.wedgeReach !== undefined) this.opts.wedgeReach = opts.wedgeReach
-    if (opts.wedgeAlpha !== undefined) this.opts.wedgeAlpha = opts.wedgeAlpha
     if (opts.up !== undefined) this.opts.up = opts.up
+    if (opts.upYaw !== undefined) this.opts.upYaw = opts.upYaw
   }
 
   mount(target: HTMLCanvasElement | OffscreenCanvas): void {
@@ -367,9 +357,9 @@ export class Render2d implements MapRenderer {
       oy = b.top - Math.floor((rows - bh) / 2)
     }
     this.origin = { x: ox, y: oy }
-    // the map turned so `up` is at the top: about the cell the view is
-    // centred on, which is where the player stands when following
-    const rot = -dirToYaw(this.opts.up)
+    // the map turned so `up` (or the easing `upYaw`) is at the top: about the
+    // cell the view is centred on, which is where the player stands when following
+    const rot = -(this.opts.upYaw ?? dirToYaw(this.opts.up))
     const pivot = centre ?? (this.opts.follow && cam ? cam : null)
     const pvx = pivot ? (pivot.x - ox + 0.5) * cs : this.width / 2
     const pvy = pivot ? (pivot.y - oy + 0.5) * cs : this.height / 2
@@ -412,7 +402,7 @@ export class Render2d implements MapRenderer {
       if (!inView(sx, sy)) continue
       if (minimap) this.drawMinimapCell(ctx, cell, sx, sy, cs)
       else if (glyphs) upright(sx, sy, () => this.drawGlyphCell(ctx, cell, sx, sy, cs, 'fill'))
-      else this.drawTileCell(ctx, cell, sx, sy, cs)
+      else this.drawTileCell(ctx, cell, sx, sy, cs, upright)
     }
     if (!minimap && !glyphs) {
       // things standing in cells, in scene order, then their badges
@@ -482,36 +472,12 @@ export class Render2d implements MapRenderer {
         }
       }
     }
-    // player + facing
-    if (scene.playerOnLevel) {
+    // the player's own cell on a minimap
+    if (scene.playerOnLevel && minimap) {
       const px = (scene.player.x - ox) * cs
       const py = (scene.player.y - oy) * cs
-      if (minimap) {
-        ctx.fillStyle = this.opts.minimapColours.player
-        ctx.fillRect(px, py, cs, cs)
-      }
-      if (cam) {
-        // field-of-view wedge
-        const ax = px + cs / 2
-        const ay = py + cs / 2
-        const half = ((this.opts.fov / 2) * Math.PI) / 180
-        const yaw = cam.yaw - Math.PI / 2
-        const reach = cs * this.opts.wedgeReach
-        const a = this.opts.wedgeAlpha
-        ctx.fillStyle = `rgba(255,255,255,${0.15 * a})`
-        ctx.beginPath()
-        ctx.moveTo(ax, ay)
-        ctx.arc(ax, ay, reach, yaw - half, yaw + half)
-        ctx.closePath()
-        ctx.fill()
-        ctx.strokeStyle = `rgba(255,255,255,${0.45 * a})`
-        ctx.lineWidth = Math.max(1, cs / 16)
-        ctx.beginPath()
-        ctx.moveTo(ax + Math.cos(yaw - half) * reach, ay + Math.sin(yaw - half) * reach)
-        ctx.lineTo(ax, ay)
-        ctx.lineTo(ax + Math.cos(yaw + half) * reach, ay + Math.sin(yaw + half) * reach)
-        ctx.stroke()
-      }
+      ctx.fillStyle = this.opts.minimapColours.player
+      ctx.fillRect(px, py, cs, cs)
     }
     if (scene.playerOnLevel && !minimap && minibarRects(this.opts.minibars).length) {
       const px = (scene.player.x - ox) * cs
@@ -575,7 +541,12 @@ export class Render2d implements MapRenderer {
     ctx.fillRect(sx, sy, cs, cs)
   }
 
-  private drawTileCell(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, cell: SceneCell, sx: number, sy: number, cs: number) {
+  /**
+   * The ground (floor, walls, doors, their overlays) turns with the map;
+   * what stands on it (a fountain, an altar, stairs) is drawn `upright` like
+   * the monsters, so it never lies on its side over a turned map.
+   */
+  private drawTileCell(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, cell: SceneCell, sx: number, sy: number, cs: number, upright?: (sx: number, sy: number, draw: () => void) => void) {
     if (cell.kind === 'unknown') return
     if (cell.kind === 'wall') {
       this.drawTile(ctx, cell.wallTile ?? cell.floorTile, sx, sy, cs)
@@ -584,7 +555,11 @@ export class Render2d implements MapRenderer {
     }
     this.drawTile(ctx, cell.floorTile, sx, sy, cs)
     if (cell.underlays) for (const o of cell.underlays) this.drawTile(ctx, o, sx, sy, cs)
-    if (cell.featureTile !== undefined) this.drawTile(ctx, cell.featureTile, sx, sy, cs)
+    if (cell.featureTile !== undefined) {
+      const feature = cell.featureTile
+      if (upright && cell.kind !== 'door') upright(sx, sy, () => this.drawTile(ctx, feature, sx, sy, cs))
+      else this.drawTile(ctx, feature, sx, sy, cs)
+    }
     if (cell.kind === 'door' && cell.wallOverlays) for (const o of cell.wallOverlays) this.drawTile(ctx, o, sx, sy, cs)
     if (cell.overlays) for (const o of cell.overlays) this.drawTile(ctx, o, sx, sy, cs)
   }

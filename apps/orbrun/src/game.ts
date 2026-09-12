@@ -3,7 +3,7 @@ import { cellKey, dirFromDelta, isThreat, nearestHostile, type Billboard, type C
 import { linesSince, namedInWarnings, namedMonster } from './warnings'
 import { Render3d } from '@orbrun/render-3d'
 import { viewmodelFor } from '@orbrun/scene-webtiles'
-import { Render2d, horizontalFov } from '@orbrun/render-2d'
+import { Render2d } from '@orbrun/render-2d'
 import { escapeHtml, h } from './dom'
 import type { Session } from './session'
 import { CameraController } from './camera'
@@ -12,7 +12,7 @@ import type { FocusOp } from './focus'
 import { HOLD_MS, LEVEL_MAP, barLabels, contextualLabel, armsTapOrHold, holdAction, resolve, type Action, type CommandCategory, type RelDir } from './bindings'
 import { MORPH, animate, containTransform, reducedMotion } from './mapmorph'
 import { Runner, stepIsOurs, type LastStep } from './runner'
-import { Hud, MINIMAP_WEDGE_ALPHA, MINIMAP_WEDGE_REACH } from './hud'
+import { Hud } from './hud'
 import { GridHost } from './grid/host'
 import { gameSplit, levelMapSplit, type GameLayout } from './grid/console'
 import { Chat } from './chat'
@@ -36,8 +36,6 @@ const WHEEL_LINE = 40
 const MAP_PAN_RATE = 0.12
 /** game.js `show_diameter`: the cells across a full field of view, which the view is fitted to */
 const SHOW_DIAMETER = 17
-/** how far the 2D view's facing wedge reaches, in cells (render-2d's own default) */
-const VIEW_WEDGE_REACH = 8
 /** keyboard keys the focus layer takes over on a screen that offers a cursor */
 const FOCUS_KEYS: Record<string, FocusOp> = { ArrowUp: 'prev', ArrowDown: 'next', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'select', Escape: 'cancel', PageUp: 'pagePrev', PageDown: 'pageNext' }
 
@@ -351,7 +349,7 @@ export class GameScreen {
 
   private makeRenderer(): MapRenderer {
     const st = this.hooks.settings()
-    const r: MapRenderer = this.is3d ? new Render3d(this.render3dOptions(st)) : new Render2d({ cellSize: 32, fov: this.horizontalFov(st.fov) })
+    const r: MapRenderer = this.is3d ? new Render3d(this.render3dOptions(st)) : new Render2d({ cellSize: 32 })
     r.mount(this.canvas)
     this.viewmodelRev = -1
     if (this.session.gamedata) r.setTiles(this.session.gamedata)
@@ -369,8 +367,6 @@ export class GameScreen {
     const want3d = st.renderer === '3d' && !this.mapBorrowed2d
     if (want3d !== this.is3d) this.toggleRenderer()
     else if (this.is3d) (this.renderer as Render3d).setOptions(this.render3dOptions(st))
-    else (this.renderer as Render2d).setOptions({ fov: this.horizontalFov(st.fov) })
-    this.hud.setFov(this.horizontalFov(st.fov))
     // the minimap's size is the layout's to set
     this.hud.setMinimapTiles(st.minimapTiles, st.minimapCell)
     this.relayout(true)
@@ -396,13 +392,6 @@ export class GameScreen {
     if (!this.is3d || st.rev.player === this.viewmodelRev) return
     this.viewmodelRev = st.rev.player
     ;(this.renderer as Render3d).setViewmodel(viewmodelFor(st, this.session.gamedata ?? undefined))
-  }
-
-  /** The 3D camera's horizontal field of view, from the vertical setting and the view's aspect. */
-  private horizontalFov(verticalDeg: number): number {
-    const w = this.canvas.clientWidth || 16
-    const h = this.canvas.clientHeight || 9
-    return horizontalFov(verticalDeg, w / h)
   }
 
   /**
@@ -514,6 +503,7 @@ export class GameScreen {
         padLabels.splice(at < 0 ? padLabels.length : at, 0, l)
       }
     }
+    this.hud.minimapUp = this.cam.mapYaw
     this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held)
     this.chat.update(st, st.phase === 'playing' || st.phase === 'watching', !!st.lobby.username)
     if (this.ctx.mode === 'targeting') this.pointTarget()
@@ -737,10 +727,6 @@ export class GameScreen {
       ;(this.renderer as Render2d).setOptions({
         cellSize: this.cellPixels(Math.max(8, Math.round((px * scale) / 100)), mode),
         mode,
-        // the level map is the minimap fullscreen, so it wears the minimap's short, faint
-        // facing wedge; the 2D view keeps the main view's long, solid one
-        wedgeReach: mapView ? MINIMAP_WEDGE_REACH : VIEW_WEDGE_REACH,
-        wedgeAlpha: mapView ? MINIMAP_WEDGE_ALPHA : 1,
         filterScaling: o.tile_filter_scaling === true,
         glyphFont: typeof o.glyph_mode_font === 'string' && o.glyph_mode_font ? o.glyph_mode_font : 'monospace',
         minibars,

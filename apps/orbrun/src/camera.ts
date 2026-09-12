@@ -35,6 +35,12 @@ export class CameraController {
   camera: Camera = makeCamera()
   /** yaw the camera is easing toward */
   private goalYaw = 0
+  /**
+   * The heading the minimap shows at the top, in radians: eases toward the
+   * grid heading (`gridFacing`) the same way the view's yaw eases toward its
+   * facing, so the map turns in step with the scene rather than snapping.
+   */
+  private _mapYaw = 0
   private freeLook = false
   private dragging = false
   private lookVel = 0
@@ -63,7 +69,19 @@ export class CameraController {
   setFacing(d: Dir8, immediate = false) {
     this.camera.facing = d
     this.goalYaw = dirToYaw(d)
-    if (immediate || this.reducedMotion) this.camera.yaw = this.goalYaw
+    if (immediate || this.reducedMotion) {
+      this.camera.yaw = this.goalYaw
+      this._mapYaw = this.mapGoal
+    }
+  }
+
+  /** The heading up the minimap right now, in radians; `gridFacing` once the turn settles. */
+  get mapYaw(): number {
+    return this._mapYaw
+  }
+
+  private get mapGoal(): number {
+    return dirToYaw(this.gridFacing)
   }
 
   turn(by: number) {
@@ -90,6 +108,7 @@ export class CameraController {
     c.pitch = this.clampPitch(view.pitch)
     c.facing = yawToDir(c.yaw)
     this.goalYaw = c.yaw
+    this._mapYaw = this.mapGoal
   }
 
   /**
@@ -385,17 +404,29 @@ export class CameraController {
       c.facing = yawToDir(c.yaw)
       moved = true
     } else {
-      const d = yawDelta(c.yaw, this.goalYaw)
-      if (Math.abs(d) > 0.002) {
-        const k = this.reducedMotion ? 1 : Math.min(1, dt * 14)
-        c.yaw = normalizeYaw(c.yaw + d * k)
-        moved = true
-      } else if (c.yaw !== this.goalYaw) {
-        c.yaw = this.goalYaw
+      const yaw = this.ease(c.yaw, this.goalYaw, dt, TURN_RATE)
+      if (yaw !== c.yaw) {
+        c.yaw = yaw
         moved = true
       }
     }
+    // the minimap turns with the same easing, a little quicker, toward the grid heading
+    const map = this.ease(this._mapYaw, this.mapGoal, dt, MAP_TURN_RATE)
+    if (map !== this._mapYaw) {
+      this._mapYaw = map
+      moved = true
+    }
     return moved
+  }
+
+  /** One step of the turn easing from `from` toward `to` at `rate` per second; `to` itself once close enough. */
+  private ease(from: number, to: number, dt: number, rate: number): number {
+    const d = yawDelta(from, to)
+    if (Math.abs(d) > 0.002) {
+      const k = this.reducedMotion ? 1 : Math.min(1, dt * rate)
+      return normalizeYaw(from + d * k)
+    }
+    return to
   }
 
   get steering(): boolean {
@@ -428,6 +459,10 @@ export function trailStep(scene: Scene): { dx: number; dy: number } | null {
   return null
 }
 
+/** the view's turn easing: the fraction of the remaining turn closed per second */
+const TURN_RATE = 14
+/** the minimap's turn easing: a touch quicker than the view, so the map settles first */
+const MAP_TURN_RATE = 18
 /** how far ahead a heading must be open before it counts as not facing a wall */
 const OPEN_DEPTH = 2
 /** rotations from a preferred heading, nearest first, ending with a full about-turn */
