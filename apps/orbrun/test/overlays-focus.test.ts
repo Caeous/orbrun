@@ -69,7 +69,11 @@ describe('describe popup', () => {
     expect(ctx.mode).toBe('popup')
     expect(ctx.focus).toMatchObject({ label: 'Flame Tongue', count: 5 })
     expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('Flame Tongue')
-    ov.focusOp(st, ctx, 'next')
+    // the spells sit two to a line: right crosses to Fireball, left back, and down leaves the pair for the verbs
+    ov.focusOp(st, ctx, 'right')
+    expect(ov.focusInfo(ctx)?.label).toBe('Fireball')
+    ov.focusOp(st, ctx, 'left')
+    expect(ov.focusInfo(ctx)?.label).toBe('Flame Tongue')
     ov.focusOp(st, ctx, 'next')
     ctx = frame()
     expect(ctx.focus?.label).toBe('Read')

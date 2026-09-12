@@ -226,7 +226,7 @@ describe('the grouped command menu', () => {
     const h = setup()
     const labels = () => [...h.host.querySelectorAll('.sysmenu .label')].map((r) => r.textContent)
     h.ov.showSystem({ spectating: false, inGame: true })
-    expect(labels()).toEqual(['Resume', 'Repeat previous command (`)', 'Game menu (~)', 'Help (?)', 'Chat (F12)', 'Gamepad', 'Settings', 'Save and exit (S)'])
+    expect(labels()).toEqual(['Resume', 'Repeat previous command (`)', 'Game menu (F1)', 'Help (?)', 'Chat (F12)', 'Gamepad', 'Settings', 'Save and exit (S)'])
     expect([...h.host.querySelectorAll('.sysmenu li.sep .label')].map((r) => r.textContent)).toEqual(['Gamepad', 'Save and exit (S)'])
     h.ov.clientOverlayInput('next')
     h.ov.clientOverlayInput('next')

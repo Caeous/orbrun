@@ -1593,7 +1593,11 @@ export class Overlays {
     for (const book of books) {
       if (book.label && book.label.trim()) c.append(h('div', { html: formattedStringToHtml(book.label) }))
       const ol = h('ol')
-      for (const s of book.spells) {
+      // the list lays its entries two to a line (styles.css .spellset li: 50% each), so a pair
+      // shares one focus row and left / right cross between them, as up / down walk the lines
+      let pairRow = 0
+      book.spells.forEach((s, i) => {
+        if (i % 2 === 0) pairRow = nextRow()
         const li = h('li', { class: 'selectable' + (colour && s.colour !== undefined ? ' fg' + s.colour : '') })
         // official _fmt_spells_list: the spell's own icon from the GUI texture, then its
         // letter and title, then the effect and range as the server coloured them (a range
@@ -1607,9 +1611,9 @@ export class Overlays {
         // official: a click sends the letter as text input
         const send = () => this.hooks.send(cm.textInput(s.letter))
         li.addEventListener('click', send)
-        items.push({ label: formattedStringToText(s.title), el: li, activate: send, row: nextRow(), id: 'spell:' + s.letter })
+        items.push({ label: formattedStringToText(s.title), el: li, activate: send, row: pairRow, col: i % 2, id: 'spell:' + s.letter })
         ol.append(li)
-      }
+      })
       c.append(ol)
     }
     return c
@@ -2649,7 +2653,7 @@ export class Overlays {
     if (playing) {
       add(`${REPEAT_COMMAND.label} (${REPEAT_COMMAND.key})`, () => this.hooks.send(cm.input(REPEAT_COMMAND.key)))
       // crawl binds CMD_GAME_MENU to `~` and F1 (cmd-keys.h); Escape does nothing in the main view
-      add('Game menu (~)', () => this.hooks.send(cm.input('~')))
+      add('Game menu (F1)', () => this.hooks.send(cm.input('~')))
       add(`${HELP_COMMAND.label} (${HELP_COMMAND.key})`, () => this.hooks.send(cm.input(HELP_COMMAND.key)))
     }
     if (opts.inGame) add('Chat (F12)', () => this.hooks.onSystemAction('chat'))

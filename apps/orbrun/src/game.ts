@@ -1098,7 +1098,9 @@ export class GameScreen {
     // a key typed into a field is still the keyboard speaking (a server prompt's on-screen keyboard goes away for it)
     this.inputFrom('keyboard')
     if (target && isTextEntry(target)) return
-    if (ev.key === 'F1' && !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+    // F2 is Orbrun's own: the player's commands. A bare F1 goes on to Crawl (keys.ts CODES), which binds it
+    // to CMD_GAME_MENU alongside `~`, so it opens the usual WebTiles game menu.
+    if (ev.key === 'F2' && !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
       ev.preventDefault()
       if (!ev.repeat && !this.session.watching) {
         if (this.ctx.mode === 'command') this.overlays.showCommands((a) => this.runner.execute(a), 'select')

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { initialState } from '@orbrun/webtiles'
+import { cm, initialState } from '@orbrun/webtiles'
 import { GamepadHints } from '../src/gamepad-hints'
 import { GameScreen } from '../src/game'
 import { HOLD_MS, type Action } from '../src/bindings'
@@ -174,14 +174,22 @@ describe('direct game input', () => {
     expect(h.send).not.toHaveBeenCalled()
   })
 
-  it('F1 opens commands without forwarding a key; native command keys still reach Crawl', () => {
+  it('F2 opens commands without forwarding a key; native command keys still reach Crawl', () => {
     const h = harness()
-    const f1 = new KeyboardEvent('keydown', { key: 'F1', cancelable: true })
-    h.screen.onKeyDown(f1)
-    expect(f1.defaultPrevented).toBe(true)
+    const f2 = new KeyboardEvent('keydown', { key: 'F2', code: 'F2', cancelable: true })
+    h.screen.onKeyDown(f2)
+    expect(f2.defaultPrevented).toBe(true)
     expect(h.overlays.showCommands).toHaveBeenCalledExactlyOnceWith(expect.any(Function), 'select')
     expect(h.send).not.toHaveBeenCalled()
     for (const key of ['q', 'r', 'z', 'm', 'g', 'G', '>', '<']) h.screen.onKeyDown(new KeyboardEvent('keydown', { key, cancelable: true }))
     expect(h.send.mock.calls.map(([m]) => m.text ?? m.keycode)).toEqual(['q', 'r', 'z', 'm', 'g', 'G', '>', '<'])
+  })
+
+  it('F1 is left to Crawl, which binds it to the game menu', () => {
+    const h = harness()
+    h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'F1', code: 'F1', cancelable: true }))
+    expect(h.overlays.showCommands).not.toHaveBeenCalled()
+    expect(h.overlays.showPalette).not.toHaveBeenCalled()
+    expect(h.send).toHaveBeenCalledExactlyOnceWith(cm.key(-265))
   })
 })
