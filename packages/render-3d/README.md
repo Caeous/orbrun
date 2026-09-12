@@ -3,7 +3,8 @@
 A first-person (and third-person) [three.js](https://threejs.org) renderer of
 a `@orbrun/scene` `Scene`: walls as inset masonry, floors and ceilings,
 standing features, doors, water and lava, monsters and items as billboards
-that face the camera, memory dimming, a viewmodel for what is held, ghost
+that face the camera (each a shallow block with a shaded rim, like the hands),
+memory dimming, a viewmodel for what is held, ghost
 badges for what geometry hides, and a cursor. Geometry is rebuilt only when
 the level's layout changes (`sceneLayoutEquals`), so a frame at rest costs
 nothing.

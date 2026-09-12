@@ -181,8 +181,21 @@ const DOLL_GHOST_TINT = { r: 0.85, g: 0.9, b: 1 }
 const VM_DEPTH = 2
 const VM_FILL = 0.9
 const VM_FOV = 40
-/** Shade of the extruded block's faces relative to the texel colour: front, top, side, bottom. */
-const VM_SHADE = { front: 1, top: 0.86, side: 0.7, bottom: 0.5 }
+/** Shade of an extruded block's faces relative to the texel colour: front, top, side, bottom. The hands and the standing sprites share it. */
+const BLOCK_SHADE = { front: 1, top: 0.86, side: 0.7, bottom: 0.5 }
+/**
+ * Standing sprites (monsters, items, the doll, doors and statues) have the
+ * hands' thickness: behind the front quad every opaque texel is extruded
+ * this many texels deep, with the rim of side faces shaded as the hands' are,
+ * so a sprite seen from off-centre or from above reads as a slab rather
+ * than a sheet of paper. The front quad is untouched, so what the sprite
+ * shows is exactly what it showed flat. Ghosts, clouds and translucent
+ * sprites stay flat: they blend, and a rim behind a blended face doubles up.
+ * So do the status badges and the damage bar: they are marks on the sprite.
+ */
+const BB_DEPTH = 2
+/** Texel alpha at or above which a texel is opaque, bbMat's alpha test (0.1) in 8 bits. */
+const OPAQUE_ALPHA = 26
 /** Attack cue: the weapon thrusts this far (view units) toward the centre of the view and settles back over this many seconds. */
 const VM_LIFT_S = 0.22
 const VM_LIFT = 0.07
@@ -327,6 +340,26 @@ interface AtlasEntry {
   /** The same for a cell in view: stronger, and over `GHOST_FADE_VISIBLE`, so what the server shows keeps its ghost however deep behind the wall it stands. */
   ghostVisibleMat: THREE.ShaderMaterial
   bbMat: THREE.MeshBasicMaterial
+  /**
+   * One byte per texel, 1 where the atlas is opaque, for the rim of a
+   * standing sprite's block; undefined until first asked for, null where the
+   * atlas's pixels cannot be read (no 2D canvas, an atlas that is not an image).
+   */
+  mask?: Uint8Array | null
+}
+
+/**
+ * The rim of a standing sprite's block, in texel units relative to the tile's
+ * top-left corner (y up, z toward the viewer, the front face at z = 0): the
+ * side faces of every opaque texel that border a transparent one, with a
+ * texel-centre uv and the face's shade. Built once per tile and clip height,
+ * then placed and coloured per sprite.
+ */
+interface RimTemplate {
+  pos: Float32Array
+  uv: Float32Array
+  shade: Float32Array
+  index: number[]
 }
 
 /** Which pass a standing sprite belongs to: the lit sprite itself, or a ghost of it behind the geometry (II.4). */
@@ -341,6 +374,8 @@ interface SpriteLayer {
   ymax?: number
   /** Overrides the holder's tint for this layer alone (status badges keep their own colours in the ghost pass). */
   tint?: { r: number; g: number; b: number }
+  /** Drawn as a flat quad even on a thick sprite: the status badges and damage bar are marks on the sprite, not part of its body. */
+  flat?: boolean
 }
 
 /** The four corner uvs of a quad in point order: the first point takes (u0, v1). */
@@ -526,6 +561,8 @@ export class Render3d implements MapRenderer {
   private vmMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })
   /** Extruded icon geometry per item, keyed by its layers. */
   private vmGeos = new Map<string, THREE.BufferGeometry | null>()
+  /** Rim templates of the standing sprites' blocks, by tile and clip height (`rimTemplate`). */
+  private rims = new Map<string, RimTemplate | null>()
   /** Attack lift start, in seconds on the render clock; NaN when at rest. */
   private vmLift = NaN
   constructor(opts: Render3dOptions = {}) {
@@ -758,6 +795,7 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
       a.bbMat.dispose()
     }
     this.atlases.clear()
+    this.rims.clear()
     for (const g of this.vmGeos.values()) g?.dispose()
     this.vmGeos.clear()
     this.vmBuilt = false
@@ -839,6 +877,7 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
   destroy(): void {
     for (const g of this.vmGeos.values()) g?.dispose()
     this.vmGeos.clear()
+    this.rims.clear()
     this.vmMat.dispose()
     this.depthTarget?.dispose()
     this.depthTarget = null
@@ -1328,6 +1367,7 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
     tint: { r: number; g: number; b: number },
     fixed: boolean,
     ghost: GhostKind = 'none',
+    thick = ghost === 'none',
   ): THREE.Object3D {
     const holder = new THREE.Group()
     holder.position.set(x + 0.5, 0, y + 0.5)
@@ -1346,28 +1386,8 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
       const hq = (hTex / cell) * scale
       const cx = ((l.r.ox + (l.ox || 0) + l.r.w / 2 - cell / 2) / cell) * scale
       const bottom = ((cell - (l.r.oy + (l.oy || 0) + hTex)) / cell) * scale
-      const geo = new THREE.PlaneGeometry(wq, hq)
-      const uvAttr = geo.getAttribute('uv') as THREE.BufferAttribute
-      uvAttr.setXY(0, l.uv.u0, l.uv.v0)
-      uvAttr.setXY(1, l.uv.u1, l.uv.v0)
-      uvAttr.setXY(2, l.uv.u0, v1)
-      uvAttr.setXY(3, l.uv.u1, v1)
-      uvAttr.needsUpdate = true
       const lt = l.tint || tint
-      const colors = new Float32Array(4 * 3)
-      for (let j = 0; j < 4; j++) {
-        colors[j * 3] = shade * lt.r
-        colors[j * 3 + 1] = shade * lt.g
-        colors[j * 3 + 2] = shade * lt.b
-      }
-      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-      // the cell the sprite stands in, for the level shader's shade map (fixtures)
-      const cells = new Float32Array(4 * 2)
-      for (let j = 0; j < 4; j++) {
-        cells[j * 2] = x
-        cells[j * 2 + 1] = y
-      }
-      geo.setAttribute('cell', new THREE.BufferAttribute(cells, 2))
+      const geo = this.standingGeometry(l, hTex, v1, wq, hq, scale / cell, { r: shade * lt.r, g: shade * lt.g, b: shade * lt.b }, x, y, thick && !l.flat)
       const mesh = new THREE.Mesh(geo, ghost === 'visible' ? l.a.ghostVisibleMat : ghost === 'remembered' ? l.a.ghostMat : fixed ? l.a.featMat : l.a.bbMat)
       mesh.position.set(cx, bottom + hq / 2, i * 0.002)
       // ghosts draw before every sprite so a nearer billboard paints over them
@@ -1379,6 +1399,131 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
     holder.userData.fixedFacing = fixed
     group.add(holder)
     return holder
+  }
+
+  /**
+   * One standing layer's geometry: the front quad (the four corners first, in
+   * PlaneGeometry's order, with the tile's uvs), and behind it, where the
+   * atlas's pixels can be read, the rim of a block `BB_DEPTH` texels deep.
+   * The vertex colour carries the sprite's light and tint times the face's
+   * shade; `cell` is the cell the sprite stands in, for the level shader's
+   * shade map (fixtures). `k` is the world size of a texel.
+   */
+  private standingGeometry(
+    l: SpriteLayer,
+    hTex: number,
+    v1: number,
+    wq: number,
+    hq: number,
+    k: number,
+    c: { r: number; g: number; b: number },
+    x: number,
+    y: number,
+    thick: boolean,
+  ): THREE.BufferGeometry {
+    const rim = thick ? this.rimTemplate(l, hTex) : null
+    const nRim = rim ? rim.pos.length / 3 : 0
+    const n = 4 + nRim
+    const pos = new Float32Array(n * 3)
+    const uv = new Float32Array(n * 2)
+    const col = new Float32Array(n * 3)
+    const cells = new Float32Array(n * 2)
+    const hw = wq / 2, hh = hq / 2
+    pos.set([-hw, hh, 0, hw, hh, 0, -hw, -hh, 0, hw, -hh, 0])
+    uv.set([l.uv.u0, l.uv.v0, l.uv.u1, l.uv.v0, l.uv.u0, v1, l.uv.u1, v1])
+    const index = [0, 2, 1, 2, 3, 1]
+    if (rim) {
+      for (let i = 0; i < nRim; i++) {
+        pos[(4 + i) * 3] = -hw + rim.pos[i * 3] * k
+        pos[(4 + i) * 3 + 1] = hh + rim.pos[i * 3 + 1] * k
+        pos[(4 + i) * 3 + 2] = rim.pos[i * 3 + 2] * k
+      }
+      uv.set(rim.uv, 8)
+      for (const i of rim.index) index.push(4 + i)
+    }
+    for (let j = 0; j < n; j++) {
+      const f = j < 4 ? BLOCK_SHADE.front : rim!.shade[j - 4]
+      col[j * 3] = c.r * f
+      col[j * 3 + 1] = c.g * f
+      col[j * 3 + 2] = c.b * f
+      cells[j * 2] = x
+      cells[j * 2 + 1] = y
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    geo.setAttribute('cell', new THREE.BufferAttribute(cells, 2))
+    geo.setIndex(index)
+    return geo
+  }
+
+  /** The rim of this tile's block, clipped to `hTex` rows, from the cache; null where the atlas's pixels cannot be read. */
+  private rimTemplate(l: SpriteLayer, hTex: number): RimTemplate | null {
+    const mask = this.atlasMask(l.a)
+    if (!mask) return null
+    const { sx, sy, w } = l.r
+    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex}`
+    let t = this.rims.get(key)
+    if (t !== undefined) return t
+    const aw = l.a.width, ah = l.a.height
+    const opaque = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && mask[(sy + ty) * aw + sx + tx] === 1
+    const pos: number[] = []
+    const uv: number[] = []
+    const shade: number[] = []
+    const index: number[] = []
+    const face = (p: number[], u: number, v: number, f: number) => {
+      const base = pos.length / 3
+      pos.push(...p)
+      for (let i = 0; i < 4; i++) {
+        uv.push(u, v)
+        shade.push(f)
+      }
+      index.push(base, base + 1, base + 2, base, base + 2, base + 3)
+    }
+    const z0 = -BB_DEPTH, z1 = 0
+    for (let ty = 0; ty < hTex; ty++) {
+      for (let tx = 0; tx < w; tx++) {
+        if (!opaque(tx, ty)) continue
+        const x0 = tx, x1 = tx + 1
+        const y1 = -ty, y0 = y1 - 1
+        const u = (sx + tx + 0.5) / aw, v = (sy + ty + 0.5) / ah
+        if (!opaque(tx, ty - 1)) face([x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0], u, v, BLOCK_SHADE.top)
+        if (!opaque(tx, ty + 1)) face([x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1], u, v, BLOCK_SHADE.bottom)
+        if (!opaque(tx - 1, ty)) face([x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0], u, v, BLOCK_SHADE.side)
+        if (!opaque(tx + 1, ty)) face([x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1], u, v, BLOCK_SHADE.side)
+      }
+    }
+    t = index.length ? { pos: new Float32Array(pos), uv: new Float32Array(uv), shade: new Float32Array(shade), index } : null
+    this.rims.set(key, t)
+    return t
+  }
+
+  /** The atlas's opacity, one byte per texel, read once; null where its pixels cannot be read. */
+  private atlasMask(a: AtlasEntry): Uint8Array | null {
+    if (a.mask !== undefined) return a.mask
+    a.mask = null
+    const img = a.texture.image as TexImageSource | undefined
+    if (!img) return null
+    try {
+      let canvas: HTMLCanvasElement | OffscreenCanvas
+      if (typeof OffscreenCanvas !== 'undefined') canvas = new OffscreenCanvas(a.width, a.height)
+      else if (typeof document !== 'undefined') {
+        canvas = document.createElement('canvas')
+        canvas.width = a.width
+        canvas.height = a.height
+      } else return null
+      const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null
+      if (!ctx) return null
+      ctx.drawImage(img as CanvasImageSource, 0, 0)
+      const data = ctx.getImageData(0, 0, a.width, a.height).data
+      const mask = new Uint8Array(a.width * a.height)
+      for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3] >= OPAQUE_ALPHA ? 1 : 0
+      a.mask = mask
+    } catch {
+      a.mask = null
+    }
+    return a.mask
   }
 
   /**
@@ -1444,7 +1589,7 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
       if (b.kind === 'cloud') {
         const t = tileOf(b.tile)
         if (!t) continue
-        const h = this.addStanding(this.billboardGroup, b.x, b.y, [{ ...t, ox: 0, oy: 0 }], b.height, shade, tint, false)
+        const h = this.addStanding(this.billboardGroup, b.x, b.y, [{ ...t, ox: 0, oy: 0 }], b.height, shade, tint, false, 'none', false)
         h.traverse((o) => {
           const m = o as THREE.Mesh
           if (m.material) {
@@ -1473,12 +1618,13 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
       if (b.statusIcons) {
         for (const i of b.statusIcons) {
           const t = tileOf(i.tile)
-          if (t) layers.push({ ...t, ox: i.ox, oy: i.at === 'top' ? -t.r.oy : i.oy })
+          if (t) layers.push({ ...t, ox: i.ox, oy: i.at === 'top' ? -t.r.oy : i.oy, flat: true })
         }
       }
       const bh = b.kind === 'player' ? b.height * DOLL_SCALE : b.height
       // scenery monsters (plants, bushes) are fixtures: they stand square like statues and take their light from the shade map
-      const holder = this.addStanding(this.billboardGroup, b.x, b.y, layers, bh, b.scenery ? 1 : shade, tint, !!b.scenery)
+      const translucent = b.alpha !== undefined && b.alpha < 1
+      const holder = this.addStanding(this.billboardGroup, b.x, b.y, layers, bh, b.scenery ? 1 : shade, tint, !!b.scenery, 'none', !translucent)
       holder.userData.kind = b.kind
       if (b.kind === 'player') {
         this.doll = holder
@@ -1512,7 +1658,7 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
       if (b.kind === 'projectile') g.position.y = PROJECTILE_LIFT
       g.userData.kind = 'ghost'
       if (b.kind === 'projectile') holder.position.y = PROJECTILE_LIFT
-      if (b.alpha !== undefined && b.alpha < 1) {
+      if (translucent) {
         let k = 0
         holder.traverse((o) => {
           const m = o as THREE.Mesh
@@ -1754,12 +1900,12 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
         const x0 = (x - cx) * s, x1 = x0 + s
         const y1 = (bottom - y) * s, y0 = y1 - s
         const z0 = -depth, z1 = 0
-        face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], c.r, c.g, c.b, VM_SHADE.front)
-        face([[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]], c.r, c.g, c.b, VM_SHADE.front)
-        if (!opaque(x, y - 1)) face([[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]], c.r, c.g, c.b, VM_SHADE.top)
-        if (!opaque(x, y + 1)) face([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], c.r, c.g, c.b, VM_SHADE.bottom)
-        if (!opaque(x - 1, y)) face([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], c.r, c.g, c.b, VM_SHADE.side)
-        if (!opaque(x + 1, y)) face([[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]], c.r, c.g, c.b, VM_SHADE.side)
+        face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], c.r, c.g, c.b, BLOCK_SHADE.front)
+        face([[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]], c.r, c.g, c.b, BLOCK_SHADE.front)
+        if (!opaque(x, y - 1)) face([[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]], c.r, c.g, c.b, BLOCK_SHADE.top)
+        if (!opaque(x, y + 1)) face([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], c.r, c.g, c.b, BLOCK_SHADE.bottom)
+        if (!opaque(x - 1, y)) face([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], c.r, c.g, c.b, BLOCK_SHADE.side)
+        if (!opaque(x + 1, y)) face([[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]], c.r, c.g, c.b, BLOCK_SHADE.side)
       }
     }
     if (!idx.length) return null
