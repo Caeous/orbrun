@@ -365,6 +365,8 @@ export type ClientOverlayOp =
   | 'prev'
   | 'select'
   | 'cancel'
+  /** put the whole overlay away, wherever in it the cursor is (Select, the button that opened it) */
+  | 'close'
   | 'pageNext'
   | 'pagePrev'
   | 'bumperNext'
@@ -2329,6 +2331,14 @@ export class Overlays {
   clientOverlayInput(op: ClientOverlayOp): boolean {
     const o = this.clientOverlay
     if (!o) return false
+    // Select is a toggle: the screen it opened goes away whole, not one step back
+    // (`cancel`'s `back` would land on the screen this one was reached from). A
+    // filter keyboard is the one thing it puts away first.
+    if (op === 'close') {
+      if (this.clientOskOpen) this.osk.detach()
+      else this.closeClientOverlay()
+      return true
+    }
     if (this.clientOskOpen) {
       switch (op) {
         case 'next':

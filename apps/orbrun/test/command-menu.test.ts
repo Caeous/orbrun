@@ -48,6 +48,23 @@ describe('the grouped command menu', () => {
     }
   })
 
+  it('puts the whole menu away on Select, wherever in it the cursor stands', () => {
+    const h = setup()
+    h.ov.showCommands(h.run, 'select')
+    expect(h.ov.hasClientOverlay).toBe(true)
+    expect(h.ov.clientOverlayInput('close')).toBe(true)
+    expect(h.ov.hasClientOverlay).toBe(false)
+    // browsing sends nothing, and closing is browsing
+    expect(h.run).not.toHaveBeenCalled()
+    expect(h.sent).toEqual([])
+    // a screen reached from another goes too: Select closes, it does not step back
+    const back = vi.fn()
+    h.ov.showChoices('Deeper', [{ label: 'Row', run: () => {} }], back)
+    h.ov.clientOverlayInput('close')
+    expect(h.ov.hasClientOverlay).toBe(false)
+    expect(back).not.toHaveBeenCalled()
+  })
+
   it('keeps battle actions on RB and non-battle commands on Select', () => {
     expect(BATTLE_COMMANDS.map((c) => c.key)).toEqual(['q', 'r', 'z *', 'a *', 'V', "'", 'Q', 'v', 't'])
     const expected = [

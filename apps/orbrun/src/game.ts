@@ -996,6 +996,8 @@ export class GameScreen {
         if (ev.button === 'A') this.overlays.clientOverlayInput('select')
         else if (ev.button === 'START') this.overlays.clientOverlayInput('submit')
         else if (ev.button === 'B') this.overlays.clientOverlayInput('cancel')
+        // Select opened this screen (or Start did): pressing it again puts it away
+        else if (ev.button === 'SELECT') this.overlays.clientOverlayInput('close')
         else if (ev.button === 'X') this.overlays.clientOverlayInput('keyboard')
         else if (ev.button === 'LB') this.overlays.clientOverlayInput('bumperPrev')
         else if (ev.button === 'RB') this.overlays.clientOverlayInput('bumperNext')
@@ -1103,7 +1105,9 @@ export class GameScreen {
     if (ev.key === 'F2' && !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
       ev.preventDefault()
       if (!ev.repeat && !this.session.watching) {
-        if (this.ctx.mode === 'command') this.overlays.showCommands((a) => this.runner.execute(a), 'select')
+        // the keyboard's Select: it toggles, as the button does
+        if (this.overlays.hasClientOverlay) this.overlays.clientOverlayInput('close')
+        else if (this.ctx.mode === 'command') this.overlays.showCommands((a) => this.runner.execute(a), 'select')
         else this.overlays.showPalette(this.ctx.mode === 'targeting' || this.ctx.mode === 'levelmap' || this.ctx.mode === 'menu' ? this.ctx.mode : 'command')
       }
       return
