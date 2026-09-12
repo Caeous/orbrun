@@ -180,18 +180,23 @@ export class CameraController {
   }
 
   /**
-   * The aim's cursor moved: the heading is kept while the cell is in front
-   * of the player (ahead of the line across their shoulders), so a walk of
-   * the cursor about the view never swings it; a cell on or behind that
-   * line turns the view to the heading nearest the cell, so the cursor
-   * stays in sight.
+   * The aim's cursor moved. A cell on one of the eight rays from the player
+   * (straight along a heading) turns the view to that heading at once, so
+   * an aim opened on a diagonal facing turns to east as soon as the cursor
+   * steps onto the line due east, and a cursor stepping diagonally from a
+   * compass facing takes the view with it. Off every ray, the heading is
+   * kept while the cell is in front of the player (ahead of the line across
+   * their shoulders), so a walk of the cursor about the view never swings
+   * it; a cell on or behind that line turns the view to the heading nearest
+   * the cell, so the cursor stays in sight.
    */
   faceCursorBehind(scene: Scene, x: number, y: number) {
     const dx = x - scene.player.x
     const dy = y - scene.player.y
     if (dx === 0 && dy === 0) return
+    const onRay = dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)
     const f = this.camera.facing
-    if (dx * DIR8_DX[f] + dy * DIR8_DY[f] > 0) return
+    if (!onRay && dx * DIR8_DX[f] + dy * DIR8_DY[f] > 0) return
     this.faceCell(scene, x, y)
   }
 

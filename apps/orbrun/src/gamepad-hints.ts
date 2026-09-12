@@ -118,9 +118,9 @@ export class GamepadHints {
   prompts(ctx: Context, mode: HintMode): BindingLabel[] {
     if (['spectating', 'lobby', 'ended', 'macro', 'text'].includes(ctx.mode)) return []
     const all = barLabels(ctx)
-    // Confirm/back are navigation, not tutorial reminders. Keep them even with gameplay hints off.
+    // Confirmation is navigation, not a tutorial reminder. B is always implicit.
     const navigation = ['menu', 'targeting', 'levelmap', 'popup', 'newgame', 'crt', 'dialog'].includes(ctx.mode)
-      ? all.filter((l) => l.button === 'A' || l.button === 'B' || (ctx.mode === 'menu' && l.button === 'START')) : []
+      ? all.filter((l) => l.button === 'A' || (ctx.mode === 'menu' && l.button === 'START')) : []
     const decision = ['more', 'prompt', 'yesno'].includes(ctx.mode)
     const contextual = mode === 'off' && !decision ? [...navigation] : [...promptLabels(ctx)]
     for (const l of navigation) if (!contextual.some((p) => p.button === l.button)) contextual.push(l)

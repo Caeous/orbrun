@@ -66,7 +66,7 @@ describe('the grouped command menu', () => {
   })
 
   it('keeps battle actions on RB and non-battle commands on Select', () => {
-    expect(BATTLE_COMMANDS.map((c) => c.key)).toEqual(['q', 'r', 'z *', 'a *', 'V', "'", 'Q', 'v', 't'])
+    expect(BATTLE_COMMANDS.map((c) => c.key)).toEqual(['q', 'r', 'z *', 'a *', 'V', "'", 'Q', ')', '(', 'v', 't'])
     const expected = [
       ['Ctrl-F', 'G', 'Ctrl-O', 'X', 'G <', 'G >'],
       ['e', 'w', 'W', 'T', 'P', 'R', 'd'],
@@ -138,6 +138,8 @@ describe('the grouped command menu', () => {
     expect([...more.querySelectorAll('.kbd-only kbd')].map((k) => k.textContent)).toEqual(['←', '→', 'Enter', 'Esc'])
     expect(more.querySelector('.kbd-only svg')).toBeNull()
     expect(more.querySelector('.pad-only svg')).not.toBeNull()
+    expect(more.querySelector('.pad-only')?.textContent).not.toContain('Back')
+    expect(more.querySelectorAll('.pad-only svg')).toHaveLength(3) // LB, RB and A only
     // the pad speaks: the class flips without a rebuild, the same footer element
     h.ov.setDevice('pad')
     expect(h.host.querySelector('.overlay-stack')?.classList.contains('device-pad')).toBe(true)

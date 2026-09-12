@@ -1860,7 +1860,9 @@ export class Overlays {
     const rowEl = h('div', { class: 'chips' })
     if (lead) rowEl.append(h('span', { class: 'lead' }, lead))
     chips.forEach((c, i) => {
-      const b = buttons.get(c.hotkey)
+      const binding = buttons.get(c.hotkey)
+      // Keep the No option and its binding, but never advertise B.
+      const b = binding === 'B' ? undefined : binding
       // after the pad a choice chip wears nothing: the cursor marks it and A sends it
       const keyName = c.hotkey === '\t' ? 'Tab' : c.hotkey === '\r' ? 'Enter' : c.hotkey
       const cap = pad ? (b ? glyph(b, padKind) : null) : h('kbd', null, keyName)
@@ -2473,7 +2475,7 @@ export class Overlays {
     const kind = this.hooks.padKind?.() ?? 'generic'
     const pad = h('span', { class: 'pad-only' })
     if (tabs) pad.append(glyph('LB', kind), ' / ', glyph('RB', kind), ' Tabs · ')
-    pad.append(glyph('A', kind), ' Select · ', glyph('B', kind), ' Back')
+    pad.append(glyph('A', kind), ' Select')
     const kbd = h('span', { class: 'kbd-only' })
     if (tabs) kbd.append(h('kbd', null, '←'), ' ', h('kbd', null, '→'), ' Tabs · ')
     kbd.append(h('kbd', null, 'Enter'), ' Select · ', h('kbd', null, 'Esc'), ' Back')

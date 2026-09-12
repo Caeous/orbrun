@@ -273,8 +273,10 @@ describe('prompt card', () => {
     expect(ctx.focus).toMatchObject({ label: 'Yes', cancelLabel: 'No' })
     expect(focusedText()).toBe('Yes')
     expect(actionLabel(bindingTable(ctx).B!, ctx)).toBe('No')
-    // the chips wear the buttons that fire them
-    expect(Array.from(host.querySelectorAll('.prompt-card .chip')).map((c) => c.className)).toEqual(['chip A focused', 'chip B'])
+    // Yes advertises A; No remains selectable without a B hint
+    expect(Array.from(host.querySelectorAll('.prompt-card .chip')).map((c) => c.className)).toEqual(['chip A focused', 'chip'])
+    expect(host.querySelectorAll('.prompt-card .chip')[1].querySelector('svg')).toBeNull()
+    expect(host.querySelectorAll('.prompt-card .chip')[1].getAttribute('title')).toBe('No')
     // a yes/no's question is not its answers: the text stays over the chips
     expect(host.querySelector('.prompt-card .text')?.textContent).toBe('Really attack? (y/n)')
     ov.focusOp(st, ctx, 'right')
@@ -916,8 +918,8 @@ describe('the travel depth prompt', () => {
     reduce(st, { msg: 'init_input', type: 'messages', tag: 'travel_depth', prompt: 'What level of Dungeon? (default D:3, ? - help) ', maxlen: 100 })
     frame()
     const line = host.querySelector('.osk .more')!
-    expect(Array.from(line.querySelectorAll('.osk-prompt')).map((p) => p.getAttribute('aria-label'))).toEqual(['A Type', 'X Backspace', 'RB Space', 'LB Shift', 'Y Done', 'B Cancel'])
-    expect(line.querySelectorAll('.osk-prompt svg').length).toBe(6)
+    expect(Array.from(line.querySelectorAll('.osk-prompt')).map((p) => p.getAttribute('aria-label'))).toEqual(['A Type', 'X Backspace', 'RB Space', 'LB Shift', 'Y Done'])
+    expect(line.querySelectorAll('.osk-prompt svg').length).toBe(5)
     expect(line.textContent!.endsWith(' · Enter / Esc')).toBe(true)
     expect(host.querySelector('.osk .muted')).toBeNull()
   })

@@ -459,45 +459,67 @@ describe('an aim reads its keys against the grid in view', () => {
     expect(c.facing).toBe(1)
   })
 
-  it('the cursor walking in front of the player never turns the view', () => {
-    const s = sceneFrom(['.....', '.....', '..@..', '.....', '.....'])
+  it('the cursor walking in front of the player, off every ray, never turns the view', () => {
+    const s = sceneFrom(['.......', '.......', '.......', '...@...', '.......', '.......', '.......'])
     const c = cam(0)
     for (const [x, y] of [
+      [3, 2],
+      [4, 1],
       [2, 1],
-      [3, 1],
-      [1, 1],
-      [4, 0],
-      [0, 0],
+      [5, 2],
+      [1, 2],
+      [6, 1],
+      [0, 1],
     ]) {
       c.faceCursorBehind(s, x, y)
       expect(c.facing).toBe(0)
     }
   })
 
-  it('a cursor beside or behind turns to the heading nearest it, diagonals included', () => {
-    const s = sceneFrom(['.....', '.....', '..@..', '.....', '.....'])
+  it('a cursor stepping onto a ray from the player turns to that heading, in front or not', () => {
+    const s = sceneFrom(['.......', '.......', '.......', '...@...', '.......', '.......', '.......'])
     const c = cam(0)
-    c.faceCursorBehind(s, 3, 2)
+    // the north-east diagonal, still in front of a north facing
+    c.faceCursorBehind(s, 5, 1)
+    expect(c.facing).toBe(1)
+    // off the ray again, and in front of north-east: kept
+    c.faceCursorBehind(s, 5, 2)
+    expect(c.facing).toBe(1)
+    // due east: an aim opened on a diagonal turns to the compass heading as
+    // soon as the cursor steps onto its line, not once it falls behind
+    c.faceCursorBehind(s, 5, 3)
+    expect(c.facing).toBe(2)
+    c.faceCursorBehind(s, 3, 6)
+    expect(c.facing).toBe(4)
+    c.faceCursorBehind(s, 1, 1)
+    expect(c.facing).toBe(7)
+  })
+
+  it('a cursor beside or behind turns to the heading nearest it, diagonals included', () => {
+    const s = sceneFrom(['.......', '.......', '.......', '...@...', '.......', '.......', '.......'])
+    const c = cam(0)
+    // beside, off every ray
+    c.faceCursorBehind(s, 6, 4)
     expect(c.facing).toBe(2)
     // still in front now: kept
-    c.faceCursorBehind(s, 3, 1)
+    c.faceCursorBehind(s, 5, 2)
     expect(c.facing).toBe(2)
-    c.faceCursorBehind(s, 1, 3)
+    c.faceCursorBehind(s, 2, 5)
     expect(c.facing).toBe(5)
     // the player's own cell says nothing
-    c.faceCursorBehind(s, 2, 2)
+    c.faceCursorBehind(s, 3, 3)
     expect(c.facing).toBe(5)
   })
 
-  it('a diagonal facing keeps the cursor walking in front of it', () => {
-    const s = sceneFrom(['.....', '.....', '..@..', '.....', '.....'])
+  it('a diagonal facing keeps the cursor walking in front of it, off every ray', () => {
+    const s = sceneFrom(['.......', '.......', '.......', '...@...', '.......', '.......', '.......'])
     const c = cam(1)
     // ahead of the line across the shoulders (north-west to south-east)
-    for (const [x, y] of [[3, 1], [2, 1], [3, 2], [4, 0], [1, 0]]) {
+    for (const [x, y] of [[4, 1], [5, 2], [6, 2], [2, 1], [6, 1]]) {
       c.faceCursorBehind(s, x, y)
       expect(c.facing).toBe(1)
     }
-    c.faceCursorBehind(s, 1, 3)
+    c.faceCursorBehind(s, 2, 5)
     expect(c.facing).toBe(5)
   })
 })

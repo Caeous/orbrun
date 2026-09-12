@@ -22,18 +22,16 @@ export interface OskPrompt {
 
 /**
  * The hint line's buttons, in the dialogs' order: what types, then the
- * edits, then the way out. Y's and B's labels are the keyboard's to name
- * (Done, Send, Submit; Cancel, Close). Start is Enter and Select is Escape,
- * unlabelled as on every other dialog.
+ * edits, then submit. Y's label is the keyboard's to name (Done, Send,
+ * Submit). B, Start and Select remain usable but unlabelled.
  */
-export function oskPrompts(submit = 'Done', cancel = 'Cancel'): OskPrompt[] {
+export function oskPrompts(submit = 'Done'): OskPrompt[] {
   return [
     { button: 'A', label: 'Type' },
     { button: 'X', label: 'Backspace' },
     { button: 'RB', label: 'Space' },
     { button: 'LB', label: 'Shift' },
     { button: 'Y', label: submit },
-    { button: 'B', label: cancel },
   ]
 }
 

@@ -23,12 +23,14 @@ describe('chat on a pad', () => {
     expect(host.querySelector('.osk')).toBeNull()
     expect(host.querySelector('.chat_body')?.getAttribute('style') ?? '').not.toContain('none')
     expect(host.querySelector('.chat_read_hints')?.textContent).toContain('Write')
+    expect(host.querySelector('.chat_read_hints')?.textContent).not.toContain('Close')
   })
 
   it('A brings the keyboard up; B from it goes back to reading; B again closes', () => {
     const { host, chat } = open()
     expect(chat.pad(press('A'))).toBe(true)
     expect(host.querySelector('.osk')).not.toBeNull()
+    expect(host.querySelector('.osk .more')?.textContent).not.toContain('Close')
     expect(host.querySelector('.chat_read_hints')).toBeNull()
     chat.pad(press('B'))
     expect(host.querySelector('.osk')).toBeNull()

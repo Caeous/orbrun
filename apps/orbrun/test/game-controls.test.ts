@@ -100,6 +100,22 @@ describe('direct game input', () => {
     expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: '5' }] }))
   })
 
+  it('a tap-or-hold outside command mode still acts: Y in an aim cycles the quiver either way', () => {
+    const h = harness()
+    h.ctx.mode = 'targeting'
+    h.event({ type: 'press', button: 'Y', t: 0 })
+    h.screen.fireHolds(100)
+    expect(h.execute).not.toHaveBeenCalled()
+    h.event({ type: 'release', button: 'Y', t: 150, held: 150 })
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: ')' }] }))
+    h.execute.mockClear()
+    h.event({ type: 'press', button: 'Y', t: 1000 })
+    h.screen.fireHolds(1000 + HOLD_MS)
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: '(' }] }))
+    h.event({ type: 'release', button: 'Y', t: 2000, held: 1000 })
+    expect(h.execute).toHaveBeenCalledOnce()
+  })
+
   it('a mode change cancels a pending rest instead of turning a prompt into gameplay', () => {
     const h = harness()
     h.event({ type: 'press', button: 'LB', t: 0 })
@@ -236,5 +252,34 @@ describe('direct game input', () => {
     expect(h.overlays.showCommands).not.toHaveBeenCalled()
     expect(h.overlays.showPalette).not.toHaveBeenCalled()
     expect(h.send).toHaveBeenCalledExactlyOnceWith(cm.key(-265))
+  })
+})
+
+describe('viewmodel sync', () => {
+  /** The hands rebuild on the player message, and again on the map that carries the paperdoll's shield. */
+  function vmHarness() {
+    const state = initialState()
+    const setViewmodel = vi.fn()
+    const screen = Object.assign(Object.create(GameScreen.prototype), {
+      is3d: true, viewmodelRev: '', renderer: { setViewmodel }, session: { state, gamedata: undefined },
+    }) as { syncViewmodel(st: typeof state): void }
+    return { state, screen, setViewmodel }
+  }
+
+  it('rebuilds the hands when the map changes, since the shield rides the paperdoll on the player cell', () => {
+    const h = vmHarness()
+    h.state.rev.player++
+    h.screen.syncViewmodel(h.state)
+    expect(h.setViewmodel).toHaveBeenCalledTimes(1)
+    h.state.rev.map++
+    h.screen.syncViewmodel(h.state)
+    expect(h.setViewmodel).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves the hands alone while neither message has changed', () => {
+    const h = vmHarness()
+    h.screen.syncViewmodel(h.state)
+    h.screen.syncViewmodel(h.state)
+    expect(h.setViewmodel).toHaveBeenCalledTimes(1)
   })
 })

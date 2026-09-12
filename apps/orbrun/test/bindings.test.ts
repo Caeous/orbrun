@@ -263,10 +263,14 @@ describe('direct command controls', () => {
     // not outside command mode
     expect(promptLabels(ctx({ injured: true, mode: 'menu' })).find((l) => l.button === 'LB')).toBeUndefined()
   })
-  it('shows the server-provided readied action on LT', () => {
-    const c = ctx({ readiedAction: 'Stone Arrow' })
+  it('shows the server-provided readied action on LT when there is something to shoot', () => {
+    const c = ctx({ readiedAction: 'Stone Arrow', hostilesInView: 1 })
     expect(promptLabels(c)).toContainEqual(expect.objectContaining({ button: 'LT', label: 'Stone Arrow' }))
     expect(bindingTable(c).LT).toEqual({ kind: 'fire' })
+    // a hostile ahead is a threat too, the same as autofight's
+    expect(promptLabels(ctx({ readiedAction: 'Stone Arrow', ahead: ogre }))).toContainEqual(expect.objectContaining({ button: 'LT' }))
+    // quivered but nothing in view: the corner stays quiet, as autofight's does
+    expect(promptLabels(ctx({ readiedAction: 'Stone Arrow' })).find((l) => l.button === 'LT')).toBeUndefined()
     // with nothing quivered the bar does not volunteer it
     expect(actionLabel({ kind: 'fire' }, ctx({}))).toBe('Fire')
     expect(promptLabels(ctx({})).find((l) => l.button === 'LT')).toBeUndefined()
@@ -277,7 +281,7 @@ describe('direct command controls', () => {
     expect(readiedAction('<darkgrey>Nothing quivered</darkgrey>')).toBeUndefined()
     expect(readiedAction('')).toBeUndefined()
     expect(readiedAction(undefined)).toBeUndefined()
-    expect(promptLabels(ctx({ readiedAction: readiedAction('<darkgrey>Nothing quivered</darkgrey>') })).find((l) => l.button === 'LT')).toBeUndefined()
+    expect(promptLabels(ctx({ hostilesInView: 1, readiedAction: readiedAction('<darkgrey>Nothing quivered</darkgrey>') })).find((l) => l.button === 'LT')).toBeUndefined()
   })
   it('A takes the stairs underfoot even with a monster ahead; RT offers autofight', () => {
     const c = ctx({ ahead: ogre, under: stairsDown })
@@ -301,14 +305,14 @@ describe('direct command controls', () => {
     for (let n = 1; n <= 20; n++) expect(resolve({ type: 'repeat', button: 'RT', n }, c)).toBeNull()
     expect(resolve({ type: 'release', button: 'RT', t: 1000, held: 1000 }, c)).toBeNull()
   })
-  it('inventory, explore and commands have direct buttons; no stick clicks are needed', () => {
+  it('inventory, explore and commands have direct buttons; either stick click examines', () => {
     const t = bindingTable(ctx({}))
     expect(t.Y).toMatchObject({ seq: [{ text: 'i' }] })
     expect(t.R3).toEqual({ kind: 'examine' })
+    expect(t.L3).toEqual({ kind: 'examine' })
     expect(t.X).toMatchObject({ seq: [{ text: 'o' }] })
     expect(t.RB).toEqual({ kind: 'ui', op: 'commands' })
     expect(t.LB).toMatchObject({ kind: 'hold', tap: { seq: [{ text: '.' }] }, hold: { seq: [{ text: '5' }] } })
-    expect(t.L3).toBeUndefined()
     expect(t.B).toMatchObject({ seq: [{ key: Keys.ESC }] })
   })
   it('the controls sheet describes Cancel, LB wait/rest and R3 examine', () => {
@@ -317,12 +321,12 @@ describe('direct command controls', () => {
     expect(sheet.find((r) => r.button === 'LB')?.action).toEqual({ tap: 'Wait one turn', hold: 'Rest' })
     expect(sheet.find((r) => r.button === 'R3')?.action).toEqual({ tap: 'Examine' })
   })
-  it('R3 examines once on press without repeating or acting on release', () => {
+  it.each(['R3', 'L3'] as const)('%s examines once on press without repeating or acting on release', (button) => {
     const c = ctx({})
-    expect(resolve({ type: 'press', button: 'R3', t: 0 }, c)).toEqual({ kind: 'examine' })
-    expect(armsTapOrHold('R3', c)).toBe(false)
-    expect(resolve({ type: 'repeat', button: 'R3', n: 1 }, c)).toBeNull()
-    expect(resolve({ type: 'release', button: 'R3', t: 100, held: 100 }, c)).toBeNull()
+    expect(resolve({ type: 'press', button, t: 0 }, c)).toEqual({ kind: 'examine' })
+    expect(armsTapOrHold(button, c)).toBe(false)
+    expect(resolve({ type: 'repeat', button, n: 1 }, c)).toBeNull()
+    expect(resolve({ type: 'release', button, t: 100, held: 100 }, c)).toBeNull()
   })
   it('A is only ever contextual: no bare step, no attack', () => {
     expect(contextualLabel(ctx({}))).toBe(NO_ACTION)
@@ -349,23 +353,25 @@ describe('direct command controls', () => {
 describe('look mode (x): A describes, named for what the cursor rests on', () => {
   // directn.cc: `x` is `just_looking`; `v` is CMD_TARGET_DESCRIBE, while Enter and `.` select, which do_look_around turns into travel
   const look = (over: Partial<Context> = {}) => ctx({ mode: 'targeting', examining: true, ...over })
-  it('A sends v as "Examine <thing>", X travels with `.`, B cancels, the bumpers cycle', () => {
+  it('A sends v as "Examine <thing>", X travels with `.`, Y is help, B cancels, bumpers cycle monsters and triggers objects', () => {
     const t = bindingTable(look({ cursor: { kind: 'monster', monster: {} as never, hostile: true, label: 'goblin' } }))
     expect(t.A).toEqual({ kind: 'examine' })
     expect(t.X).toMatchObject({ seq: [{ text: '.' }], label: 'Travel here' })
+    expect(t.Y).toMatchObject({ seq: [{ text: '?' }], label: 'Help' })
     expect(t.B).toMatchObject({ seq: [{ key: Keys.ESC }] })
     expect(t.LB).toMatchObject({ seq: [{ text: '-' }] })
     expect(t.RB).toMatchObject({ seq: [{ text: '+' }] })
-    // Enter would travel, not describe: no RT confirm in look mode
-    expect(t.RT).toBeUndefined()
+    // cmd-keys.h: `/` CMD_TARGET_OBJ_CYCLE_BACK, `*` CMD_TARGET_OBJ_CYCLE_FORWARD
+    expect(t.LT).toMatchObject({ seq: [{ text: '/' }] })
+    expect(t.RT).toMatchObject({ seq: [{ text: '*' }] })
   })
-  it('the bar shows A unasked, naming the monster, the pile, the feature, or "here" on the player', () => {
+  it('the corner shows the three keys the server prompts ("? - help, v - describe, . - travel"), A naming the monster, the pile, the feature, or "here"', () => {
     const show = (c: Context) => promptLabels(c).map((l) => l.button + ' ' + l.label)
-    expect(show(look({ cursor: { kind: 'monster', monster: {} as never, hostile: true, label: 'goblin' } }))).toEqual(['A Examine goblin'])
-    expect(show(look({ cursor: { kind: 'item', label: 'a +0 halberd' } }))).toEqual(['A Examine a +0 halberd'])
-    expect(show(look({ cursor: { kind: 'feature', feature: { type: 'stairs', dir: 'down' } as never, label: 'stone staircase' } }))).toEqual(['A Examine stone staircase'])
-    expect(show(look({ cursor: { kind: 'none', label: 'here' } }))).toEqual(['A Examine here'])
-    expect(show(look())).toEqual(['A Examine here'])
+    expect(show(look({ cursor: { kind: 'monster', monster: {} as never, hostile: true, label: 'goblin' } }))).toEqual(['A Examine goblin', 'X Travel here', 'Y Help'])
+    expect(show(look({ cursor: { kind: 'item', label: 'a +0 halberd' } }))).toEqual(['A Examine a +0 halberd', 'X Travel here', 'Y Help'])
+    expect(show(look({ cursor: { kind: 'feature', feature: { type: 'stairs', dir: 'down' } as never, label: 'stone staircase' } }))).toEqual(['A Examine stone staircase', 'X Travel here', 'Y Help'])
+    expect(show(look({ cursor: { kind: 'none', label: 'here' } }))).toEqual(['A Examine here', 'X Travel here', 'Y Help'])
+    expect(show(look())).toEqual(['A Examine here', 'X Travel here', 'Y Help'])
   })
   it('an aim (a throw, a spell) is shaped like the look: A fires, named for the target; X describes', () => {
     const aim = ctx({ mode: 'targeting', cursor: { kind: 'monster', monster: {} as never, hostile: true, label: 'goblin' } })
@@ -374,6 +380,16 @@ describe('look mode (x): A describes, named for what the cursor rests on', () =>
     expect(t.X).toMatchObject({ seq: [{ text: 'v' }] })
     expect(promptLabels(aim).map((l) => l.button + ' ' + l.label)).toEqual(['A Fire at goblin', 'LT Fire at goblin'])
     expect(promptLabels(ctx({ mode: 'targeting' })).map((l) => l.label)).toEqual(['Fire', 'Fire'])
+  })
+  it('Y cycles the quiver inside the aim, and the corner shows it while something is quivered', () => {
+    // cmd-keys.h targeting: `)` CMD_TARGET_CYCLE_QUIVER_FORWARD, `(` CMD_TARGET_CYCLE_QUIVER_BACKWARD
+    const aim = ctx({ mode: 'targeting', readiedAction: 'Throw: 23 darts' })
+    expect(bindingTable(aim).Y).toMatchObject({ kind: 'hold', tap: { seq: [{ text: ')' }] }, hold: { seq: [{ text: '(' }] } })
+    expect(promptLabels(aim).map((l) => l.button + ' ' + l.label)).toContainEqual('Y Next quiver')
+    // nothing quivered, and nothing to cycle: the corner keeps the aim's own prompts
+    expect(promptLabels(ctx({ mode: 'targeting' })).map((l) => l.button)).not.toContain('Y')
+    // a look is not an aim: the quiver has no place there (Y is the server's own help prompt)
+    expect(bindingTable(look({ readiedAction: 'Throw: 23 darts' })).Y).toMatchObject({ seq: [{ text: '?' }] })
   })
   it('LT is the same action before and inside the aim, so tapping it fires shot after shot as `f f f` does', () => {
     // the second tap may land either side of the server reporting the aim; both send f (CMD_TARGET_SELECT inside the prompt)
@@ -506,7 +522,7 @@ describe('the action bar shows only what the situation created', () => {
     expect(show(ctx({ mode: 'menu', menu: { ...menu, shop: { ...bare, canBuy: false, mode: 'examine' } } }))).toEqual(['A Examine', 'Y Add to list'])
   })
   it('a prompt shows its answers without a Start confirmation hint', () => {
-    expect(show(ctx({ mode: 'yesno', focus: { label: 'Yes', cancelLabel: 'No', index: 0, count: 2 } }))).toEqual(['A Yes', 'B No'])
+    expect(show(ctx({ mode: 'yesno', focus: { label: 'Yes', cancelLabel: 'No', index: 0, count: 2 } }))).toEqual(['A Yes'])
     expect(show(ctx({ mode: 'popup' }))).toEqual([])
     expect(show(ctx({ mode: 'popup', focus: { label: 'Wield', cancelLabel: null, index: 0, count: 3 } }))).toEqual(['A Wield'])
   })

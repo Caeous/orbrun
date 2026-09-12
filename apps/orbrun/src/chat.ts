@@ -49,7 +49,7 @@ export class Chat {
    */
   private reading = false
   private readHints = h('div', { class: 'more chat_read_hints' })
-  private osk = new Osk(oskPrompts('Send', 'Close'), () => this.hooks.padKind?.() ?? 'generic')
+  private osk = new Osk(oskPrompts('Send'), () => this.hooks.padKind?.() ?? 'generic')
 
   constructor(host: HTMLElement, hooks: ChatHooks) {
     this.hooks = hooks
@@ -203,7 +203,7 @@ export class Chat {
     const kind = this.hooks.padKind?.() ?? 'generic'
     clear(this.readHints)
     const hint = (button: GlyphName, label: string) => h('span', { class: 'osk-prompt', 'aria-label': `${glyphName(button, kind)} ${label}` }, glyph(button, kind), ' ' + label)
-    this.readHints.append(hint('DPAD', 'Scroll'), ' · ', hint('A', 'Write'), ' · ', hint('B', 'Close'))
+    this.readHints.append(hint('DPAD', 'Scroll'), ' · ', hint('A', 'Write'))
     this.root.append(this.readHints)
   }
 

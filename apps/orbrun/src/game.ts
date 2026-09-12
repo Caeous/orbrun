@@ -81,8 +81,8 @@ export class GameScreen {
   private ctx: Context
   private unsub: (() => void)[] = []
   private needsRender = true
-  /** `rev.player` the viewmodel was last built from */
-  private viewmodelRev = -1
+  /** `rev.player|rev.map` the viewmodel was last built from */
+  private viewmodelRev = ''
   private lastFrame = performance.now()
   private raf = 0
   private lastPos = { x: NaN, y: NaN }
@@ -351,7 +351,7 @@ export class GameScreen {
     const st = this.hooks.settings()
     const r: MapRenderer = this.is3d ? new Render3d(this.render3dOptions(st)) : new Render2d({ cellSize: 32 })
     r.mount(this.canvas)
-    this.viewmodelRev = -1
+    this.viewmodelRev = ''
     if (this.session.gamedata) r.setTiles(this.session.gamedata)
     r.setScene(this.session.scene)
     r.setCamera(this.cam.camera)
@@ -385,12 +385,16 @@ export class GameScreen {
   }
 
   /**
-   * The hands hold what the `player` message says is wielded; rebuilt only
-   * when that message changes.
+   * The hands hold what the `player` message says is wielded, and what the
+   * paperdoll on the player's cell says the off hand carries (a shield
+   * arrives by `map`, not `player`, and on a new level the cell lands after
+   * the first `player`). Rebuilt when either message changes; the renderer
+   * ignores a rebuild that holds the same items.
    */
   private syncViewmodel(st: GameState) {
-    if (!this.is3d || st.rev.player === this.viewmodelRev) return
-    this.viewmodelRev = st.rev.player
+    const rev = `${st.rev.player}|${st.rev.map}`
+    if (!this.is3d || rev === this.viewmodelRev) return
+    this.viewmodelRev = rev
     ;(this.renderer as Render3d).setViewmodel(viewmodelFor(st, this.session.gamedata ?? undefined))
   }
 
@@ -757,11 +761,12 @@ export class GameScreen {
    * one signal common to our own play and a spectated one. The level map is
    * north-up and gets no facing. A cursor our own pointer placed is skipped:
    * facing it would turn the view under the mouse and chase itself. In our
-   * own aims, look mode (`x`) and fire (`f`) alike, the view holds its
-   * heading while the cursor walks in front of the player, and turns to
-   * the nearest heading only when the cursor goes beside or behind (camera
-   * `faceCursorBehind`); the keys read against whatever grid is in view
-   * (camera `gridFacing`). A fire that locked onto a target behind the
+   * own aims, look mode (`x`) and fire (`f`) alike, the view turns to a
+   * heading as soon as the cursor steps onto its line from the player, and
+   * otherwise holds while the cursor walks in front of the player, turning
+   * to the nearest heading only when the cursor goes beside or behind
+   * (camera `faceCursorBehind`); the keys read against whatever grid is in
+   * view (camera `gridFacing`). A fire that locked onto a target behind the
    * player turns nothing at all until the cursor is first stepped
    * (`viewHeld`): the lock is crawl's, not a move of the player's. A
    * spectated player's aim faces the cell itself.
@@ -951,12 +956,16 @@ export class GameScreen {
   /** Fire the hold half of any tap-or-hold button that has been down for HOLD_MS, without waiting for release. */
   private fireHolds(now: number) {
     this.holding = null
-    if (this.chat.capturing || this.overlays.hasClientOverlay || this.ctx.mode !== 'command') {
+    if (this.chat.capturing || this.overlays.hasClientOverlay) {
       this.tapArmed.clear()
       return
     }
     for (const [b, t0] of this.pressTimes) {
-      if (this.holdFired.has(b) || !this.tapArmed.has(b) || !this.hooks.gamepad.isHeld(b as Button)) continue
+      if (!this.tapArmed.has(b)) continue
+      // the server may have moved the mode under the press: a button the new context has no tap-or-hold for
+      // disarms, so neither half can fire where it would mean something else (LB pressed in a menu must not rest)
+      if (!armsTapOrHold(b as Button, this.ctx)) { this.tapArmed.delete(b); continue }
+      if (this.holdFired.has(b) || !this.hooks.gamepad.isHeld(b as Button)) continue
       const a = holdAction(b as Button, this.ctx)
       if (!a) continue
       if (now - t0 < HOLD_MS) {

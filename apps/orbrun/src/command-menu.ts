@@ -29,6 +29,9 @@ export const BATTLE_COMMANDS: CommandEntry[] = [
   command('Evoke item', 'V'),
   command('Swap weapons', "'"),
   command('Quiver item / action', 'Q'),
+  // `)` and `(` step the quiver through the actions it finds suitable, without opening anything (cmd-keys.h CMD_CYCLE_QUIVER_*)
+  command('Next quiver action', ')'),
+  command('Previous quiver action', '('),
   command('Primary attack', 'v'),
   command('Shout / order allies', 't'),
 ]

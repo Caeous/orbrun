@@ -129,7 +129,7 @@ export class FrontEnd {
   private reloaded = false
   private error: string | null = null
   /** pad-driven keyboard for the login, register and add-server fields */
-  private osk = new Osk(oskPrompts('Submit', 'Cancel'), () => this.hooks.padKind?.() ?? 'generic')
+  private osk = new Osk(oskPrompts('Submit'), () => this.hooks.padKind?.() ?? 'generic')
   /** the room behind the screens */
   private roomView: RoomView
   /** Xom's line under the title, drawn once per visit so redraws don't reshuffle it */

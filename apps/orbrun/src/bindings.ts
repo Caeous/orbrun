@@ -102,6 +102,8 @@ const COMMAND: Partial<Record<Button, Action>> = {
   RB: { kind: 'ui', op: 'commands' },
   LT: { kind: 'fire' },
   RT: { kind: 'fight' },
+  // either stick click examines: R3 for a right thumb already on the look stick, L3 for a left thumb resting on the move stick
+  L3: { kind: 'examine' },
   R3: { kind: 'examine' },
   SELECT: { kind: 'ui', op: 'travel' },
   // the way out of a game from the pad: the Orbrun menu, with Save and exit on it
@@ -165,7 +167,9 @@ const TARGETING: Partial<Record<Button, Action>> = {
   LB: k('-', 'Previous'),
   RB: k('+', 'Next'),
   X: k('v', 'Describe'),
-  Y: k('/', 'Cycle'),
+  // the quiver, cycled inside the aim (CMD_TARGET_CYCLE_QUIVER_FORWARD / _BACKWARD): the shot to take is chosen
+  // where it is aimed, and the bar's Fire label follows the server's new quiver line
+  Y: hold(k(')', 'Next quiver'), k('(', 'Previous quiver')),
   // the same button as opened the aim confirms it, so tapping LT again and again fires shot after shot as `f f f` does
   LT: { kind: 'fire' },
   SELECT: palette('targeting'),
@@ -178,17 +182,23 @@ const TARGETING: Partial<Record<Button, Action>> = {
  * describes the cell (CMD_TARGET_DESCRIBE, `describe_target`), while Enter,
  * `.` and `5` select it, which `do_look_around` turns into travel
  * (`start_travel`); Space cancels (`targeting_behaviour::get_command`). So A
- * describes, named for what the cursor rests on ("Examine goblin"), and
- * travel moves to X. The rest is the aim's: the bumpers cycle, B cancels.
+ * describes, named for what the cursor rests on ("Examine goblin"), travel
+ * moves to X and help sits on Y. The server prints those three itself
+ * ("Press: ? - help, v - describe, . - travel"), so they are the situation's
+ * own and the corner shows them (`situational`). The bumpers cycle monsters
+ * (`-`/`+`), the triggers the items in view (`/`/`*`, cmd-keys.h
+ * OBJ_CYCLE_BACK/FORWARD), B cancels; the finds (`<`, `>`, `_`, `^`, Tab, `r`)
+ * live in the palette.
  */
 const EXAMINE: Partial<Record<Button, Action>> = {
   A: { kind: 'examine' },
   B: ESC,
-  LB: k('-', 'Previous'),
-  RB: k('+', 'Next'),
-  X: k('.', 'Travel here'),
-  Y: k('/', 'Cycle'),
-  LT: kc(Keys.TAB, 'Find portal'),
+  LB: k('-', 'Previous monster'),
+  RB: k('+', 'Next monster'),
+  X: situational(k('.', 'Travel here')),
+  Y: situational(k('?', 'Help')),
+  LT: k('/', 'Previous item'),
+  RT: k('*', 'Next item'),
   SELECT: palette('targeting'),
   START: ENTER,
 }
@@ -357,9 +367,9 @@ export function barLabels(ctx: Context): BindingLabel[] {
   return out
 }
 
-/** Contextual prompts plus menu confirmation, the readied action and bump attacks. */
+/** Contextual prompts plus menu confirmation, the readied action and bump attacks. B stays implicit. */
 export function promptLabels(ctx: Context): BindingLabel[] {
-  const labels = barLabels(ctx).filter((l) => l.contextual)
+  const labels = barLabels(ctx).filter((l) => l.contextual && l.button !== 'B')
   if (ctx.mode === 'command' && ctx.ahead.kind === 'monster' && ctx.ahead.hostile) {
     labels.push({ button: 'LSTICK_UP', label: 'Attack ' + ctx.ahead.label, action: { kind: 'step', dir: 0 }, contextual: true })
   }
@@ -373,18 +383,23 @@ function isContextual(a: Action, ctx: Context): boolean {
       return contextualLabel(ctx, a.alt) !== NO_ACTION
     case 'fight':
       // a hostile ahead is the attack; one in view is what autofight is for
-      return (ctx.ahead.kind === 'monster' && ctx.ahead.hostile) || ctx.hostilesInView > 0
+      return threatened(ctx)
     case 'examine':
       // In look mode the cursor rests on something the server named.
       return ctx.mode === 'targeting' && !!ctx.examining
     case 'fire':
-      // the server named what is quivered; while aiming, the cursor rests on the target
-      return ctx.mode === 'targeting' ? !ctx.examining : !!ctx.readiedAction
+      // the server named what is quivered; while aiming, the cursor rests on the target.
+      // Standing safe, the quivered shot is not the situation's own: it shows when
+      // there is something to shoot at, alongside autofight.
+      return ctx.mode === 'targeting' ? !ctx.examining : !!ctx.readiedAction && threatened(ctx)
     case 'hold':
       return isContextual(a.tap, ctx) || isContextual(a.hold, ctx)
     case 'keys':
       // wait/rest is the situation's own while hurt with nothing in view: resting is what the turn is for
-      return a.contextual === true || (isRest(a) && restWorthwhile(ctx))
+      if (isRest(a) && restWorthwhile(ctx)) return true
+      // the quiver cycle names the shot it would swap to, so it stands in the corner while there is one to swap
+      if (isQuiverCycle(a)) return ctx.mode === 'targeting' && !ctx.examining && !!ctx.readiedAction
+      return a.contextual === true
     case 'prompt':
       return !!ctx.prompt?.options.some((x) => x.hotkey.toLowerCase() === a.hotkey.toLowerCase())
     case 'focus':
@@ -425,6 +440,16 @@ function menuRowExamines(m: MenuContext): boolean {
 /** The wait (`.`) or rest (`5`) key on its own, as the LB tap-or-hold sends them. */
 function isRest(a: Action): boolean {
   return a.kind === 'keys' && a.seq.length === 1 && 'text' in a.seq[0] && (a.seq[0].text === '.' || a.seq[0].text === '5')
+}
+
+/** The quiver cycle (`)` / `(`) as the aim's Y sends it, either way round. */
+function isQuiverCycle(a: Action): boolean {
+  return a.kind === 'keys' && a.seq.length === 1 && 'text' in a.seq[0] && (a.seq[0].text === ')' || a.seq[0].text === '(')
+}
+
+/** Something worth attacking: a hostile ahead, or one in view for autofight to pick. */
+function threatened(ctx: Context): boolean {
+  return (ctx.ahead.kind === 'monster' && ctx.ahead.hostile) || ctx.hostilesInView > 0
 }
 
 /** Hurt, in command mode, with no hostile in view: the wait/rest prompt shows unasked (see `isContextual`). */

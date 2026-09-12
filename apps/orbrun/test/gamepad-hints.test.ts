@@ -80,12 +80,22 @@ describe('adaptive gamepad teaching', () => {
     expect(new GamepadHints().prompts(ctx({ mode }), 'adaptive')).toEqual([])
   })
 
-  it('keeps targeting confirmation and cancel even when gameplay hints are off', () => {
+  it('keeps targeting confirmation even when gameplay hints are off, without advertising cancel', () => {
     const h = new GamepadHints()
     const targeting = ctx({ mode: 'targeting' })
-    expect(h.prompts(targeting, 'off').map((l) => [l.button, l.label])).toEqual([['A', 'Fire'], ['B', 'Cancel']])
+    expect(h.prompts(targeting, 'off').map((l) => [l.button, l.label])).toEqual([['A', 'Fire']])
     expect(teaching(h, targeting).map((l) => l.label)).toEqual(['Move cursor'])
   })
+
+  it.each(['command', 'menu', 'targeting', 'levelmap', 'popup', 'newgame', 'crt', 'dialog', 'more', 'prompt', 'yesno', 'text', 'spectating', 'lobby', 'ended', 'macro'] as const)(
+    'never advertises B in %s, regardless of hint setting', (mode) => {
+      const h = new GamepadHints()
+      const c = ctx({ mode, focus: { label: 'Yes', cancelLabel: 'No', index: 0, count: 2 } })
+      for (const setting of ['adaptive', 'contextual', 'off'] as const) {
+        expect(h.prompts(c, setting).some((l) => l.button === 'B')).toBe(false)
+      }
+    },
+  )
 
   it('learns actions by meaning and context, not button usage', () => {
     const h = new GamepadHints()
