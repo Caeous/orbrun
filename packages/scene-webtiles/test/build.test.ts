@@ -393,6 +393,20 @@ describe('buildScene on a recorded level', () => {
     expect(seen).toBeGreaterThan(0)
   })
 
+  it('marks the net and the web as whole-cell badges and every corner badge as not', () => {
+    const st = initialState()
+    for (const m of fixtureMessages()) reduce(st, m)
+    const me = st.map.cells.get(cellKey(st.player.pos.x, st.player.pos.y))!
+    // enums.js fg_flags: NET 0x00800000 and WEB 0x01000000 in the first word, POISON [0, 0x08000000] in the second (0.34)
+    const fg = [gd.fg(me.t!.fg!).value | 0x00800000 | 0x01000000, 0x08000000]
+    st.map.cells.set(cellKey(me.x, me.y), { ...me, t: { ...me.t, fg } })
+    const player = buildScene(st, gd).billboards.find((b) => b.kind === 'player')!
+    const full = (player.statusIcons || []).filter((i) => i.full).map((i) => i.tile)
+    expect(full).toEqual([gd.icons.id('TRAP_NET'), gd.icons.id('TRAP_WEB')])
+    const corner = (player.statusIcons || []).filter((i) => !i.full).map((i) => i.tile)
+    expect(corner).toContain(gd.icons.id('POISON'))
+  })
+
   it('pins the damage bar to the top of the frame and leaves every other badge where WebTiles puts it', () => {
     const st = initialState()
     const mdam = new Set(['MDAM_LIGHTLY_DAMAGED', 'MDAM_MODERATELY_DAMAGED', 'MDAM_HEAVILY_DAMAGED', 'MDAM_SEVERELY_DAMAGED', 'MDAM_ALMOST_DEAD'].map((n) => gd.icons.id(n)!))

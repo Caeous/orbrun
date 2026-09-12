@@ -227,6 +227,13 @@ export interface Billboard {
      * state (orbrun's status strip) leaves these out.
      */
     square?: true
+    /**
+     * The badge is the whole cell: the net and the web, which WebTiles
+     * paints across the doll rather than in a corner. Orbrun's HUD blows
+     * these up in the middle of the view (hud.ts renderTrapped) and keeps
+     * them off the corner strip.
+     */
+    full?: true
   }[]
   /** Opacity 0..1 when the thing is translucent (submerged, invisible-but-known). */
   alpha?: number

@@ -886,8 +886,12 @@ function statusIcons(t: CellTiles, fgw: FlagWord, bgw: FlagWord, gd: Gamedata, s
   const under = (id: number | undefined) => {
     if (id !== undefined) out.push({ tile: id, ox: 0, oy: 0, square: true })
   }
-  if (fgw.NET) add(I.TRAP_NET)
-  if (fgw.WEB) add(I.TRAP_WEB)
+  // the net and the web cover the whole cell (Billboard.statusIcons `full`)
+  const full = (id: number | undefined) => {
+    if (id !== undefined) out.push({ tile: id, ox: 0, oy: 0, full: true })
+  }
+  if (fgw.NET) full(I.TRAP_NET)
+  if (fgw.WEB) full(I.TRAP_WEB)
   // "something under this square": one icon (SOMETHING_UNDER) up to 0.34, three
   // by what lies there (ITEM_STACK_1..3) in master, where the flag also split
   // into S_UNDER / _GOOD / _ARTEFACT. Fall back so both servers get the badge.

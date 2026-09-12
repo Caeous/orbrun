@@ -1631,9 +1631,9 @@ canvas.minimap.hidden {
   visibility: hidden;
 }
 
- /* the status strip (hud.ts renderStatuses): the player's own status badges blown up down the minimap's left edge,
-   STATUS_BADGE_ROWS of the grid square each (hud.ts layout places it). Bare over the view like the minimap and shadowed the
-   same way */
+ /* the status strip (hud.ts renderStatuses): the player's own corner badges blown up in rows running leftward from the
+   minimap's left edge, STATUS_BADGE_ROWS of the grid square each (hud.ts layout places it). Bare over the view like the
+   minimap and shadowed the same way */
 .statuses {
   display: block;
 }
@@ -1641,6 +1641,19 @@ canvas.minimap.hidden {
   display: block;
   image-rendering: pixelated;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+
+/* the trapped mark (hud.ts renderTrapped): the net or web over the player blown up in the middle of the view, see-through
+   so what stands behind it still reads, and taking no clicks, since the view under it does */
+.hud > .trapped {
+  display: block;
+  pointer-events: none;
+  opacity: 0.6;
+}
+.trapped canvas.trapped-canvas {
+  display: block;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
 }
 
 .monsters {
