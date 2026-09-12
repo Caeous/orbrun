@@ -184,13 +184,12 @@ describe('layout revision (rendering-3d.md Part IV)', () => {
     expect(cellLayoutEquals(a.cells.get(cellKey(1, 1))!, c)).toBe(true)
     expect(sceneLayoutEquals(a, b)).toBe(true)
   })
-  it('a wall, a decal, a lid or a flash changes the layout', () => {
+  it('a wall, a decal or a lid changes the layout', () => {
     for (const change of [
       (c: SceneCell) => (c.wallTile = 9),
       (c: SceneCell) => (c.overlays = [7]),
       (c: SceneCell) => (c.icons = [3]),
       (c: SceneCell) => (c.ceilingTile = 5),
-      (c: SceneCell) => (c.flash = { r: 255, g: 0, b: 0, a: 128 }),
       (c: SceneCell) => ((c.kind = 'floor'), (c.occluder = false)),
     ]) {
       const a = base()
@@ -214,10 +213,14 @@ describe('layout revision (rendering-3d.md Part IV)', () => {
     b.cells.set(cellKey(9, 9), cell(9, 9, 'floor'))
     expect(sceneLayoutEquals(a, b)).toBe(false)
   })
-  it('the tint is a colour, not layout', () => {
+  it('the tint and the flash are colours, not layout', () => {
     const a = base()
-    const b = base()
+    let b = base()
     b.level.tint = { r: 0.5, g: 1, b: 0.5 }
+    expect(sceneLayoutEquals(a, b)).toBe(true)
+    // paralysis washes every cell blue; the level it washes stands unchanged
+    b = base()
+    b.cells.get(cellKey(1, 1))!.flash = { r: 64, g: 64, b: 255, a: 100 }
     expect(sceneLayoutEquals(a, b)).toBe(true)
   })
   it('shades by sight and by distance from the player, never to black', () => {

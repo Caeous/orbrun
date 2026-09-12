@@ -184,7 +184,14 @@ export interface SceneCell {
     /** Known through magic mapping only, never seen. */
     magicMapped: boolean
   }
-  /** Flash colour as rgba 0..255, when the game flashes this cell. */
+  /**
+   * Flash colour as rgba 0..255, when the game washes this cell in one
+   * (view.cc `draw_cell`): blue while paralysed, grey while petrified, red
+   * while berserk, and while blind the colour of what blinded you, thickening
+   * with the distance from the player. It covers everything drawn in the cell,
+   * as WebTiles lays it over the whole cell (cell_renderer.js `render_flash`),
+   * not the ground alone.
+   */
   flash?: { r: number; g: number; b: number; a: number }
   /** Glyph and colour fallback, so a renderer without tiles can still draw. */
   glyph?: string
@@ -305,9 +312,9 @@ function sameIds(a: TileId[] | undefined, b: TileId[] | undefined): boolean {
 /**
  * Whether two cells build the same level geometry: the same kind and height,
  * the same tiles on the floor, the walls, the lid and the feature, the same
- * decals and badges, the same flash. Visibility is not part of it: it only
- * shades what is built (`shadeOf`), so a cell coming into or out of sight
- * leaves the geometry standing.
+ * decals and badges. Neither visibility nor the flash is part of it: both are
+ * colour a renderer lays over what is built (`shadeOf`, `flashOf`), so a cell
+ * coming into sight or washed blue by paralysis leaves the geometry standing.
  */
 export function cellLayoutEquals(a: SceneCell, b: SceneCell): boolean {
   if (a === b) return true
@@ -317,16 +324,14 @@ export function cellLayoutEquals(a: SceneCell, b: SceneCell): boolean {
   if (!sameIds(a.wallOverlays, b.wallOverlays) || !sameIds(a.wallShadows, b.wallShadows) || !sameIds(a.shorelines, b.shorelines)) return false
   if (!sameIds(a.translucent, b.translucent)) return false
   if (a.trail?.from !== b.trail?.from || a.trail?.to !== b.trail?.to) return false
-  const fa = a.flash, fb = b.flash
-  if (fa !== fb && (!fa || !fb || fa.r !== fb.r || fa.g !== fb.g || fa.b !== fb.b || fa.a !== fb.a)) return false
   return true
 }
 
 /**
  * Whether `next` has the same layout as `prev`: the same bounds, lid, sky,
  * player cell and cell set, every cell `cellLayoutEquals` its counterpart.
- * The tint is not layout: it is a colour the renderer applies. A builder
- * uses this to carry `layoutRevision` over.
+ * The tint and the flash are not layout: they are colours the renderer
+ * applies. A builder uses this to carry `layoutRevision` over.
  */
 export function sceneLayoutEquals(prev: Scene, next: Scene): boolean {
   const pb = prev.bounds, nb = next.bounds
@@ -355,6 +360,19 @@ export function shadeOf(cell: SceneCell | undefined, scene: Scene): number {
   const d = Math.hypot(cell.x - scene.player.x, cell.y - scene.player.y)
   s *= 0.55 + 0.45 * Math.max(0, 1 - d / 9)
   return s
+}
+
+/**
+ * The wash over a cell, each channel 0..1: the flash colour the game gave it
+ * and how thickly it lies, 0 where the cell is not flashed. A flash covers
+ * everything drawn in the cell — floor, walls, lid and whatever stands there —
+ * so the 2D view fills the cell with it and the 3D view carries it through the
+ * cell's air.
+ */
+export function flashOf(cell: SceneCell | undefined): { r: number; g: number; b: number; a: number } {
+  const f = cell?.flash
+  if (!f || f.a <= 0) return { r: 0, g: 0, b: 0, a: 0 }
+  return { r: f.r / 255, g: f.g / 255, b: f.b / 255, a: Math.min(1, f.a / 255) }
 }
 
 export function getCell(scene: Scene, x: number, y: number): SceneCell | undefined {

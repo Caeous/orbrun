@@ -25,6 +25,8 @@ import {
   type HandItem,
   type Viewmodel,
   shadeOf,
+  flashOf,
+  getCell,
 } from '@orbrun/scene'
 import { bodyRect, insetFootprint, sceneClassAt, type FootprintOptions } from './footprint.js'
 
@@ -276,6 +278,40 @@ const SIDE_SHADE = 0.82
  */
 const GHOST_DEPTH_SCALE = 0.5
 
+/**
+ * The flash field: the colour the game washes a cell in — blue while
+ * paralysed, grey while petrified, red while berserk, and while blind the
+ * colour of whatever blinded you, thickening with the distance out to the
+ * edge of sight. WebTiles' 2D view fills the whole cell with it
+ * (cell_renderer.js `render_flash`), so in 3D it belongs to the whole cube and
+ * not to the ground alone: every material lays it over its fragment, so the
+ * walls, the lid, the sprites standing in the cell and the hands all take it,
+ * and what is far off in a blind view is washed out until it can barely be
+ * read.
+ *
+ * The field is sampled by world position and filtered, not stepped cell by
+ * cell: a flash that thickens with distance would otherwise band into visible
+ * squares across a floor running away from the eye.
+ */
+const FLASH_PARS = /* glsl */ `
+uniform sampler2D flashMap;
+uniform vec2 fieldOrigin;
+uniform vec2 fieldSize;
+varying vec3 vWorldPos;`
+const FLASH_VERT_PARS = /* glsl */ `
+varying vec3 vWorldPos;`
+/** Set `vWorldPos` from the vertex three has already transformed (`transformed`). */
+const FLASH_VERT = /* glsl */ `
+vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
+/** Wash `c` in the flash standing over this fragment. */
+function flashApply(c: string): string {
+  return /* glsl */ `
+{
+  vec4 flash = texture2D(flashMap, (vWorldPos.xz - fieldOrigin) / fieldSize);
+  ${c}.rgb = mix(${c}.rgb, flash.rgb, flash.a);
+}`
+}
+
 // The ghost shaders test each fragment against a depth image of the level
 // rendered just before the frame. Only fragments that geometry hides pass,
 // and their alpha fades with the depth gap to the occluder in front.
@@ -283,9 +319,11 @@ const GHOST_VERT = /* glsl */ `
 varying vec2 vUv;
 varying vec3 vColor;
 varying float vViewZ;
+${FLASH_VERT_PARS}
 void main() {
   vUv = uv;
   vColor = color;
+  vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vViewZ = mv.z;
   gl_Position = projectionMatrix * mv;
@@ -302,6 +340,7 @@ uniform float opacity;
 #ifdef GHOST_MAP
 uniform sampler2D map;
 #endif
+${FLASH_PARS}
 varying vec2 vUv;
 varying vec3 vColor;
 varying float vViewZ;
@@ -319,6 +358,7 @@ void main() {
   c *= t;
 #endif
   gl_FragColor = vec4(c.rgb, c.a * opacity * fade);
+${flashApply('gl_FragColor')}
   #include <colorspace_fragment>
 }`
 
@@ -518,10 +558,18 @@ export class Render3d implements MapRenderer {
    * geometry standing.
    */
   private shadeTex: THREE.DataTexture | null = null
-  private shadeUniforms = {
+  /**
+   * Flash field: the same grid again, rgba per cell, the wash the game
+   * lays over everything in the cell. Filtered, not stepped, so the thickening
+   * of a blind view reads as haze rather than as squares.
+   */
+  private flashTex: THREE.DataTexture | null = null
+  /** The two cell fields and the grid they share: origin and size in cells. */
+  private fieldUniforms = {
     shadeMap: { value: null as THREE.Texture | null },
-    shadeOrigin: { value: new THREE.Vector2(0, 0) },
-    shadeSize: { value: new THREE.Vector2(1, 1) },
+    flashMap: { value: null as THREE.Texture | null },
+    fieldOrigin: { value: new THREE.Vector2(0, 0) },
+    fieldSize: { value: new THREE.Vector2(1, 1) },
   }
   /** The billboards need rebuilding for a reason other than a new scene revision (the player's bars changed). */
   private billboardsDirty = false
@@ -539,7 +587,6 @@ export class Render3d implements MapRenderer {
   private doll: THREE.Object3D | null = null
   private raycaster = new THREE.Raycaster()
   private pickMeshes: THREE.Mesh[] = []
-  private flashMat: THREE.MeshBasicMaterial
   private voidMat: THREE.MeshBasicMaterial
   /** Depth image of the level geometry, rendered before each frame for the ghost shaders. */
   private depthTarget: THREE.WebGLRenderTarget | null = null
@@ -559,6 +606,12 @@ export class Render3d implements MapRenderer {
   private vmCam = new THREE.PerspectiveCamera(VM_FOV, 1, 0.1, 20)
   private vmHands = { weapon: new THREE.Group(), offhand: new THREE.Group() }
   private vmMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })
+  /**
+   * The flash over the cell the player stands in, rgba. The hands are
+   * drawn in a frame of their own, with no world to read the field at, so they
+   * take the one cell that is always under them.
+   */
+  private vmFlash = { value: new THREE.Vector4(0, 0, 0, 0) }
   /** Extruded icon geometry per item, keyed by its layers. */
   private vmGeos = new Map<string, THREE.BufferGeometry | null>()
   /** Rim templates of the standing sprites' blocks, by tile and clip height (`rimTemplate`). */
@@ -598,8 +651,13 @@ export class Render3d implements MapRenderer {
     this.cursorTileMesh.renderOrder = 11
     this.cursorTileMesh.visible = false
     this.overlayGroup.add(this.cursorTileMesh)
-    this.flashMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.5, depthWrite: false })
     this.voidMat = new THREE.MeshBasicMaterial({ color: 0x000000 })
+    this.vmMat.onBeforeCompile = (shader) => {
+      shader.uniforms.flash = this.vmFlash
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec4 flash;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, flash.rgb, flash.a);')
+    }
     this.vmScene.add(this.vmHands.weapon, this.vmHands.offhand)
     // the overlay frame is two units tall where the hands stand (z = 0)
     this.vmCam.position.z = 1 / Math.tan((VM_FOV * Math.PI) / 360)
@@ -630,23 +688,20 @@ export class Render3d implements MapRenderer {
       ? new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.02, depthWrite: false, side: THREE.DoubleSide })
       : new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, alphaTest: feature ? 0.1 : 0.5, side: THREE.DoubleSide })
     if (feature) m.defines = { UPRIGHT_SPRITE: '' }
-    const su = this.shadeUniforms
+    const fu = this.fieldUniforms
     m.onBeforeCompile = (shader) => {
-      shader.uniforms.shadeMap = su.shadeMap
-      shader.uniforms.shadeOrigin = su.shadeOrigin
-      shader.uniforms.shadeSize = su.shadeSize
+      Object.assign(shader.uniforms, fu)
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float cut;\nattribute vec2 cell;\nvarying float vCut;\nvarying vec2 vCell;')
-        .replace('#include <project_vertex>', '#include <project_vertex>\nvCut = cut;\nvCell = cell;')
+        .replace('#include <common>', `#include <common>\nattribute float cut;\nattribute vec2 cell;\nvarying float vCut;\nvarying vec2 vCell;${FLASH_VERT_PARS}`)
+        .replace('#include <project_vertex>', `#include <project_vertex>\nvCut = cut;\nvCell = cell;${FLASH_VERT}`)
       shader.fragmentShader = shader.fragmentShader
         .replace(
           '#include <common>',
           `#include <common>
 uniform sampler2D shadeMap;
-uniform vec2 shadeOrigin;
-uniform vec2 shadeSize;
 varying float vCut;
-varying vec2 vCell;`,
+varying vec2 vCell;
+${FLASH_PARS}`,
         )
         .replace(
           '#include <clipping_planes_fragment>',
@@ -657,44 +712,97 @@ varying vec2 vCell;`,
 if (vCut > 0.5 && !gl_FrontFacing) discard;
 #endif`,
         )
-        // the cell's light, from the shade map (the vertex colour carries the tint and the face's own shade)
-        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= texture2D(shadeMap, (vCell - shadeOrigin + 0.5) / shadeSize).r;')
+        // the cell's light comes from the shade map, stepped cell by cell (`vCell`),
+        // and the vertex colour carries the tint and the face's own shade; the flash
+        // over it is a smooth field, read at the fragment's own place in the world
+        .replace(
+          '#include <color_fragment>',
+          `#include <color_fragment>
+diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize).r;${flashApply('diffuseColor')}`,
+        )
     }
     return m
   }
 
   /**
-   * Repaint the shade map for this scene: a texel per cell over the bounds
-   * (and one cell around them, for the void columns the level builds there),
-   * `shadeOf` in 8 bits. A cell outside the map is full bright, as it was
-   * when the shade was a vertex colour.
+   * Billboard material: sprites carry their light in their vertex colour, so
+   * the only field they read is the flash — a monster standing in a
+   * cell the game has washed blue is washed with it, as it is in the 2D view.
    */
-  private updateShadeMap(scene: Scene) {
+  private makeBillboardMaterial(tex: THREE.Texture): THREE.MeshBasicMaterial {
+    const m = new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide, depthWrite: true })
+    const fu = this.fieldUniforms
+    m.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, fu)
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>${FLASH_VERT_PARS}`)
+        .replace('#include <project_vertex>', `#include <project_vertex>${FLASH_VERT}`)
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${FLASH_PARS}`)
+        .replace('#include <color_fragment>', `#include <color_fragment>${flashApply('diffuseColor')}`)
+    }
+    return m
+  }
+
+  /**
+   * Repaint the cell fields for this scene: a texel per cell over the bounds
+   * (and one cell around them, for the void columns the level builds there).
+   * The shade map holds `shadeOf` in 8 bits, stepped per cell; a cell outside
+   * the map is full bright, as it was when the shade was a vertex colour. The
+   * flash map holds `flashOf` as rgba, filtered smooth, and carries the flash
+   * colour into every texel — including the unwashed ones, whose alpha is
+   * zero: a texel left black there would filter into a dark fringe around the
+   * edge of the wash.
+   */
+  private updateFields(scene: Scene) {
     const b = scene.bounds
     const ox = b.left - 1, oz = b.top - 1
     const w = Math.max(1, b.right - b.left + 3)
     const h = Math.max(1, b.bottom - b.top + 3)
-    let tex = this.shadeTex
-    if (!tex || tex.image.width !== w || tex.image.height !== h) {
-      tex?.dispose()
-      tex = this.shadeTex = new THREE.DataTexture(new Uint8Array(w * h), w, h, THREE.RedFormat, THREE.UnsignedByteType)
-      tex.magFilter = THREE.NearestFilter
-      tex.minFilter = THREE.NearestFilter
-      tex.generateMipmaps = false
+    let shade = this.shadeTex
+    let flash = this.flashTex
+    if (!shade || !flash || shade.image.width !== w || shade.image.height !== h) {
+      shade?.dispose()
+      flash?.dispose()
+      shade = this.shadeTex = new THREE.DataTexture(new Uint8Array(w * h), w, h, THREE.RedFormat, THREE.UnsignedByteType)
+      shade.magFilter = THREE.NearestFilter
+      shade.minFilter = THREE.NearestFilter
+      shade.generateMipmaps = false
       // one byte per texel: rows are not padded to four
-      tex.unpackAlignment = 1
-      this.shadeUniforms.shadeMap.value = tex
-      this.shadeUniforms.shadeSize.value.set(w, h)
+      shade.unpackAlignment = 1
+      flash = this.flashTex = new THREE.DataTexture(new Uint8Array(w * h * 4), w, h, THREE.RGBAFormat, THREE.UnsignedByteType)
+      flash.magFilter = THREE.LinearFilter
+      flash.minFilter = THREE.LinearFilter
+      flash.generateMipmaps = false
+      this.fieldUniforms.shadeMap.value = shade
+      this.fieldUniforms.flashMap.value = flash
+      this.fieldUniforms.fieldSize.value.set(w, h)
     }
-    this.shadeUniforms.shadeOrigin.value.set(ox, oz)
-    const data = tex.image.data as Uint8Array
+    this.fieldUniforms.fieldOrigin.value.set(ox, oz)
+    const sd = shade.image.data as Uint8Array
+    const fd = flash.image.data as Uint8Array
+    // the colour the wash is in, for the texels it does not reach: one flash
+    // covers the view, so the first cell wearing one speaks for all of them
+    let hue = { r: 0, g: 0, b: 0 }
+    for (const cell of scene.cells.values()) {
+      if (!cell.flash || cell.flash.a <= 0) continue
+      hue = { r: cell.flash.r, g: cell.flash.g, b: cell.flash.b }
+      break
+    }
     for (let z = 0; z < h; z++) {
       for (let x = 0; x < w; x++) {
+        const i = z * w + x
         const cell = scene.cells.get(cellKey(ox + x, oz + z))
-        data[z * w + x] = Math.round(shadeOf(cell, scene) * 255)
+        sd[i] = Math.round(shadeOf(cell, scene) * 255)
+        const f = cell?.flash
+        fd[i * 4] = f?.a ? f.r : hue.r
+        fd[i * 4 + 1] = f?.a ? f.g : hue.g
+        fd[i * 4 + 2] = f?.a ? f.b : hue.b
+        fd[i * 4 + 3] = Math.min(255, f?.a ?? 0)
       }
     }
-    tex.needsUpdate = true
+    shade.needsUpdate = true
+    flash.needsUpdate = true
   }
 
   /** Footprint options for the inset walls of II.1. */
@@ -705,7 +813,8 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
   private makeGhostMaterial(opacity: number, map?: THREE.Texture, fade?: { start: number; range: number }): THREE.ShaderMaterial {
     // the shared uniforms are the same objects in every ghost material (one depth image, one camera);
     // a material with its own fade takes uniforms of its own for that alone
-    const u: Record<string, THREE.IUniform> = { ...this.ghostUniforms, opacity: { value: opacity } }
+    // the ghost lays the flash over itself like every other material, and reads it from the shared field uniforms
+    const u: Record<string, THREE.IUniform> = { ...this.ghostUniforms, ...this.fieldUniforms, opacity: { value: opacity } }
     if (fade) {
       u.fadeStart = { value: fade.start }
       u.fadeRange = { value: fade.range }
@@ -730,7 +839,7 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
    * sample: the level, and the sprites that stand in it. A plant or a statue
    * hides a monster as surely as a wall does, so it belongs in this image —
    * that is what lets one rule (II.4) cover everything the geometry hides.
-   * The overlays (cursor, flash) are left out, and so are the ghosts
+   * The overlays (the cursor) are left out, and so are the ghosts
    * themselves: they sample this very depth texture, and a sprite that reads
    * the image it is being drawn into is a framebuffer feedback loop, which
    * GL refuses (`GL_INVALID_OPERATION` on the draw call).
@@ -824,7 +933,7 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
       wallMat: this.makeLevelMaterial(tex),
       featMat: this.makeLevelMaterial(tex, true),
       decalMat: this.makeLevelMaterial(tex, false, true),
-      bbMat: new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide, depthWrite: true }),
+      bbMat: this.makeBillboardMaterial(tex),
       // A fragment draws only where the level's depth image is nearer, i.e.
       // exactly the part of the sprite the geometry hides, fading with the
       // depth gap. Fully visible sprites produce nothing.
@@ -1002,7 +1111,6 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
     const builders = new Map<string, GeoBuilder>()
     const decalBuilders = new Map<string, GeoBuilder>()
     const voids = new GeoBuilder()
-    const flash = new GeoBuilder()
     const tint = scene.level.tint
     const get = (name: string) => {
       let b = builders.get(name)
@@ -1086,13 +1194,6 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
           // ceiling
           const ceiling = ceilingOf(cell)
           if (ceiling) get(ceiling.r.atlas).at(x, y).quad([[x, 1, y], [x + 1, 1, y], [x + 1, 1, y + 1], [x, 1, y + 1]], ceiling.uv, 0.75, tint)
-          if (cell.flash && cell.flash.a > 0) {
-            flash.at(x, y).quad([[x, 0.01, y + 1], [x + 1, 0.01, y + 1], [x + 1, 0.01, y], [x, 0.01, y]], { u0: 0, v0: 0, u1: 1, v1: 1 }, 1, {
-              r: cell.flash.r / 255,
-              g: cell.flash.g / 255,
-              b: cell.flash.b / 255,
-            })
-          }
           continue
         }
         // solid: wall, door or void. The body is the footprint of II.1
@@ -1340,12 +1441,6 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
     }
     const vg = voids.build()
     if (vg) this.levelGroup.add(new THREE.Mesh(vg, this.voidMat))
-    const fg = flash.build()
-    if (fg) {
-      const m = new THREE.Mesh(fg, this.flashMat)
-      m.renderOrder = 5
-      this.levelGroup.add(m)
-    }
     // upright features stand as billboards built with the level
     for (const cell of scene.cells.values()) {
       if (cell.kind === 'unknown' || cell.occluder) continue
@@ -1724,7 +1819,7 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
         this.builtTint = tintKey
         this.rebuildLevel(scene)
       }
-      this.updateShadeMap(scene)
+      this.updateFields(scene)
       this.rebuildBillboards(scene)
     } else if (this.billboardsDirty) this.rebuildBillboards(scene)
     // camera
@@ -1954,9 +2049,12 @@ if (vCut > 0.5 && !gl_FrontFacing) discard;
     const o = this.vmHands.offhand
     o.visible = !!vm.offhand
     pose(o, vm.offhand?.name?.startsWith('HAND2_') ? VM_SHIELD_REST : VM_OFFWEAPON_REST)
-    // hands take the level's light like everything else in the view
+    // hands take the level's light like everything else in the view, and the
+    // flash over the cell the player stands in washes over them
     const tint = scene.level.tint
     this.vmMat.color.setRGB(tint.r, tint.g, tint.b)
+    const flash = flashOf(getCell(scene, scene.player.x, scene.player.y))
+    this.vmFlash.value.set(flash.r, flash.g, flash.b, flash.a)
     const prevAutoClear = r.autoClear
     r.autoClear = false
     r.clearDepth()

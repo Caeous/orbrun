@@ -1,6 +1,7 @@
 import {
   cellKey,
   dirToYaw,
+  flashOf,
   minibarRects,
   MINIBAR_CELL,
   type Minibars,
@@ -466,8 +467,13 @@ export class Render2d implements MapRenderer {
           ctx.fillStyle = 'rgba(0,0,0,0.3)'
           ctx.fillRect(sx, sy, cs, cs)
         }
-        if (cell.flash) {
-          ctx.fillStyle = `rgba(${cell.flash.r},${cell.flash.g},${cell.flash.b},${cell.flash.a / 255})`
+        // the flash covers the whole cell, over everything drawn in it
+        // (cell_renderer.js `render_flash`); the 3D view carries the same
+        // wash through the cell's air
+        const flash = flashOf(cell)
+        if (flash.a > 0) {
+          const c = (v: number) => Math.round(v * 255)
+          ctx.fillStyle = `rgba(${c(flash.r)},${c(flash.g)},${c(flash.b)},${flash.a})`
           ctx.fillRect(sx, sy, cs, cs)
         }
       }

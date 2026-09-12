@@ -112,8 +112,11 @@ export const MINIMAP_CELL_DEFAULT = 20
 export const MINIMAP_TILES_DEFAULT = 19
 /** the status strip's badges are squares this many rows of the grid tall (renderStatuses) */
 export const STATUS_BADGE_ROWS = 4
-/** the trapped mark (renderTrapped) is a square this fraction of the free view's shorter side */
-export const TRAPPED_FRACTION = 0.35
+/**
+ * the trapped mark (renderTrapped) is a square this fraction of the free view's shorter side: most of the view, so
+ * it reads as something wrapped round the player rather than a sprite standing in the cell ahead
+ */
+export const TRAPPED_FRACTION = 0.8
 /**
  * The map's shape is minimap.js's: `gym` rows to `gxm` columns, enums.js has
  * `gxm = 80`, `gym = 70`.
