@@ -157,8 +157,7 @@ export class CameraController {
    * the left edge of the view, `l` up the right, and `u` straight ahead.
    */
   get gridFacing(): Dir8 {
-    const f = this.camera.facing
-    return f % 2 === 0 ? f : rotateDir(f, -1)
+    return gridFacingOf(this.camera.facing)
   }
 
   /**
@@ -453,4 +452,14 @@ function monsterId(b: Billboard): number | undefined {
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v))
+}
+
+/**
+ * The compass heading the grid is read against under a facing (`gridFacing`):
+ * a compass facing itself, a diagonal the compass heading on its left, so
+ * north-east reads as north. The minimap turns to the same heading (hud.ts
+ * renderMinimap), so the map and an aim's keys agree on which way is up.
+ */
+export function gridFacingOf(f: Dir8): Dir8 {
+  return f % 2 === 0 ? f : rotateDir(f, -1)
 }

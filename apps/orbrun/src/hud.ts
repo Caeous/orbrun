@@ -15,6 +15,7 @@ import { glyph, glyphName } from './glyphs'
 import type { Context } from './context'
 import type { PadKind } from './gamepad'
 import type { InputDevice } from './game'
+import { gridFacingOf } from './camera'
 import { MORPH, animate, coverTransform, reducedMotion, type Rect } from './mapmorph'
 import type { CellRect, GameLayout } from './grid/console'
 import type { GridHost } from './grid/host'
@@ -1050,6 +1051,11 @@ export class Hud {
     const mfColours = MF_OPTION_NAMES.map((n) => c(n))
     this.minimap.setOptions({
       mode,
+      // the map turns with the player, to the heading an aim's keys read
+      // against (camera gridFacing): a compass facing is straight up, a
+      // diagonal shows its left-hand compass heading up, so the wedge leans
+      // 45 degrees right and `k` in an aim walks the cursor up the map
+      up: gridFacingOf(cam.facing),
       mfColours,
       filterScaling: opts.tile_filter_scaling === true,
       glyphFont: typeof opts.glyph_mode_font === 'string' && opts.glyph_mode_font ? opts.glyph_mode_font : 'monospace',

@@ -1,10 +1,12 @@
 import {
   cellKey,
+  dirToYaw,
   minibarRects,
   MINIBAR_CELL,
   type Minibars,
   type Camera,
   type CellKey,
+  type Dir8,
   type MapRenderer,
   type Scene,
   type SceneCursor,
@@ -74,6 +76,14 @@ export interface Render2dOptions {
   wedgeReach?: number
   /** Opacity scale for the wedge, 0..1: 1 is the main view's marker, less makes a quieter one for a minimap. Default 1. */
   wedgeAlpha?: number
+  /**
+   * The compass heading drawn at the top: north (0) by default, the map as
+   * WebTiles lays it out. A minimap that turns with the player passes the
+   * heading they face; the map turns about the cell the view is centred on
+   * (the player), in whole quarter turns, so cells stay square. Sprites,
+   * glyphs and the cursor's icon stay upright over the turned ground.
+   */
+  up?: Dir8
 }
 
 /** Horizontal field of view (degrees) from a vertical one and a viewport aspect ratio. */
@@ -155,6 +165,7 @@ export class Render2d implements MapRenderer {
       fov: opts.fov ?? 90,
       wedgeReach: opts.wedgeReach ?? 8,
       wedgeAlpha: opts.wedgeAlpha ?? 1,
+      up: opts.up ?? 0,
     }
   }
 
@@ -173,6 +184,7 @@ export class Render2d implements MapRenderer {
     if (opts.fov !== undefined) this.opts.fov = opts.fov
     if (opts.wedgeReach !== undefined) this.opts.wedgeReach = opts.wedgeReach
     if (opts.wedgeAlpha !== undefined) this.opts.wedgeAlpha = opts.wedgeAlpha
+    if (opts.up !== undefined) this.opts.up = opts.up
   }
 
   mount(target: HTMLCanvasElement | OffscreenCanvas): void {
@@ -355,17 +367,51 @@ export class Render2d implements MapRenderer {
       oy = b.top - Math.floor((rows - bh) / 2)
     }
     this.origin = { x: ox, y: oy }
+    // the map turned so `up` is at the top: about the cell the view is
+    // centred on, which is where the player stands when following
+    const rot = -dirToYaw(this.opts.up)
+    const pivot = centre ?? (this.opts.follow && cam ? cam : null)
+    const pvx = pivot ? (pivot.x - ox + 0.5) * cs : this.width / 2
+    const pvy = pivot ? (pivot.y - oy + 0.5) * cs : this.height / 2
+    if (rot) {
+      ctx.translate(pvx, pvy)
+      ctx.rotate(rot)
+      ctx.translate(-pvx, -pvy)
+    }
+    const cosR = Math.cos(rot)
+    const sinR = Math.sin(rot)
+    /** draw something upright over a turned map: the cell's own axes turned back about its centre */
+    const upright = (sx: number, sy: number, draw: () => void) => {
+      if (!rot) return draw()
+      const mx = sx + cs / 2
+      const my = sy + cs / 2
+      ctx.save()
+      ctx.translate(mx, my)
+      ctx.rotate(-rot)
+      ctx.translate(-mx, -my)
+      draw()
+      ctx.restore()
+    }
     const minimap = this.opts.mode === 'minimap' || !this.tiles
     const glyphs = this.opts.mode === 'glyphs' && !minimap
     const hybrid = this.opts.mode === 'hybrid' && !minimap
-    const inView = (sx: number, sy: number) => !(sx < -cs || sy < -cs || sx > this.width || sy > this.height)
+    const inView = (sx: number, sy: number) => {
+      if (rot) {
+        // where the cell's centre lands on the turned canvas
+        const dx = sx + cs / 2 - pvx
+        const dy = sy + cs / 2 - pvy
+        sx = pvx + dx * cosR - dy * sinR - cs / 2
+        sy = pvy + dx * sinR + dy * cosR - cs / 2
+      }
+      return !(sx < -cs || sy < -cs || sx > this.width || sy > this.height)
+    }
     if (glyphs || hybrid) ctx.font = `${Math.floor(cs * 0.8)}px ${this.opts.glyphFont}`
     for (const cell of scene.cells.values()) {
       const sx = (cell.x - ox) * cs
       const sy = (cell.y - oy) * cs
       if (!inView(sx, sy)) continue
       if (minimap) this.drawMinimapCell(ctx, cell, sx, sy, cs)
-      else if (glyphs) this.drawGlyphCell(ctx, cell, sx, sy, cs, 'fill')
+      else if (glyphs) upright(sx, sy, () => this.drawGlyphCell(ctx, cell, sx, sy, cs, 'fill'))
       else this.drawTileCell(ctx, cell, sx, sy, cs)
     }
     if (!minimap && !glyphs) {
@@ -377,8 +423,10 @@ export class Render2d implements MapRenderer {
         if (hybrid && b.kind !== 'cloud' && b.kind !== 'projectile') continue
         const alpha = b.alpha ?? (b.kind === 'cloud' ? 0.75 : 1)
         if (alpha !== 1) ctx.globalAlpha = alpha
-        if (b.layers) for (const l of b.layers) this.drawTile(ctx, l.tile, sx, sy, cs, l.ox, l.oy, l.ymax)
-        else this.drawTile(ctx, b.tile, sx, sy, cs)
+        upright(sx, sy, () => {
+          if (b.layers) for (const l of b.layers) this.drawTile(ctx, l.tile, sx, sy, cs, l.ox, l.oy, l.ymax)
+          else this.drawTile(ctx, b.tile, sx, sy, cs)
+        })
         if (alpha !== 1) ctx.globalAlpha = 1
       }
       if (hybrid) {
@@ -387,7 +435,7 @@ export class Render2d implements MapRenderer {
           const sx = (cell.x - ox) * cs
           const sy = (cell.y - oy) * cs
           if (!inView(sx, sy)) continue
-          if (scene.billboards.some((b) => b.x === cell.x && b.y === cell.y && b.kind !== 'cloud' && b.kind !== 'projectile')) this.drawGlyphCell(ctx, cell, sx, sy, cs, 'shade')
+          if (scene.billboards.some((b) => b.x === cell.x && b.y === cell.y && b.kind !== 'cloud' && b.kind !== 'projectile')) upright(sx, sy, () => this.drawGlyphCell(ctx, cell, sx, sy, cs, 'shade'))
         }
       }
       // status badges over the sprite (or over the glyph standing in for it)
@@ -396,7 +444,9 @@ export class Render2d implements MapRenderer {
         const sx = (b.x - ox) * cs
         const sy = (b.y - oy) * cs
         if (!inView(sx, sy)) continue
-        for (const i of b.statusIcons) this.drawTile(ctx, i.tile, sx, sy, cs, i.ox, i.oy, undefined, i.at)
+        upright(sx, sy, () => {
+          for (const i of b.statusIcons!) this.drawTile(ctx, i.tile, sx, sy, cs, i.ox, i.oy, undefined, i.at)
+        })
       }
     } else if (minimap) {
       for (const b of scene.billboards) {
@@ -463,9 +513,14 @@ export class Render2d implements MapRenderer {
         ctx.stroke()
       }
     }
-    if (scene.playerOnLevel && !minimap) this.drawMinibars(ctx, (scene.player.x - ox) * cs, (scene.player.y - oy) * cs, cs)
-    if (this.cursor) {
-      if (this.cursor.grid && !minimap) {
+    if (scene.playerOnLevel && !minimap && minibarRects(this.opts.minibars).length) {
+      const px = (scene.player.x - ox) * cs
+      const py = (scene.player.y - oy) * cs
+      upright(px, py, () => this.drawMinibars(ctx, px, py, cs))
+    }
+    const cursor = this.cursor
+    if (cursor) {
+      if (cursor.grid && !minimap) {
         // a faint outline on every known cell: where the cursor may go
         ctx.strokeStyle = 'rgba(255,255,255,0.22)'
         ctx.lineWidth = 1
@@ -477,12 +532,13 @@ export class Render2d implements MapRenderer {
           ctx.strokeRect(sx + 0.5, sy + 0.5, cs - 1, cs - 1)
         }
       }
-      const cx = (this.cursor.x - ox) * cs
-      const cy = (this.cursor.y - oy) * cs
+      const cx = (cursor.x - ox) * cs
+      const cy = (cursor.y - oy) * cs
       // the same icon WebTiles paints over the cell; an outline when the gamedata has none
-      if (this.cursor.tile !== undefined && this.tiles && this.tiles.tile(this.cursor.tile)) this.drawTile(ctx, this.cursor.tile, cx, cy, cs)
+      const icon = cursor.tile
+      if (icon !== undefined && this.tiles && this.tiles.tile(icon)) upright(cx, cy, () => this.drawTile(ctx, icon, cx, cy, cs))
       else {
-        ctx.strokeStyle = this.cursor.mode === 'map' ? '#ffffff' : '#ff8800'
+        ctx.strokeStyle = cursor.mode === 'map' ? '#ffffff' : '#ff8800'
         ctx.lineWidth = 2
         ctx.strokeRect(cx + 1, cy + 1, cs - 2, cs - 2)
       }

@@ -9,6 +9,7 @@ function fakeCanvas() {
   const fills: { x: number; y: number; w: number; h: number }[] = []
   const images: { sx: number; sy: number; sh: number; dx: number; dy: number; dh: number }[] = []
   const arcs: number[] = []
+  const rotates: number[] = []
   const ctx = new Proxy(
     {
       clearRect: () => undefined,
@@ -26,6 +27,8 @@ function fakeCanvas() {
       save: () => undefined,
       restore: () => undefined,
       setTransform: () => undefined,
+      translate: () => undefined,
+      rotate: (a: number) => rotates.push(a),
       beginPath: () => undefined,
       moveTo: () => undefined,
       lineTo: () => undefined,
@@ -37,7 +40,7 @@ function fakeCanvas() {
     { set: (t, k, v) => ((t as Record<string | symbol, unknown>)[k] = v, true) },
   )
   const canvas = { width: 0, height: 0, getContext: () => ctx } as unknown as HTMLCanvasElement
-  return { canvas, draws, rects, fills, images, arcs }
+  return { canvas, draws, rects, fills, images, arcs, rotates }
 }
 
 const tiles: TileSource = {
@@ -213,6 +216,47 @@ describe('Render2d draw order', () => {
     expect(arcs).toEqual([40])
     // only the cursor's own outline, no grid over the known cells
     expect(rects.filter((k) => k === 'stroke')).toHaveLength(1)
+  })
+  it('turns the map so `up` is at the top, about the player, and keeps sprites, glyphs and the cursor upright', () => {
+    const { canvas, rotates, images, draws } = fakeCanvas()
+    // facing east: the map turns a quarter turn anticlockwise
+    const r = new Render2d({ cellSize: 10, follow: true, up: 2 })
+    r.mount(canvas)
+    r.setTiles(tiles)
+    r.resize(30, 30, 1)
+    const scene = sceneWith([floor(1, 1), floor(2, 1)])
+    scene.billboards.push({ x: 2, y: 1, tile: 500, kind: 'monster', height: 0.8 })
+    r.setScene(scene)
+    r.setCamera(makeCamera(1, 1, Math.PI / 2))
+    r.setCursor({ x: 2, y: 1, mode: 'target', tile: 950, grid: false })
+    r.render()
+    // the map's turn, then the sprite and the cursor icon each turned back
+    expect(rotates).toEqual([-Math.PI / 2, Math.PI / 2, Math.PI / 2])
+    // the cell east of the player is still drawn at its map position; the turn is the canvas's
+    expect(draws).toEqual([100, 100, 500, 950])
+    expect(images[1]).toMatchObject({ dx: 20, dy: 10 })
+    // north up: nothing turns
+    rotates.length = 0
+    r.setOptions({ up: 0 })
+    r.render()
+    expect(rotates).toEqual([])
+    // a wide canvas turned a quarter turn shows cells above and below the player that lie
+    // past its rows but within its columns
+    const wide = fakeCanvas()
+    const w = new Render2d({ cellSize: 10, follow: true, up: 2 })
+    w.mount(wide.canvas)
+    w.setTiles(tiles)
+    w.resize(70, 30, 1)
+    const tall = sceneWith([floor(1, 1)])
+    tall.cells.set(cellKey(1, 4), floor(1, 4))
+    tall.cells.set(cellKey(4, 1), floor(4, 1))
+    w.setScene(tall)
+    w.setCamera(makeCamera(1, 1, Math.PI / 2))
+    w.render()
+    // the player stands in the middle column; (1,4) is three cells south: turned, it lands
+    // three cells right of the player, in view; (4,1) is three cells east: turned, three
+    // cells up, off a 3-row canvas
+    expect(wide.images.map((i) => `${i.dx},${i.dy}`)).toEqual(['30,10', '30,40'])
   })
   it('renderCell bare drops the terrain and the cell marks, keeping the sprite and its badges', () => {
     const { canvas, draws, rects } = fakeCanvas()
