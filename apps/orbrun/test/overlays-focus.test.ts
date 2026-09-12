@@ -32,6 +32,7 @@ function setup() {
   st.inputMode = MouseMode.COMMAND
   /** one frame of the game loop: overlays, context, prompt strip, focus */
   const frame = (device: 'pad' | 'keyboard' | 'pointer' = 'pad'): Context => {
+    ov.setDevice(device)
     ov.update(st)
     const ctx = deriveContext(st, scene, cam, 'micro')
     if (ctx.mode === 'popup') ctx.popupActions = ov.popupActions()
@@ -750,6 +751,35 @@ describe('scroller popups with unprinted keys', () => {
     ctx = frame()
     expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('Annotate')
   })
+  it("a god's description at an altar: the keyboard's Enter joins (raw to the server) until an arrow has taken the cursor; J stays raw too", () => {
+    const { ov, st, sent, frame, host } = setup()
+    // ui-layouts.js describe_god: the pane names sit behind ! and ^; at an altar the footer adds "J/Enter: join religion"
+    reduce(st, { msg: 'ui-push', type: 'describe-god', name: 'Okawaru', colour: 14, description: 'Okawaru is a dangerous god.', title: 'the Fighter', favour: '', powers_list: '', powers: '', wrath: 'w', extra: '', is_altar: true, service_fee: '' })
+    const ctx = frame('keyboard')
+    expect(ctx.mode).toBe('popup')
+    expect(host.querySelector('.popup .footer')?.textContent).toContain('J/Enter: join religion')
+    // the cursor rests on the pane switch, but Enter is not its until the keyboard walked there
+    expect(ctx.focus?.label).toBe('Powers')
+    expect(ov.focusKey(st, ctx, 'select')).toBe(false)
+    expect(sent).toEqual([])
+    // an arrow the cursor cannot take (one item) is not a walk either: it scrolls the text, Enter stays raw
+    expect(ov.focusKey(st, ctx, 'next')).toBe(false)
+    expect(ov.focusKey(st, ctx, 'select')).toBe(false)
+    expect(sent).toEqual([])
+    // the pad's A fires the focused switch as before
+    ov.focusOp(st, ctx, 'select')
+    expect(sent).toEqual([{ msg: 'input', text: '!' }])
+  })
+  it('a popup whose row the keyboard can walk: an arrow that moves the cursor arms Enter, which then fires the focused key', () => {
+    const { ov, st, sent, frame } = setup()
+    reduce(st, { msg: 'ui-push', type: 'formatted-scroller', title: '', text: '<white>Dungeon Overview and Level Annotations<lightgrey>\n<yellow>Dungeon<lightgrey>' })
+    const ctx = frame('keyboard')
+    expect(ctx.focus).toMatchObject({ label: 'Travel', count: 4 })
+    expect(ov.focusKey(st, ctx, 'select')).toBe(false)
+    expect(ov.focusKey(st, ctx, 'right')).toBe(true)
+    expect(ov.focusKey(st, ctx, 'select')).toBe(true)
+    expect(sent).toEqual([{ msg: 'input', text: '_' }])
+  })
   it('the help screen: its "k: Section" menu lines become the row, and it stays when a section replaces the text', () => {
     const { st, frame } = setup()
     reduce(st, { msg: 'ui-push', type: 'formatted-scroller', tag: 'help', title: '', text: '<h>Dungeon Crawl Help\n\nPress one of the following keys to\nobtain more information on a certain\naspect of Dungeon Crawl.\n<w>?</w>: List of commands\n<w>^</w>: Quickstart Guide\n<darkgrey>:: Browse character notes</darkgrey>\n<w>~</w>: Macros help\n<w>/</w>: Lookup description\n<w>Q</w>: FAQ' })
@@ -806,6 +836,28 @@ describe('the travel depth prompt', () => {
     expect(sent).toEqual([])
     ov.oskOp('submit')
     expect(sent).toEqual([{ msg: 'key', keycode: 21 }, { msg: 'key', keycode: 11 }, { msg: 'text_input', text: '2\r' }])
+  })
+
+  it('after the keyboard or the mouse the field stands alone, focused, and the on-screen keyboard waits for the pad', () => {
+    const { ov, st, frame, host } = setup()
+    // skill_menu.cc: a msgwin_get_line tagged skill_target, prefilled with the current target
+    reduce(st, { msg: 'init_input', type: 'messages', tag: 'skill_target', prompt: 'Enter a skill target for Armour: ', maxlen: 3, size: 3, prefill: '0' })
+    expect(frame('keyboard').mode).toBe('text')
+    expect(host.querySelector('.osk')).toBeNull()
+    const input = host.querySelector<HTMLInputElement>('.popup input.text')!
+    expect(input.value).toBe('0')
+    // the pad speaks: the keyboard comes up over the same field, no rebuild needed
+    frame('pad')
+    expect(host.querySelectorAll('.osk').length).toBe(1)
+    expect(host.querySelector<HTMLInputElement>('.popup input.text')).toBe(input)
+    // a physical key: it goes away again, so the field it covered shows what is typed
+    frame('keyboard')
+    expect(host.querySelector('.osk')).toBeNull()
+    frame('pointer')
+    expect(host.querySelector('.osk')).toBeNull()
+    // X on the pad still brings it up on demand
+    ov.oskOp('type')
+    expect(host.querySelectorAll('.osk').length).toBe(1)
   })
 
   it('B leaves the prompt with an Escape and puts the keyboard away; X erases', () => {

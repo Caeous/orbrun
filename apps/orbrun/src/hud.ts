@@ -102,6 +102,8 @@ export const MINIMAP_CELL_DEFAULT = 20
  * cells of 8px, game.js `stat_width`, 336px), so it hangs over the view.
  */
 export const MINIMAP_TILES_DEFAULT = 19
+/** the status strip's badges are squares this many rows of the grid tall (renderStatuses) */
+export const STATUS_BADGE_ROWS = 3
 /**
  * The map's shape is minimap.js's: `gym` rows to `gxm` columns, enums.js has
  * `gxm = 80`, `gym = 70`.
@@ -171,6 +173,23 @@ export class Hud {
   /** consumables action panel (action_panel.js): inventory items with action_panel_order >= 0, in the strip along the top between the stats pane and the minimap (grid/panel.ts) */
   private actionPanel = h('div', { class: 'action-panel' })
   private minimapCanvas = h('canvas', { class: 'minimap' })
+  /**
+   * The status strip: the player's own status badges (poison, a net, the
+   * server's status icons) blown up beside the minimap, each a square
+   * STATUS_BADGE_ROWS of the grid tall, stacked down the map's left edge a
+   * cell's gutter away. The portrait paints them at a few texels in the
+   * corner of a cell; here a poisoned character reads from across the
+   * room. Hidden when there is nothing to show, and with the sidebar.
+   */
+  private statuses = h('div', { class: 'statuses', hidden: true })
+  private statusCanvas = h('canvas', { class: 'status-canvas' })
+  private statusR2d = new Render2d({ mode: 'tiles', cellSize: 32 })
+  /** a badge's side in css px and how many stack down the map's side, from `layout` */
+  private statusPx = 0
+  private statusRows = 1
+  /** where the stack hangs: its right edge and top in css px; null with no minimap to hang off */
+  private statusAt: { right: number; top: number } | null = null
+  private statusKey = ''
   /** the minimap's unexplored ground is the same translucent backing as the stats pane, since it lies over the view too */
   private minimap = new Render2d({ mode: 'tiles', cellSize: MINIMAP_CELL_DEFAULT, follow: true, background: 'rgba(0, 0, 0, 0)', wedgeReach: MINIMAP_WEDGE_REACH, wedgeAlpha: MINIMAP_WEDGE_ALPHA })
   /** Horizontal field of view (degrees) for the minimap wedge. */
@@ -251,7 +270,9 @@ export class Hud {
     this.hooks = hooks
     this.root = h('div', { class: 'hud' })
     this.sidebar.append(this.minimapCanvas, this.monsters)
-    this.root.append(this.pips, this.stats, this.sidebar, this.actionPanel, this.messages, this.actionbar)
+    this.statuses.append(this.statusCanvas)
+    this.statusR2d.mount(this.statusCanvas)
+    this.root.append(this.pips, this.stats, this.sidebar, this.statuses, this.actionPanel, this.messages, this.actionbar)
     host.append(this.root, this.statusEl, this.panelTooltip)
     this.minimap.mount(this.minimapCanvas)
     this.portrait.mount(this.portraitCanvas)
@@ -333,6 +354,12 @@ export class Hud {
     const statsRight = this.stats.hidden ? null : statsPx.left + statsPx.width
     const minimapLeft = this.sidebar.hidden || w === 0 ? null : sidePx.left + sidePx.width - w
     this.panelBox = panelSpan(this.freePx, statsRight, minimapLeft, host.grid.cw, PANEL_CELL)
+    // the status strip hangs down the minimap's left edge, a cell's gutter away: squares STATUS_BADGE_ROWS tall, as many
+    // down as the map is tall, another column leftward past that
+    this.statusPx = host.grid.ch * STATUS_BADGE_ROWS
+    this.statusRows = Math.max(1, Math.floor(size / this.statusPx))
+    this.statusAt = minimapLeft === null ? null : { right: minimapLeft - host.grid.cw, top: sidePx.top }
+    this.statusKey = ''
     // left aligned in the strip, where action_panel.js stands it in the dungeon's top-left corner; it shrinks to what it
     // draws, so the edge pips step round the panel itself, not the whole strip
     this.actionPanel.style.left = this.panelBox.left + 'px'
@@ -395,6 +422,7 @@ export class Hud {
     this.monsters.hidden = nearby === 'pips'
     if (nearby === 'list') this.renderMonsters(scene, cam, state, gd)
     this.renderMinimap(scene, cam, state, gd)
+    this.renderStatuses(scene, state, gd)
     // only the player's pane can be dismissed, so that is part of the key
     const msgKey = state.rev.messages + ':' + this.logOffset + (state.messages.more ? ':' + spectating : '')
     if (msgKey !== this.lastMsgKey) {
@@ -460,6 +488,55 @@ export class Hud {
     this.portrait.setScene(scene)
     this.portrait.clear(true)
     if (scene.playerOnLevel) this.portrait.renderCell(scene.player.x, scene.player.y, 0, 0, px)
+  }
+
+  /**
+   * The status strip beside the minimap: the badges on the player's own
+   * billboard (scene-webtiles `statusIcons`, the same ones the portrait
+   * paints over the doll), each blown up to a square of its own on one
+   * canvas, stacked down the map's left edge from its top, a second column
+   * leftward once the map's height is used up. Left out:
+   * the damage bar, which the stats pane's HP bar already says, and the
+   * "something under here" marks, which are about the square, not the
+   * player. Glyph mode paints no badges anywhere, so none here. The strip
+   * carries the status lights' descriptions as its tooltip.
+   */
+  private renderStatuses(scene: Scene, state: GameState, gd: Gamedata | null) {
+    if (!this.statusPx) return
+    const at = this.statusAt
+    const me = scene.playerOnLevel ? scene.billboards.find((b) => b.kind === 'player' && b.x === scene.player.x && b.y === scene.player.y) : undefined
+    const badges = (me?.statusIcons || []).filter((i) => !i.at && !i.square)
+    const o = state.options
+    const glyphs = o.tile_display_mode === 'glyphs'
+    const tip = state.player.status
+      .filter((s) => s.light)
+      .map((s) => s.desc || s.text || s.light)
+      .join('\n')
+    const key = JSON.stringify([badges.map((b) => b.tile), glyphs, o.tile_filter_scaling, gd?.version, this.statusPx, this.statusRows, at, tip])
+    if (key === this.statusKey) return
+    this.statusKey = key
+    const shown = badges.length > 0 && !glyphs && !!gd && !!at
+    this.statuses.hidden = !shown
+    if (!shown || !at) return
+    this.statuses.title = tip
+    const px = this.statusPx
+    const rows = Math.min(this.statusRows, badges.length)
+    const cols = Math.ceil(badges.length / rows)
+    const width = cols * px
+    const height = rows * px
+    this.statuses.style.left = at.right - width + 'px'
+    this.statuses.style.top = at.top + 'px'
+    const dpr = window.devicePixelRatio || 1
+    this.statusR2d.resize(width, height, dpr)
+    this.statusCanvas.style.width = width + 'px'
+    this.statusCanvas.style.height = height + 'px'
+    this.statusR2d.setOptions({ filterScaling: o.tile_filter_scaling === true })
+    this.statusR2d.setTiles(gd!)
+    this.statusR2d.clear(true)
+    // a tenth of the square clear on each side, so neighbours never touch
+    const pad = Math.round(px * 0.1)
+    // the first column is the one against the map; the next stands left of it
+    badges.forEach((b, i) => this.statusR2d.drawTileFit(b.tile, (cols - 1 - Math.floor(i / rows)) * px, (i % rows) * px, px, pad))
   }
 
   /**
@@ -881,7 +958,7 @@ export class Hud {
     const avoid: PxRect[] = []
     // the panes a pip steps round: the stats pane, the action panel in the strip beside it, the prompt stack, and the
     // sidebar's panes (skipped with the column)
-    for (const el of [this.stats, this.actionPanel, this.actionbar, this.minimapCanvas, this.monsters]) {
+    for (const el of [this.stats, this.actionPanel, this.actionbar, this.statuses, this.minimapCanvas, this.monsters]) {
       if (el.hidden || (this.sidebar.hidden && el.parentElement === this.sidebar)) continue
       const r = el.getBoundingClientRect()
       const host = this.root.getBoundingClientRect()

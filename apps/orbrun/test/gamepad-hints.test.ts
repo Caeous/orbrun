@@ -239,5 +239,10 @@ describe('the one Hints preference, and activation', () => {
     expect(isPadActivity({ type: 'release', button: 'A', t: 100, held: 100 })).toBe(false)
     expect(isPadActivity({ type: 'press', button: 'A', t: 0 })).toBe(true)
     expect(isPadActivity({ type: 'dir', source: 'lstick', dir: 6 })).toBe(true)
+    // the continuation of something already counted is not a fresh choice of the pad
+    expect(isPadActivity({ type: 'look', dx: 0.5, dy: 0, start: true })).toBe(true)
+    expect(isPadActivity({ type: 'look', dx: 0.5, dy: 0 })).toBe(false)
+    expect(isPadActivity({ type: 'dirRepeat', source: 'lstick', dir: 6, n: 1 })).toBe(false)
+    expect(isPadActivity({ type: 'repeat', button: 'A', n: 1 })).toBe(false)
   })
 })

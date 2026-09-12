@@ -221,6 +221,12 @@ export interface Billboard {
      * head, where the player's own bars go (bars.ts).
      */
     at?: 'top'
+    /**
+     * The badge is about the square, not the thing standing on it: the
+     * "something under here" item-stack marks. A pane about the player's own
+     * state (orbrun's status strip) leaves these out.
+     */
+    square?: true
   }[]
   /** Opacity 0..1 when the thing is translucent (submerged, invisible-but-known). */
   alpha?: number

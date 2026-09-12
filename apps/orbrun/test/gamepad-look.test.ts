@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { GamepadInput, type PadEvent } from '../src/gamepad'
+import { GamepadInput, isPadActivity, type PadEvent } from '../src/gamepad'
 
 /** A standard-mapping pad with nothing pressed and the sticks at the given axes. */
 function fakePad(axes: number[]): Gamepad {
@@ -58,5 +58,18 @@ describe('right stick look has hysteresis', () => {
     expect(gp.isLooking).toBe(false)
     expect(looks.length).toBe(3)
     expect(looks[2]).toEqual({ dx: 0, dy: 0 })
+  })
+  it('only the first frame of a look is the pad speaking: a stick held past the threshold, or resting there, does not keep saying so', () => {
+    const gp = new GamepadInput()
+    const events: PadEvent[] = []
+    gp.on((e) => events.push(e))
+    withPad([0, 0, 0.6, 0])
+    gp.poll(0)
+    gp.poll(16)
+    gp.poll(32)
+    withPad([0, 0, 0.1, 0])
+    gp.poll(48)
+    expect(events.map((e) => isPadActivity(e))).toEqual([true, false, false, false])
+    expect(events.map((e) => e.type === 'look' && e.start === true)).toEqual([true, false, false, false])
   })
 })

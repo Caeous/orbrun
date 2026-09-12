@@ -464,6 +464,8 @@ export class GameScreen {
     if (this.is3d && (this.renderer as Render3d).animating) this.needsRender = true
     const st = this.session.state
     // overlays first: the popup's parsed actions and the focus cursor feed the context and the action bar
+    // the device first: the overlays decide what to bring up with a server prompt by who spoke last
+    this.overlays.setDevice(this.lastInput)
     this.overlays.update(st)
     // The gamedata fetch runs while the game is already talking: the launcher's
     // save-transfer question (a `show_dialog`) comes up with the veil still
@@ -1093,8 +1095,9 @@ export class GameScreen {
 
   private onKeyDown(ev: KeyboardEvent) {
     const target = ev.target as HTMLElement | null
-    if (target && isTextEntry(target)) return
+    // a key typed into a field is still the keyboard speaking (a server prompt's on-screen keyboard goes away for it)
     this.inputFrom('keyboard')
+    if (target && isTextEntry(target)) return
     if (ev.key === 'F1' && !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
       ev.preventDefault()
       if (!ev.repeat && !this.session.watching) {

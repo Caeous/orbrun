@@ -271,6 +271,33 @@ export class Render2d implements MapRenderer {
     ctx.restore()
   }
 
+  /**
+   * One tile blown up to fill a `size` square at (sx, sy) with no cell
+   * behind it: its opaque texels alone, scaled to fit inside the square
+   * less `pad` on each side and centred, whatever corner of its cell the
+   * tile is authored in. A status badge that paints a few texels in a
+   * cell's corner comes out as a full-size mark this way (orbrun's status
+   * strip).
+   */
+  drawTileFit(id: number, sx: number, sy: number, size: number, pad = 0): void {
+    const ctx = this.ctx
+    const tiles = this.tiles
+    if (!ctx || !tiles) return
+    const rect = tiles.tile(id)
+    if (!rect || rect.w <= 0 || rect.h <= 0) return
+    const img = tiles.atlas(rect.atlas)
+    if (!img) return
+    const room = Math.max(0, size - 2 * pad)
+    const scale = room / Math.max(rect.w, rect.h)
+    const w = rect.w * scale
+    const h = rect.h * scale
+    ctx.save()
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
+    ctx.imageSmoothingEnabled = this.opts.filterScaling
+    ctx.drawImage(img as CanvasImageSource, rect.sx, rect.sy, rect.w, rect.h, sx + (size - w) / 2, sy + (size - h) / 2, w, h)
+    ctx.restore()
+  }
+
   /** Clear the whole canvas to black (or transparent). */
   clear(transparent = false): void {
     const ctx = this.ctx

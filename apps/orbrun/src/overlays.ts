@@ -449,6 +449,8 @@ export class Overlays {
   private osk = new Osk(oskPrompts(), () => this.hooks.padKind?.() ?? 'generic')
   /** the server-driven text field the pad types into (init_input, menu filter, seed) */
   private textTarget: OskTarget | null = null
+  /** who spoke last (`setDevice`): a server text prompt brings the on-screen keyboard up only for the pad */
+  private device: InputDevice = 'keyboard'
   private currentTextTarget(): OskTarget | null { return this.textTarget }
   /** the seed-selection popup's field, wired when the matching init_input is up */
   private seedInput: HTMLInputElement | null = null
@@ -477,7 +479,15 @@ export class Overlays {
    * pane takes both as its default answer (prompt.cc `yesno`, `f_keyfilter`),
    * which a client-side "Yes" under Enter would override.
    */
-  private promptArmed = false
+  /**
+   * The keyboard has moved the focus layer's cursor on the screen it is on:
+   * only then does its Enter fire the focused item on a prompt card or a
+   * popup. Before that the key stays raw, so the server's own Enter applies
+   * (a yes/no's default answer, a popup's Enter, such as joining at an altar
+   * from the god's description). Cleared whenever the cursor is reseated on a
+   * rebuilt or a new screen (`syncFocus`).
+   */
+  private keyArmed = false
   /** newgame: the server's `button_focus` at the last build, so a move of its own re-seats our cursor and an echo of ours does not */
   private newgameFocus = ''
   /** bumped whenever either focus set is rebuilt, so syncFocus re-seats the cursor once */
@@ -619,10 +629,13 @@ export class Overlays {
       if (ti.type === 'seed-selection' && this.seedInput) this.wireInput(this.seedInput, ti, true)
       else this.root.append(this.renderTextInput(state))
     }
-    // a prompt of the server's comes with the keyboard up, so the pad has its keys at once;
-    // the keyboard follows the field across rebuilds. The new game's seed field waits to be asked.
+    // a prompt of the server's comes with the on-screen keyboard up when the pad spoke last, so it has
+    // its keys at once; the keyboard follows the field across rebuilds. After a physical keyboard or the
+    // mouse the field stands alone and takes the typing (the on-screen keyboard would cover it and its
+    // prompt, and show none of what was typed); X still brings it up (`oskOp`). The new game's seed
+    // field waits to be asked.
     const tt = this.currentTextTarget() // reassigned by the render helpers above
-    const prompt = !!ti && ti.type !== 'seed-selection' && !this.hooks.watching()
+    const prompt = !!ti && ti.type !== 'seed-selection' && !this.hooks.watching() && this.device === 'pad'
     if (tt && (oskWasUp || prompt)) this.osk.attach(tt, tt.input.closest('.popup') || this.root)
     else if (!tt && !this.clientOverlay) this.osk.detach()
     // now that the new elements are laid out: the reader's place, or the scroll the server asked for
@@ -1815,7 +1828,7 @@ export class Overlays {
     this.promptEl = null
     this.promptFocusables = []
     this.promptInitial = 0
-    this.promptArmed = false
+    this.keyArmed = false
     this.focusGen++
     if (!key) return
     const padKind = this.hooks.padKind?.() ?? 'xbox'
@@ -1904,6 +1917,7 @@ export class Overlays {
     }
     if (this.focusSynced === this.focusGen) return
     this.focusSynced = this.focusGen
+    this.keyArmed = false
     const set = this.focusSet(ctx)
     this.nav.set(set.items, set.screen, set.opts, set.initial, set.force)
   }
@@ -1939,14 +1953,28 @@ export class Overlays {
   private focusKeyOp(ctx: Context, op: FocusOp, keyboard: boolean): boolean {
     const set = this.focusSet(ctx)
     if (keyboard && !this.nav.count) return false
-    if (keyboard && set.items === this.promptFocusables) {
+    const prompt = set.items === this.promptFocusables
+    // a prompt card and a popup: Enter is the server's until an arrow has moved the cursor (`keyArmed`);
+    // on a prompt any arrow arms it, on a popup only one the cursor took (the others scroll the text)
+    if (keyboard && prompt) {
       if (op === 'cancel' || op === 'pageNext' || op === 'pagePrev') return false
-      if (op === 'select' && !this.promptArmed) return false
+      if (op === 'select' && !this.keyArmed) return false
       if (op !== 'select') {
-        this.promptArmed = true
+        this.keyArmed = true
         this.promptEl?.classList.add('armed')
       }
+    } else if (keyboard && ctx.mode === 'popup') {
+      if (op === 'select' && !this.keyArmed) return false
+      if (op !== 'select' && op !== 'cancel') {
+        const moved = this.focusKeyMove(op)
+        if (moved) this.keyArmed = true
+        return moved
+      }
     }
+    return this.focusKeyMove(op)
+  }
+
+  private focusKeyMove(op: FocusOp): boolean {
     switch (op) {
       case 'select':
         return this.nav.activate()
@@ -2406,12 +2434,49 @@ export class Overlays {
     })
   }
 
+  /**
+   * The footer of a client menu (the Commands screen, a list of choices):
+   * what moves the cursor and fires the row, in the words of the device that
+   * spoke last. Both readings are built and the stack's `device-*` class
+   * (`setDevice`) shows one, so the footer follows the player from the pad
+   * to the keyboard without a rebuild. `tabs`: the menu has categories on
+   * the bumpers and the left and right arrows.
+   */
+  private clientFooter(tabs: boolean): HTMLElement {
+    const kind = this.hooks.padKind?.() ?? 'generic'
+    const pad = h('span', { class: 'pad-only' })
+    if (tabs) pad.append(glyph('LB', kind), ' / ', glyph('RB', kind), ' Tabs · ')
+    pad.append(glyph('A', kind), ' Select · ', glyph('B', kind), ' Back')
+    const kbd = h('span', { class: 'kbd-only' })
+    if (tabs) kbd.append(h('kbd', null, '←'), ' ', h('kbd', null, '→'), ' Tabs · ')
+    kbd.append(h('kbd', null, 'Enter'), ' Select · ', h('kbd', null, 'Esc'), ' Back')
+    return h('div', { class: 'more' }, pad, kbd)
+  }
+
+  /**
+   * Which device spoke last (game.ts `inputFrom`): the overlays that print
+   * both a pad and a keyboard reading of their controls show the one that
+   * fits (styles.css `.device-pad .kbd-only`, `.kbd-only`). Called every frame; cheap when unchanged.
+   */
+  setDevice(device: InputDevice) {
+    const cls = device === 'pad' ? 'device-pad' : 'device-keyboard'
+    this.device = device
+    if (this.root.classList.contains(cls)) return
+    this.root.classList.remove('device-pad', 'device-keyboard')
+    this.root.classList.add(cls)
+    // a server text prompt that is up: the pad taking over brings the on-screen keyboard with it, and a
+    // physical key or the mouse puts it away so the field it was covering shows what is typed
+    const t = this.textTarget
+    if (!t || this.clientOverlay) return
+    if (device === 'pad' && !this.osk.visible) this.osk.attach(t, t.input.closest('.popup') || this.root)
+    else if (device !== 'pad' && this.osk.visible && this.osk.input === t.input) this.osk.detach()
+  }
+
   showChoices(title: string, choices: { label: string; key?: string; sep?: boolean; run(): void }[], back?: () => void, remember = title) {
     const el = h('div', { class: 'popup menu game command-menu', dataset: { remember } })
     const items = this.choiceRows(choices)
     el.append(h('div', { class: 'title' }, title), h('div', { class: 'body' }, h('ol', null, ...items)))
-    const kind = this.hooks.padKind?.() ?? 'generic'
-    el.append(h('div', { class: 'more' }, glyph('A', kind), ' Select · ', glyph('B', kind), ' Back · Enter / Esc'))
+    el.append(this.clientFooter(false))
     this.openClientOverlay('choices', el, items, back)
     this.setClientFocus(this.choiceAt.get(remember) ?? 0)
   }
@@ -2474,8 +2539,7 @@ export class Overlays {
       this.setClientFocus(this.choiceAt.get(o.el.dataset.remember) ?? 0)
     }
     o.el.querySelector('.title')!.after(tabs, hints)
-    const kind = this.hooks.padKind?.() ?? 'generic'
-    o.el.querySelector('.more')!.prepend(glyph('LB', kind), ' / ', glyph('RB', kind), ' Tabs · ')
+    o.el.querySelector('.more')!.replaceWith(this.clientFooter(true))
     o.rebuild()
   }
 

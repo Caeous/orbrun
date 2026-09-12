@@ -1631,6 +1631,18 @@ canvas.minimap.hidden {
   visibility: hidden;
 }
 
+ /* the status strip (hud.ts renderStatuses): the player's own status badges blown up down the minimap's left edge,
+   STATUS_BADGE_ROWS of the grid square each (hud.ts layout places it). Bare over the view like the minimap and shadowed the
+   same way */
+.statuses {
+  display: block;
+}
+.statuses canvas.status-canvas {
+  display: block;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+
 .monsters {
   display: flex;
   flex-direction: column;
@@ -2321,6 +2333,25 @@ canvas.minimap.hidden {
 /* the keyboard has taken the cursor: Enter now fires the lit chip */
 .prompt-card.armed .chip.focused {
   outline-width: 2px;
+}
+/* a client menu's footer (overlays.ts clientFooter) carries both a pad and a keyboard reading of its controls;
+   the stack's device class (setDevice) shows the one for the device that spoke last, the keyboard's by default */
+.overlay-stack .pad-only {
+  display: none;
+}
+.overlay-stack.device-pad .pad-only {
+  display: inline;
+}
+.overlay-stack.device-pad .kbd-only {
+  display: none;
+}
+.popup .more kbd {
+  font: inherit;
+  font-size: 0.9em;
+  color: #ddd;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 0 0.3em;
 }
 /* the letter picker (overlays.ts letterGrid): a-m / n-z / A-M / N-Z, one chip per inventory letter */
 .prompt-card .letters {

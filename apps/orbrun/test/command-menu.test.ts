@@ -110,6 +110,26 @@ describe('the grouped command menu', () => {
     expect(h.run).not.toHaveBeenCalled()
     expect(h.sent).toEqual([])
   })
+  it('the footer reads in the words of the device that spoke last: key caps on the keyboard, glyphs on the pad', () => {
+    const h = setup()
+    h.ov.showCommands(h.run, 'select')
+    const more = h.host.querySelector('.command-menu .more')!
+    const shown = () => [...more.querySelectorAll<HTMLElement>('.pad-only, .kbd-only')].filter((e) => getComputedStyle(e).display !== 'none').map((e) => e.className)
+    // by default and after the keyboard, the pad reading is hidden and the keyboard one carries key caps, no glyphs
+    h.ov.setDevice('keyboard')
+    expect(h.host.querySelector('.overlay-stack')?.classList.contains('device-keyboard')).toBe(true)
+    expect([...more.querySelectorAll('.kbd-only kbd')].map((k) => k.textContent)).toEqual(['←', '→', 'Enter', 'Esc'])
+    expect(more.querySelector('.kbd-only svg')).toBeNull()
+    expect(more.querySelector('.pad-only svg')).not.toBeNull()
+    // the pad speaks: the class flips without a rebuild, the same footer element
+    h.ov.setDevice('pad')
+    expect(h.host.querySelector('.overlay-stack')?.classList.contains('device-pad')).toBe(true)
+    expect(h.host.querySelector('.command-menu .more')).toBe(more)
+    // a pointer counts as the keyboard's side, as the prompt card does
+    h.ov.setDevice('pointer')
+    expect(h.host.querySelector('.overlay-stack')?.classList.contains('device-keyboard')).toBe(true)
+    void shown
+  })
 
   it('keeps the dialog and tabs mounted when bumpers, arrows or pointer change tabs', () => {
     const h = setup()

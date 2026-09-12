@@ -882,14 +882,18 @@ function statusIcons(t: CellTiles, fgw: FlagWord, bgw: FlagWord, gd: Gamedata, s
   const add = (id: number | undefined, ox = 0, oy = 0, at?: 'top') => {
     if (id !== undefined) out.push(at ? { tile: id, ox, oy, at } : { tile: id, ox, oy })
   }
+  // a mark about the square rather than the thing on it (Billboard.statusIcons `square`)
+  const under = (id: number | undefined) => {
+    if (id !== undefined) out.push({ tile: id, ox: 0, oy: 0, square: true })
+  }
   if (fgw.NET) add(I.TRAP_NET)
   if (fgw.WEB) add(I.TRAP_WEB)
   // "something under this square": one icon (SOMETHING_UNDER) up to 0.34, three
   // by what lies there (ITEM_STACK_1..3) in master, where the flag also split
   // into S_UNDER / _GOOD / _ARTEFACT. Fall back so both servers get the badge.
-  if (fgw.S_UNDER) add(I.ITEM_STACK_1 ?? I.SOMETHING_UNDER)
-  else if (fgw.S_UNDER_GOOD) add(I.ITEM_STACK_2 ?? I.SOMETHING_UNDER)
-  else if (fgw.S_UNDER_ARTEFACT) add(I.ITEM_STACK_3 ?? I.SOMETHING_UNDER)
+  if (fgw.S_UNDER) under(I.ITEM_STACK_1 ?? I.SOMETHING_UNDER)
+  else if (fgw.S_UNDER_GOOD) under(I.ITEM_STACK_2 ?? I.SOMETHING_UNDER)
+  else if (fgw.S_UNDER_ARTEFACT) under(I.ITEM_STACK_3 ?? I.SOMETHING_UNDER)
   if (fgw.PET) add(I.FRIENDLY)
   else if (fgw.GD_NEUTRAL) add(I.GOOD_NEUTRAL)
   else if (fgw.NEUTRAL) add(I.NEUTRAL)

@@ -14,11 +14,20 @@ export type PadEvent =
   | { type: 'repeat'; button: Button; n: number }
   | { type: 'dir'; source: 'dpad' | 'lstick'; dir: Dir8 | null }
   | { type: 'dirRepeat'; source: 'dpad' | 'lstick'; dir: Dir8; n: number }
-  | { type: 'look'; dx: number; dy: number }
+  /** `start`: true on the first frame of a deflection; false on the frames that follow and on the settle to 0,0 */
+  | { type: 'look'; dx: number; dy: number; start?: boolean }
 
-/** A connection, release or centred stick is not a choice to use the controller. */
+/**
+ * Whether an event is the player choosing the controller: a button going
+ * down, or a stick or the d-pad being pushed. A connection, a release or a
+ * centred stick is not, and neither is the continuation of something already
+ * counted (a held button's repeats, a held direction's repeats, the frames of
+ * a look after its first): a stick that rests off centre, or a key typed
+ * while the stick is still pushed, must not keep the prompts in pad glyphs
+ * against a keyboard that spoke since (game.ts `inputFrom`).
+ */
 export function isPadActivity(ev: PadEvent): boolean {
-  return ev.type === 'press' || ev.type === 'repeat' || ((ev.type === 'dir' || ev.type === 'dirRepeat') && ev.dir !== null) || (ev.type === 'look' && (ev.dx !== 0 || ev.dy !== 0))
+  return ev.type === 'press' || (ev.type === 'dir' && ev.dir !== null) || (ev.type === 'look' && ev.start === true)
 }
 
 export interface GamepadOptions {
@@ -216,8 +225,9 @@ export class GamepadInput {
     const rm = Math.hypot(rx, ry)
     if (rm > (this.looking ? this.opts.deadzoneR : this.opts.enterR)) {
       const k = ((rm - this.opts.deadzoneR) / (1 - this.opts.deadzoneR)) ** 2
+      const start = !this.looking
       this.looking = true
-      this.emit({ type: 'look', dx: (rx / rm) * k, dy: (ry / rm) * k })
+      this.emit({ type: 'look', dx: (rx / rm) * k, dy: (ry / rm) * k, start })
     } else if (this.looking) {
       this.looking = false
       this.emit({ type: 'look', dx: 0, dy: 0 })
