@@ -18,7 +18,7 @@ of what Orbrun does today.
   menus for travel, equipment, character and actions, an on-screen keyboard,
   and hints that teach the controls as you use them.
 - Aiming on a controller: fire, examine, spells and wands open on the cell
-  ahead, keep a compass heading while the d-pad walks the cursor, and repeat
+  ahead, keep their heading while the d-pad walks the cursor, and repeat
   with repeated taps.
 - Keyboard plays exactly as in the official client, with one exception:
   direction keys are relative to facing.

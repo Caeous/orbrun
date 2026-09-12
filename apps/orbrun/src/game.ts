@@ -770,20 +770,20 @@ export class GameScreen {
    * north-up and gets no facing. A cursor our own pointer placed is skipped:
    * facing it would turn the view under the mouse and chase itself. In our
    * own aims, look mode (`x`) and fire (`f`) alike, the view holds its
-   * compass heading while the cursor walks in front of the player, and
-   * turns to the nearest compass heading only when the cursor goes beside
-   * or behind (camera `faceCursorCardinal`), so the d-pad's axes stay on
-   * the grid the whole time. A fire that locked onto a target behind the
+   * heading while the cursor walks in front of the player, and turns to
+   * the nearest heading only when the cursor goes beside or behind (camera
+   * `faceCursorBehind`); the keys read against whatever grid is in view
+   * (camera `gridFacing`). A fire that locked onto a target behind the
    * player turns nothing at all until the cursor is first stepped
    * (`viewHeld`): the lock is crawl's, not a move of the player's. A
-   * spectated player's aim faces the cell itself: there is no pad to anchor.
+   * spectated player's aim faces the cell itself.
    */
   private faceCursor(c: SceneCursor) {
     if (c.mode === 'map' || this.cam.steering || this.viewHeld) return
     if (cellKey(c.x, c.y) === this.lastTargetSent) return
     const scene = this.session.scene
     if (!scene.playerOnLevel) return
-    if (this.ctx.examining || !this.session.watching) this.cam.faceCursorCardinal(scene, c.x, c.y)
+    if (this.ctx.examining || !this.session.watching) this.cam.faceCursorBehind(scene, c.x, c.y)
     else this.cam.faceCell(scene, c.x, c.y)
   }
 

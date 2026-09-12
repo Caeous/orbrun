@@ -118,18 +118,16 @@ export class Runner {
         this.lastStep = null
         this.cam.faceBlocker(this.session.scene)
       }
-      // look mode (`x`, typed or from LB): the view snaps to the nearest
-      // compass heading before the cursor appears, so the direction keys and
-      // the d-pad move it along the grid the player sees (input.md
-      // "Examine"), and the heading is kept while the cursor walks (game.ts
-      // `faceCursor`). The targeting that follows `x` is remembered as look
-      // mode, which the server does not distinguish from an aim (`examining`).
-      // Fire (`f`, typed or from LT) locks onto crawl's default target
-      // wherever it stands, and the view is not to swing for that: it holds
-      // its heading until the cursor is first stepped, when it snaps as the
-      // look does (`step`, `holdingView`). Any other command drops a hold a
-      // refused `f` left behind.
-      if (isLookAround(msg)) this.cam.faceCardinal()
+      // look mode (`x`, typed or from LB): the view is not turned; the
+      // direction keys and the d-pad read against the grid the player sees
+      // (camera `gridFacing`), and the heading is kept while the cursor
+      // walks in front (game.ts `faceCursor`). The targeting that follows
+      // `x` is remembered as look mode, which the server does not
+      // distinguish from an aim (`examining`). Fire (`f`, typed or from LT)
+      // locks onto crawl's default target wherever it stands, and the view
+      // is not to swing for that: it holds its heading until the cursor is
+      // first stepped (`step`, `holdingView`). Any other command drops a
+      // hold a refused `f` left behind.
       if (isLookAround(msg)) this.look = { state: 'pending', t: this.hooks.now() }
       this.hold = isFire(msg) ? { state: 'pending', t: this.hooks.now() } : { state: 'idle', t: 0 }
       this.session.send(msg)
@@ -308,30 +306,35 @@ export class Runner {
   }
 
   /**
+   * Absolute direction for a key in an aim: read against the grid the
+   * player sees, one axis per key (camera `gridFacing`), so a diagonal
+   * facing has `k` up its left-hand edge and `l` up its right.
+   */
+  absoluteAim(rel: RelDir): Dir8 {
+    return rotateDir(this.cam.gridFacing, rel)
+  }
+
+  /**
    * Movement in command mode: forward turns the camera; the diagonals and
    * back strafe. A keyboard, d-pad or left-stick left / right (`opts.turns`)
    * is a turn. Every step is remembered (`lastStep`), and
    * only one that aimed the camera (forward, or an attack) snaps the view onto
    * the vector the feet took once the server echoes the new position (game.ts
    * onScene); j, y, u, b and n strafe and keep the heading.
-   * In targeting the same relative direction moves the cursor (plain), fires
-   * that way (Shift: the uppercase letter is CMD_TARGET_DIR_*) or sends the
-   * Ctrl variant, all rotated with facing. The level map is north-up: absolute.
+   * In targeting the same key moves the cursor (plain), fires that way
+   * (Shift: the uppercase letter is CMD_TARGET_DIR_*) or sends the Ctrl
+   * variant, read against the grid the player sees (`absoluteAim`). The
+   * level map is north-up: absolute.
    */
   step(rel: RelDir, opts: { run?: boolean; attack?: boolean; keyboard?: boolean; turns?: boolean } = {}) {
     const ctx = this.hooks.context()
     if (ctx.mode !== 'command' && ctx.mode !== 'targeting' && ctx.mode !== 'levelmap' && ctx.mode !== 'prompt') return
     if (ctx.mode === 'targeting' || ctx.mode === 'prompt') {
-      // rotate with the camera, never turn it. The first step of a fire's
-      // cursor releases the held view: it snaps to the nearest compass
-      // heading, as a look's does as `x` goes out, and the step is taken
-      // along that heading's grid; from here the cursor's walk turns the
-      // view as any aim's does (game.ts `faceCursor`)
-      if (ctx.mode === 'targeting' && this.hold.state !== 'idle') {
-        this.hold = { state: 'idle', t: 0 }
-        this.cam.faceCardinal()
-      }
-      this.send(dirMessage(this.absolute(rel), opts))
+      // read against the grid in view, never turn it. The first step of a
+      // fire's cursor releases the held view: from here the cursor's walk
+      // turns the view as any aim's does (game.ts `faceCursor`)
+      if (ctx.mode === 'targeting') this.hold = { state: 'idle', t: 0 }
+      this.send(dirMessage(this.absoluteAim(rel), opts))
       return
     }
     if (ctx.mode === 'levelmap') {
@@ -469,9 +472,9 @@ export class Runner {
    */
   /**
    * LT: fire. In command mode `f` fires what is quivered, opening the aim
-   * prompt on the default target; the view snaps to a compass heading as
-   * the key goes out, as it does for examine (`send`), so the d-pad walks
-   * the cursor along the grid from there. Inside that prompt `f` is
+   * prompt on the default target; the view holds as the key goes out
+   * (`send`), and the d-pad walks the cursor along the grid in view. Inside
+   * that prompt `f` is
    * CMD_TARGET_SELECT as `.` and Enter are (cmd-keys.h), so the same button
    * confirms the shot. The key is the same either side of the server's
    * round trip, which is what lets LT be tapped as fast as `f` is spammed

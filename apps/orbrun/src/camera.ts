@@ -150,30 +150,31 @@ export class CameraController {
   }
 
   /**
-   * Examine (`x`) and fire (`f`): the view snaps to the nearest of the four
-   * compass headings, so the cursor keys and the d-pad walk the cursor along
-   * the grid the player sees, one axis per key (input.md "Examine"). A
-   * diagonal facing turns by a quarter of a heading; a compass one stays
-   * exact.
+   * The compass heading an aim's direction keys are read against. A compass
+   * facing is itself. A diagonal one is not turned (the view stays where
+   * the player left it): the grid runs off at 45 degrees either side, and
+   * the keys take the left-hand axis as north, so `k` walks the cursor up
+   * the left edge of the view, `l` up the right, and `u` straight ahead.
    */
-  faceCardinal() {
-    this.setFacing(cardinal(this.camera.yaw))
+  get gridFacing(): Dir8 {
+    const f = this.camera.facing
+    return f % 2 === 0 ? f : rotateDir(f, -1)
   }
 
   /**
-   * The aim's cursor moved: the compass heading is kept while the cell is
-   * in front of the player (ahead of the line across their shoulders), so a
-   * walk of the cursor about the view never swings it; a cell on or behind
-   * that line turns the view to the compass heading nearest the cell, so
-   * the cursor stays in sight and the pad's axes stay on the grid.
+   * The aim's cursor moved: the heading is kept while the cell is in front
+   * of the player (ahead of the line across their shoulders), so a walk of
+   * the cursor about the view never swings it; a cell on or behind that
+   * line turns the view to the heading nearest the cell, so the cursor
+   * stays in sight.
    */
-  faceCursorCardinal(scene: Scene, x: number, y: number) {
+  faceCursorBehind(scene: Scene, x: number, y: number) {
     const dx = x - scene.player.x
     const dy = y - scene.player.y
     if (dx === 0 && dy === 0) return
     const f = this.camera.facing
     if (dx * DIR8_DX[f] + dy * DIR8_DY[f] > 0) return
-    this.setFacing(cardinal(Math.atan2(dx, -dy)))
+    this.faceCell(scene, x, y)
   }
 
   /** Face a cell, choosing the nearest heading. */
@@ -426,11 +427,6 @@ export function trailStep(scene: Scene): { dx: number; dy: number } | null {
     if (to !== undefined && to === ((d + 4) % 8)) return { dx: DIR8_DX[to], dy: DIR8_DY[to] }
   }
   return null
-}
-
-/** The compass heading (north, east, south or west) nearest a yaw. */
-function cardinal(yaw: number): Dir8 {
-  return ((Math.round(normalizeYaw(yaw) / (Math.PI / 2)) % 4) * 2) as Dir8
 }
 
 /** how far ahead a heading must be open before it counts as not facing a wall */

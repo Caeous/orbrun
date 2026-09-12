@@ -413,23 +413,18 @@ describe('facing what stopped the walk (nearby-danger.cc mons_is_safe)', () => {
   })
 })
 
-describe('look mode snaps the view to a compass heading', () => {
-  it('faceCardinal turns a diagonal facing to the nearest of north, east, south, west', () => {
+describe('an aim reads its keys against the grid in view', () => {
+  it('gridFacing is a compass facing itself, and a diagonal one is read from its left-hand axis', () => {
+    for (const f of [0, 2, 4, 6] as const) expect(cam(f).gridFacing).toBe(f)
+    // facing north-east: north runs up the left of the view (k), east up the right (l)
+    expect(cam(1).gridFacing).toBe(0)
+    expect(cam(3).gridFacing).toBe(2)
+    expect(cam(5).gridFacing).toBe(4)
+    expect(cam(7).gridFacing).toBe(6)
+    // the view itself is not turned
     const c = cam(1)
-    c.faceCardinal()
-    expect([0, 2]).toContain(c.facing)
-    // a compass heading is kept as it is
-    const n = cam(6)
-    n.faceCardinal()
-    expect(n.facing).toBe(6)
-  })
-
-  it('goes by the exact yaw: a free look just past the diagonal snaps to the nearer heading', () => {
-    const c = cam(0)
-    // 50 degrees right of north: east is nearer than north
-    c.lookBy((50 * Math.PI) / 180, 0)
-    c.faceCardinal()
-    expect(c.facing).toBe(2)
+    void c.gridFacing
+    expect(c.facing).toBe(1)
   })
 
   it('the cursor walking in front of the player never turns the view', () => {
@@ -442,25 +437,35 @@ describe('look mode snaps the view to a compass heading', () => {
       [4, 0],
       [0, 0],
     ]) {
-      c.faceCursorCardinal(s, x, y)
+      c.faceCursorBehind(s, x, y)
       expect(c.facing).toBe(0)
     }
   })
 
-  it('a cursor beside or behind turns to the compass heading nearest it, never a diagonal', () => {
+  it('a cursor beside or behind turns to the heading nearest it, diagonals included', () => {
     const s = sceneFrom(['.....', '.....', '..@..', '.....', '.....'])
     const c = cam(0)
-    c.faceCursorCardinal(s, 3, 2)
+    c.faceCursorBehind(s, 3, 2)
     expect(c.facing).toBe(2)
     // still in front now: kept
-    c.faceCursorCardinal(s, 3, 1)
+    c.faceCursorBehind(s, 3, 1)
     expect(c.facing).toBe(2)
-    c.faceCursorCardinal(s, 1, 3)
-    expect([4, 6]).toContain(c.facing)
-    expect(c.facing % 2).toBe(0)
+    c.faceCursorBehind(s, 1, 3)
+    expect(c.facing).toBe(5)
     // the player's own cell says nothing
-    const f = c.facing
-    c.faceCursorCardinal(s, 2, 2)
-    expect(c.facing).toBe(f)
+    c.faceCursorBehind(s, 2, 2)
+    expect(c.facing).toBe(5)
+  })
+
+  it('a diagonal facing keeps the cursor walking in front of it', () => {
+    const s = sceneFrom(['.....', '.....', '..@..', '.....', '.....'])
+    const c = cam(1)
+    // ahead of the line across the shoulders (north-west to south-east)
+    for (const [x, y] of [[3, 1], [2, 1], [3, 2], [4, 0], [1, 0]]) {
+      c.faceCursorBehind(s, x, y)
+      expect(c.facing).toBe(1)
+    }
+    c.faceCursorBehind(s, 1, 3)
+    expect(c.facing).toBe(5)
   })
 })

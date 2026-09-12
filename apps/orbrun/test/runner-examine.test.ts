@@ -14,8 +14,8 @@ import type { Context } from '../src/context'
  * LB was pointed at. The cell is sent as a `target_cursor` message, the
  * mouse's hover while aiming, which is inert outside an aim: so it goes out
  * with `x` itself, a round trip early, and again on the cursor's arrival
- * should the first have missed. The view snaps to a compass heading as `x`
- * goes out, but the cell is the one faced before the snap. The same start
+ * should the first have missed. The view is not turned as `x` goes out:
+ * the cell is the one faced. The same start
  * serves every aim (`f`, a spell, a wand): only a cursor the server put on
  * the player is moved, a default target is kept.
  */
@@ -33,13 +33,11 @@ function harness(facing = 0, ahead: Context['ahead'] = { kind: 'monster', monste
     send: (m: { msg: string; text?: string }) => sent.push(m),
     on: (fn: (e: SessionEvent) => void) => (listeners.push(fn), () => listeners.splice(listeners.indexOf(fn), 1)),
   } as unknown as Session
-  const snaps: number[] = []
   const cam = {
     facing,
-    faceCardinal() {
-      snaps.push(this.facing)
-      // the nearest compass heading, as the camera does from its yaw
-      this.facing = Math.round(this.facing / 2) * 2 % 8
+    // the camera's rule: a diagonal facing reads its left-hand axis as north
+    get gridFacing() {
+      return this.facing % 2 === 0 ? this.facing : (this.facing + 7) % 8
     },
   } as unknown as CameraController & { facing: number }
   const ctx = { mode: 'command', under: { kind: 'none' }, ahead, hostilesInView: 0 } as unknown as Context
@@ -61,7 +59,7 @@ function harness(facing = 0, ahead: Context['ahead'] = { kind: 'monster', monste
   }
   // what went out: a key's text, or `@x,y` for a target_cursor
   const keys = () => sent.map((m) => (m.msg === 'target_cursor' ? `@${(m as { x: number }).x},${(m as { y: number }).y}` : m.text))
-  return { r, sent, ctx, cam, snaps, mode, frame, state, keys, tick: (ms: number) => (now += ms) }
+  return { r, sent, ctx, cam, mode, frame, state, keys, tick: (ms: number) => (now += ms) }
 }
 
 describe('LB opens look mode on the cell ahead', () => {
@@ -71,9 +69,8 @@ describe('LB opens look mode on the cell ahead', () => {
     h.r.examine()
     // the target went out with x, in the same burst, before any round trip
     expect(h.keys()).toEqual(['x', '@11,9'])
-    // the view snapped to a compass heading as x went out
-    expect(h.snaps).toEqual([1])
-    expect(h.cam.facing).toBe(2)
+    // the view did not turn as x went out
+    expect(h.cam.facing).toBe(1)
     // the server opened the look with its cursor on the player: the same cell again, in case the first missed
     h.mode(MouseMode.TARGET)
     expect(h.keys()).toEqual(['x', '@11,9', '@11,9'])
@@ -158,12 +155,11 @@ describe('LT fires', () => {
     expect(h.r.examining('targeting')).toBe(false)
   })
 
-  it('holds the view as f locks onto its target, and snaps it to a compass heading on the first cursor step', () => {
+  it('holds the view as f locks onto its target, and releases it on the first cursor step, read against the grid in view', () => {
     const h = harness(1)
     h.ctx.hostilesInView = 1
     h.r.fire()
     // nothing turned as f went out: the lock is crawl's, not a move of the player's
-    expect(h.snaps).toEqual([])
     expect(h.cam.facing).toBe(1)
     expect(h.r.holdingView('command')).toBe(false)
     // the aim opened on a monster behind: the view is held there too (game.ts faceCursor)
@@ -171,16 +167,17 @@ describe('LT fires', () => {
     expect(h.r.holdingView('targeting')).toBe(true)
     // confirming the shot inside the aim, or a typed f there, turns nothing
     h.r.fire()
-    expect(h.snaps).toEqual([])
-    // the first step of the cursor snaps the view and walks along the new heading
+    expect(h.cam.facing).toBe(1)
+    // the first step of the cursor releases the hold and walks the grid in
+    // view: facing north-east, k is north, up the left-hand edge of the view
     h.r.step(0)
-    expect(h.snaps).toEqual([1])
-    expect(h.cam.facing).toBe(2)
-    expect(h.keys()).toEqual(['f', 'f', 'l'])
+    expect(h.cam.facing).toBe(1)
+    expect(h.keys()).toEqual(['f', 'f', 'k'])
     expect(h.r.holdingView('targeting')).toBe(false)
-    // later steps turn nothing themselves
-    h.r.step(0)
-    expect(h.snaps).toEqual([1])
+    // l is east, up the right-hand edge; u is straight ahead
+    h.r.step(2)
+    h.r.step(1)
+    expect(h.keys()).toEqual(['f', 'f', 'k', 'l', 'u'])
   })
 
   it('the hold ends with the aim, and any other command drops one a refused f left behind', () => {
@@ -292,10 +289,10 @@ describe('the runner pairs its x with the targeting that follows', () => {
     expect(h.r.examining('targeting')).toBe(false)
   })
 
-  it('a typed x counts too: the keyboard gets the same snap and the same look mode', () => {
+  it('a typed x counts too: the keyboard gets the same look mode', () => {
     const h = harness(3)
     h.r.send({ msg: 'input', text: 'x' })
-    expect(h.snaps).toEqual([3])
+    expect(h.cam.facing).toBe(3)
     expect(h.r.examining('targeting')).toBe(true)
   })
 
@@ -311,7 +308,6 @@ describe('the runner pairs its x with the targeting that follows', () => {
     const h = harness(0)
     h.ctx.mode = 'targeting'
     h.r.send({ msg: 'input', text: 'x' })
-    expect(h.snaps).toEqual([])
     expect(h.r.examining('targeting')).toBe(false)
   })
 })
