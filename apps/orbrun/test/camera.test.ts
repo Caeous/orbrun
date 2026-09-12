@@ -238,7 +238,7 @@ describe('camera view between sessions', () => {
 describe('rest pitch (the Camera angle setting)', () => {
   it('starts a little under the horizon, and a new angle tilts the view with it', () => {
     const c = cam(0)
-    expect(REST_PITCH).toBeCloseTo(-(Math.PI / 180) * 10, 6)
+    expect(REST_PITCH).toBeCloseTo(-(Math.PI / 180) * 5, 6)
     expect(c.camera.pitch).toBeCloseTo(REST_PITCH)
     c.setRestPitch(-(Math.PI / 180) * 25)
     expect(c.camera.pitch).toBeCloseTo(-(Math.PI / 180) * 25)

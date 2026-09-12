@@ -67,7 +67,7 @@ export const CAM_DISTANCES = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 
 /**
  * Camera height, in cells, lowest first (rendering-3d.md II.11): 0 is the
  * floor and 1 the lid, and the stops keep clear of both. One list serves
- * both cameras. In first person it is the eye, 0.6 by default; the low end is
+ * both cameras. In first person it is the eye, 0.65 by default; the low end is
  * a kobold's view of the corridor and the high end brushes the lid. In third person it is the shot: the low end sits at the
  * doll's waist and reads as a follow-cam looking level down the corridor,
  * the high end is just under the lid, looking down over the doll, and the
@@ -80,7 +80,7 @@ export const CAM_HEIGHTS = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.
 /**
  * Camera angle (rendering-3d.md II.11), in degrees off the horizon, most
  * down first: where the view points at rest, before any glance with the
- * stick or the mouse. The default -10 tips the floor a couple of cells ahead
+ * stick or the mouse. The default -5 tips the floor a few cells ahead
  * into frame without losing the wall tops; the range runs from -30, a look
  * down at the ground the @ stands on, to +10, a glance up at the lid. The
  * stops are five degrees apart, fine enough that no step jars.

@@ -11,7 +11,7 @@ import { loadRoomTiles } from './tiles'
  */
 /** the room's own eye, for a build with no settings to read (tools/build/poster.mjs): the game's defaults */
 export const ROOM_FOV = 80
-export const ROOM_EYE_HEIGHT = 0.6
+export const ROOM_EYE_HEIGHT = 0.65
 
 export class Room3d {
   private r: Render3d

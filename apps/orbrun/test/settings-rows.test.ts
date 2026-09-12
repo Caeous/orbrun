@@ -25,7 +25,7 @@ describe('camera rows follow the Camera setting', () => {
   it('Camera height sets the eye in first person and the shot in third', () => {
     const height = row('Camera height')
     expect(rowKey(height)).toBe('eyeHeight')
-    expect(settingValue(height)).toBe('0.60 cells')
+    expect(settingValue(height)).toBe('0.65 cells')
     expect(rowHint(height)).toMatch(/eyes/)
     expect(rowKey(height, third())).toBe('camHeight')
     expect(settingValue(height, third())).toBe('0.75 cells')
@@ -35,7 +35,7 @@ describe('camera rows follow the Camera setting', () => {
   it('each height is kept on its own', () => {
     const height = row('Camera height')
     adjustSetting(height, 1)
-    expect(getSettings().eyeHeight).toBe(0.65)
+    expect(getSettings().eyeHeight).toBe(0.7)
     expect(getSettings().camHeight).toBe(0.75)
   })
 
@@ -43,10 +43,10 @@ describe('camera rows follow the Camera setting', () => {
     const height = row('Camera height')
     expect(CAM_HEIGHTS).toContain(defaultSettings.eyeHeight)
     adjustSetting(height, -1)
-    expect(getSettings().eyeHeight).toBe(0.55)
+    expect(getSettings().eyeHeight).toBe(0.6)
     saveSettings({ ...defaultSettings })
     adjustSetting(height, 1)
-    expect(getSettings().eyeHeight).toBe(0.65)
+    expect(getSettings().eyeHeight).toBe(0.7)
   })
 
   it('Camera distance is off in first person and inert, on in third', () => {
@@ -92,12 +92,12 @@ describe('2D and third person are temporarily out (VIEW_OPTIONS)', () => {
 describe('Camera angle', () => {
   beforeEach(() => saveSettings({ ...defaultSettings }))
 
-  it('looks ten degrees down by default, the rest pitch every camera starts on', () => {
+  it('looks five degrees down by default, the rest pitch every camera starts on', () => {
     const angle = row('Camera angle')
-    expect(defaultSettings.restPitch).toBe(-10)
+    expect(defaultSettings.restPitch).toBe(-5)
     expect((Math.PI / 180) * defaultSettings.restPitch).toBeCloseTo(REST_PITCH, 12)
     expect(SETTING_ROWS).toContain(angle)
-    expect(settingValue(angle)).toBe('10° down')
+    expect(settingValue(angle)).toBe('5° down')
     expect(rowOff(angle)).toBe(false)
   })
 
@@ -106,8 +106,9 @@ describe('Camera angle', () => {
     expect(CAM_ANGLES[0]).toBe(-30)
     expect(CAM_ANGLES[CAM_ANGLES.length - 1]).toBe(10)
     for (let i = 1; i < CAM_ANGLES.length; i++) expect(CAM_ANGLES[i] - CAM_ANGLES[i - 1]).toBe(5)
+    expect(adjustSetting(angle, -1)).toBe('10° down')
+    expect(getSettings().restPitch).toBe(-10)
     expect(adjustSetting(angle, 1)).toBe('5° down')
-    expect(getSettings().restPitch).toBe(-5)
     expect(adjustSetting(angle, 1)).toBe('Level')
     expect(adjustSetting(angle, 1)).toBe('5° up')
     expect(adjustSetting(angle, -1)).toBe('Level')

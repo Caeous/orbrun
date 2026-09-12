@@ -421,7 +421,7 @@ export interface Camera {
  * this is the stop it starts on, and the pitch every other angle is measured
  * from.
  */
-export const REST_PITCH = -(Math.PI / 180) * 10
+export const REST_PITCH = -(Math.PI / 180) * 5
 
 export function makeCamera(x = 0, y = 0, facing: Dir8 = 0): Camera {
   return { x, y, yaw: dirToYaw(facing), pitch: REST_PITCH, facing }

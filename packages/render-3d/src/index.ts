@@ -35,7 +35,7 @@ import { bodyRect, insetFootprint, sceneClassAt, type FootprintOptions } from '.
  * and three. Every classification it needs arrives on the Scene.
  *
  * World mapping: cell (x, y) -> world (x, 0, y). North (-y) is -z. Wall
- * height is 1. The camera stands at eye height 0.6 by default (the
+ * height is 1. The camera stands at eye height 0.65 by default (the
  * `eyeHeight` option moves it), or in third person (rendering-3d.md II.11)
  * on a cell behind the player, under the lid.
  */
@@ -105,12 +105,12 @@ export interface Render3dOptions {
 // First person: the eye stands EYE up by default; the `eyeHeight` option
 // (the Camera height setting, in first person) moves it between EYE_MIN and
 // EYE_MAX, the same range the third-person camera has, clear of floor and lid.
-const EYE = 0.6
+const EYE = 0.65
 const EYE_MIN = 0.25
 const EYE_MAX = 0.9
 // Third person (II.11). The camera stands on the facing line, up to
 // ORBIT_BACK behind the player and THIRD_H up: under the 1.0 lid, over the
-// 0.6 eye, so it never clips a lid or a wall face (a cell centre is half a
+// 0.65 eye, so it never clips a lid or a wall face (a cell centre is half a
 // cell from any face). It looks at the floor THIRD_AHEAD cells past the
 // player, THIRD_SHOULDER to the right of the facing line, so the doll sits
 // left of centre and the cell ahead stays clear. The stick glances from
