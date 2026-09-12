@@ -510,8 +510,7 @@ export class GameScreen {
     this.hud.minimapUp = this.cam.mapYaw
     this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held)
     this.chat.update(st, st.phase === 'playing' || st.phase === 'watching', !!st.lobby.username)
-    if (this.ctx.mode === 'targeting') this.pointTarget()
-    else this.lastTargetSent = -1
+    this.syncTarget()
     if (this.needsRender) {
       this.needsRender = false
       this.syncViewmodel(st)
@@ -813,6 +812,20 @@ export class GameScreen {
     // every pointer move, camera move, resize and level change marks a render, so this is the only time the pick can change
     if (this.needsRender || this.pickMemo === undefined) this.pickMemo = this.renderer.pick(this.hover.x, this.hover.y)
     return this.pickMemo
+  }
+
+  /**
+   * Once a frame: while an aim is up the pointer steers its cursor
+   * (`pointTarget`). Outside one, a mouse resting on the view does not aim
+   * the `x` or `f` that opens next: the movement it made in command mode
+   * is forgotten, so only movement while the aim is up moves its cursor.
+   */
+  private syncTarget() {
+    if (this.ctx.mode === 'targeting') this.pointTarget()
+    else {
+      this.lastTargetSent = -1
+      this.hoverMoved = false
+    }
   }
 
   /**

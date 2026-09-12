@@ -283,3 +283,34 @@ describe('viewmodel sync', () => {
     expect(h.setViewmodel).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('mouse and the aim cursor', () => {
+  /** The frame-level target sync with a mouse that hovered a cell before the aim opened. */
+  function aimHarness() {
+    const send = vi.fn()
+    const ctx: Context = { mode: 'command', layer: 'micro', ahead: { kind: 'none', label: '' }, under: { kind: 'none', label: '' }, hostilesInView: 0 }
+    const screen = Object.assign(Object.create(GameScreen.prototype), {
+      ctx, session: { watching: false, state: initialState() }, runner: { send },
+      renderer: { pick: () => (3 + 512) | ((4 + 512) << 10) },
+      hover: { x: 10, y: 10 }, hoverMoved: true, lastTargetSent: -1,
+    }) as { syncTarget(): void; hoverMoved: boolean }
+    return { screen, ctx, send }
+  }
+
+  it('a mouse resting on the view does not move the cursor of the aim that opens next', () => {
+    const h = aimHarness()
+    h.screen.syncTarget()
+    h.ctx.mode = 'targeting'
+    h.screen.syncTarget()
+    expect(h.send).not.toHaveBeenCalled()
+  })
+
+  it('a mouse moving while the aim is up moves its cursor', () => {
+    const h = aimHarness()
+    h.screen.syncTarget()
+    h.ctx.mode = 'targeting'
+    h.screen.hoverMoved = true
+    h.screen.syncTarget()
+    expect(h.send).toHaveBeenCalledExactlyOnceWith(cm.targetCursor(3, 4))
+  })
+})
