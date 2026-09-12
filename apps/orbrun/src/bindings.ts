@@ -306,7 +306,8 @@ export function bindingTable(ctx: Context): Partial<Record<Button, Action>> {
       case 'popup':
         return ctx.popupActions?.length ? { ...FOCUS, X: POPUP_ACTION } : FOCUS
       default:
-        return FOCUS
+        // the focused item's second action (a skill row's "Set target") sits on Y while the cursor rests on one
+        return ctx.focus?.altLabel ? { ...FOCUS, Y: focus('altSelect') } : FOCUS
     }
   }
   switch (ctx.mode) {
@@ -387,7 +388,7 @@ function isContextual(a: Action, ctx: Context): boolean {
       return !!ctx.prompt?.options.some((x) => x.hotkey.toLowerCase() === a.hotkey.toLowerCase())
     case 'focus':
       // the cursor rests on something with a name of its own (a spell, Yes); the fallbacks are the table's
-      return a.op === 'select' ? !!ctx.focus?.label : a.op === 'cancel' ? !!ctx.focus?.cancelLabel : false
+      return a.op === 'select' ? !!ctx.focus?.label : a.op === 'cancel' ? !!ctx.focus?.cancelLabel : a.op === 'altSelect' ? !!ctx.focus?.altLabel : false
     case 'menu': {
       const shop = ctx.menu?.shop
       // the shop's letters mark and unmark; the label follows what the server printed
@@ -535,6 +536,8 @@ export function actionLabel(a: Action, ctx: Context, button?: Button): string {
           return f?.label ?? fb.label
         case 'cancel':
           return f?.cancelLabel ?? fb.cancelLabel
+        case 'altSelect':
+          return f?.altLabel ?? ''
         default:
           return { next: 'Next', prev: 'Previous', left: 'Left', right: 'Right', pageNext: 'Page down', pagePrev: 'Page up', first: 'First', last: 'Last' }[a.op]
       }

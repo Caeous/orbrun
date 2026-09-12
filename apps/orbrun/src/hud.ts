@@ -71,6 +71,13 @@ const MONSTER_LIST_MAX_SPRITES = 6
  * both, as the official client does.
  */
 const NUM_RESERVED_BUTTONS = 2
+/**
+ * Modes whose screen is a panel centred over the view (overlays.ts `.popup`:
+ * a menu, a CRT screen, a describe popup, a dialog, the new-game chooser,
+ * the death screen). Its foot can lie a line or two above the view's, so the
+ * prompts run along the strip under it as one row rather than a column.
+ */
+const POPUP_MODES: ReadonlySet<Context['mode']> = new Set(['menu', 'popup', 'crt', 'dialog', 'newgame', 'ended'])
 
 /** the action panel's cell before `action_panel_scale`, as cell_renderer.js sizes one (`tile_cell_pixels`) */
 const PANEL_CELL = 32
@@ -1203,6 +1210,9 @@ export class Hud {
     this.actionbar.dataset.v = key
     this.actionbar.hidden = labels.length === 0
     this.actionbar.classList.add('contextual')
+    // a centred popup leaves the corner only the strip under it: the prompts run along that strip in one row
+    // instead of climbing behind the panel (styles.css .actionbar.contextual.row)
+    this.actionbar.classList.toggle('row', POPUP_MODES.has(ctx.mode))
     const keep = new Map(this.barChips)
     this.barChips.clear()
     clear(this.actionbar)

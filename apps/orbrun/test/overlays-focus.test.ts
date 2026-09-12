@@ -207,6 +207,35 @@ describe('skills screen (crt menu)', () => {
     ov.focusOp(st, ctx, 'cancel')
     expect(sent).toEqual([{ msg: 'key', keycode: Keys.ESC }])
   })
+  it('Y on a skill row sets its target: `=` for set-target mode, then the letter, in one send', () => {
+    const { ov, st, sent, frame } = setup()
+    load(st)
+    let ctx = frame()
+    expect(ctx.focus).toMatchObject({ label: 'Fighting', altLabel: 'Set target' })
+    expect(bindingTable(ctx).Y).toEqual({ kind: 'focus', op: 'altSelect' })
+    expect(actionLabel({ kind: 'focus', op: 'altSelect' }, ctx)).toBe('Set target')
+    ov.focusOp(st, ctx, 'altSelect')
+    expect(sent).toEqual([{ msg: 'input', text: '=a' }])
+    sent.length = 0
+    // a footer switch has no second action: Y does nothing there, and the bar offers none
+    ov.focusOp(st, ctx, 'last')
+    ctx = frame()
+    expect(ctx.focus?.altLabel).toBeUndefined()
+    expect(bindingTable(ctx).Y).toBeUndefined()
+    ov.focusOp(st, ctx, 'altSelect')
+    expect(sent).toEqual([])
+  })
+  it('a skills screen without the target switch (a Gnoll) offers no Set target', () => {
+    const { ov, st, frame } = setup()
+    load(st)
+    // strip the `[=] set a skill target` switch from the footer line
+    st.crt.areas.get('menu_txt')!.set(22, ' <span class="fg7 bg0">[</span><span class="fg14 bg0">?</span><span class="fg7 bg0">] Help</span>')
+    const ctx = frame()
+    expect(ctx.focus).toMatchObject({ label: 'Fighting' })
+    expect(ctx.focus?.altLabel).toBeUndefined()
+    expect(bindingTable(ctx).Y).toBeUndefined()
+    void ov
+  })
   it('the keyboard drives the same cursor: arrows move, Enter fires, and a raw key stays raw', () => {
     const { ov, st, sent, frame } = setup()
     load(st)

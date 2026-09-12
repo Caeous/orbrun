@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Keys, MouseMode, initialState, type MenuState } from '@orbrun/webtiles'
 import { actionLabel, armsTapOrHold, barLabels, bindingTable, contextualLabel, holdAction, NO_ACTION, promptLabels, resolve } from '../src/bindings'
-import { deriveMode, shopContext, type Context } from '../src/context'
+import { deriveMode, readiedAction, shopContext, type Context } from '../src/context'
 import commands from '../data/commands.json'
 
 const ctx = (over: Partial<Context>): Context => ({
@@ -269,6 +269,14 @@ describe('direct command controls', () => {
     // with nothing quivered the bar does not volunteer it
     expect(actionLabel({ kind: 'fire' }, ctx({}))).toBe('Fire')
     expect(promptLabels(ctx({})).find((l) => l.button === 'LT')).toBeUndefined()
+  })
+  it('reads the readied action from the formatted quiver line; an empty quiver is no action', () => {
+    expect(readiedAction('<brown>Throw: <lightgreen>23 darts (poison)')).toBe('Throw: 23 darts (poison)')
+    // quiver.cc quiver_description: the empty quiver is spelled out, not blank
+    expect(readiedAction('<darkgrey>Nothing quivered</darkgrey>')).toBeUndefined()
+    expect(readiedAction('')).toBeUndefined()
+    expect(readiedAction(undefined)).toBeUndefined()
+    expect(promptLabels(ctx({ readiedAction: readiedAction('<darkgrey>Nothing quivered</darkgrey>') })).find((l) => l.button === 'LT')).toBeUndefined()
   })
   it('A takes the stairs underfoot even with a monster ahead; RT offers autofight', () => {
     const c = ctx({ ahead: ogre, under: stairsDown })

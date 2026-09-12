@@ -90,7 +90,7 @@ export interface ShopContext {
 export interface Context {
   mode: Mode
   layer: Layer
-  /** The server's description of the action fired by LT. */
+  /** The server's description of the action fired by LT; absent when nothing is quivered. */
   readiedAction?: string
   ahead: Target
   under: Target
@@ -448,6 +448,17 @@ export function shopContext(menu: MenuState): ShopContext {
   return { canBuy, mode: buy ? 'buy' : 'examine', hoveredMarked, hoveredListed, anyMarked, anyListed }
 }
 
+/**
+ * The quivered action as plain text, or undefined when there is none. The
+ * server's `quiver_desc` is a formatted string (`<brown>Throw: <lightgreen>23
+ * darts`) and an empty quiver is spelled out rather than blank: quiver.cc
+ * `quiver_description` prints `<darkgrey>Nothing quivered</darkgrey>`.
+ */
+export function readiedAction(quiverDesc: string | undefined): string | undefined {
+  const text = formattedStringToText(quiverDesc ?? '').trim()
+  return text && text !== 'Nothing quivered' ? text : undefined
+}
+
 export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer: Layer): Context {
   const mode = deriveMode(state)
   const ahead = targetFor(scene, cellAhead(scene, cam.facing), false)
@@ -455,7 +466,7 @@ export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer
   // what autofight would attack: a plant is hostile-attitude firewood and counts for nothing (scene `isThreat`)
   const hostiles = monstersInView(scene).filter(isThreat).length
   const p = state.player
-  const ctx: Context = { mode, layer, ahead, under, hostilesInView: hostiles, readiedAction: p.quiver_desc || undefined }
+  const ctx: Context = { mode, layer, ahead, under, hostilesInView: hostiles, readiedAction: readiedAction(p.quiver_desc) }
   if (p.hp < p.hp_max || p.mp < p.mp_max) ctx.injured = true
   if (mode === 'yesno' || mode === 'prompt') ctx.prompt = parsePrompt(state)
   if (mode === 'menu') {

@@ -106,3 +106,25 @@ describe('a hold in progress fills its prompt', () => {
     expect(inner.actionbar.querySelector('.chip.B')).toBe(chip)
   })
 })
+
+describe('the stack under a centred panel', () => {
+  it('lies down in a row under a menu, a crt screen or a popup, and stands as a column in play', () => {
+    for (const mode of ['menu', 'crt', 'popup', 'dialog', 'newgame', 'ended'] as const) {
+      expect(bar(ctx({ mode })).classList.contains('row'), mode).toBe(true)
+    }
+    for (const mode of ['command', 'targeting', 'levelmap', 'yesno', 'prompt'] as const) {
+      expect(bar(ctx({ mode })).classList.contains('row'), mode).toBe(false)
+    }
+  })
+
+  it('stands back up when the menu closes', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const hud = new Hud(host, { onSelectMonster() {}, onBarAction() {}, onMinimapClick() {}, onPanelItem() {}, onPanelShow() {} })
+    const inner = hud as unknown as { renderBar(c: Context, k: string, spectating: boolean, device: string, hints: boolean): void; actionbar: HTMLElement }
+    inner.renderBar(ctx({ mode: 'menu' }), 'xbox', false, 'pad', true)
+    expect(inner.actionbar.classList.contains('row')).toBe(true)
+    inner.renderBar(ctx({ mode: 'command' }), 'xbox', false, 'pad', true)
+    expect(inner.actionbar.classList.contains('row')).toBe(false)
+  })
+})

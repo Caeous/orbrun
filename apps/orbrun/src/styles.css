@@ -1883,50 +1883,6 @@ canvas.minimap.hidden {
   pointer-events: none;
 }
 .actionbar.contextual .group {
-  border-left: 0;
-  padding-left: 0;
-}
-
-.actionbar .chip,
-.prompts .chip {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5em;
-  background: var(--chip-bg);
-  border: 1px solid var(--chip-line);
-  border-radius: 4px;
-  padding: 0.1em 0.7em 0.1em 0.25em;
-  cursor: pointer;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    transform 90ms ease;
-}
-.actionbar .chip:hover {
-  border-color: rgba(255, 255, 255, 0.35);
-}
-
-/*
- * The contextual prompts: a stack in the bottom-right corner of the view,
- * growing upward from the interact prompt on its last row. No boxes:
- * shadowed text like the messages, the glyph or key cap at the edge so they
- * line up in one column, the label to its left.
- */
-.actionbar.contextual {
-  flex-direction: column-reverse;
-  flex-wrap: nowrap;
-  align-items: flex-end;
-  justify-content: flex-start;
-  gap: 0.2em;
-  /* a cell in from the edge, and left of the first-person weapon when one is drawn there (hud.ts keepClear) */
-  padding: 0 calc(var(--cw, 10px) + var(--hands-inset, 0px)) 0.15em 0;
-  transition: padding-right 200ms ease;
-  pointer-events: none;
-}
-.actionbar.contextual .group {
   display: contents;
 }
 .actionbar.contextual .chip {
@@ -1944,6 +1900,19 @@ canvas.minimap.hidden {
 .actionbar.contextual .chip.teaching {
   pointer-events: none;
   cursor: default;
+}
+/*
+ * Under a centred panel (hud.ts POPUP_MODES) the corner is only the strip
+ * between the panel's foot and the view's, so the stack lies down: the same
+ * order read from the corner leftward, the primary prompt still at the edge,
+ * wrapping upward only if the strip is too narrow for all of them.
+ */
+.actionbar.contextual.row {
+  flex-direction: row-reverse;
+  flex-wrap: wrap-reverse;
+  align-items: flex-end;
+  column-gap: 1.4em;
+  row-gap: 0.2em;
 }
 .actionbar.contextual .chip:hover {
   border: 0;

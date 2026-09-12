@@ -1758,7 +1758,14 @@ export class Overlays {
     pre.append(...els)
     if (!top) return pre
     const items: Focusable[] = []
-    for (const hk of scrapeCrt(tag, lines)) {
+    const hotkeys = scrapeCrt(tag, lines)
+    // skill-menu.cc: `=` puts the screen in set-target mode (set_flag, so a second `=` is harmless)
+    // and a skill's letter then prompts for its target (read_skill_target, text input `skill_target`).
+    // A row's Y sends both, so one press asks for the target without a mode switch first. The screen
+    // only prints the switch when targets are available (not for a Gnoll), and in set-target mode
+    // it prints `[-] clear selected target` in its stead.
+    const targets = tag === 'skills' && hotkeys.some((hk) => hk.kind === 'footer' && (hk.key === '=' || /skill target|selected target/.test(hk.label)))
+    for (const hk of hotkeys) {
       const line = els[hk.line]
       if (!line) continue
       const marker = h('span', { class: 'crt-hot ' + hk.kind, style: { left: hk.col + 'ch', width: hk.len + 'ch' }, title: hk.label })
@@ -1769,7 +1776,9 @@ export class Overlays {
       // column walk never jumps from the last row into the footer
       const n = Number(hk.group.replace(/\D/g, '')) || 0
       const col = hk.kind === 'row' ? n : 10 + n
-      items.push({ label: hk.label, el: marker, activate: send, row: hk.line, col, group: hk.group, id: hk.kind + ':' + hk.key })
+      const item: Focusable = { label: hk.label, el: marker, activate: send, row: hk.line, col, group: hk.group, id: hk.kind + ':' + hk.key }
+      if (targets && hk.kind === 'row') item.alt = { label: 'Set target', activate: () => this.hooks.send(cm.input('=' + hk.key)) }
+      items.push(item)
     }
     // the skills screen is two columns of rows, and a row often has an entry in
     // only one of them: left / right cross columns rather than staying on the line
@@ -1982,6 +1991,8 @@ export class Overlays {
     switch (op) {
       case 'select':
         return this.nav.activate()
+      case 'altSelect':
+        return this.nav.altActivate()
       case 'cancel':
         return this.nav.cancel()
       case 'prev':
@@ -2014,6 +2025,8 @@ export class Overlays {
     const fb = focusFallback(ctx)
     const keys: Record<FocusOp, number | null> = {
       select: fb.select === 'close' ? Keys.ESC : Keys.ENTER,
+      // a second action is the item's own: nothing to fall back to
+      altSelect: null,
       cancel: Keys.ESC,
       prev: Keys.CK_UP,
       next: Keys.CK_DOWN,

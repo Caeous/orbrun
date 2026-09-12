@@ -23,12 +23,14 @@ export interface Focusable {
   col?: number
   /** what B / Escape means on this screen (a "No", a "Close"); at most one */
   cancel?: boolean
+  /** a second thing the item can do (a skill row's "Set target"), on Y */
+  alt?: { label: string; activate(): void }
   /** the cursor arrived here by a move (not by a rebuild): the screen may follow it, as the new-game description does */
   onFocus?(): void
 }
 
 export type FocusDir = 'up' | 'down' | 'left' | 'right'
-export type FocusOp = 'next' | 'prev' | 'left' | 'right' | 'select' | 'cancel' | 'pageNext' | 'pagePrev' | 'first' | 'last'
+export type FocusOp = 'next' | 'prev' | 'left' | 'right' | 'select' | 'altSelect' | 'cancel' | 'pageNext' | 'pagePrev' | 'first' | 'last'
 
 /** The cursor as the bindings see it: what A and B would do, for the bar. */
 export interface FocusInfo {
@@ -36,6 +38,8 @@ export interface FocusInfo {
   label: string | null
   /** label of the cancel item when the screen has one ("No"), else null */
   cancelLabel: string | null
+  /** label of the focused item's second action (Y), when it has one */
+  altLabel?: string | null
   index: number
   count: number
 }
@@ -195,7 +199,9 @@ export class FocusNav {
   info(): FocusInfo {
     const cur = this.current()
     const cancel = this.items.find((f) => f.cancel)
-    return { label: cur ? cur.label : null, cancelLabel: cancel ? cancel.label : null, index: this.index, count: this.items.length }
+    const info: FocusInfo = { label: cur ? cur.label : null, cancelLabel: cancel ? cancel.label : null, index: this.index, count: this.items.length }
+    if (cur?.alt) info.altLabel = cur.alt.label
+    return info
   }
 
   set(items: Focusable[], screen: string, opts: FocusOptions = {}, initial?: number, forceInitial = false) {
@@ -270,6 +276,14 @@ export class FocusNav {
     const cur = this.current()
     if (!cur) return false
     cur.activate()
+    return true
+  }
+
+  /** Fire the focused item's second action, if it has one. */
+  altActivate(): boolean {
+    const cur = this.current()
+    if (!cur?.alt) return false
+    cur.alt.activate()
     return true
   }
 
