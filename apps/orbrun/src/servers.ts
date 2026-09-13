@@ -175,9 +175,9 @@ export function loginState(account: Account | null, loggedIn: string | null | un
 }
 
 /**
- * The character last played on a server, as its `player` messages last
- * described it, so the home screen's Continue can say who waits there before
- * the connection is up: the stats screen's first lines (grid/stats.ts).
+ * A character as a roster line or a lobby's save info describes them: the
+ * stats screen's first lines (grid/stats.ts), as the home screen's Continue
+ * and the browser tab speak them.
  */
 export interface LastCharacter {
   name: string
@@ -196,35 +196,6 @@ export interface LastPlayed {
   serverId: string
   gameId?: string
   username?: string
-  /** who was playing `gameId` when it was last left (older builds; now in `orbrun.characters`, see getCharacter) */
-  character?: LastCharacter
-}
-
-const CHARACTERS_KEY = 'orbrun.characters'
-
-/**
- * The character seen in each game of each server, as its `player` messages
- * last described them: who Continue 0.34 and Continue trunk lead to, on a
- * server whose lobby does not say (`show_save_info` off, so `set_game_links`
- * carries no save). Kept per device; dropped when `game_ended` says the
- * character is gone (main.ts).
- */
-export function getCharacter(serverId: string, gameId: string): LastCharacter | null {
-  const all = load<Record<string, Record<string, LastCharacter>>>(CHARACTERS_KEY, {})
-  const c = all[serverId]?.[gameId]
-  if (c) return c
-  // a character remembered by an older build, on the last game played
-  const last = getLast()
-  return last && last.serverId === serverId && last.gameId === gameId && last.character ? last.character : null
-}
-
-export function setCharacter(serverId: string, gameId: string, c: LastCharacter | null) {
-  const all = load<Record<string, Record<string, LastCharacter>>>(CHARACTERS_KEY, {})
-  if (c) (all[serverId] ??= {})[gameId] = c
-  else if (all[serverId]) delete all[serverId][gameId]
-  save(CHARACTERS_KEY, all)
-  const last = getLast()
-  if (!c && last && last.serverId === serverId && last.gameId === gameId && last.character) setLast({ ...last, character: undefined })
 }
 
 /**
@@ -233,22 +204,22 @@ export function setCharacter(serverId: string, gameId: string, c: LastCharacter 
  * the title without its "the", the species and background as the roster's
  * four letters ("VSIE"), the place as the HUD abbreviates it ("D:2"). The
  * account's own line is a game of theirs still open on the server, left
- * through a dropped socket or in another tab, which a server that keeps its
- * save info to itself says nothing else about. `stored` is what this device
- * remembered of the game (getCharacter): its fuller species name is kept when
- * it is the same character.
+ * through a dropped socket or in another tab.
+ *
+ * Everything here comes from the line itself, nothing from what this device
+ * saw last: the same account can be played from anywhere, so a remembered
+ * character may already be dead and would contradict the live line.
  */
-export function characterOf(e: { username: string; char?: string; xl?: string; place?: string; title?: string; god?: string }, stored: LastCharacter | null = null): LastCharacter {
+export function characterOf(e: { username: string; char?: string; xl?: string; place?: string; title?: string; god?: string }): LastCharacter {
   const colon = e.place?.lastIndexOf(':') ?? -1
   const depth = colon > 0 ? Number(e.place!.slice(colon + 1)) : 0
   const place = colon > 0 && depth ? e.place!.slice(0, colon) : e.place ?? ''
-  const same = stored?.name === e.username
   return {
     name: e.username,
-    title: e.title ? 'the ' + e.title : same ? stored!.title : '',
-    species: same && stored!.species ? stored!.species : e.char ?? '',
-    god: e.god || (same ? stored!.god : '') || '',
-    xl: Number(e.xl) || (same ? stored!.xl : 0),
+    title: e.title ? 'the ' + e.title : '',
+    species: e.char ?? '',
+    god: e.god || '',
+    xl: Number(e.xl) || 0,
     place,
     depth: depth || 0,
   }
@@ -280,6 +251,25 @@ export function gameTitle(c: LastCharacter, base: string): string {
   const who = c.name + (c.title ? ((c.title[0] === ',' ? '' : ' ') + c.title) : '')
   const what = c.species + (c.god ? (c.species ? ' of ' : 'of ') + c.god : '')
   return [who, what, base].filter(Boolean).join(' | ')
+}
+
+const MORGUE_KEY = 'orbrun.morgue'
+
+/**
+ * Where a server keeps an account's morgue directory ("/crawl/morgue/caeo/"), once something has said: a
+ * `game_ended` `dump` names the real one, and before that the home screen tries the layouts
+ * dgamelaunch-config ships with (whereis.ts `morgueDirGuesses`) and keeps whichever answered. '' is a
+ * server that answered none of them, kept so the tries are not made again on every redraw.
+ */
+export function getMorgueDir(serverId: string, username: string): string | null {
+  const all = load<Record<string, string>>(MORGUE_KEY, {})
+  return all[tokenKey(serverId, username)] ?? null
+}
+
+export function setMorgueDir(serverId: string, username: string, dir: string) {
+  const all = load<Record<string, string>>(MORGUE_KEY, {})
+  all[tokenKey(serverId, username)] = dir
+  save(MORGUE_KEY, all)
 }
 
 export function getLast(): LastPlayed | null {

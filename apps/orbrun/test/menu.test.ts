@@ -63,8 +63,19 @@ interface Made {
 }
 
 const made: FrontEnd[] = []
+
+/**
+ * The home screen reads `<player>.where` from the server in the background (menu.ts `readWhereis`). Nothing
+ * here is talking to a server, so it answers 404 by default: the screen is the one drawn without it. Tests
+ * about the file stub `fetch` themselves.
+ */
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })))
+})
+
 afterEach(() => {
   for (const s of made.splice(0)) s.destroy()
+  vi.unstubAllGlobals()
 })
 
 /** The front end on a screen, with no session up unless `session` gives one. */
@@ -195,7 +206,7 @@ describe('the front end: the home screen', () => {
     const { screen } = make(() => s)
     const msg = () => screen.root.querySelector('.menu-msg')!
     const hint = msg().textContent
-    expect(hint).toBe('DCSS 0.34 on crawl.dcss.io. A game of yours already waiting there continues instead.')
+    expect(hint).toBe('A new game of DCSS 0.34 on crawl.dcss.io.')
     expect(msg().classList.contains('said')).toBe(true)
     // each watcher arriving redraws the home screen: the same words on a fresh line, without the fade-in
     for (let n = 1; n <= 3; n++) {
@@ -211,7 +222,7 @@ describe('the front end: the home screen', () => {
     expect(msg().classList.contains('said')).toBe(true)
   })
 
-  it('once logged in: versions are on home, Continue stands first, Watch counts players', () => {
+  it('once logged in: versions are on home in the lobby’s order, Watch counts players', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
     localStorage.setItem('orbrun.account', JSON.stringify(caeo))
     localStorage.setItem('orbrun.last', JSON.stringify({ serverId: 'cdi', username: 'caeo', gameId: 'dcss-web-trunk' }))
@@ -225,14 +236,16 @@ describe('the front end: the home screen', () => {
       entries: new Map([[1, playing('alice')]]),
     })
     const { screen } = make(() => s)
-    expect(labels(screen)).toEqual(['Continue DCSS trunk', 'Play DCSS 0.34', 'Watch', 'Settings', 'caeo · CDI', 'About & credits'])
+    // the latest release leads whatever was played last and whatever has a game waiting: the cursor is on the
+    // same row every time the screen comes up
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Settings', 'caeo · CDI', 'About & credits'])
     expect(sub(screen, 'Continue DCSS trunk')).toBe('a level 9 Minotaur Berserker of Trog')
     expect(sub(screen, 'Play DCSS 0.34')).toBeNull()
     expect(sub(screen, 'Watch')).toBe('1 playing')
     expect(conn(screen)).toBe('caeo · CDI')
-    expect(focused(screen)).toBe('play:dcss-web-trunk')
+    expect(focused(screen)).toBe('play:dcss-web-0.34')
     const lines = Array.from(screen.root.querySelectorAll('.home-actions > .line'))
-    expect(lines.map((line) => line.firstElementChild?.getAttribute('data-focus'))).toEqual(['play:dcss-web-trunk', 'play:dcss-web-0.34', 'watch', 'settings'])
+    expect(lines.map((line) => line.firstElementChild?.getAttribute('data-focus'))).toEqual(['play:dcss-web-0.34', 'play:dcss-web-trunk', 'watch', 'settings'])
     expect(lines.map((line) => line.children.length)).toEqual([1, 1, 1, 1])
     press(screen, 'ArrowDown')
     press(screen, 'ArrowDown')
@@ -356,19 +369,79 @@ describe('the front end: the home screen', () => {
       entries: new Map([[1, playing('alice')], [2, playing('Caeo', { game_id: 'dcss-git', char: 'VSIE', xl: '2', place: 'D:2', title: 'Chiller' })]]),
     })
     const { screen } = make(() => s)
-    expect(labels(screen).slice(0, 2)).toEqual(['Continue DCSS trunk', 'Play DCSS 0.34'])
+    // trunk is the one with a game waiting, and it still sits under 0.34 rather than jumping the list
+    expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk'])
     expect(sub(screen, 'Continue DCSS trunk')).toBe('Caeo the Chiller, VSIE XL2')
-    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('Down the stairs to your game, still open on the server. D:2 lies below.')
     // Play on such a server is not surely a new game, and its hint does not promise one
-    press(screen, 'ArrowDown')
     expect(focused(screen)).toBe('play:dcss-0.34')
-    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('DCSS 0.34 on crawl.dcss.io. A game of yours already waiting there continues instead.')
-    // the roster line goes (the server stopped the process): what this device remembered of the game stands in
-    localStorage.setItem('orbrun.characters', JSON.stringify({ cdi: { 'dcss-git': { name: 'caeo', title: 'the Chiller', species: 'Vine Stalker', xl: 2, place: 'Dungeon', depth: 2 } } }))
+    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('A new game of DCSS 0.34 on crawl.dcss.io.')
+    press(screen, 'ArrowDown')
+    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('Down the stairs to your game, still open on the server. D:2 lies below.')
+    // the roster line goes (the server stopped the process, or the game was played out and died in another
+    // browser): with nothing live to go on the row stops naming a character and stops promising a game
     s.state.lobby.entries = new Map([[1, playing('alice')]])
     screen.refresh()
-    expect(labels(screen).slice(0, 2)).toEqual(['Continue DCSS trunk', 'Play DCSS 0.34'])
-    expect(sub(screen, 'Continue DCSS trunk')).toBe('caeo the Chiller, Vine Stalker XL2')
+    expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk'])
+    expect(sub(screen, 'Play DCSS trunk')).toBeNull()
+  })
+
+  it('asks the server what is waiting: `.where` turns one version’s row into Continue and leaves the other alone', async () => {
+    // crawl.dcss.io publishes no save info over the socket, but crawl writes <player>.where into the morgue
+    // directory on every save and every death (chardump.cc whereis_record). This is the real file, for a trunk
+    // game saved in D:2 — so trunk continues and 0.34, which the file says nothing about, does not pretend to.
+    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
+    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
+    const where =
+      'v=0.35-a0:vlong=0.35-a0-1015-gbe08bfc2e8:tiles=1:name=caeo:race=Minotaur:cls=Fighter:char=MiFi:xl=3:' +
+      'title=Covered:place=D::2:br=D:lvl=2:hp=30:mhp=33:turn=1084:status=saved\n'
+    const fetched = vi.fn(async (url: string) => new Response(url.endsWith('/crawl/morgue/caeo/caeo.where') ? where : '', { status: url.endsWith('/crawl/morgue/caeo/caeo.where') ? 200 : 404 }))
+    vi.stubGlobal('fetch', fetched)
+    const s = fakeSession(cdi, 'caeo', {
+      username: 'caeo',
+      complete: true,
+      games: [
+        { id: 'dcss-0.34', label: 'DCSS 0.34' },
+        { id: 'dcss-git', label: 'DCSS trunk' },
+      ],
+      entries: new Map([[1, playing('alice')]]),
+    })
+    const { screen } = make(() => s)
+    // drawn before the file lands, and redrawn when it does
+    expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk'])
+    await vi.waitFor(() => expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk']))
+    expect(fetched).toHaveBeenCalledWith('/morgue-proxy/crawl.dcss.io/crawl/morgue/caeo/caeo.where')
+    expect(sub(screen, 'Continue DCSS trunk')).toBe('caeo the Covered, Minotaur Fighter XL3')
+    expect(sub(screen, 'Play DCSS 0.34')).toBeNull()
+    press(screen, 'ArrowDown')
+    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('Down the stairs to your game. D:2 lies below.')
+    // the character walked into a hobgoblin in another browser: the same file says so, and the row lets go
+    screen.attach(s)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(where.replace('status=saved', 'status=dead'), { status: 200 })))
+    screen.refresh()
+    await vi.waitFor(() => expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk']))
+  })
+
+  it('never speaks a save this device only remembers: the same account plays from any browser', () => {
+    // a character can be walked into a hobgoblin from another browser at any moment; the server publishes no
+    // save info to contradict it, so a Continue built from this device's memory would name someone dead
+    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
+    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
+    localStorage.setItem('orbrun.last', JSON.stringify({ serverId: 'cdi', gameId: 'dcss-git', username: 'caeo' }))
+    localStorage.setItem('orbrun.characters', JSON.stringify({ cdi: { 'dcss-git': { name: 'caeo', title: 'the Chiller', species: 'Vine Stalker', xl: 2, place: 'Dungeon', depth: 2 } } }))
+    const s = fakeSession(cdi, 'caeo', {
+      username: 'caeo',
+      complete: true,
+      games: [
+        { id: 'dcss-0.34', label: 'DCSS 0.34' },
+        { id: 'dcss-git', label: 'DCSS trunk' },
+      ],
+      entries: new Map([[1, playing('alice')]]),
+    })
+    const { screen } = make(() => s)
+    expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk'])
+    expect(sub(screen, 'Play DCSS trunk')).toBeNull()
+    press(screen, 'ArrowDown')
+    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('A new game of DCSS trunk on crawl.dcss.io.')
   })
 
   it('keeps the footer in keyboard and pad order, and restores its cursor after Back', () => {
@@ -736,16 +809,16 @@ describe('the front end: Play and Watch', () => {
     const s = loggedIn()
     const { screen, connect } = make(() => s)
     expect(screen.view).toBe('home')
-    expect(labels(screen)).toEqual(['Continue DCSS trunk', 'Play DCSS 0.34', 'Watch', 'Settings', 'caeo · CDI', 'About & credits'])
-    expect(focused(screen)).toBe('play:dcss-web-trunk')
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Settings', 'caeo · CDI', 'About & credits'])
+    expect(focused(screen)).toBe('play:dcss-web-0.34')
     press(screen, 'ArrowDown')
-    expect(focused(screen)).toBe('play:dcss-web-0.34')
+    expect(focused(screen)).toBe('play:dcss-web-trunk')
     press(screen, 'ArrowRight')
-    expect(focused(screen)).toBe('play:dcss-web-0.34')
+    expect(focused(screen)).toBe('play:dcss-web-trunk')
     pad(screen, 'A')
-    expect(connect).toHaveBeenLastCalledWith(cdi, 'caeo', { kind: 'play', gameId: 'dcss-web-0.34' })
-    pick(screen, 'Continue DCSS trunk')
     expect(connect).toHaveBeenLastCalledWith(cdi, 'caeo', { kind: 'play', gameId: 'dcss-web-trunk' })
+    pick(screen, 'Play DCSS 0.34')
+    expect(connect).toHaveBeenLastCalledWith(cdi, 'caeo', { kind: 'play', gameId: 'dcss-web-0.34' })
   })
 
   it('tells the address bar where it stands: #lobby is the Watch screen, home is home', () => {
@@ -793,7 +866,7 @@ describe('the front end: Play and Watch', () => {
     expect(screen.root.textContent).not.toContain('Loading game versions…')
   })
 
-  it('keeps a last-played older save first and never offers a disabled slot', () => {
+  it('keeps a last-played older version on the list, after the latest, and never offers a disabled slot', () => {
     const s = loggedIn()
     localStorage.setItem('orbrun.last', JSON.stringify({ serverId: 'cdi', gameId: 'dcss-web-0.33' }))
     s.state.lobby.games.push(
@@ -801,8 +874,10 @@ describe('the front end: Play and Watch', () => {
       { id: 'other-game', label: 'Other game', save: 'slot full', disabled: true },
     )
     const { screen } = make(() => s)
-    expect(labels(screen).slice(0, 3)).toEqual(['Continue DCSS 0.33', 'Play DCSS 0.34', 'Continue DCSS trunk'])
-    expect(focused(screen)).toBe('play:dcss-web-0.33')
+    // 0.33 is off the lobby's own rows (only the latest release and trunk are shown), and being the last played
+    // brings it back — at the end, where an old version belongs; the cursor stays on the latest release
+    expect(labels(screen).slice(0, 3)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Continue DCSS 0.33'])
+    expect(focused(screen)).toBe('play:dcss-web-0.34')
     expect(labels(screen).some((label) => label.includes('Other game'))).toBe(false)
     s.state.lobby.games.find((g) => g.id === 'dcss-web-0.33')!.disabled = true
     screen.refresh()

@@ -25,6 +25,8 @@ import { CAM_DISTANCES, CAM_HEIGHTS } from './settings-rows'
 
 /** The most drawn pixels per CSS pixel the game view gets (Part IV of rendering-3d.md): the display's density, capped here. */
 const VIEW_MAX_DPR = 1
+/** at rest the frame loop sleeps, waking to run its body this often, so nothing that changed without waking it waits longer */
+const IDLE_TICK_MS = 250
 
 /** css pixels a touch must travel before a press becomes a look drag */
 const DRAG_SLOP = 6
@@ -80,11 +82,51 @@ export class GameScreen {
   private hooks: GameHooks
   private ctx: Context
   private unsub: (() => void)[] = []
-  private needsRender = true
+  private _needsRender = true
+  /**
+   * Something for the frame loop to look at: a server message, a key, a
+   * pointer, a pad event, a resize, a settings change. Cleared as a frame's
+   * body starts, so anything set during it earns another frame. With it
+   * clear and nothing moving, the loop's callback returns at once (`awake`).
+   */
+  private dirty = true
+  /** the pointer moved over the view since the last pick, so the hovered cell may have changed */
+  private pickDirty = false
+  /** when the frame body last ran, for the idle safety tick (IDLE_TICK_MS) */
+  private lastBody = 0
+  /** the settings as last read; cleared by `applySettings`, so a frame reads storage at most once */
+  private settingsCache: Settings | null = null
+  /** the context as last derived, and the key of what it was derived from */
+  private ctxBase: Context | null = null
+  private ctxKey = ''
+  /** the revisions a frame was last drawn for: only a change to what is drawn (the map, the player, the UI stack) asks for a frame */
+  private drawnRev = { map: -1, player: -1, ui: -1 }
+  /** A frame is needed; setting it also wakes the loop. */
+  private get needsRender(): boolean {
+    return this._needsRender
+  }
+  private set needsRender(v: boolean) {
+    this._needsRender = v
+    if (v) this.wake()
+  }
+  /** Something happened: the next frame runs its body, and a sleeping loop is started again at once. */
+  private wake() {
+    this.dirty = true
+    if (!this.raf && !this.destroyed) {
+      clearTimeout(this.idleTimer)
+      this.idleTimer = 0
+      // the clock starts again with the loop: an easing's first frame must not be handed the whole sleep as its dt
+      this.lastFrame = performance.now()
+      this.raf = requestAnimationFrame(this.loop)
+    }
+  }
   /** `rev.player|rev.map` the viewmodel was last built from */
   private viewmodelRev = ''
   private lastFrame = performance.now()
   private raf = 0
+  /** the safety tick while the loop sleeps (IDLE_TICK_MS) */
+  private idleTimer = 0
+  private destroyed = false
   private lastPos = { x: NaN, y: NaN }
   /**
    * The player's position as of the last server message, and every hop it
@@ -152,6 +194,8 @@ export class GameScreen {
   private mapPan = { x: 0, y: 0 }
 
   constructor(host: HTMLElement, session: Session, hooks: GameHooks) {
+    // first: anything below that asks for a frame (`wake`) schedules the loop
+    this.loop = this.loop.bind(this)
     this.session = session
     this.hooks = hooks
     this.root = h('div', { class: 'screen game' })
@@ -217,9 +261,11 @@ export class GameScreen {
     this.padHints.cancel() // no pending server reply survives a screen/run change
     this.unsub.push(
       session.on((e) => {
-        if (e.type === 'scene') this.onScene()
-        else if (e.type === 'state') {
-          this.needsRender = true
+        if (e.type === 'scene') {
+          this.wake()
+          this.onScene()
+        } else if (e.type === 'state') {
+          this.wake()
           this.trackHop()
           if (e.msg.msg === 'input_mode') this.payOwedTurn()
           // a new game on the same version reuses the loaded gamedata, so no
@@ -253,14 +299,15 @@ export class GameScreen {
     this.attachPointer(this.canvas)
     this.hud.setMinimapTiles(st.minimapTiles, st.minimapCell)
     this.relayout(true)
-    this.loop = this.loop.bind(this)
-    this.raf = requestAnimationFrame(this.loop)
+    this.wake()
   }
 
   destroy() {
+    this.destroyed = true
     this.saveView()
     window.removeEventListener('pagehide', this.saveView)
     cancelAnimationFrame(this.raf)
+    clearTimeout(this.idleTimer)
     window.removeEventListener('keydown', this.onKeyDown, true)
     window.removeEventListener('resize', this.onResize)
     document.removeEventListener('pointerdown', this.onDocPointer, true)
@@ -359,7 +406,8 @@ export class GameScreen {
   }
 
   applySettings() {
-    const st = this.hooks.settings()
+    this.settingsCache = null
+    const st = this.settings()
     this.cam.thirdPerson = st.view === 'third'
     this.cam.setRestPitch(radians(st.restPitch))
     document.documentElement.style.setProperty('--ui-scale', String(st.uiScale))
@@ -371,6 +419,11 @@ export class GameScreen {
     this.hud.setMinimapTiles(st.minimapTiles, st.minimapCell)
     this.relayout(true)
     this.needsRender = true
+  }
+
+  /** The settings, read from storage once and kept until `applySettings` says they changed. */
+  private settings(): Settings {
+    return (this.settingsCache ??= this.hooks.settings())
   }
 
   private render3dOptions(st: Settings) {
@@ -436,6 +489,7 @@ export class GameScreen {
   }
 
   private onResize() {
+    this.wake()
     // the grid host watches the root too; a window resize is the sure signal on browsers without a ResizeObserver
     this.grid.fit()
   }
@@ -449,6 +503,21 @@ export class GameScreen {
     if (this.session.flushScene()) this.needsRender = true
     const beforeLook = this.cam.view
     if (this.cam.update(dt)) this.needsRender = true
+    if (!this.awake(now)) {
+      // nothing to do and nothing moving: no frames until something happens (`wake`) or the safety tick
+      cancelAnimationFrame(this.raf)
+      this.raf = 0
+      this.idleTimer = window.setTimeout(this.idleTick, IDLE_TICK_MS)
+      return
+    }
+    this.dirty = false
+    this.lastBody = now
+    // what is drawn changed: the map, the player, the UI stack (a menu's cursor, the level map opening)
+    const rev = this.session.state.rev
+    if (rev.map !== this.drawnRev.map || rev.player !== this.drawnRev.player || rev.ui !== this.drawnRev.ui) {
+      this.drawnRev = { map: rev.map, player: rev.player, ui: rev.ui }
+      this.needsRender = true
+    }
     if (this.padLooking && this.lastInput === 'pad' && this.ctx.mode === 'command' && !this.overlays.hasClientOverlay && !this.session.watching) {
       const after = this.cam.view
       const yaw = Math.atan2(Math.sin(after.yaw - beforeLook.yaw), Math.cos(after.yaw - beforeLook.yaw))
@@ -465,7 +534,7 @@ export class GameScreen {
     // over the screen. A veil that swallowed the click would strand the player,
     // so while anything of the server's is up it stands behind the overlays.
     this.loading.classList.toggle('behind', !!(st.dialog || st.menus.length || st.ui.length || st.textInput))
-    this.ctx = deriveContext(st, this.session.scene, this.cam.camera, 'micro')
+    this.ctx = this.deriveContext(st)
     this.fireHolds(now)
     // the server reports targeting alone; the runner knows whether its `x` opened it
     if (this.runner.examining(this.ctx.mode)) this.ctx.examining = true
@@ -476,7 +545,7 @@ export class GameScreen {
     this.overlays.syncFocus(this.ctx)
     const fi = this.overlays.focusInfo(this.ctx)
     if (fi) this.ctx.focus = fi
-    this.padHints.observe(this.padHintEvidence(), now)
+    if (this.padHints.waiting) this.padHints.observe(this.padHintEvidence(), now)
     const cursor = this.cursorFor()
     const lc = this.lastCursor
     if ((cursor?.x !== lc?.x || cursor?.y !== lc?.y || cursor?.mode !== lc?.mode || cursor?.tile !== lc?.tile) && !(cursor === null && lc === null)) {
@@ -493,8 +562,8 @@ export class GameScreen {
     this.applyServerOptions()
     this.hud.keepClear(this.handsLeft())
     // the monster list or the edge pips, one or the other; in 2D the top-down view frames everything in sight, so the list stands in
-    const nearby = this.is3d ? this.hooks.settings().nearby : 'list'
-    const settings = this.hooks.settings()
+    const settings = this.settings()
+    const nearby = this.is3d ? settings.nearby : 'list'
     const padLabels = this.overlays.hasClientOverlay || this.chat.capturing ? [] : this.padHints.prompts(this.ctx, settings.hints)
     // A held tap-or-hold button (B: Wait, hold for Rest) shows its prompt while it is down, even when the
     // situation did not put it in the corner, so the hold's progress has a place to show. It joins the
@@ -525,6 +594,48 @@ export class GameScreen {
       const r3d = this.renderer instanceof Render3d ? this.renderer : null
       this.hud.renderPips(this.session.scene, st, this.session.gamedata, r3d ? r3d.projector() : null, nearby === 'pips' ? 'all' : 'off')
     }
+  }
+
+  /**
+   * The context of the frame (context.ts `deriveContext`): scans of the
+   * scene's billboards and the message log, so it is derived once per change
+   * of what it reads (every message bumps `rev.any`; a scene rebuild bumps
+   * `scene.revision`; a turn changes the facing) and copied for the fields
+   * the frame fills in afterwards (`examining`, `popupActions`, `focus`).
+   */
+  private deriveContext(st: GameState): Context {
+    const key = `${st.rev.any}|${this.session.scene.revision}|${this.cam.camera.facing}`
+    if (!this.ctxBase || key !== this.ctxKey) {
+      this.ctxKey = key
+      this.ctxBase = deriveContext(st, this.session.scene, this.cam.camera, 'micro')
+    }
+    return { ...this.ctxBase }
+  }
+
+  /** The safety tick: a frame after IDLE_TICK_MS asleep, so anything that changed without waking the loop is seen. */
+  private idleTick = () => {
+    this.idleTimer = 0
+    if (!this.raf && !this.destroyed) {
+      this.lastFrame = performance.now()
+      this.raf = requestAnimationFrame(this.loop)
+    }
+  }
+
+  /**
+   * Whether this frame has anything to do. At rest (no message, no input,
+   * nothing easing or animating, no hold under way) the loop's body is
+   * skipped whole, so an idle game costs the CPU nothing but the callback.
+   * A safety tick every IDLE_TICK_MS still runs the body, so anything that
+   * changes state without waking the loop (a runner's timeout, a tooltip)
+   * is seen within a quarter second.
+   */
+  private awake(now: number): boolean {
+    if (this.dirty || this._needsRender || this.pickDirty || this.hoverMoved) return true
+    if (this.cam.steering || this.padLooking) return true
+    if (this.is3d && (this.renderer as Render3d).animating) return true
+    if (this.pressTimes.size > 0 || this.padHints.waiting) return true
+    // the safety tick woke the loop: a frame's body, and then sleep again
+    return now - this.lastBody >= IDLE_TICK_MS
   }
 
   /**
@@ -669,9 +780,9 @@ export class GameScreen {
     const key = JSON.stringify([
       this.is3d,
       mapView,
-      // the cell size is fitted to the view (`cellPixels`), so its size belongs to the key
-      this.canvas.clientWidth,
-      this.canvas.clientHeight,
+      // the cell size is fitted to the view (`cellPixels`), so its size belongs to the key (`relayout` ran first in the frame)
+      this.viewPx?.width,
+      this.viewPx?.height,
       o.tile_cell_pixels,
       o.tile_viewport_scale,
       o.tile_map_scale,
@@ -809,8 +920,11 @@ export class GameScreen {
   private pointerCell(): CellKey | null {
     if (!this.hover || !this.pointerLive || this.session.watching || this.ctx.mode !== 'command') return null
     if (this.session.state.options.tile_web_mouse_control === false) return null
-    // every pointer move, camera move, resize and level change marks a render, so this is the only time the pick can change
-    if (this.needsRender || this.pickMemo === undefined) this.pickMemo = this.renderer.pick(this.hover.x, this.hover.y)
+    // every camera move, resize and level change marks a render, and a pointer move marks the pick, so these are the only times it can change
+    if (this.needsRender || this.pickDirty || this.pickMemo === undefined) {
+      this.pickDirty = false
+      this.pickMemo = this.renderer.pick(this.hover.x, this.hover.y)
+    }
     return this.pickMemo
   }
 
@@ -993,6 +1107,7 @@ export class GameScreen {
   }
 
   pad(ev: PadEvent) {
+    this.wake()
     // a press, a stick or the d-pad is the pad speaking; a stick settling back to centre is not
     if (isPadActivity(ev)) this.inputFrom('pad')
     if (this.chat.capturing) {
@@ -1017,7 +1132,7 @@ export class GameScreen {
       }
       return
     }
-    const st = this.hooks.settings()
+    const st = this.settings()
     if (ev.type === 'look') {
       this.padLooking = ev.dx !== 0 || ev.dy !== 0
       if (this.ctx.mode === 'levelmap') {
@@ -1104,6 +1219,7 @@ export class GameScreen {
   }
 
   private onKeyDown(ev: KeyboardEvent) {
+    this.wake()
     const target = ev.target as HTMLElement | null
     // a key typed into a field is still the keyboard speaking (a server prompt's on-screen keyboard goes away for it)
     this.inputFrom('keyboard')
@@ -1227,7 +1343,9 @@ export class GameScreen {
         this.hover = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }
         this.hoverMoved = true
         this.pointerLive = true
-        this.needsRender = true
+        // the hovered cell is picked again next frame; only a change of cell draws one
+        this.pickDirty = true
+        this.wake()
         this.armCellTooltip(ev.pageX, ev.pageY)
       }
       const d = this.drag
@@ -1354,6 +1472,7 @@ export class GameScreen {
    * pointer.
    */
   private onDocPointer(ev: PointerEvent) {
+    this.wake()
     if (!this.popupUp()) return
     const t = ev.target instanceof Element ? ev.target : null
     if (t && this.chat.root.contains(t)) return
@@ -1368,6 +1487,7 @@ export class GameScreen {
 
   /** ui.js context_disable: no browser context menu while a popup is up, except on a text input. */
   private onDocContextMenu(ev: MouseEvent) {
+    this.wake()
     if (!this.popupUp()) return
     const t = ev.target instanceof Element ? ev.target : null
     if (t && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement)) return

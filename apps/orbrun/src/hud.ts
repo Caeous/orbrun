@@ -174,7 +174,7 @@ export class Hud {
   /** the portrait's side in css px (PORTRAIT_ROWS of the grid) and the cells the rows beside it give up */
   private portraitPx = 0
   private portraitCols = 0
-  private portraitKey = ''
+  private portraitPre: unknown[] | undefined
   /** consumables action panel (action_panel.js): inventory items with action_panel_order >= 0, in the strip along the top between the stats pane and the minimap (grid/panel.ts) */
   private actionPanel = h('div', { class: 'action-panel' })
   private minimapCanvas = h('canvas', { class: 'minimap' })
@@ -196,6 +196,8 @@ export class Hud {
   /** where the rows hang: their right edge and top in css px; null with no minimap to hang off */
   private statusAt: { right: number; top: number } | null = null
   private statusKey = ''
+  /** what the strip was last considered for, checked before the scene is scanned */
+  private statusPre: unknown[] | undefined
   /**
    * The trapped mark: the net or the web over the player, the badges
    * WebTiles paints across the whole doll (scene `statusIcons` `full`),
@@ -207,6 +209,7 @@ export class Hud {
   private trappedCanvas = h('canvas', { class: 'trapped-canvas' })
   private trappedR2d = new Render2d({ mode: 'tiles', cellSize: 32 })
   private trappedKey = ''
+  private trappedPre: unknown[] | undefined
   /** the minimap's unexplored ground is the same translucent backing as the stats pane, since it lies over the view too */
   private minimap = new Render2d({ mode: 'tiles', cellSize: MINIMAP_CELL_DEFAULT, follow: true, background: 'rgba(0, 0, 0, 0)' })
   /**
@@ -234,6 +237,7 @@ export class Hud {
   private monsters = h('div', { class: 'monsters' })
   private monsterRows: MonsterRow[] = []
   private monstersKey = ''
+  private monstersPre: unknown[] | undefined
   /** action panel: the one canvas WebTiles draws the buttons and item tiles on */
   private panelCanvas = h('canvas', { class: 'action-canvas' })
   private panelR2d = new Render2d({ mode: 'tiles', cellSize: 32 })
@@ -248,6 +252,9 @@ export class Hud {
   private panelTooltip = h('div', { class: 'tooltip', style: { display: 'none' } })
   private panelTooltipTimer = 0
   private panelKey = ''
+  private panelPre: unknown[] | undefined
+  /** a chip wears the hold ring, so the next frame without a hold clears it */
+  private holdShown = false
   /** the message pane (game.html `#message_pane`) as rows on the grid (grid/messages.ts), the `--more--` row last */
   private messages = h('div', { class: 'messages' })
   private actionbar = h('div', { class: 'actionbar' })
@@ -338,7 +345,7 @@ export class Hud {
       this.portrait.resize(side, side, window.devicePixelRatio || 1)
       this.portraitCanvas.style.width = side + 'px'
       this.portraitCanvas.style.height = side + 'px'
-      this.portraitKey = ''
+      this.portraitPre = undefined
     }
     this.messages.hidden = hidden.messages
     const at = host.px(free)
@@ -464,6 +471,8 @@ export class Hud {
    * frame of the hold rebuilds the corner.
    */
   private showHold(holding?: HoldProgress | null) {
+    if (!holding && !this.holdShown) return
+    this.holdShown = !!holding
     for (const [button, chip] of this.barChips) {
       const on = !!holding && button === holding.button
       chip.classList.toggle('holding', on)
@@ -503,9 +512,9 @@ export class Hud {
     if (!this.portraitPx || this.stats.hidden) return
     const o = state.options
     const mode = o.tile_display_mode === 'glyphs' ? 'glyphs' : o.tile_display_mode === 'hybrid' ? 'hybrid' : 'tiles'
-    const key = JSON.stringify([scene.revision, scene.playerOnLevel, scene.player.x, scene.player.y, mode, o.glyph_mode_font, o.tile_filter_scaling, gd?.version, this.portraitPx])
-    if (key === this.portraitKey) return
-    this.portraitKey = key
+    const pre = [scene.revision, scene.playerOnLevel, scene.player.x, scene.player.y, mode, o.glyph_mode_font, o.tile_filter_scaling, gd?.version, this.portraitPx]
+    if (!changed(this.portraitPre, pre)) return
+    this.portraitPre = pre
     const px = this.portraitPx
     this.portrait.setOptions({ cellSize: px, mode, filterScaling: o.tile_filter_scaling === true, glyphFont: typeof o.glyph_mode_font === 'string' && o.glyph_mode_font ? o.glyph_mode_font : 'monospace' })
     if (gd) this.portrait.setTiles(gd)
@@ -528,6 +537,10 @@ export class Hud {
   private renderStatuses(scene: Scene, state: GameState, gd: Gamedata | null) {
     if (!this.statusPx) return
     const at = this.statusAt
+    // every message bumps `rev.any` and every rebuild the scene's revision: nothing below can differ without one
+    const pre = [scene.revision, state.rev.any, gd, this.statusPx, this.statusCols, at]
+    if (!changed(this.statusPre, pre)) return
+    this.statusPre = pre
     const me = scene.playerOnLevel ? scene.billboards.find((b) => b.kind === 'player' && b.x === scene.player.x && b.y === scene.player.y) : undefined
     const badges = (me?.statusIcons || []).filter((i) => !i.at && !i.square && !i.full)
     const o = state.options
@@ -571,6 +584,9 @@ export class Hud {
    */
   private renderTrapped(scene: Scene, state: GameState, gd: Gamedata | null) {
     const free = this.freePx
+    const pre = [scene.revision, state.rev.any, gd, free]
+    if (!changed(this.trappedPre, pre)) return
+    this.trappedPre = pre
     const me = scene.playerOnLevel ? scene.billboards.find((b) => b.kind === 'player' && b.x === scene.player.x && b.y === scene.player.y) : undefined
     const marks = (me?.statusIcons || []).filter((i) => i.full)
     const o = state.options
@@ -617,6 +633,9 @@ export class Hud {
    */
   private renderActionPanel(state: GameState, gd: Gamedata | null, spectating: boolean) {
     const o = state.options
+    const pre = [state.rev.any, gd, this.panelBox, this.panelSelected, spectating]
+    if (!changed(this.panelPre, pre)) return
+    this.panelPre = pre
     const items = actionPanelItems(state)
     // action_panel.js update(): nothing until the inventory arrived, nothing for spectators
     const inited = Object.values(state.player.inv).length > 0
@@ -874,6 +893,9 @@ export class Hud {
    * bearing arrow relative to facing, and a row can be tapped to face it.
    */
   private renderMonsters(scene: Scene, cam: Camera, state: GameState, gd: Gamedata | null) {
+    const pre = [scene.revision, cam.facing, state.rev.any, gd]
+    if (!changed(this.monstersPre, pre)) return
+    this.monstersPre = pre
     const groups = monsterGroups(scene)
     const invis = state.map.invisibleMonsterDesc
     const o = state.options
@@ -1352,3 +1374,9 @@ const MF_OPTION_NAMES = [
 /** The 16 terminal colours, for glyph-mode items on the action panel. */
 const TERM16 = ['#000000', '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', '#aaaaaa', '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff']
 
+/** Whether `next` differs from `prev` element for element: a memo key with no string to build each frame. */
+function changed(prev: readonly unknown[] | undefined, next: readonly unknown[]): boolean {
+  if (!prev || prev.length !== next.length) return true
+  for (let i = 0; i < next.length; i++) if (prev[i] !== next[i]) return true
+  return false
+}

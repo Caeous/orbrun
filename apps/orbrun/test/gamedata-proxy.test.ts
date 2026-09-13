@@ -79,6 +79,8 @@ describe('morgue proxy route', () => {
     expect(morgueUpstream(`${MORGUE_PROXY_PREFIX}crawl.dcss.io/crawl/morgue/caeo/morgue-caeo-20260910-120000.txt`)).toBe('https://crawl.dcss.io/crawl/morgue/caeo/morgue-caeo-20260910-120000.txt')
     expect(morgueUpstream(`${MORGUE_PROXY_PREFIX}crawl.akrasiac.org/rawdata/caeo/caeo.txt`)).toBe('https://crawl.akrasiac.org/rawdata/caeo/caeo.txt')
     expect(morgueUpstream(`${MORGUE_PROXY_PREFIX}webzook.net:8080/morgue/caeo/crash-caeo-1.txt`)).toBe('https://webzook.net:8080/morgue/caeo/crash-caeo-1.txt')
+    // and the `.where` beside them, which the home screen reads to know whether a save is still waiting
+    expect(morgueUpstream(`${MORGUE_PROXY_PREFIX}crawl.dcss.io/crawl/morgue/caeo/caeo.where`)).toBe('https://crawl.dcss.io/crawl/morgue/caeo/caeo.where')
   })
 
   it('refuses anything that is not a text file on a plain path', () => {
@@ -86,6 +88,7 @@ describe('morgue proxy route', () => {
       '/',
       `${MORGUE_PROXY_PREFIX}crawl.dcss.io/morgue/caeo/`,
       `${MORGUE_PROXY_PREFIX}crawl.dcss.io/morgue/caeo/morgue.html`,
+      `${MORGUE_PROXY_PREFIX}crawl.dcss.io/morgue/caeo/caeo.wherever`,
       `${MORGUE_PROXY_PREFIX}crawl.dcss.io/morgue/caeo/../../secrets.txt`,
       `${MORGUE_PROXY_PREFIX}crawl.dcss.io/morgue/caeo/a.txt?x=1`,
       `${MORGUE_PROXY_PREFIX}user@crawl.dcss.io/morgue/caeo/a.txt`,
@@ -93,6 +96,12 @@ describe('morgue proxy route', () => {
       `${GAMEDATA_PROXY_PREFIX}crawl.dcss.io/morgue/caeo/a.txt`,
     ]
     for (const p of bad) expect(morgueUpstream(p), p).toBeNull()
+  })
+
+  it('gives a `.where` a cache short enough to catch a death in another browser', async () => {
+    const res = await serveMorgue(`${MORGUE_PROXY_PREFIX}crawl.dcss.io/crawl/morgue/caeo/caeo.where`, async () => new Response('name=caeo:status=saved', { status: 200 }))
+    expect(res!.headers.get('Cache-Control')).toBe('public, max-age=15')
+    expect(await res!.text()).toBe('name=caeo:status=saved')
   })
 
   it('serves the file as text with CORS and a short cache, and a failure as a status', async () => {

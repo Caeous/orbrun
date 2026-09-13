@@ -6,7 +6,6 @@ import {
   describeCharacter,
   describePlace,
   gameTitle,
-  getCharacter,
   getChosenAccount,
   getGames,
   getLast,
@@ -15,7 +14,6 @@ import {
   loginState,
   removeAccount,
   sameAccount,
-  setCharacter,
   setChosenAccount,
   setGames,
   setLast,
@@ -76,11 +74,10 @@ describe('cached game list', () => {
 })
 
 /**
- * The home screen's Continue names the character the game last described
- * (`player`: name, title, species, xl, place, depth), the way the stats
- * screen's first lines and the lobby roster's spoken line do.
+ * The home screen's Continue names the character from the lobby roster's own line, the way the stats screen's
+ * first lines do. The entry below is a real one, recorded from CDI on 2026-09-09 for the test account's open
+ * trunk game.
  */
-/** The character a lobby roster line stands for, as recorded from CDI on 2026-09-09 for the test account's open trunk game. */
 describe('characterOf', () => {
   const entry = { username: 'caeo', game_id: 'dcss-git', xl: '2', char: 'VSIE', place: 'D:2', turn: '1312', title: 'Chiller' }
 
@@ -91,11 +88,11 @@ describe('characterOf', () => {
     expect(describePlace(c)).toBe('D:2')
   })
 
-  it('keeps the fuller species this device saw in the game when it is the same character, and takes the roster’s level and place', () => {
-    const stored = { name: 'caeo', title: 'the Sneak', species: 'Vine Stalker', god: 'Vehumet', xl: 1, place: 'Dungeon', depth: 1 }
-    expect(characterOf(entry, stored)).toEqual({ name: 'caeo', title: 'the Chiller', species: 'Vine Stalker', god: 'Vehumet', xl: 2, place: 'D', depth: 2 })
-    expect(characterOf({ ...entry, god: 'Xom' }, stored).god).toBe('Xom')
-    expect(characterOf(entry, { ...stored, name: 'other' }).species).toBe('VSIE')
+  it('says only what the line says, never what this device saw last', () => {
+    // the same account plays from any browser: a character this device remembers can already be dead, and
+    // borrowing their species or god would dress the live line in someone who is gone
+    expect(characterOf({ ...entry, god: 'Xom' }).god).toBe('Xom')
+    expect(characterOf({ username: 'caeo', game_id: 'dcss-git' })).toEqual({ name: 'caeo', title: '', species: '', god: '', xl: 0, place: '', depth: 0 })
   })
 
   it('takes a branch without a depth bare, and stands without a line the roster has not filled', () => {

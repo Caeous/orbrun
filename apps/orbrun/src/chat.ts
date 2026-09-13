@@ -37,6 +37,8 @@ export class Chat {
   private newMessages = 0
   private rendered = 0
   private lastRev = -1
+  /** the visibility switches as last written (`update`) */
+  private lastVis = -1
   private sent: string[] = []
   private unsent = ''
   private historyPos = -1
@@ -84,10 +86,16 @@ export class Chat {
     // client.js reset_visibility: no chat outside a game
     const superHidden = state.chatSuperHidden
     const show = inGame && state.chatVisible && !this.hidden && !superHidden
-    this.root.style.display = show ? '' : 'none'
-    this.hiddenTab.style.display = inGame && this.hidden && !superHidden ? '' : 'none'
-    this.input.style.display = loggedIn ? '' : 'none'
-    this.loginText.style.display = loggedIn ? 'none' : ''
+    const tab = inGame && this.hidden && !superHidden
+    // style writes only on a change: this runs every frame
+    const vis = (show ? 1 : 0) | (tab ? 2 : 0) | (loggedIn ? 4 : 0)
+    if (vis !== this.lastVis) {
+      this.lastVis = vis
+      this.root.style.display = show ? '' : 'none'
+      this.hiddenTab.style.display = tab ? '' : 'none'
+      this.input.style.display = loggedIn ? '' : 'none'
+      this.loginText.style.display = loggedIn ? 'none' : ''
+    }
     if (state.rev.chat === this.lastRev) return
     this.lastRev = state.rev.chat
     // spectators

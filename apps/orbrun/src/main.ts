@@ -5,7 +5,8 @@ import { Session } from './session'
 import { FrontEnd, type Intent } from './menu'
 import type { GameScreen, InputDevice } from './game'
 import { GamepadInput, installPadKeys, isPadActivity } from './gamepad'
-import { characterOf, findServer, gameTitle, getCharacter, getChosenAccount, getLast, getSettings, getToken, parseRoute, setCharacter, setGames, setLast, setRoute, setToken, type Account, type LastCharacter, type Route, type ServerInfo } from './servers'
+import { findServer, gameTitle, getChosenAccount, getLast, getSettings, getToken, parseRoute, setGames, setLast, setMorgueDir, setRoute, setToken, type Account, type Route, type ServerInfo } from './servers'
+import { morgueDirOf } from './whereis'
 import { settingsPanel } from './settings-panel'
 
 const app = document.getElementById('app')!
@@ -37,9 +38,6 @@ let retries = 0
 const RETRY_MS = 1000
 const RETRY_MAX_MS = 30_000
 document.documentElement.style.setProperty('--ui-scale', String(getSettings().uiScale))
-/** `game_ended` reasons after which there is no game to continue: the character died, won, quit, bailed out, or was never made (client.js normal_exit, less "saved"). */
-const GONE = new Set(['dead', 'won', 'quit', 'bailed out', 'cancel'])
-
 /** The tab's title as the page loaded: "Orbrun" from the site title's first words, restored once out of a game. */
 const BASE_TITLE = document.title.split(/\s[—–-]\s/)[0] || 'Orbrun'
 
@@ -56,46 +54,9 @@ function updateTitle(s: Session | null) {
   if (document.title !== t) document.title = t
 }
 
-/**
- * Keep the character as the game's `player` updates describe them, for the
- * home screen's Continue. Written only when the line would change: `player`
- * comes several times a turn.
- */
-function rememberCharacter(s: Session) {
-  const p = s.state.player
-  if (!p.name) return
-  const last = getLast()
-  if (!last || last.serverId !== s.server.id || !last.gameId) return
-  const c: LastCharacter = { name: p.name, title: p.title || '', species: p.species_display_name || p.species || '', god: p.god || '', xl: p.xl, place: p.place || '', depth: p.depth || 0 }
-  const o = getCharacter(s.server.id, last.gameId)
-  if (o && o.name === c.name && o.title === c.title && o.species === c.species && (o.god || '') === c.god && o.xl === c.xl && o.place === c.place && o.depth === c.depth) return
-  setCharacter(s.server.id, last.gameId, c)
-}
-
-/**
- * The roster lists a game of this account's own, still open on the server
- * (a socket that dropped, another tab): keep its character, so Continue can
- * name them on this device once the server has stopped that process, on a
- * server that publishes no save info (CDI). What the game itself said of the
- * character (rememberCharacter) is fuller and stays when it is the same one.
- */
-function rememberOwnGames(s: Session) {
-  const who = s.state.lobby.username
-  if (!who || s.state.phase !== 'lobby') return
-  const name = who.toLowerCase()
-  for (const e of s.state.lobby.entries.values()) {
-    if (e.username.toLowerCase() !== name) continue
-    const stored = getCharacter(s.server.id, e.game_id)
-    const c = characterOf(e, stored)
-    if (stored && stored.name === c.name && stored.title === c.title && stored.species === c.species && (stored.god || '') === c.god && stored.xl === c.xl && stored.place === c.place && stored.depth === c.depth) continue
-    setCharacter(s.server.id, e.game_id, c)
-  }
-}
-
 function play(s: Session, gameId: string) {
-  const last = getLast()
-  // the game's character (getCharacter) stays until a `player` update says otherwise
-  setLast({ serverId: s.server.id, gameId, username: s.state.lobby.username || undefined, character: last?.serverId === s.server.id && last.gameId === gameId ? last.character : undefined })
+  // which version was played last, so the home screen leads with it; who waits in it is the server's to say
+  setLast({ serverId: s.server.id, gameId, username: s.state.lobby.username || undefined })
   s.send(cm.play(gameId))
   const account = accountOf(s)
   if (account) setRoute({ kind: 'play', account, gameId })
@@ -213,15 +174,13 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
       }
       if (m === 'game_started' || m === 'watching_started') setRoute(routeFor(s))
       if ((m === 'game_client' || m === 'watching_started' || m === 'game_started') && !game) startGame()
-      if (m === 'player') {
-        if (s.playing) rememberCharacter(s)
-        updateTitle(s)
-      }
-      if (m === 'game_ended' && GONE.has(String(e.msg.reason))) {
-        // the character is gone (end.cc _exit_type_to_string, "cancel" from game_ended); a save ("saved", files.cc save_game),
-        // a crash, an error or a disconnect leave the game to continue
-        const last = getLast()
-        if (last?.gameId && last.serverId === server.id) setCharacter(server.id, last.gameId, null)
+      if (m === 'player') updateTitle(s)
+      if (m === 'game_ended') {
+        // the dump handed back names the morgue directory this server keeps for the account ("/crawl/morgue/caeo/"),
+        // which is where the home screen reads `<player>.where` from (whereis.ts) instead of guessing the layout
+        const who = s.state.lobby.username || s.username
+        const dir = who && e.msg.dump ? morgueDirOf(server, String(e.msg.dump)) : null
+        if (who && dir) setMorgueDir(server.id, who, dir)
       }
       if (m === 'go_lobby' && (game || boot)) {
         // out of a game (death, save, quit): the home screen, where Continue and Play are. Out of a spectate (the
@@ -235,7 +194,6 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
         // (client.js login_failed), and the intent waits for it
         frontEnd().showLogin()
       } else if (m === 'login_success' || m === 'login_fail') lobby?.refresh()
-      if (m === 'lobby_entry' || m === 'login_success') rememberOwnGames(s)
       if (m === 'set_game_links') {
         // the lobby screen's Play entries come from this list; keep it for next time, before the connection is up
         setGames(server.id, s.state.lobby.games)
@@ -499,27 +457,30 @@ window.addEventListener('keydown', (ev) => {
   }
 }, true)
 
-// gamepad loop: every frame while a pad is there; with none, a look every quarter second (navigator.getGamepads is
-// not free, and a keyboard-only session should not pay it sixty times a second), and at once when one is plugged in
+// gamepad loop: every frame while a pad is there; with none, a look every quarter second on a timer (navigator.getGamepads
+// is not free, and a keyboard-only session should not pay it, or an animation frame, sixty times a second), and at once
+// when one is plugged in
 const IDLE_POLL_MS = 250
-let nextPoll = 0
+let pollTimer = 0
+let pollFrame = 0
 function tick(now: number) {
-  if (gamepad.connected || now >= nextPoll) {
-    gamepad.poll(now)
-    lobby?.updateInputHints()
-    if (!gamepad.connected) nextPoll = now + IDLE_POLL_MS
-  }
-  requestAnimationFrame(tick)
+  pollFrame = 0
+  gamepad.poll(now)
+  lobby?.updateInputHints()
+  if (gamepad.connected) pollFrame = requestAnimationFrame(tick)
+  else pollTimer = window.setTimeout(() => { pollFrame = requestAnimationFrame(tick) }, IDLE_POLL_MS)
 }
 window.addEventListener('gamepadconnected', () => {
-  nextPoll = 0
+  clearTimeout(pollTimer)
+  cancelAnimationFrame(pollFrame)
+  pollFrame = requestAnimationFrame(tick)
 })
 gamepad.on((e) => {
   if (isPadActivity(e)) lastInput = 'pad'
   if (game) game.pad(e)
   else lobby?.pad(e)
 })
-requestAnimationFrame(tick)
+pollFrame = requestAnimationFrame(tick)
 
 window.addEventListener('beforeunload', (ev) => {
   if (session && session.playing) {

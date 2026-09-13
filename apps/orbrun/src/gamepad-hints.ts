@@ -76,6 +76,8 @@ export class GamepadHints {
   }
 
   cancel() { this.pending = null }
+  /** A lesson's outcome is still awaited (`observe` has something to compare), so the frame loop keeps looking. */
+  get waiting(): boolean { return this.pending !== null }
 
   /** Called only for server-confirmed, player-directed pad steps, never bumps or autoexplore. */
   moved(steps = 1) {

@@ -4,7 +4,8 @@ import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
 import { FocusNav, type Focusable } from './focus'
 import { RoomView } from './room/view'
-import { addAccount, addServer, characterOf, describeCharacter, describePlace, findServer, getCharacter, getChosenAccount, getGames, getLast, listAccounts, listServers, loginState, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, type Account, type LastCharacter, type ServerInfo } from './servers'
+import { addAccount, addServer, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type ServerInfo } from './servers'
+import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import type { Session } from './session'
 import type { PadEvent, PadKind } from './gamepad'
 import { Osk, oskPrompts } from './osk'
@@ -663,21 +664,84 @@ export class FrontEnd {
   }
 
   /**
-   * Who waits in a game: the lobby's own word first (game_links.html save_info, "orbruntest, a level 3 Minotaur
-   * Berserker of Trog", less the account's name at its head); else the roster, when the account's own game is
-   * still open on the server (a socket that dropped, another tab); else the character this device saw there last.
-   * A server that keeps its save info to itself (CDI, checked 2026-09-09) leaves only the last two.
+   * Who waits in a game, when the server is the one saying so, in the order the answers are worth: the lobby's
+   * own word (game_links.html save_info, "orbruntest, a level 3 Minotaur Berserker of Trog", less the
+   * account's name at its head); the roster, when the account's own game is still open on the server (a socket
+   * that dropped, another tab); and `<player>.where`, which crawl rewrites on every save and every death
+   * (whereis.ts). Null otherwise, and the row reads Play.
+   *
+   * What this device saw there last is deliberately not a source. An account is one account everywhere: a save
+   * this browser remembers can have been played out and died in another, and the WebTiles socket cannot be
+   * asked (CDI keeps its save info to itself, checked again 2026-09-12), so remembering it here would promise
+   * a character who is gone. The `.where` file is the same question asked of the server instead.
    */
-  private saveOf(server: ServerInfo, g: GameLink, who: string | null, s: Session | null): { sub: string; hint: string } | null {
-    const stairs = (c: LastCharacter | null) => 'Down the stairs to your game.' + (c && describePlace(c) ? ` ${describePlace(c)} lies below.` : '')
-    if (g.save && g.save !== 'playing' && g.save !== 'slot full') return { sub: who && g.save.startsWith(who + ', ') ? g.save.slice(who.length + 2) : g.save, hint: stairs(null) }
-    const c = getCharacter(server.id, g.id)
+  private saveOf(g: GameLink, version: string | null, who: string | null, s: Session | null, where: Whereis | null): { sub: string; hint: string } | null {
+    const stairs = (c: LastCharacter) => 'Down the stairs to your game.' + (describePlace(c) ? ` ${describePlace(c)} lies below.` : '')
+    if (g.save && g.save !== 'playing' && g.save !== 'slot full') {
+      return { sub: who && g.save.startsWith(who + ', ') ? g.save.slice(who.length + 2) : g.save, hint: 'Down the stairs to your game.' }
+    }
     const open = this.ownGame(s, who, g.id)
     if (open) {
-      const live = characterOf(open, c)
+      const live = characterOf(open)
       return { sub: describeCharacter(live), hint: 'Down the stairs to your game, still open on the server.' + (describePlace(live) ? ` ${describePlace(live)} lies below.` : '') }
     }
-    return c ? { sub: describeCharacter(c), hint: stairs(c) } : null
+    // one `.where` per player, rewritten by whichever game ran last: it answers for its own version and says
+    // nothing about any other, so a row of a different version is left unanswered rather than guessed at
+    if (where && version && where.version === version && saveWaiting(where)) return { sub: describeCharacter(where.character), hint: stairs(where.character) }
+    return null
+  }
+
+  /**
+   * What the server says is waiting in an account's save (`<player>.where`, whereis.ts), read in the
+   * background: the screen draws without it and is redrawn when it lands. Asked again no more than once a
+   * minute while the home screen stands, so a character killed in another browser stops being offered here
+   * without waiting for a reload, and dropped outright on the way back from a game (`attach`).
+   */
+  private whereis = new Map<string, Whereis | null>()
+  private asked = new Map<string, number>()
+  private static readonly WHEREIS_MS = 60_000
+
+  private whereFor(server: ServerInfo, who: string | null): Whereis | null {
+    if (!who) return null
+    const key = server.id + '/' + who.toLowerCase()
+    const at = this.asked.get(key)
+    if (at === undefined || Date.now() - at > FrontEnd.WHEREIS_MS) {
+      this.asked.set(key, Date.now())
+      void this.readWhereis(server, who, key)
+    }
+    return this.whereis.get(key) ?? null
+  }
+
+  /**
+   * Fetch the `.where` from the morgue directory `game_ended` named, or from the layouts dgamelaunch-config
+   * ships with until one answers. A server that answers none of them is remembered as such ('' in
+   * `setMorgueDir`), so the tries are made once and not on every redraw; a directory already known is trusted
+   * through a failure, which is more likely the network than a server that moved its morgues.
+   */
+  private async readWhereis(server: ServerInfo, who: string, key: string) {
+    const known = getMorgueDir(server.id, who)
+    if (known === '') return
+    for (const dir of known ? [known] : morgueDirGuesses(who)) {
+      const url = whereisUrl(server, dir)
+      if (!url) continue
+      let text: string
+      try {
+        const r = await fetch(url)
+        if (!r.ok) continue
+        text = await r.text()
+      } catch {
+        continue
+      }
+      const w = parseWhereis(text)
+      if (!w) continue
+      if (!known) setMorgueDir(server.id, who, dir)
+      const before = this.whereis.get(key)
+      this.whereis.set(key, w)
+      // a redraw only when the screen would read differently: this runs again every minute
+      if (!before || before.status !== w.status || before.version !== w.version || describeCharacter(before.character) !== describeCharacter(w.character)) this.refresh()
+      return
+    }
+    if (!known) setMorgueDir(server.id, who, '')
   }
 
   /** The roster's line for the account's own game `gameId`, when the server lists one: a game of theirs still running there. */
@@ -721,32 +785,33 @@ export class FrontEnd {
       rows.push({ id: 'account', label: `${loggedIn ?? account.username} · ${server.name}`, sub: problem, conn, hint: 'Manage accounts, check your connection, or log out.', fn: () => this.showAccounts() })
       const games = this.games(server, s)
       const links = games?.length ? gameLinkRows(games) : null
-      const offered = [...(links?.latest ?? []), ...(links?.trunk ?? []), ...(links?.other ?? [])].filter((g) => !g.disabled)
+      // each row with the version it belongs to, as `gameLinkRows` grouped them: what a `.where` line answers for
+      const offered = [
+        ...(links?.latest ?? []).map((game) => ({ game, version: links!.latestVersion })),
+        ...(links?.trunk ?? []).map((game) => ({ game, version: 'trunk' })),
+        ...(links?.other ?? []).map((game) => ({ game, version: null })),
+      ].filter(({ game }) => !game.disabled)
       if (login === 'out') {
         rows.push({ id: 'login', label: 'Log in', sub: `as ${account.username}`, marker: '\\', main: true, gap: true, hint: `${server.host} asks who you are before it offers a game.`, fn: () => this.showLogin() })
       } else {
         const last = getLast()
         const who = loggedIn ?? account.username
-        const versions = offered.map((game) => ({ game, save: this.saveOf(server, game, who, s) }))
+        const where = this.whereFor(server, who)
+        // One row per version, in the lobby's own order: the latest release leads, always, then trunk. The row
+        // under the cursor is the same one every time the screen comes up, whatever was played last and whatever
+        // the server says is waiting — a front screen that reshuffles itself is one you have to read before
+        // pressing.
+        const ordered = offered.map(({ game, version }) => ({ game, save: this.saveOf(game, version, who, s, where) }))
         // Keep access to a last-played older version even when the normal list
         // only shows the latest release, but never re-enable a disabled slot.
         const previous = last?.serverId === server.id ? games?.find((g) => g.id === last.gameId && !g.disabled) : null
-        if (previous && !offered.includes(previous)) {
-          const save = this.saveOf(server, previous, who, s)
-          if (save) versions.push({ game: previous, save })
-        }
-        const primary = versions.find(({ game, save }) => save && last?.serverId === server.id && last.gameId === game.id)
-          ?? versions.find(({ save }) => save) ?? versions[0]
-        // One row per version; put the last saved adventure (or latest release) first.
-        const ordered = primary ? [primary, ...versions.filter((v) => v !== primary)] : []
-        // a lobby whose links carry no save at all may be keeping its save info to itself: Play is then not
-        // surely a new game, and the row says so rather than promising one
-        const silent = !!games?.length && !games.some((g) => g.save)
+        if (previous && !offered.some((o) => o.game === previous)) ordered.push({ game: previous, save: this.saveOf(previous, null, who, s, where) })
+        const primary = ordered[0]
         for (const { game: g, save } of ordered) {
           rows.push({
             id: 'play:' + g.id, label: `${save ? 'Continue' : 'Play'} ${g.label}`,
             sub: save?.sub ?? (g.save ? `[${g.save}]` : null), marker: '>', main: g === primary?.game,
-            hint: save?.hint ?? (silent ? `${g.label} on ${server.host}. A game of yours already waiting there continues instead.` : `A new game of ${g.label} on ${server.host}.`),
+            hint: save?.hint ?? `A new game of ${g.label} on ${server.host}.`,
             fn: () => this.connectTo(account, { kind: 'play', gameId: g.id }),
           })
         }
@@ -1234,6 +1299,9 @@ export class FrontEnd {
 
   /** Follow an already open session and show the home screen: after a death, a save, or a reload. */
   attach(session: Session) {
+    // a game was played: whatever the server said was waiting before it is stale now
+    this.asked.clear()
+    this.whereis.clear()
     this.follow(session)
     this.hooks.leave('home')
     this.shape.delete('home')

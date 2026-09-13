@@ -352,8 +352,17 @@ export function focusFallback(ctx: Context): { select: 'close' | 'confirm'; labe
   return { select: closes ? 'close' : 'confirm', label: closes ? 'Close' : 'Confirm', cancelLabel: closes ? 'Close' : 'Cancel' }
 }
 
-/** Every binding of the context as a label, in display order. */
+/** Every binding of the context as a label, in display order. Built once per context object: a frame asks several times. */
 export function barLabels(ctx: Context): BindingLabel[] {
+  const memo = barLabelsMemo.get(ctx)
+  if (memo) return memo
+  const out = buildBarLabels(ctx)
+  barLabelsMemo.set(ctx, out)
+  return out
+}
+const barLabelsMemo = new WeakMap<Context, BindingLabel[]>()
+
+function buildBarLabels(ctx: Context): BindingLabel[] {
   const t = bindingTable(ctx)
   const out: BindingLabel[] = []
   for (const b of BAR_ORDER) {

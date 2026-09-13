@@ -19,12 +19,13 @@ export const GAMEDATA_PROXY_PREFIX = '/gamedata-proxy/'
 
 /**
  * The morgue proxy, the same shape for the same reason: a game's morgue
- * file or character dump (`game_ended` `dump`) is a plain-text file the
- * server publishes without CORS headers, and the exit screen shows it in
- * place rather than in a new tab.
+ * file or character dump (`game_ended` `dump`), and the `<player>.where` beside
+ * them, are plain-text files the server publishes without CORS headers. The exit
+ * screen shows a dump in place rather than in a new tab; the home screen reads
+ * the `.where` to know whether a save is still waiting (whereis.ts).
  *
- * URL shape: /morgue-proxy/<host>/<path>.txt
- * Upstream:  https://<host>/<path>.txt
+ * URL shape: /morgue-proxy/<host>/<path>.txt|.where
+ * Upstream:  https://<host>/<path>.txt|.where
  */
 export const MORGUE_PROXY_PREFIX = '/morgue-proxy/'
 
@@ -49,12 +50,13 @@ const ROUTE = /^\/gamedata-proxy\/([^/@]+)\/gamedata\/([0-9a-f]+)\/([A-Za-z0-9_.
 const HOST = /^[A-Za-z0-9.-]+(:[0-9]{1,5})?$/
 
 /**
- * A morgue path: plain segments, a `.txt` at the end and nothing else. Only
- * the extension is pinned, not the directory: servers keep their morgues
- * under different names (`/morgue/`, `/crawl/morgue/`, `/rawdata/`), and the
- * path comes from the server's own `game_ended` message.
+ * A morgue path: plain segments, then a `.txt` (a morgue file or a character dump) or a `.where` (what the
+ * server says is waiting in a player's save, chardump.cc `whereis_record`) and nothing else. Only the
+ * extension is pinned, not the directory: servers keep their morgues under different names (`/morgue/`,
+ * `/crawl/morgue/`, `/rawdata/`), and the path comes from the server's own `game_ended` message or from the
+ * layouts dgamelaunch-config ships with.
  */
-const MORGUE_ROUTE = /^\/morgue-proxy\/([^/@]+)\/((?:[A-Za-z0-9_.~-]+\/)*[A-Za-z0-9_.~-]+\.txt)$/
+const MORGUE_ROUTE = /^\/morgue-proxy\/([^/@]+)\/((?:[A-Za-z0-9_.~-]+\/)*[A-Za-z0-9_.~-]+\.(?:txt|where))$/
 
 function validHost(host: string): boolean {
   return HOST.test(host) && !host.startsWith('.') && !host.endsWith('.')
@@ -129,7 +131,8 @@ export async function serveGamedata(pathname: string, fetchImpl: typeof fetch = 
 /**
  * Serve one morgue file as text, or null when the path is not a morgue
  * proxy path. A character dump is rewritten on every save, so nothing here
- * is immutable: a short cache is all it gets.
+ * is immutable: a short cache is all it gets, and a `.where` barely any — it
+ * is how the home screen learns that a save died in another browser.
  */
 export async function serveMorgue(pathname: string, fetchImpl: typeof fetch = fetch): Promise<Response | null> {
   const upstream = morgueUpstream(pathname)
@@ -155,7 +158,7 @@ export async function serveMorgue(pathname: string, fetchImpl: typeof fetch = fe
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'public, max-age=300',
+      'Cache-Control': pathname.endsWith('.where') ? 'public, max-age=15' : 'public, max-age=300',
     },
   })
 }

@@ -46,6 +46,13 @@ const DRAG_SLOP = 6
 const DRIFT_RATE = (Math.PI / 180) * 0.35
 const IDLE_DELAY = 4
 const DRIFT_RAMP = 3
+/**
+ * The idle turn's own frame rate: at DRIFT_RATE the eye moves a tenth of a
+ * pixel a frame at the display's rate, so a frame every DRIFT_FRAME_MS reads
+ * the same and costs a weak GPU a fifth of it. Frames follow the display
+ * again the moment a stick or a drag moves the eye.
+ */
+const DRIFT_FRAME_MS = 80
 /** the console grid the menus stand on: the cell the level backdrop settled on for its usual floor, kept so nothing about the menus' scale changes */
 const GRID_COLS = 59
 const GRID_ROWS = 32
@@ -62,6 +69,8 @@ export class RoomView {
   private room: Room3d | null = null
   private cam = new CameraController()
   private raf = 0
+  /** the timer that paces the idle turn's frames while nothing else moves */
+  private driftTimer = 0
   private last = 0
   private needsRender = false
   private lost = false
@@ -113,6 +122,7 @@ export class RoomView {
     this.destroyed = true
     clearTimeout(this.posterTimer)
     cancelAnimationFrame(this.raf)
+    clearTimeout(this.driftTimer)
     this.ro?.disconnect()
     document.removeEventListener('visibilitychange', this.onVisibility)
     this.room?.destroy()
@@ -194,7 +204,11 @@ export class RoomView {
 
   private invalidate() {
     this.needsRender = true
-    if (!this.raf && !document.hidden) this.raf = requestAnimationFrame(this.tick)
+    if (!this.raf && !document.hidden) {
+      // frames were paced by the idle turn's timer (or stopped): the clock starts again, so a look's first frame eases from zero
+      this.last = performance.now()
+      this.raf = requestAnimationFrame(this.tick)
+    }
   }
 
   /** The picture of the room at rest, for as long as there is no live room to stand on. */
@@ -231,9 +245,12 @@ export class RoomView {
   /** A frame while something moves; then nothing until something does (the idle turn counts as something). */
   private tick(now: number) {
     this.raf = 0
-    const dt = Math.min(0.05, (now - this.last) / 1000 || 0)
+    clearTimeout(this.driftTimer)
+    this.driftTimer = 0
+    const dt = Math.min(0.1, (now - this.last) / 1000 || 0)
     this.last = now
-    if (this.cam.update(dt)) {
+    const eased = this.cam.update(dt)
+    if (eased) {
       this.cam.camera.pitch = clampPitch(this.cam.camera.pitch)
       this.needsRender = true
     } else if (this.drift(dt)) {
@@ -245,13 +262,22 @@ export class RoomView {
       this.el.classList.add('in')
     }
     const turning = !this.reducedMotion && !!this.room && !this.lost && this.el.classList.contains('in')
-    if (this.cam.steering || this.needsRender || turning) this.raf = requestAnimationFrame(this.tick)
+    if (this.cam.steering || this.needsRender || eased) this.raf = requestAnimationFrame(this.tick)
+    // left alone, only the idle turn wants frames, and it wants few of them
+    else if (turning) this.driftTimer = window.setTimeout(this.driftFrame, DRIFT_FRAME_MS)
+  }
+
+  private driftFrame = () => {
+    this.driftTimer = 0
+    if (!this.raf && !document.hidden && !this.destroyed) this.raf = requestAnimationFrame(this.tick)
   }
 
   private onVisibility() {
     if (document.hidden) {
       cancelAnimationFrame(this.raf)
+      clearTimeout(this.driftTimer)
       this.raf = 0
+      this.driftTimer = 0
       this.last = 0
     } else this.invalidate()
   }
