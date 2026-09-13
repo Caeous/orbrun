@@ -439,6 +439,31 @@ interface RimTemplate {
   index: number[]
 }
 
+/**
+ * The outline of a standing sprite's block, in the rim's units: a hull one
+ * texel wider than the body on every side, as deep as the block, with a back
+ * and sides but no front. Drawn black with its front faces culled, only the
+ * faces that turn away from the eye show, and of those only what pokes out
+ * past the body's own silhouette — a line a texel wide round the sprite from
+ * every angle, crawl's ink put back after `peelInk` took it off the art.
+ */
+interface HullTemplate {
+  pos: Float32Array
+  index: number[]
+}
+
+/**
+ * The same line for the ghost pass (II.4), where a sprite is a flat quad with
+ * no block and its shader is the depth test: the ring of texels round the
+ * body, one flat face each in the quad's own plane, disjoint from the body
+ * so the two never blend over each other. Drawn black with the ghost's own
+ * material, it is hidden, faded and cut by the level exactly as the ghost is.
+ */
+interface RingTemplate {
+  pos: Float32Array
+  index: number[]
+}
+
 /** Which pass a standing sprite belongs to: the lit sprite itself, or a ghost of it behind the geometry (II.4). */
 type GhostKind = 'none' | 'remembered' | 'visible'
 
@@ -681,12 +706,22 @@ export class Render3d implements MapRenderer {
    */
   private vmFlash = { value: new THREE.Vector4(0, 0, 0, 0) }
   /** Extruded icon geometry per item, keyed by its layers. */
-  private vmGeos = new Map<string, THREE.BufferGeometry | null>()
+  /** A hand's block and the ink round it (`HullTemplate`), per distinct item; null where the icon paints nothing. */
+  private vmGeos = new Map<string, { block: THREE.BufferGeometry; hull: THREE.BufferGeometry | null } | null>()
   /** Rim templates of the standing sprites' blocks, by tile and clip height (`rimTemplate`). */
   private rims = new Map<string, RimTemplate | null>()
+  private hulls = new Map<string, HullTemplate | null>()
+  private rings = new Map<string, RingTemplate | null>()
+  /** The ink round a ghost (`RingTemplate`): the ghost material with no map, coloured by the ring's black vertices. */
+  private ghostInkMat!: THREE.ShaderMaterial
+  private ghostVisibleInkMat!: THREE.ShaderMaterial
+  /** The ink round every standing sprite (`HullTemplate`): black, back faces only. */
+  private hullMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide })
   /** Attack lift start, in seconds on the render clock; NaN when at rest. */
   private vmLift = NaN
   constructor(opts: Render3dOptions = {}) {
+    this.ghostInkMat = this.makeGhostMaterial(GHOST_ALPHA)
+    this.ghostVisibleInkMat = this.makeGhostMaterial(GHOST_ALPHA_VISIBLE, undefined, { start: GHOST_FADE_VISIBLE_START, range: GHOST_FADE_VISIBLE })
     this.opts = {
       view: opts.view ?? 'first',
       fov: opts.fov ?? 85,
@@ -973,7 +1008,12 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     }
     this.atlases.clear()
     this.rims.clear()
-    for (const g of this.vmGeos.values()) g?.dispose()
+    this.hulls.clear()
+    this.rings.clear()
+    for (const g of this.vmGeos.values()) {
+      g?.block.dispose()
+      g?.hull?.dispose()
+    }
     this.vmGeos.clear()
     this.vmBuilt = false
     this.builtRevision = -1
@@ -1052,10 +1092,18 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.vmCam.updateProjectionMatrix()
   }
   destroy(): void {
-    for (const g of this.vmGeos.values()) g?.dispose()
+    for (const g of this.vmGeos.values()) {
+      g?.block.dispose()
+      g?.hull?.dispose()
+    }
     this.vmGeos.clear()
     this.rims.clear()
+    this.hulls.clear()
+    this.rings.clear()
     this.vmMat.dispose()
+    this.hullMat.dispose()
+    this.ghostInkMat.dispose()
+    this.ghostVisibleInkMat.dispose()
     this.depthTarget?.dispose()
     this.depthTarget = null
     this.shadeTex?.dispose()
@@ -1598,12 +1646,32 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const cx = ((l.r.ox + (l.ox || 0) + l.r.w / 2 - cell / 2) / cell) * scale
       const bottom = ((cell - (l.r.oy + (l.oy || 0) + hTex)) / cell) * scale
       const lt = l.tint || tint
-      const geo = this.standingGeometry(l, hTex, v1, wq, hq, scale / cell, { r: shade * lt.r, g: shade * lt.g, b: shade * lt.b }, x, y, thick && !l.flat)
+      const solid = thick && !l.flat
+      const geo = this.standingGeometry(l, hTex, v1, wq, hq, scale / cell, { r: shade * lt.r, g: shade * lt.g, b: shade * lt.b }, x, y, solid)
       const mesh = new THREE.Mesh(geo, ghost === 'visible' ? l.a.ghostVisibleMat : ghost === 'remembered' ? l.a.ghostMat : fixed ? l.a.featMat : l.a.bbMat)
       mesh.position.set(cx, bottom + hq / 2, i * 0.002 - back)
       // ghosts draw before every sprite so a nearer billboard paints over them
       mesh.renderOrder = ghost === 'none' ? 1 + i : -1
+      // a ghost's ink is a flat ring in its plane (`RingTemplate`), added before the ghost so that, with the
+      // same order and depth, the sort keeps it under the ghost and the ghost's body paints over nothing black
+      const ring = ghost !== 'none' && !l.flat ? this.ringGeometry(l, hTex, wq, hq, scale / cell) : null
+      if (ring) {
+        const ink = new THREE.Mesh(ring, ghost === 'visible' ? this.ghostVisibleInkMat : this.ghostInkMat)
+        ink.position.copy(mesh.position)
+        ink.renderOrder = mesh.renderOrder
+        ink.userData.hull = true
+        holder.add(ink)
+      }
       holder.add(mesh)
+      // the ink round the block (`HullTemplate`), in the block's own frame; a badge or a bar has no block and no line
+      const hull = solid ? this.hullGeometry(l, hTex, wq, hq, scale / cell) : null
+      if (hull) {
+        const ink = new THREE.Mesh(hull, this.hullMat)
+        ink.position.copy(mesh.position)
+        ink.renderOrder = mesh.renderOrder
+        ink.userData.hull = true
+        holder.add(ink)
+      }
       i++
     }
     if (yaw !== undefined) holder.rotation.y = yaw
@@ -1674,6 +1742,117 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     geo.setAttribute('cell', new THREE.BufferAttribute(cells, 2))
     geo.setIndex(index)
     return geo
+  }
+
+  /** The hull's geometry placed on the same quad the rim is (`standingGeometry`); null where there is no rim to line. */
+  private hullGeometry(l: SpriteLayer, hTex: number, wq: number, hq: number, k: number): THREE.BufferGeometry | null {
+    const t = this.hullTemplate(l, hTex)
+    if (!t) return null
+    const n = t.pos.length / 3
+    const pos = new Float32Array(n * 3)
+    const hw = wq / 2, hh = hq / 2
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = -hw + t.pos[i * 3] * k
+      pos[i * 3 + 1] = hh + t.pos[i * 3 + 1] * k
+      pos[i * 3 + 2] = t.pos[i * 3 + 2] * k
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geo.setIndex(t.index)
+    return geo
+  }
+
+  /** The ring's geometry placed on the same quad the ghost is; null where the atlas's pixels cannot be read. */
+  private ringGeometry(l: SpriteLayer, hTex: number, wq: number, hq: number, k: number): THREE.BufferGeometry | null {
+    const t = this.ringTemplate(l, hTex)
+    if (!t) return null
+    const n = t.pos.length / 3
+    const pos = new Float32Array(n * 3)
+    const hw = wq / 2, hh = hq / 2
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = -hw + t.pos[i * 3] * k
+      pos[i * 3 + 1] = hh + t.pos[i * 3 + 1] * k
+      pos[i * 3 + 2] = 0
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    // the ghost shader reads its colour from the vertices: the ink is black
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3))
+    geo.setIndex(t.index)
+    return geo
+  }
+
+  /** The ring of texels round this tile's body (`RingTemplate`), from the cache: the hull's footprint less the body, flat. */
+  private ringTemplate(l: SpriteLayer, hTex: number): RingTemplate | null {
+    const mask = this.atlasMask(l.a)
+    if (!mask) return null
+    const { sx, sy, w } = l.r
+    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex}`
+    let t = this.rings.get(key)
+    if (t !== undefined) return t
+    const aw = l.a.width
+    const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && mask[(sy + ty) * aw + sx + tx] === 1
+    const pos: number[] = []
+    const index: number[] = []
+    for (let ty = 0; ty < hTex; ty++) {
+      for (let tx = 0; tx < w; tx++) {
+        if (body(tx, ty) || !(body(tx - 1, ty) || body(tx + 1, ty) || body(tx, ty - 1) || body(tx, ty + 1))) continue
+        const x0 = tx, x1 = tx + 1
+        const y1 = -ty, y0 = y1 - 1
+        const base = pos.length / 3
+        pos.push(x0, y0, 0, x1, y0, 0, x1, y1, 0, x0, y1, 0)
+        index.push(base, base + 1, base + 2, base, base + 2, base + 3)
+      }
+    }
+    t = index.length ? { pos: new Float32Array(pos), index } : null
+    this.rings.set(key, t)
+    return t
+  }
+
+  /**
+   * The hull round this tile's block (`HullTemplate`), from the cache. The
+   * body grown a texel on each of its four sides, kept inside the tile — the
+   * art's own line never left it — and built like the rim: the back at
+   * BB_DEPTH and a side wherever a texel of the hull borders one outside it,
+   * every face wound outward. No front: from the front it would be culled
+   * anyway, and from behind (an open door, which stands in its wall and can
+   * be walked round) it would paint over the art at the same depth.
+   */
+  private hullTemplate(l: SpriteLayer, hTex: number): HullTemplate | null {
+    const mask = this.atlasMask(l.a)
+    if (!mask) return null
+    const { sx, sy, w } = l.r
+    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex}`
+    let t = this.hulls.get(key)
+    if (t !== undefined) return t
+    const aw = l.a.width
+    const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && mask[(sy + ty) * aw + sx + tx] === 1
+    const inked = (tx: number, ty: number) =>
+      tx >= 0 && ty >= 0 && tx < w && ty < hTex &&
+      (body(tx, ty) || body(tx - 1, ty) || body(tx + 1, ty) || body(tx, ty - 1) || body(tx, ty + 1))
+    const pos: number[] = []
+    const index: number[] = []
+    const face = (p: number[]) => {
+      const base = pos.length / 3
+      pos.push(...p)
+      index.push(base, base + 1, base + 2, base, base + 2, base + 3)
+    }
+    const z0 = -BB_DEPTH, z1 = 0
+    for (let ty = 0; ty < hTex; ty++) {
+      for (let tx = 0; tx < w; tx++) {
+        if (!inked(tx, ty)) continue
+        const x0 = tx, x1 = tx + 1
+        const y1 = -ty, y0 = y1 - 1
+        face([x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0])
+        if (!inked(tx, ty - 1)) face([x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0])
+        if (!inked(tx, ty + 1)) face([x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1])
+        if (!inked(tx - 1, ty)) face([x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0])
+        if (!inked(tx + 1, ty)) face([x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1])
+      }
+    }
+    t = index.length ? { pos: new Float32Array(pos), index } : null
+    this.hulls.set(key, t)
+    return t
   }
 
   /** The rim of this tile's block, clipped to `hTex` rows, from the cache; null where the atlas's pixels cannot be read. */
@@ -2094,9 +2273,11 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * the thickness reads. The origin is the bottom centre of the opaque texels'
    * bounding box (not the cell's), so an icon drawn off-centre in its cell,
    * such as a paperdoll part, still hangs from the hand; the block spans z in
-   * [-depth, 0].
+   * [-depth, 0]. With it comes the hull that lines it, the standing sprites'
+   * (`hullTemplate`) at the hand's own scale: the block grown a texel each
+   * way and closed, for the black material to draw back faces only.
    */
-  private extrudeIcon(item: HandItem): THREE.BufferGeometry | null {
+  private extrudeIcon(item: HandItem): { block: THREE.BufferGeometry; hull: THREE.BufferGeometry | null } | null {
     const px = this.paintIcon(item)
     if (!px) return null
     const { w, h, data } = px
@@ -2150,10 +2331,43 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
     g.setIndex(idx)
-    return g
+    // the ink: the hull round the block, kept inside the icon's canvas as the art's own line was. Closed on both
+    // sides, unlike a standing sprite's: a hand is posed with its back to the eye as often as its front (the
+    // weapon's rest yaw is a half turn), and the block's own front and back keep either hull face off the art
+    const inked = (x: number, y: number) =>
+      x >= 0 && y >= 0 && x < w && y < h &&
+      (opaque(x, y) || opaque(x - 1, y) || opaque(x + 1, y) || opaque(x, y - 1) || opaque(x, y + 1))
+    const hpos: number[] = []
+    const hidx: number[] = []
+    const hface = (p: [number, number, number][]) => {
+      const base = hpos.length / 3
+      for (const [x, y, z] of p) hpos.push(x, y, z)
+      hidx.push(base, base + 1, base + 2, base, base + 2, base + 3)
+    }
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (!inked(x, y)) continue
+        const x0 = (x - cx) * s, x1 = x0 + s
+        const y1 = (bottom - y) * s, y0 = y1 - s
+        const z0 = -depth, z1 = 0
+        hface([[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]])
+        hface([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]])
+        if (!inked(x, y - 1)) hface([[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]])
+        if (!inked(x, y + 1)) hface([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]])
+        if (!inked(x - 1, y)) hface([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]])
+        if (!inked(x + 1, y)) hface([[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]])
+      }
+    }
+    let hull: THREE.BufferGeometry | null = null
+    if (hidx.length) {
+      hull = new THREE.BufferGeometry()
+      hull.setAttribute('position', new THREE.Float32BufferAttribute(hpos, 3))
+      hull.setIndex(hidx)
+    }
+    return { block: g, hull }
   }
 
-  /** One hand: the extruded icon, built once per distinct item. */
+  /** One hand: the extruded icon and the ink round it, built once per distinct item. */
   private buildHand(group: THREE.Group, item: HandItem | null) {
     group.clear()
     if (!item) return
@@ -2164,7 +2378,12 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       this.vmGeos.set(key, geo)
     }
     if (!geo) return
-    group.add(new THREE.Mesh(geo, this.vmMat))
+    group.add(new THREE.Mesh(geo.block, this.vmMat))
+    if (geo.hull) {
+      const ink = new THREE.Mesh(geo.hull, this.hullMat)
+      ink.userData.hull = true
+      group.add(ink)
+    }
   }
 
   private renderViewmodel(r: THREE.WebGLRenderer, scene: Scene) {

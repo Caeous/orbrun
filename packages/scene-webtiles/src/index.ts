@@ -197,21 +197,24 @@ export function classifyFeature(name: string | undefined, glyph: string | undefi
   return undefined
 }
 
-const UPRIGHT = /DOOR|ARCH|GATE|ALTAR|FOUNTAIN|STATUE|IDOL|GRAVE|SARCOPHAG|COLUMN|PILLAR|SHRINE|PORTAL|ENTER_|EXIT_|RETURN_|ENTRANCE|SHOP|TREE|MANGROVE|PLANT|BUSH|FUNGUS|LANTERN|TORCH|ORCISH_IDOL|STONE_ARCH|WAX_WALL|TRANSPORTER$|RUNELIGHT|SEAL|CRYSTAL|STAIRS|ABYSSAL_STAIR|WELL/
-const DECAL = /HATCH|TRAP|TELEPORT|LANDING|SHAFT|MAGIC_CIRCLE|WATER|LAVA|BLOOD|MOLD|SLIME/
+const UPRIGHT = /HATCH|DOOR|ARCH|GATE|ALTAR|FOUNTAIN|STATUE|IDOL|GRAVE|SARCOPHAG|COLUMN|PILLAR|SHRINE|PORTAL|ENTER_|EXIT_|RETURN_|ENTRANCE|SHOP|TREE|MANGROVE|PLANT|BUSH|FUNGUS|LANTERN|TORCH|ORCISH_IDOL|STONE_ARCH|WAX_WALL|TRANSPORTER$|RUNELIGHT|SEAL|CRYSTAL|STAIRS|ABYSSAL_STAIR|WELL/
+const DECAL = /TRAP|TELEPORT|LANDING|SHAFT|MAGIC_CIRCLE|WATER|LAVA|BLOOD|MOLD|SLIME/
 
 /**
  * Whether a feature stands as a billboard in its cell or lies on the floor.
  *
  * Stairs stand. Their tile is the one thing on the floor a player steers by,
  * and a floor decal seen at eye height is a sliver: a staircase two rooms away
- * has to read as a staircase. Hatches, shafts and traps stay decals — they
- * are holes in the floor, and nothing to walk towards.
+ * has to read as a staircase. Escape hatches stand for the same reason — they
+ * are a way off the level you steer towards. Trap shafts and traps stay decals:
+ * a shaft is a hole you fall down, not a route, and `classifyFeature` files it
+ * as a down hatch, so the name settles it here.
  */
 export function stanceFor(name: string | undefined, feature: Feature | undefined): 'upright' | 'decal' {
   if (feature) {
     if (feature.type === 'stairs') return 'upright'
-    if (feature.type === 'hatch' || feature.type === 'trap' || feature.type === 'transporter') return 'decal'
+    if (feature.type === 'hatch') return /SHAFT/.test(name || '') ? 'decal' : 'upright'
+    if (feature.type === 'trap' || feature.type === 'transporter') return 'decal'
     if (feature.type === 'door' || feature.type === 'altar' || feature.type === 'shop' || feature.type === 'fountain' || feature.type === 'portal') return 'upright'
   }
   const n = name || ''

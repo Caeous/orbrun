@@ -108,8 +108,13 @@ describe('classification', () => {
     // stairs stand: a floor decal is a sliver at eye height, and stairs are what a player steers by
     expect(stanceFor('DNGN_STONE_STAIRS_DOWN', { type: 'stairs', dir: 'down' })).toBe('upright')
     expect(stanceFor('DNGN_STONE_STAIRS_UP_I', undefined)).toBe('upright')
-    // holes in the floor stay on the floor
-    expect(stanceFor('DNGN_ESCAPE_HATCH_DOWN', { type: 'hatch', dir: 'down' })).toBe('decal')
+    // escape hatches stand with the stairs: they are a way off the level
+    expect(stanceFor('DNGN_ESCAPE_HATCH_DOWN', { type: 'hatch', dir: 'down' })).toBe('upright')
+    expect(stanceFor('DNGN_ESCAPE_HATCH_UP', { type: 'hatch', dir: 'up' })).toBe('upright')
+    expect(stanceFor('DNGN_ESCAPE_HATCH_DOWN', undefined)).toBe('upright')
+    // a shaft is a hole you fall down, not a route: it classifies as a down hatch but stays on the floor
+    expect(stanceFor('DNGN_TRAP_SHAFT', { type: 'hatch', dir: 'down' })).toBe('decal')
+    expect(stanceFor('DNGN_TRAP_SHAFT', undefined)).toBe('decal')
     expect(stanceFor('DNGN_ALTAR_ZIN', { type: 'altar' })).toBe('upright')
     expect(stanceFor('DNGN_TRAP_ARROW', { type: 'trap' })).toBe('decal')
     expect(stanceFor('DNGN_GRANITE_STATUE', undefined)).toBe('upright')

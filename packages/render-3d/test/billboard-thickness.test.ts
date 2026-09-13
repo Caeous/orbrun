@@ -43,7 +43,12 @@ function scene(alpha?: number): Scene {
 
 function quads(r: Priv, kind: string): THREE.Mesh[] {
   const h = r.billboardGroup.children.find((c) => c.userData.kind === kind)!
-  return h.children.filter((c) => (c as THREE.Mesh).geometry && !c.userData.shared) as THREE.Mesh[]
+  return h.children.filter((c) => (c as THREE.Mesh).geometry && !c.userData.shared && !c.userData.hull) as THREE.Mesh[]
+}
+
+function hulls(r: Priv, kind: string): THREE.Mesh[] {
+  const h = r.billboardGroup.children.find((c) => c.userData.kind === kind)!
+  return h.children.filter((c) => c.userData.hull) as THREE.Mesh[]
 }
 
 describe('billboard thickness', () => {
@@ -130,13 +135,105 @@ describe('billboard thickness', () => {
     }
   })
 
+  /**
+   * Crawl's line round a sprite is the ink `peelInk` takes off the art, and
+   * it comes back as a hull: the body grown a texel each way, as deep as the
+   * block, black, drawn back faces only. What shows is the part that pokes
+   * out past the body from wherever the eye is — the line, a texel wide,
+   * from every angle — while the body's own lit sides stay in view.
+   */
+  it('lines the block with a black hull a texel wider than the body', () => {
+    const r = maskedRenderer()
+    r.rebuildBillboards(scene())
+    const [ink] = hulls(r, 'monster')
+    expect(ink).toBeTruthy()
+    const mat = ink.material as THREE.MeshBasicMaterial
+    expect(mat.side).toBe(THREE.BackSide)
+    expect(mat.color.getHex()).toBe(0x000000)
+    const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
+    // the 2x2 body grown a texel on four sides is a 12-texel cross: a back face each, and one side per
+    // exposed edge — the cross's perimeter is 16 edges
+    expect(pos.count).toBe((12 + 16) * 4)
+    const k = 1 / 32, hw = (4 / 32) / 2
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity
+    for (let i = 0; i < pos.count; i++) {
+      x0 = Math.min(x0, pos.getX(i)); x1 = Math.max(x1, pos.getX(i))
+      y0 = Math.min(y0, pos.getY(i)); y1 = Math.max(y1, pos.getY(i))
+      z0 = Math.min(z0, pos.getZ(i)); z1 = Math.max(z1, pos.getZ(i))
+    }
+    // the whole tile across, the block's depth back, and nothing in front of the quad
+    expect(x0).toBeCloseTo(-hw, 6)
+    expect(x1).toBeCloseTo(hw, 6)
+    expect(y1).toBeCloseTo(hw, 6)
+    expect(y0).toBeCloseTo(-hw, 6)
+    expect(z0).toBeCloseTo(-2 * k, 6)
+    expect(z1).toBe(0)
+    // no front face: nothing lies wholly at z = 0
+    const idx = ink.geometry.getIndex()!
+    for (let f = 0; f < idx.count; f += 3) {
+      const zs = [idx.getX(f), idx.getX(f + 1), idx.getX(f + 2)].map((i) => pos.getZ(i))
+      expect(zs.every((z) => z === 0)).toBe(false)
+    }
+    // the hull stands where the sprite does
+    const [m] = quads(r, 'monster')
+    expect(ink.position.toArray()).toEqual(m.position.toArray())
+  })
+
+  /**
+   * The ghost pass draws a flat quad with no block, and its shader is the
+   * depth test. Its line is a flat ring in the quad's plane: the texels round
+   * the body and none of the body, black, on the ghost's own material so it
+   * is hidden and faded as the ghost is, and added under the ghost so the
+   * body paints over none of it.
+   */
+  it('lines a ghost with a flat ring in its plane', () => {
+    const r = maskedRenderer()
+    r.rebuildBillboards(scene())
+    const [ink] = hulls(r, 'ghost')
+    expect(ink).toBeTruthy()
+    const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
+    // eight texels round the 2x2 body, one face each
+    expect(pos.count).toBe(8 * 4)
+    for (let i = 0; i < pos.count; i++) expect(pos.getZ(i)).toBe(0)
+    const col = ink.geometry.getAttribute('color') as THREE.BufferAttribute
+    for (let i = 0; i < col.count; i++) expect([col.getX(i), col.getY(i), col.getZ(i)]).toEqual([0, 0, 0])
+    const mat = ink.material as THREE.ShaderMaterial
+    expect(mat.isShaderMaterial).toBe(true)
+    expect(mat.uniforms.map).toBeUndefined()
+    const h = r.billboardGroup.children.find((c) => c.userData.kind === 'ghost')!
+    const [ghost] = quads(r, 'ghost')
+    expect(h.children.indexOf(ink)).toBeLessThan(h.children.indexOf(ghost))
+    expect(ink.renderOrder).toBe(ghost.renderOrder)
+    expect(ink.position.toArray()).toEqual(ghost.position.toArray())
+  })
+
+  it('keeps the hull inside the tile', () => {
+    // a body on the tile's top-left corner: the hull cannot grow past the tile's edge
+    const r = maskedRenderer([[4, 8]])
+    r.rebuildBillboards(scene())
+    const [ink] = hulls(r, 'monster')
+    const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
+    const hw = (4 / 32) / 2
+    // three texels: the body, and one to its right and below; back faces plus eight exposed edges
+    expect(pos.count).toBe((3 + 8) * 4)
+    let x0 = Infinity, y1 = -Infinity
+    for (let i = 0; i < pos.count; i++) {
+      x0 = Math.min(x0, pos.getX(i))
+      y1 = Math.max(y1, pos.getY(i))
+    }
+    expect(x0).toBeCloseTo(-hw, 6)
+    expect(y1).toBeCloseTo(hw, 6)
+  })
+
   it('leaves the damage bar and badges, the ghost, and a translucent sprite flat', () => {
     const r = maskedRenderer()
     r.rebuildBillboards(scene())
     expect((quads(r, 'monster')[1].geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
     expect((quads(r, 'ghost')[0].geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
+    expect(hulls(r, 'monster')).toHaveLength(1)
     r.rebuildBillboards(scene(0.5))
     expect((quads(r, 'monster')[0].geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
+    expect(hulls(r, 'monster')).toHaveLength(0)
   })
   it('stays flat where the atlas pixels cannot be read', () => {
     const r = new Render3d() as unknown as Priv
