@@ -79,8 +79,13 @@ const kc = (key: number, label: string): Action => ({ kind: 'keys', seq: [{ key 
 const ctrl = (letter: string, label: string): Action => kc(letter.toUpperCase().charCodeAt(0) - 64, label)
 const ESC: Action = kc(Keys.ESC, 'Cancel')
 const ENTER: Action = kc(Keys.ENTER, 'Confirm')
-/** space, as the `--more--` loop takes it (message.cc `readkey_more`); also what a click on the ringed message pane sends (hud.ts) */
-export const CONTINUE: Action = kc(Keys.SPACE, 'Continue')
+/**
+ * space, as the `--more--` loop takes it (message.cc `readkey_more`); also
+ * what a click on the ringed message pane sends (hud.ts). It wears the game's
+ * own word rather than ours: the pane says `--more--` where the stop happened,
+ * and the chip under A says the same, so the two read as one thing.
+ */
+export const CONTINUE: Action = kc(Keys.SPACE, '--more--')
 const SPACE = CONTINUE
 const palette = (category: CommandCategory, section?: string): Action => ({ kind: 'ui', op: 'palette', category, section })
 const SYSTEM: Action = { kind: 'ui', op: 'system' }

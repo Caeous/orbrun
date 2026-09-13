@@ -533,7 +533,7 @@ describe('the action bar shows only what the situation created', () => {
     expect(bindingTable(ctx({ mode: 'popup', popupActions: [] })).X).toBeUndefined()
     expect(bindingTable(ctx({ mode: 'dialog' })).X).toBeUndefined()
   })
-  it('a --more-- shows Continue on A, with the other prompts', () => {
-    expect(show(ctx({ mode: 'more' }))).toEqual(['A Continue'])
+  it('a --more-- names itself on A, with the other prompts', () => {
+    expect(show(ctx({ mode: 'more' }))).toEqual(['A --more--'])
   })
 })

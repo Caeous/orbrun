@@ -1279,7 +1279,7 @@ export class Hud {
    * until the more is acknowledged (styles.css `.messages.more`), as
    * `#message_pane` goes black in WebTiles. Nothing moves to the middle of
    * the view, so the player's eye stays on the log it was already reading.
-   * The way out is on the action bar (Continue on A, or Space), and for the
+   * The way out is on the action bar (`--more--` on A, or Space), and for the
    * player a click on the pane sends space (`.dismissable`). A spectator
    * cannot dismiss it, so its pane takes no click.
    */
