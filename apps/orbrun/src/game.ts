@@ -27,6 +27,8 @@ import { CAM_DISTANCES, CAM_HEIGHTS } from './settings-rows'
 const VIEW_MAX_DPR = 1
 /** at rest the frame loop sleeps, waking to run its body this often, so nothing that changed without waking it waits longer */
 const IDLE_TICK_MS = 250
+/** how long after the last thing that wanted a frame the loop keeps the display's rate before it parks (`awake`) */
+const ACTIVE_MS = 500
 
 /** css pixels a touch must travel before a press becomes a look drag */
 const DRAG_SLOP = 6
@@ -94,6 +96,8 @@ export class GameScreen {
   private pickDirty = false
   /** when the frame body last ran, for the idle safety tick (IDLE_TICK_MS) */
   private lastBody = 0
+  /** when something last wanted a frame, for the run-on before the loop parks (ACTIVE_MS) */
+  private lastActive = 0
   /** the settings as last read; cleared by `applySettings`, so a frame reads storage at most once */
   private settingsCache: Settings | null = null
   /** the context as last derived, and the key of what it was derived from */
@@ -629,14 +633,30 @@ export class GameScreen {
    * A safety tick every IDLE_TICK_MS still runs the body, so anything that
    * changes state without waking the loop (a runner's timeout, a tooltip)
    * is seen within a quarter second.
+   *
+   * Play is not one event but a stream of them: a step, the messages it
+   * brings, the turn that follows. Parking between them would hand the
+   * frames back to whatever woke the loop next, so they would arrive when a
+   * packet did rather than when the display asked, which reads as judder
+   * however many of them there are. So the loop holds the display's rate for
+   * ACTIVE_MS past the last thing that wanted a frame, and only then parks.
    */
   private awake(now: number): boolean {
+    if (this.busy()) {
+      this.lastActive = now
+      return true
+    }
+    if (now - this.lastActive < ACTIVE_MS) return true
+    // the safety tick woke the loop: a frame's body, and then sleep again
+    return now - this.lastBody >= IDLE_TICK_MS
+  }
+
+  /** Something wants this frame: a message, an input, an easing, an animation, a hold. */
+  private busy(): boolean {
     if (this.dirty || this._needsRender || this.pickDirty || this.hoverMoved) return true
     if (this.cam.steering || this.padLooking) return true
     if (this.is3d && (this.renderer as Render3d).animating) return true
-    if (this.pressTimes.size > 0 || this.padHints.waiting) return true
-    // the safety tick woke the loop: a frame's body, and then sleep again
-    return now - this.lastBody >= IDLE_TICK_MS
+    return this.pressTimes.size > 0 || this.padHints.waiting
   }
 
   /**

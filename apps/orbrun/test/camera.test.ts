@@ -436,14 +436,24 @@ describe('the minimap heading', () => {
     for (let i = 0; i < 100; i++) c.update(0.02)
     expect(c.camera.yaw).toBeCloseTo((3 * Math.PI) / 4)
     expect(c.mapYaw).toBeCloseTo(MAP_TURNS_DIAGONAL ? (3 * Math.PI) / 4 : Math.PI / 2)
+    // a look turns the view to headings between the detents: where the
+    // ground turns with the view it goes there too, at once, so what is
+    // ahead in the scene is up the map on every frame
+    c.lookBy(0.3, 0)
+    expect(c.camera.yaw).toBeCloseTo((3 * Math.PI) / 4 + 0.3)
+    expect(c.mapYaw).toBeCloseTo(MAP_TURNS_DIAGONAL ? (3 * Math.PI) / 4 + 0.3 : Math.PI / 2)
+    c.update(0.02)
+    expect(c.mapYaw).toBeCloseTo(MAP_TURNS_DIAGONAL ? (3 * Math.PI) / 4 + 0.3 : Math.PI / 2)
+    c.endDrag()
     // reduced motion: straight there
     const r = cam(0)
     r.setFacing(4)
     expect(r.mapYaw).toBeCloseTo(Math.PI)
-    // a restored view starts the map on its heading with no easing
+    // a restored view starts the map on its heading with no easing: the
+    // view's own yaw where the ground turns with it, its quarter otherwise
     const b = new CameraController()
     b.restore({ yaw: 1.9, pitch: 0 })
-    expect(b.mapYaw).toBeCloseTo(Math.PI / 2)
+    expect(b.mapYaw).toBeCloseTo(MAP_TURNS_DIAGONAL ? 1.9 : Math.PI / 2)
     expect(b.update(0.1)).toBe(false)
   })
 

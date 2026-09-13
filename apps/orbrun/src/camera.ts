@@ -36,10 +36,13 @@ export class CameraController {
   /** yaw the camera is easing toward */
   private goalYaw = 0
   /**
-   * The heading the minimap's ground shows at the top, in radians: eases
-   * toward the map heading (`mapFacingOf`) the same way the view's yaw eases
-   * toward its facing, so the map turns in step with the scene rather than
-   * snapping.
+   * The heading the minimap's ground shows at the top, in radians, where the
+   * ground stands on compass quarters (MAP_TURNS_DIAGONAL off): eases toward
+   * the map heading (`mapFacingOf`) the same way the view's yaw eases toward
+   * its facing, so the map turns in step with the scene rather than
+   * snapping. Where the ground turns with the view itself it is not used:
+   * `mapYaw` is the view's own yaw then, so the map and the scene cannot
+   * come apart, under a keyed turn or a look.
    */
   private _mapYaw = 0
   /**
@@ -87,9 +90,16 @@ export class CameraController {
     }
   }
 
-  /** The heading up the minimap's ground right now, in radians; `mapFacingOf` once the turn settles. */
+  /**
+   * The heading up the minimap's ground right now, in radians; `mapFacingOf`
+   * once the turn settles. Where the ground turns with the view
+   * (MAP_TURNS_DIAGONAL) it is the view's yaw itself, every frame: a keyed
+   * turn eases both as one, and a stick or drag look, which turns the view
+   * to any heading between the detents, turns the map with it, so what is
+   * ahead in the scene is up the map at all times.
+   */
   get mapYaw(): number {
-    return this._mapYaw
+    return MAP_TURNS_DIAGONAL ? this.camera.yaw : this._mapYaw
   }
 
   /** The heading the minimap lays its features, highlights and cursor against right now, in radians; `gridFacing` once the turn settles. */
@@ -437,18 +447,20 @@ export class CameraController {
         moved = true
       }
     }
-    // The minimap turns on the same easing. Where its ground stands on the
-    // facing itself it turns at the view's rate, from the view's heading to
-    // the view's goal: the same turn, so the map and the scene swing as one
-    // rather than the map arriving first. On quarters it keeps its old touch
-    // of extra speed, having a different heading to reach anyway. What is
-    // painted on the ground follows the grid heading at whichever rate, so
-    // the lean grows and falls away in step with the ground it lies on.
+    // The minimap's ground: where it turns with the view it *is* the view's
+    // yaw (`mapYaw`), so there is nothing to ease — the same turn, the same
+    // look, the map and the scene swing as one. On quarters it has a
+    // different heading to reach, and eases there with a touch of extra
+    // speed. What is painted on the ground follows the grid heading at the
+    // view's rate, so the lean grows and falls away in step with the ground
+    // it lies on.
     const rate = MAP_TURNS_DIAGONAL ? TURN_RATE : MAP_TURN_RATE
-    const map = this.ease(this._mapYaw, this.mapGoal, dt, rate)
-    if (map !== this._mapYaw) {
-      this._mapYaw = map
-      moved = true
+    if (!MAP_TURNS_DIAGONAL) {
+      const map = this.ease(this._mapYaw, this.mapGoal, dt, rate)
+      if (map !== this._mapYaw) {
+        this._mapYaw = map
+        moved = true
+      }
     }
     const upright = this.ease(this._uprightYaw, this.uprightGoal, dt, rate)
     if (upright !== this._uprightYaw) {

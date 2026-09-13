@@ -461,6 +461,9 @@ export class Render2d implements MapRenderer {
         })
       }
     } else if (minimap) {
+      // the colour blocks standing in for sprites are upright like the
+      // sprites (and the player's mark below): square on screen over a
+      // turned ground, not diamonds among the ground's cells
       for (const b of scene.billboards) {
         const sx = (b.x - ox) * cs
         const sy = (b.y - oy) * cs
@@ -468,8 +471,7 @@ export class Render2d implements MapRenderer {
         const c = this.opts.minimapColours
         if (b.kind === 'monster' || b.kind === 'item') {
           ctx.fillStyle = b.kind === 'monster' ? (b.attitude === 'friendly' ? c.friendly : c.monster) : c.item
-
-          ctx.fillRect(sx, sy, cs, cs)
+          upright(sx, sy, () => ctx.fillRect(sx, sy, cs, cs))
         }
       }
     }

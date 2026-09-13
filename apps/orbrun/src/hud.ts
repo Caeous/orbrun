@@ -118,15 +118,10 @@ export const STATUS_BADGE_ROWS = 4
  */
 export const TRAPPED_FRACTION = 0.8
 /**
- * The map's shape is minimap.js's: `gym` rows to `gxm` columns, enums.js has
- * `gxm = 80`, `gym = 70`.
- */
-const MAP_COLS = 80
-const MAP_ROWS = 70
-/**
  * The most the "Minimap size" setting can take: half the screen across (the
  * view keeps its left half clear) and MINIMAP_TALLEST of the column down, so
- * the monster list under it keeps some rows even at the biggest stop.
+ * the monster list under it keeps some rows even at the biggest stop. The
+ * disc is square, so whichever cap is tighter sets its size.
  */
 const MINIMAP_WIDEST = 0.5
 const MINIMAP_TALLEST = 0.7
@@ -137,24 +132,33 @@ const oddUp = (n: number) => 2 * Math.floor(Math.max(0, n) / 2) + 1
 const oddDown = (n: number) => Math.max(1, 2 * Math.ceil(Math.max(1, n) / 2) - 1)
 
 /**
- * The minimap's size in css px on a sidebar column `sideW` × `sideH` on a
+ * The minimap's box in css px on a sidebar column `sideW` × `sideH` on a
  * `gridW` wide screen, at the "Minimap size" setting `tiles` and the
- * "Minimap tile size" setting `cell`: that many `cell` px tiles across, and
- * `gym / gxm` as many down, both taken to an odd count so the player stands
- * on the centre tile. It hangs off the column's right edge, so more tiles
- * reach left over the view (the column is view too) and down the column, to
- * MINIMAP_WIDEST of the screen and MINIMAP_TALLEST of the column; a count
- * that would pass a cap is cut to the most whole tiles under it. Tiles say
- * how much of the level shows, the cell how big it is drawn: a bigger cell
- * on the same count is the same map, larger, until a cap cuts the count.
+ * "Minimap tile size" setting `cell`: a square of that many `cell` px tiles
+ * on a side, taken to an odd count so the player stands on the centre tile.
+ * The map is clipped to the disc inscribed in it (styles.css
+ * `canvas.minimap`), so the setting reads as the diameter: the map turns
+ * under the player (renderer `upYaw`), and a disc is the only shape that
+ * shows the same reach on every heading — a rectangle swings its corners in
+ * and out of the level as the player turns.
+ *
+ * It hangs off the column's right edge, so more tiles reach left over the
+ * view (the column is view too) and down the column, to MINIMAP_WIDEST of
+ * the screen and MINIMAP_TALLEST of the column; a count that would pass
+ * either cap is cut to the most whole tiles under both. Tiles say how much
+ * of the level shows, the cell how big it is drawn: a bigger cell on the
+ * same count is the same map, larger, until a cap cuts the count.
  */
 export function minimapBox(sideW: number, sideH: number, gridW: number, tiles: number, cell: number = MINIMAP_CELL_DEFAULT): { w: number; h: number } {
   if (sideW <= 0 || sideH <= 0) return { w: 0, h: 0 }
   const across = tiles >= 1 ? Math.floor(tiles) : MINIMAP_TILES_DEFAULT
   const px = cell >= 1 ? Math.floor(cell) : MINIMAP_CELL_DEFAULT
-  const cols = Math.min(oddUp(across), oddDown(Math.floor(gridW * MINIMAP_WIDEST) / px))
-  const rows = Math.min(oddUp((cols * MAP_ROWS) / MAP_COLS), oddDown(Math.floor(sideH * MINIMAP_TALLEST) / px))
-  return { w: cols * px, h: rows * px }
+  const side = Math.min(
+    oddUp(across),
+    oddDown(Math.floor(gridW * MINIMAP_WIDEST) / px),
+    oddDown(Math.floor(sideH * MINIMAP_TALLEST) / px),
+  )
+  return { w: side * px, h: side * px }
 }
 export class Hud {
   root: HTMLElement
@@ -1173,6 +1177,31 @@ export class Hud {
     this.minimap.setScene(scene)
     this.minimap.setCamera(cam)
     this.minimap.render()
+    this.cutMinimapDisc()
+  }
+
+  /**
+   * Cut the drawn square down to the disc inscribed in it. The cut is a
+   * `destination-in` fill, so the edge is antialiased where the pixelated
+   * cells are not, and it leaves the canvas itself disc-shaped: the css
+   * drop-shadow (styles.css `canvas.minimap`) then follows the rim instead
+   * of a square nothing is drawn in. Nothing is drawn on the rim — the map
+   * ends where the level it shows ends, as the square one did.
+   */
+  private cutMinimapDisc() {
+    const ctx = this.minimapCanvas.getContext('2d')
+    const size = this.minimapSize.w
+    if (!ctx || !size) return
+    const dpr = this.minimapCanvas.width / size || 1
+    const r = size / 2
+    ctx.save()
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.globalCompositeOperation = 'destination-in'
+    ctx.beginPath()
+    ctx.arc(r, r, r, 0, Math.PI * 2)
+    ctx.fillStyle = '#fff'
+    ctx.fill()
+    ctx.restore()
   }
 
   /** Where the minimap sits on screen: the start (and end) of the level-map morph. */
