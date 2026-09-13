@@ -717,6 +717,8 @@ export class Render3d implements MapRenderer {
   private ghostVisibleInkMat!: THREE.ShaderMaterial
   /** The ink round every standing sprite (`HullTemplate`): black, back faces only. */
   private hullMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide })
+  /** The ink on a sprite that does not turn to the eye (an open door): a flat ring (`RingTemplate`) in its plane. */
+  private inkMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
   /** Attack lift start, in seconds on the render clock; NaN when at rest. */
   private vmLift = NaN
   constructor(opts: Render3dOptions = {}) {
@@ -1102,6 +1104,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.rings.clear()
     this.vmMat.dispose()
     this.hullMat.dispose()
+    this.inkMat.dispose()
     this.ghostInkMat.dispose()
     this.ghostVisibleInkMat.dispose()
     this.depthTarget?.dispose()
@@ -1647,7 +1650,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const bottom = ((cell - (l.r.oy + (l.oy || 0) + hTex)) / cell) * scale
       const lt = l.tint || tint
       const solid = thick && !l.flat
-      const geo = this.standingGeometry(l, hTex, v1, wq, hq, scale / cell, { r: shade * lt.r, g: shade * lt.g, b: shade * lt.b }, x, y, solid)
+      const geo = this.standingGeometry(l, hTex, v1, wq, hq, scale / cell, { r: shade * lt.r, g: shade * lt.g, b: shade * lt.b }, x, y, solid, yaw !== undefined)
       const mesh = new THREE.Mesh(geo, ghost === 'visible' ? l.a.ghostVisibleMat : ghost === 'remembered' ? l.a.ghostMat : fixed ? l.a.featMat : l.a.bbMat)
       mesh.position.set(cx, bottom + hq / 2, i * 0.002 - back)
       // ghosts draw before every sprite so a nearer billboard paints over them
@@ -1663,10 +1666,18 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         holder.add(ink)
       }
       holder.add(mesh)
-      // the ink round the block (`HullTemplate`), in the block's own frame; a badge or a bar has no block and no line
-      const hull = solid ? this.hullGeometry(l, hTex, wq, hq, scale / cell) : null
+      // The ink round the block (`HullTemplate`), in the block's own frame; a badge or a bar has no block and no
+      // line. A sprite that stands at a heading instead of turning to the eye (an open door in its wall run) is
+      // seen from every angle, edge-on as the player walks through it, and there a hull is no line but a band:
+      // its back face swings out from the board by the block's depth in parallax, and a texel wider than the
+      // cell it pokes into the masonry either side and is cut to ribbons against it. Its ink is the flat ring
+      // instead — the art's own line, in the board's plane, drawn on it from any side.
+      // The board is stretched a wall inset each way into the run, so the tile's edge columns lie on the reveal
+      // faces either side of the doorway: ink there straddles the masonry and shows as a torn black strip up
+      // the wall. The door's ring keeps off those columns.
+      const hull = !solid ? null : yaw === undefined ? this.hullGeometry(l, hTex, wq, hq, scale / cell) : this.ringGeometry(l, hTex, wq, hq, scale / cell, true)
       if (hull) {
-        const ink = new THREE.Mesh(hull, this.hullMat)
+        const ink = new THREE.Mesh(hull, yaw === undefined ? this.hullMat : this.inkMat)
         ink.position.copy(mesh.position)
         ink.renderOrder = mesh.renderOrder
         ink.userData.hull = true
@@ -1700,8 +1711,10 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     x: number,
     y: number,
     thick: boolean,
+    /** Leave out the rim faces on the tile's own boundary (a board set into a wall run, see `rimTemplate`). */
+    offEdges = false,
   ): THREE.BufferGeometry {
-    const rim = thick ? this.rimTemplate(l, hTex) : null
+    const rim = thick ? this.rimTemplate(l, hTex, offEdges) : null
     const nRim = rim ? rim.pos.length / 3 : 0
     const n = 4 + nRim
     const pos = new Float32Array(n * 3)
@@ -1763,8 +1776,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
   }
 
   /** The ring's geometry placed on the same quad the ghost is; null where the atlas's pixels cannot be read. */
-  private ringGeometry(l: SpriteLayer, hTex: number, wq: number, hq: number, k: number): THREE.BufferGeometry | null {
-    const t = this.ringTemplate(l, hTex)
+  private ringGeometry(l: SpriteLayer, hTex: number, wq: number, hq: number, k: number, offEdges = false): THREE.BufferGeometry | null {
+    const t = this.ringTemplate(l, hTex, offEdges)
     if (!t) return null
     const n = t.pos.length / 3
     const pos = new Float32Array(n * 3)
@@ -1782,20 +1795,25 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     return geo
   }
 
-  /** The ring of texels round this tile's body (`RingTemplate`), from the cache: the hull's footprint less the body, flat. */
-  private ringTemplate(l: SpriteLayer, hTex: number): RingTemplate | null {
+  /**
+   * The ring of texels round this tile's body (`RingTemplate`), from the
+   * cache: the hull's footprint less the body, flat. `offEdges` leaves the
+   * tile's first and last columns out of it (a board set into a wall run).
+   */
+  private ringTemplate(l: SpriteLayer, hTex: number, offEdges = false): RingTemplate | null {
     const mask = this.atlasMask(l.a)
     if (!mask) return null
     const { sx, sy, w } = l.r
-    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex}`
+    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex}${offEdges ? ':off' : ''}`
     let t = this.rings.get(key)
     if (t !== undefined) return t
     const aw = l.a.width
     const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && mask[(sy + ty) * aw + sx + tx] === 1
     const pos: number[] = []
     const index: number[] = []
+    const tx0 = offEdges ? 1 : 0, tx1 = offEdges ? w - 1 : w
     for (let ty = 0; ty < hTex; ty++) {
-      for (let tx = 0; tx < w; tx++) {
+      for (let tx = tx0; tx < tx1; tx++) {
         if (body(tx, ty) || !(body(tx - 1, ty) || body(tx + 1, ty) || body(tx, ty - 1) || body(tx, ty + 1))) continue
         const x0 = tx, x1 = tx + 1
         const y1 = -ty, y0 = y1 - 1
@@ -1855,12 +1873,19 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     return t
   }
 
-  /** The rim of this tile's block, clipped to `hTex` rows, from the cache; null where the atlas's pixels cannot be read. */
-  private rimTemplate(l: SpriteLayer, hTex: number): RimTemplate | null {
+  /**
+   * The rim of this tile's block, clipped to `hTex` rows, from the cache; null
+   * where the atlas's pixels cannot be read. `offEdges` leaves out the faces
+   * that lie on the tile's own boundary: a board set into a wall run fills its
+   * cell, so where its art reaches the tile's edge those faces lie in the
+   * planes of the reveals either side, the ceiling and the floor, and tear
+   * against them.
+   */
+  private rimTemplate(l: SpriteLayer, hTex: number, offEdges = false): RimTemplate | null {
     const mask = this.atlasMask(l.a)
     if (!mask) return null
     const { sx, sy, w } = l.r
-    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex}`
+    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex}${offEdges ? ':off' : ''}`
     let t = this.rims.get(key)
     if (t !== undefined) return t
     const aw = l.a.width, ah = l.a.height
@@ -1887,10 +1912,11 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         const y1 = -ty, y0 = y1 - 1
         // every face wears its own texel: the block is body all through, so there is no line to step off
         const u = (sx + tx + 0.5) / aw, v = (sy + ty + 0.5) / ah
-        if (!body(tx, ty - 1)) face([x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0], u, v, BLOCK_SHADE.top)
-        if (!body(tx, ty + 1)) face([x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1], u, v, BLOCK_SHADE.bottom)
-        if (!body(tx - 1, ty)) face([x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0], u, v, BLOCK_SHADE.side)
-        if (!body(tx + 1, ty)) face([x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1], u, v, BLOCK_SHADE.side)
+        const edge = (on: boolean) => offEdges && on
+        if (!body(tx, ty - 1) && !edge(ty === 0)) face([x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0], u, v, BLOCK_SHADE.top)
+        if (!body(tx, ty + 1) && !edge(ty === hTex - 1)) face([x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1], u, v, BLOCK_SHADE.bottom)
+        if (!body(tx - 1, ty) && !edge(tx === 0)) face([x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0], u, v, BLOCK_SHADE.side)
+        if (!body(tx + 1, ty) && !edge(tx === w - 1)) face([x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1], u, v, BLOCK_SHADE.side)
       }
     }
     t = index.length ? { pos: new Float32Array(pos), uv: new Float32Array(uv), shade: new Float32Array(shade), index } : null

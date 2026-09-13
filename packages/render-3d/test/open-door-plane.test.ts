@@ -11,7 +11,7 @@ const tiles: TileSource = {
   atlasNames: () => ['main'],
 }
 
-type Priv = { setTiles(t: TileSource): void; levelGroup: THREE.Group; rebuildLevel(s: Scene): void }
+type Priv = { setTiles(t: TileSource): void; levelGroup: THREE.Group; rebuildLevel(s: Scene): void; atlas(name: string): { mask?: Uint8Array | null } }
 
 function render(scene: Scene): Priv {
   const r = new Render3d() as unknown as Priv
@@ -111,5 +111,72 @@ describe('an open door', () => {
   it('faces the camera where there is no doorway', () => {
     const [door] = build(corridor('none'))
     expect(door.userData.billboard).toBe(true)
+  })
+
+  /**
+   * Seen from every side and edge-on as the player walks through, a hull round
+   * the door is a band, not a line: its back swings out from the board in
+   * parallax and it pokes into the masonry either side. The door's ink is the
+   * flat ring in the board's plane instead, black on both faces.
+   */
+  it('wears its ink as a flat ring in its plane, not a hull', () => {
+    const r = new Render3d() as unknown as Priv
+    r.setTiles(tiles)
+    // a 2x2 body in the middle of the 32x32 tile
+    const mask = new Uint8Array(64 * 64)
+    for (const [x, y] of [[15, 15], [16, 15], [15, 16], [16, 16]]) mask[y * 64 + x] = 1
+    r.atlas('main').mask = mask
+    r.rebuildLevel(corridor('x'))
+    const [door] = r.levelGroup.children.filter((c) => c.userData.fixedFacing)
+    const ink = door.children.find((c) => c.userData.hull) as THREE.Mesh
+    expect(ink).toBeTruthy()
+    const mat = ink.material as THREE.MeshBasicMaterial
+    expect(mat.side).toBe(THREE.DoubleSide)
+    expect(mat.color.getHex()).toBe(0)
+    const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
+    // the eight texels round the body, one flat face each, all in the board's plane
+    expect(pos.count).toBe(8 * 4)
+    for (let i = 0; i < pos.count; i++) expect(pos.getZ(i)).toBe(0)
+  })
+
+  /**
+   * The board is stretched a wall inset each way into the run, so the tile's
+   * edge columns lie on the reveal faces either side of the doorway; ink there
+   * straddles the masonry and tears up the wall. The ring keeps off them.
+   */
+  it('keeps its ink off the tile\'s edge columns, which stand in the masonry', () => {
+    const r = new Render3d() as unknown as Priv
+    r.setTiles(tiles)
+    // a body one texel in from the tile's left edge: its ring would reach column 0
+    const mask = new Uint8Array(64 * 64)
+    mask[15 * 64 + 1] = 1
+    r.atlas('main').mask = mask
+    r.rebuildLevel(corridor('x'))
+    const [door] = r.levelGroup.children.filter((c) => c.userData.fixedFacing)
+    const ink = door.children.find((c) => c.userData.hull) as THREE.Mesh
+    const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
+    // above, below and right of the body, not left
+    expect(pos.count).toBe(3 * 4)
+    let x0 = Infinity
+    for (let i = 0; i < pos.count; i++) x0 = Math.min(x0, pos.getX(i))
+    expect(x0).toBeCloseTo(-0.5 + 1 / 32, 6)
+  })
+
+  /**
+   * The board fills its cell, so where its art reaches the tile's edge the
+   * block's rim faces lie in the planes of the reveals either side, the
+   * ceiling and the floor, and tear against them. Those faces are left out.
+   */
+  it('has no rim face on the tile\'s boundary', () => {
+    const r = new Render3d() as unknown as Priv
+    r.setTiles(tiles)
+    // art over the whole tile: every rim face would be on the boundary
+    const mask = new Uint8Array(64 * 64)
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) mask[y * 64 + x] = 1
+    r.atlas('main').mask = mask
+    r.rebuildLevel(corridor('x'))
+    const [door] = r.levelGroup.children.filter((c) => c.userData.fixedFacing)
+    const board = door.children.find((c) => !c.userData.hull) as THREE.Mesh
+    expect((board.geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
   })
 })
