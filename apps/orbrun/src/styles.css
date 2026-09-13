@@ -1759,14 +1759,14 @@ canvas.minimap.hidden {
 }
 /* a pending --more-- is a hard stop, and the pane says so where it stands: it keeps
    its shadowed text over the scene under a faint teal wash and takes a teal ring
-   around its cells, the same colour as the --more-- line itself, until the player
-   acknowledges it.
+   around its cells, a darker shade of the --more-- line's own colour so the ring
+   frames the text rather than competing with it, until the player acknowledges it.
    The ring is an outline, not a border, so the pane keeps its cells and nothing
    rewraps, and it sits flush on them: square, still, no gap, as the console it
    stands for. */
 .messages.more {
   background: rgba(33, 161, 161, 0.08);
-  outline: 2px solid var(--color-3);
+  outline: 2px solid #157272;
   outline-offset: 0;
 }
 /* the player can dismiss it: a click on the pane sends space (hud.ts). A spectator cannot, so its pane takes none */
