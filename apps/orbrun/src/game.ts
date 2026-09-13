@@ -577,6 +577,7 @@ export class GameScreen {
       }
     }
     this.hud.minimapUp = this.cam.mapYaw
+    this.hud.minimapUpright = this.cam.mapUprightYaw
     this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held)
     this.chat.update(st, st.phase === 'playing' || st.phase === 'watching', !!st.lobby.username)
     this.syncTarget()

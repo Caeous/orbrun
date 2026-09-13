@@ -74,9 +74,10 @@ export interface Render2dOptions {
    * The compass heading drawn at the top: north (0) by default, the map as
    * WebTiles lays it out. A minimap that turns with the player passes the
    * heading they face; the map turns about the cell the view is centred on
-   * (the player), in whole quarter turns, so cells stay square. Sprites,
-   * glyphs, the cursor's icon and the features standing on cells (doors,
-   * fountains, altars, stairs) stay upright over the turned ground.
+   * (the player), in whole quarter turns, so cells stay square. The monsters,
+   * items and the player stay upright over the turned ground; the features
+   * built into cells (doors, fountains, altars, stairs), the highlights and
+   * the cursor lie with it as far as `uprightYaw` says.
    */
   up?: Dir8
   /**
@@ -85,6 +86,16 @@ export interface Render2dOptions {
    * `up`. Null hands the top back to `up`.
    */
   upYaw?: number | null
+  /**
+   * The heading the things painted on the ground are turned back to, in
+   * radians: the cell features, the highlights over them and the cursor.
+   * Null (the default) stands them upright on screen however the ground
+   * turns. A map whose ground turns on diagonals passes the quarter heading
+   * the ground used to stand on, so they lie with the floor over those 45
+   * degrees. What stands *in* a cell — a monster, an item, the player, and
+   * the badges and bars that ride on them — is upright either way.
+   */
+  uprightYaw?: number | null
 }
 
 /** Default terminal palette, as the official stylesheet. */
@@ -159,6 +170,7 @@ export class Render2d implements MapRenderer {
       minibars: opts.minibars ?? null,
       up: opts.up ?? 0,
       upYaw: opts.upYaw ?? null,
+      uprightYaw: opts.uprightYaw ?? null,
     }
   }
 
@@ -176,6 +188,7 @@ export class Render2d implements MapRenderer {
     if (opts.minibars !== undefined) this.opts.minibars = opts.minibars
     if (opts.up !== undefined) this.opts.up = opts.up
     if (opts.upYaw !== undefined) this.opts.upYaw = opts.upYaw
+    if (opts.uprightYaw !== undefined) this.opts.uprightYaw = opts.uprightYaw
   }
 
   mount(target: HTMLCanvasElement | OffscreenCanvas): void {
@@ -371,18 +384,26 @@ export class Render2d implements MapRenderer {
     }
     const cosR = Math.cos(rot)
     const sinR = Math.sin(rot)
-    /** draw something upright over a turned map: the cell's own axes turned back about its centre */
-    const upright = (sx: number, sy: number, draw: () => void) => {
-      if (!rot) return draw()
+    /** turn the cell's own axes by `by` about its centre, and draw in them */
+    const turned = (by: number, sx: number, sy: number, draw: () => void) => {
+      if (!by) return draw()
       const mx = sx + cs / 2
       const my = sy + cs / 2
       ctx.save()
       ctx.translate(mx, my)
-      ctx.rotate(-rot)
+      ctx.rotate(by)
       ctx.translate(-mx, -my)
       draw()
       ctx.restore()
     }
+    // what is painted on the ground — the features standing on cells, the
+    // highlights over them, the cursor — goes with it as far as `uprightYaw`
+    // says: turning back to the heading it stood on leaves it lying with a
+    // ground that has turned past that heading (a diagonal, 45 degrees).
+    const leanBack = this.opts.uprightYaw == null ? -rot : this.opts.uprightYaw
+    const lean = (sx: number, sy: number, draw: () => void) => turned(leanBack, sx, sy, draw)
+    /** what stands in a cell — a monster, an item, the player — never lies over: it is upright on screen however the ground turns */
+    const upright = (sx: number, sy: number, draw: () => void) => turned(-rot, sx, sy, draw)
     const minimap = this.opts.mode === 'minimap' || !this.tiles
     const glyphs = this.opts.mode === 'glyphs' && !minimap
     const hybrid = this.opts.mode === 'hybrid' && !minimap
@@ -403,7 +424,7 @@ export class Render2d implements MapRenderer {
       if (!inView(sx, sy)) continue
       if (minimap) this.drawMinimapCell(ctx, cell, sx, sy, cs)
       else if (glyphs) upright(sx, sy, () => this.drawGlyphCell(ctx, cell, sx, sy, cs, 'fill'))
-      else this.drawTileCell(ctx, cell, sx, sy, cs, upright)
+      else this.drawTileCell(ctx, cell, sx, sy, cs, lean)
     }
     if (!minimap && !glyphs) {
       // things standing in cells, in scene order, then their badges
@@ -478,12 +499,15 @@ export class Render2d implements MapRenderer {
         }
       }
     }
-    // the player's own cell on a minimap
+    // the player's own cell on a minimap: the player stands upright like any
+    // other thing in a cell, so the mark stays square over a turned ground
     if (scene.playerOnLevel && minimap) {
       const px = (scene.player.x - ox) * cs
       const py = (scene.player.y - oy) * cs
-      ctx.fillStyle = this.opts.minimapColours.player
-      ctx.fillRect(px, py, cs, cs)
+      upright(px, py, () => {
+        ctx.fillStyle = this.opts.minimapColours.player
+        ctx.fillRect(px, py, cs, cs)
+      })
     }
     if (scene.playerOnLevel && !minimap && minibarRects(this.opts.minibars).length) {
       const px = (scene.player.x - ox) * cs
@@ -508,12 +532,13 @@ export class Render2d implements MapRenderer {
       const cy = (cursor.y - oy) * cs
       // the same icon WebTiles paints over the cell; an outline when the gamedata has none
       const icon = cursor.tile
-      if (icon !== undefined && this.tiles && this.tiles.tile(icon)) upright(cx, cy, () => this.drawTile(ctx, icon, cx, cy, cs))
-      else {
-        ctx.strokeStyle = cursor.mode === 'map' ? '#ffffff' : '#ff8800'
-        ctx.lineWidth = 2
-        ctx.strokeRect(cx + 1, cy + 1, cs - 2, cs - 2)
-      }
+      if (icon !== undefined && this.tiles && this.tiles.tile(icon)) lean(cx, cy, () => this.drawTile(ctx, icon, cx, cy, cs))
+      else
+        lean(cx, cy, () => {
+          ctx.strokeStyle = cursor.mode === 'map' ? '#ffffff' : '#ff8800'
+          ctx.lineWidth = 2
+          ctx.strokeRect(cx + 1, cy + 1, cs - 2, cs - 2)
+        })
     }
     ctx.restore()
   }
@@ -548,9 +573,12 @@ export class Render2d implements MapRenderer {
   }
 
   /**
-   * The ground (floor, walls, their overlays) turns with the map; what
-   * stands on it (a door, a fountain, an altar, stairs) is drawn `upright`
-   * like the monsters, so it never lies on its side over a turned map.
+   * The ground (floor, walls, their overlays) turns with the map, and the
+   * feature built into a cell (a door, a fountain, an altar, stairs) is part
+   * of it: `upright` turns it back only as far as the ground's own rule says
+   * (renderer `uprightYaw`), which is all the way on a quarter-turned map.
+   * The monsters, items and the player standing in cells are turned back the
+   * whole way instead, wherever the ground has got to.
    */
   private drawTileCell(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, cell: SceneCell, sx: number, sy: number, cs: number, upright?: (sx: number, sy: number, draw: () => void) => void) {
     if (cell.kind === 'unknown') return

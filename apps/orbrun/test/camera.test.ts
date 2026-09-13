@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { REST_PITCH, cellKey, emptyScene, type Billboard, type Scene, type SceneCell } from '@orbrun/scene'
-import { CameraController, trailStep } from '../src/camera'
+import { CameraController, MAP_TURNS_DIAGONAL, trailStep } from '../src/camera'
 
 function cell(x: number, y: number, kind: SceneCell['kind']): SceneCell {
   return {
@@ -422,17 +422,20 @@ describe('the minimap heading', () => {
     c.setFacing(2)
     expect(c.mapYaw).toBe(0)
     expect(c.update(0.02)).toBe(true)
-    // a little ahead of the view, so it settles first
-    expect(c.mapYaw).toBeGreaterThan(c.camera.yaw)
+    // the ground and the view make the same turn at the same rate, so they
+    // swing as one; on quarters the map runs a little ahead and settles first
+    if (MAP_TURNS_DIAGONAL) expect(c.mapYaw).toBe(c.camera.yaw)
+    else expect(c.mapYaw).toBeGreaterThan(c.camera.yaw)
     for (let i = 0; i < 100; i++) c.update(0.02)
     expect(c.mapYaw).toBeCloseTo(Math.PI / 2)
     expect(c.update(0.02)).toBe(false)
-    // a diagonal reads its left-hand compass heading up the map: from east to
-    // south-east the view turns 45 degrees and the map stays put
+    // east to south-east: the view turns 45 degrees, and the map's ground
+    // goes with it only under MAP_TURNS_DIAGONAL — otherwise a diagonal
+    // stands on its left-hand compass heading and the map stays put
     c.setFacing(3)
     for (let i = 0; i < 100; i++) c.update(0.02)
     expect(c.camera.yaw).toBeCloseTo((3 * Math.PI) / 4)
-    expect(c.mapYaw).toBeCloseTo(Math.PI / 2)
+    expect(c.mapYaw).toBeCloseTo(MAP_TURNS_DIAGONAL ? (3 * Math.PI) / 4 : Math.PI / 2)
     // reduced motion: straight there
     const r = cam(0)
     r.setFacing(4)
@@ -443,12 +446,52 @@ describe('the minimap heading', () => {
     expect(b.mapYaw).toBeCloseTo(Math.PI / 2)
     expect(b.update(0.1)).toBe(false)
   })
+
+  it('stands what is on the ground against the grid heading, and the lean never passes a half-quarter', () => {
+    /** how far what stands on the ground leans, in radians */
+    const lean = (c: CameraController) => {
+      let d = c.mapYaw - c.mapUprightYaw
+      while (d > Math.PI) d -= 2 * Math.PI
+      while (d < -Math.PI) d += 2 * Math.PI
+      return d
+    }
+    const c = new CameraController()
+    c.setFacing(0, true)
+    expect(lean(c)).toBe(0)
+    // the ground never parts from the view it stands for
+    if (MAP_TURNS_DIAGONAL) {
+      c.setFacing(2)
+      for (let i = 0; i < 6; i++) {
+        c.update(0.02)
+        expect(c.mapYaw).toBe(c.camera.yaw)
+      }
+      for (let i = 0; i < 100; i++) c.update(0.02)
+      c.setFacing(0, true)
+    }
+    // onto a diagonal: the ground turns 45 degrees, the sprites lean with it
+    c.setFacing(1)
+    for (let i = 0; i < 100; i++) c.update(0.02)
+    expect(c.mapYaw).toBeCloseTo(MAP_TURNS_DIAGONAL ? Math.PI / 4 : 0)
+    expect(c.mapUprightYaw).toBeCloseTo(0)
+    // on off the diagonal: both head for east together, so the lean falls
+    // away rather than flipping to the other side on the way
+    let worst = 0
+    c.setFacing(2)
+    for (let i = 0; i < 100; i++) {
+      c.update(0.02)
+      worst = Math.max(worst, Math.abs(lean(c)))
+    }
+    expect(worst).toBeLessThanOrEqual(Math.PI / 4 + 1e-6)
+    expect(c.mapUprightYaw).toBeCloseTo(Math.PI / 2)
+    expect(lean(c)).toBeCloseTo(0)
+  })
 })
 
 describe('an aim reads its keys against the grid in view', () => {
   it('gridFacing is a compass facing itself, and a diagonal one is read from its left-hand axis', () => {
     for (const f of [0, 2, 4, 6] as const) expect(cam(f).gridFacing).toBe(f)
-    // facing north-east: north runs up the left of the view (k), east up the right (l)
+    // facing north-east: north runs up the left of the view (k), east up the
+    // right (l). The keys keep their quarters however the map's ground turns.
     expect(cam(1).gridFacing).toBe(0)
     expect(cam(3).gridFacing).toBe(2)
     expect(cam(5).gridFacing).toBe(4)

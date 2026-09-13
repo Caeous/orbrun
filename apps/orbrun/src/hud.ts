@@ -15,7 +15,7 @@ import { glyph, glyphName } from './glyphs'
 import type { Context } from './context'
 import type { PadKind } from './gamepad'
 import type { InputDevice } from './game'
-import { gridFacingOf } from './camera'
+import { mapFacingOf } from './camera'
 import { MORPH, animate, coverTransform, reducedMotion, type Rect } from './mapmorph'
 import type { CellRect, GameLayout } from './grid/console'
 import type { GridHost } from './grid/host'
@@ -224,11 +224,19 @@ export class Hud {
   /** What the minimap was last drawn for; empty when it must draw again (a resize, a morph, a new cursor). */
   private minimapKey = ''
   /**
-   * The heading up the minimap, in radians (camera `mapYaw`): eases toward
-   * the grid heading in step with the view, so the map turns as snappily as
-   * the scene. The game loop sets it before each `update`.
+   * The heading up the minimap's ground, in radians (camera `mapYaw`): eases
+   * toward the map heading in step with the view, so the map turns as
+   * snappily as the scene. The game loop sets it before each `update`.
    */
   minimapUp = 0
+  /**
+   * The heading what is painted on that ground is turned back to, in radians
+   * (camera `mapUprightYaw`): the grid heading, which is the ground's own
+   * heading except on a diagonal, where the features, the highlights and the
+   * cursor lie with it over those 45 degrees. The monsters, items and the
+   * player standing in cells are upright either way.
+   */
+  minimapUpright = 0
   private minimapTiles: Gamedata | null = null
   /** The level map is open: the minimap has morphed into it and stays out of sight. */
   private minimapHidden = false
@@ -1111,7 +1119,7 @@ export class Hud {
     if (this.minimapHidden || !this.minimapSize.w) return
     // the map is a full redraw of every known cell: only when something it shows moved.
     // The rc's palette rides `rev.player` (state.ts: `options` and `set_option` bump it).
-    const key = `${scene.revision}|${cam.x},${cam.y},${cam.yaw},${this.minimapUp}|${state.rev.player}|${gd?.version}`
+    const key = `${scene.revision}|${cam.x},${cam.y},${cam.yaw},${this.minimapUp},${this.minimapUpright}|${state.rev.player}|${gd?.version}`
     if (key === this.minimapKey) return
     this.minimapKey = key
     const opts = state.options
@@ -1128,13 +1136,15 @@ export class Hud {
     const mfColours = MF_OPTION_NAMES.map((n) => c(n))
     this.minimap.setOptions({
       mode,
-      // the map turns with the player, to the heading an aim's keys read
-      // against (camera gridFacing): a compass facing is straight up, a
-      // diagonal shows its left-hand compass heading up, so `k` in an aim
-      // walks the cursor up the map.
-      // It gets there with the view's own easing (camera mapYaw), not a snap.
-      up: gridFacingOf(cam.facing),
+      // the map turns with the player (camera mapFacingOf), and gets there
+      // with the view's own easing (camera mapYaw) rather than a snap. Under
+      // quarter turns that is the heading an aim's keys read against (camera
+      // gridFacing), so `k` walks the cursor up the map; where the ground
+      // turns on diagonals too the keys stay on their quarters and the map
+      // leans out from under the cursor.
+      up: mapFacingOf(cam.facing),
       upYaw: this.minimapUp,
+      uprightYaw: this.minimapUpright,
       mfColours,
       filterScaling: opts.tile_filter_scaling === true,
       glyphFont: typeof opts.glyph_mode_font === 'string' && opts.glyph_mode_font ? opts.glyph_mode_font : 'monospace',

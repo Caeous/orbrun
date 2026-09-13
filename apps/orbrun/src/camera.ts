@@ -36,11 +36,22 @@ export class CameraController {
   /** yaw the camera is easing toward */
   private goalYaw = 0
   /**
-   * The heading the minimap shows at the top, in radians: eases toward the
-   * grid heading (`gridFacing`) the same way the view's yaw eases toward its
-   * facing, so the map turns in step with the scene rather than snapping.
+   * The heading the minimap's ground shows at the top, in radians: eases
+   * toward the map heading (`mapFacingOf`) the same way the view's yaw eases
+   * toward its facing, so the map turns in step with the scene rather than
+   * snapping.
    */
   private _mapYaw = 0
+  /**
+   * The heading what is painted on that ground is turned back to, in radians:
+   * the grid heading (`gridFacing`), eased at the same rate. Where the ground
+   * turns on diagonals too the two run 45 degrees apart there, so the
+   * features, the highlights and the cursor lie with the ground instead of
+   * standing upright over it (the monsters, items and the player stay
+   * upright); easing both means the lean grows and falls away smoothly
+   * instead of flipping as a turn crosses the diagonal.
+   */
+  private _uprightYaw = 0
   private freeLook = false
   private dragging = false
   private lookVel = 0
@@ -72,15 +83,25 @@ export class CameraController {
     if (immediate || this.reducedMotion) {
       this.camera.yaw = this.goalYaw
       this._mapYaw = this.mapGoal
+      this._uprightYaw = this.uprightGoal
     }
   }
 
-  /** The heading up the minimap right now, in radians; `gridFacing` once the turn settles. */
+  /** The heading up the minimap's ground right now, in radians; `mapFacingOf` once the turn settles. */
   get mapYaw(): number {
     return this._mapYaw
   }
 
+  /** The heading the minimap lays its features, highlights and cursor against right now, in radians; `gridFacing` once the turn settles. */
+  get mapUprightYaw(): number {
+    return this._uprightYaw
+  }
+
   private get mapGoal(): number {
+    return dirToYaw(mapFacingOf(this.camera.facing))
+  }
+
+  private get uprightGoal(): number {
     return dirToYaw(this.gridFacing)
   }
 
@@ -109,6 +130,7 @@ export class CameraController {
     c.facing = yawToDir(c.yaw)
     this.goalYaw = c.yaw
     this._mapYaw = this.mapGoal
+    this._uprightYaw = this.uprightGoal
   }
 
   /**
@@ -415,10 +437,22 @@ export class CameraController {
         moved = true
       }
     }
-    // the minimap turns with the same easing, a little quicker, toward the grid heading
-    const map = this.ease(this._mapYaw, this.mapGoal, dt, MAP_TURN_RATE)
+    // The minimap turns on the same easing. Where its ground stands on the
+    // facing itself it turns at the view's rate, from the view's heading to
+    // the view's goal: the same turn, so the map and the scene swing as one
+    // rather than the map arriving first. On quarters it keeps its old touch
+    // of extra speed, having a different heading to reach anyway. What is
+    // painted on the ground follows the grid heading at whichever rate, so
+    // the lean grows and falls away in step with the ground it lies on.
+    const rate = MAP_TURNS_DIAGONAL ? TURN_RATE : MAP_TURN_RATE
+    const map = this.ease(this._mapYaw, this.mapGoal, dt, rate)
     if (map !== this._mapYaw) {
       this._mapYaw = map
+      moved = true
+    }
+    const upright = this.ease(this._uprightYaw, this.uprightGoal, dt, rate)
+    if (upright !== this._uprightYaw) {
+      this._uprightYaw = upright
       moved = true
     }
     return moved
@@ -466,7 +500,7 @@ export function trailStep(scene: Scene): { dx: number; dy: number } | null {
 
 /** the view's turn easing: the fraction of the remaining turn closed per second */
 const TURN_RATE = 14
-/** the minimap's turn easing: a touch quicker than the view, so the map settles first */
+/** the minimap's turn easing under quarter turns: a touch quicker than the view, so the map settles first */
 const MAP_TURN_RATE = 18
 /** how far ahead a heading must be open before it counts as not facing a wall */
 const OPEN_DEPTH = 2
@@ -495,11 +529,31 @@ function clamp(v: number, lo: number, hi: number) {
 }
 
 /**
+ * Experiment: the minimap's ground turns to every heading, diagonals
+ * included, instead of standing on the compass quarter. Only the ground —
+ * the grid the keys are read against (`gridFacingOf`) keeps its quarters, so
+ * an aim, an examine and a fire pick cells exactly as they always did. The
+ * monsters, items and the player stay upright over the turned ground; the
+ * features, the highlights and the cursor lie with it.
+ */
+export const MAP_TURNS_DIAGONAL = true
+
+/**
  * The compass heading the grid is read against under a facing (`gridFacing`):
  * a compass facing itself, a diagonal the compass heading on its left, so
- * north-east reads as north. The minimap turns to the same heading (hud.ts
- * renderMinimap), so the map and an aim's keys agree on which way is up.
+ * north-east reads as north. An aim's keys are read against it (runner
+ * `absoluteAim`), and under quarter turns the minimap stands on it too.
  */
 export function gridFacingOf(f: Dir8): Dir8 {
   return f % 2 === 0 ? f : rotateDir(f, -1)
+}
+
+/**
+ * The heading the minimap's ground stands on under a facing: the grid's
+ * heading, or the facing itself where the map turns on diagonals too
+ * (MAP_TURNS_DIAGONAL). The keys keep reading against `gridFacingOf` either
+ * way, so on a diagonal the map leans under a cursor that does not.
+ */
+export function mapFacingOf(f: Dir8): Dir8 {
+  return MAP_TURNS_DIAGONAL ? f : gridFacingOf(f)
 }

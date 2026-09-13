@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orbrun minimap turn test bed</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #111; color: #ddd; font: 13px system-ui, sans-serif; }
+      #app { display: flex; flex-direction: column; gap: 14px; padding: 14px; }
+      .maps { display: flex; gap: 18px; flex-wrap: wrap; }
+      figure { margin: 0; }
+      figcaption { padding: 6px 0; color: #9cf; }
+      canvas { display: block; background: #000; border: 1px solid #333; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      button { background: #222; color: #ddd; border: 1px solid #444; padding: 3px 8px; }
+      button.on { background: #357; }
+      .hint { color: #888; max-width: 62em; line-height: 1.5; }
+      label { display: flex; align-items: center; gap: 8px; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="row">
+        <span>Facing</span>
+        <span id="facings"></span>
+        <button id="spin">Spin</button>
+        <label><input id="ease" type="checkbox" checked /> ease</label>
+        <label><input id="cursor" type="checkbox" checked /> target cursor</label>
+        <span class="hint" id="stats"></span>
+      </div>
+      <div class="maps">
+        <figure><figcaption>quarters (shipped): up = compass heading on the facing's left</figcaption><canvas id="quarter" width="420" height="420"></canvas></figure>
+        <figure><figcaption>every heading (MAP_TURNS_DIAGONAL): up = the facing itself</figcaption><canvas id="all8" width="420" height="420"></canvas></figure>
+      </div>
+      <div class="hint">
+        The same scene and the same renderer, drawn twice: on the left the ground snaps to the nearest compass quarter, on the
+        right it stands the way the player faces. Q / E or the buttons turn; on a compass facing the two agree, on a diagonal
+        they are 45 degrees apart. The orange target cursor is painted on the ground the way the app's features and highlights are: upright at a compass
+        facing, lying with the ground over the 45 degrees of a diagonal. The player's white mark stands in its cell instead,
+        upright whatever the ground does, as the monsters and items do in the app. It sits three cells along the quarter heading an aim's keys are read against,
+        so it lands on the same cell on both maps.
+        Served by the dev server at /testbed/minimap.html; not part of the build.
+      </div>
+    </div>
+    <script type="module" src="./minimap.ts"></script>
+  </body>
+</html>
