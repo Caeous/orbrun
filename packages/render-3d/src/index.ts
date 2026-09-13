@@ -28,7 +28,7 @@ import {
   flashOf,
   getCell,
 } from '@orbrun/scene'
-import { bodyRect, insetFootprint, sceneClassAt, type FootprintOptions } from './footprint.js'
+import { bodyRect, insetFootprint, sceneClassAt, type ClassAt, type FootprintOptions } from './footprint.js'
 
 /**
  * @orbrun/render-3d
@@ -542,6 +542,35 @@ export function gridWalk(ax: number, az: number, bx: number, bz: number, visit: 
     if (tx > 1 && tz > 1) return
     if (tx < tz) { x += sx; tx += tdx } else { z += sz; tz += tdz }
   }
+}
+
+/**
+ * The open doors that hang in a doorway, and the heading each stands at.
+ *
+ * A door is a hole in a wall run, and the run tells the door which way it
+ * faces: walls east and west of it and the doorway faces north/south (yaw 0,
+ * the heading a billboard stands at when the camera looks down -z), walls
+ * north and south and it faces east/west. A door with no run to read — a
+ * corner, an opening broken through on both axes — has no plane to stand in
+ * and is left to face the eye like any other fixture.
+ *
+ * A closed door is a solid cell and is built as one; only the open ones are
+ * here, as their cell is floor with the door tile standing on it.
+ */
+export function framedDoors(scene: Scene): Map<CellKey, number> {
+  const solid = (x: number, y: number) => {
+    const c = scene.cells.get(cellKey(x, y))
+    return !c || c.kind === 'unknown' || c.occluder
+  }
+  const out = new Map<CellKey, number>()
+  for (const c of scene.cells.values()) {
+    if (c.feature?.type !== 'door' || c.kind === 'unknown' || c.occluder) continue
+    const alongX = solid(c.x - 1, c.y) && solid(c.x + 1, c.y)
+    const alongZ = solid(c.x, c.y - 1) && solid(c.x, c.y + 1)
+    if (alongX === alongZ) continue
+    out.set(cellKey(c.x, c.y), alongX ? 0 : Math.PI / 2)
+  }
+  return out
 }
 
 /** Triangulate a horizontal polygon given as world points, keeping the polygon's own winding. */
@@ -1166,7 +1195,16 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       for (const k of this.approach.cut) this.plinths.add(k)
     }
     const fo = this.fo()
-    const classAt = sceneClassAt(scene)
+    const framed = framedDoors(scene)
+    // A framed door's cell counts as wall for the footprint rule: the wall run
+    // it is set into keeps its full thickness up to the doorway instead of
+    // stepping back by the inset on either side, so the opening is exactly the
+    // cell wide and the door's own board fills it. Without this the run recedes
+    // WALL_INSET each way and the door hangs in the middle of a gap wider than
+    // itself. What is left either side is a reveal the corridor's own cells
+    // still chamfer back, so the doorway splays out into the room it opens on.
+    const base = sceneClassAt(scene)
+    const classAt: ClassAt = (x, z) => (framed.has(cellKey(x, z)) ? 'wall' : base(x, z))
     const builders = new Map<string, GeoBuilder>()
     const decalBuilders = new Map<string, GeoBuilder>()
     const voids = new GeoBuilder()
@@ -1508,6 +1546,18 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       if (cell.featureTile === undefined || !stands(cell)) continue
       const ft = tileOf(cell.featureTile)
       if (!ft) continue
+      // An open door hangs in its doorway, not on the eye: its cell is a hole
+      // in a wall run, and a board that turns with the camera pulls the leaves
+      // and their arch off the two walls they are set into — from any angle but
+      // head-on the frame floats free of the opening. Squared to the wall it
+      // fills the gap, full height like the closed door's block, and needs no
+      // FIXTURE_BACK: it is in the wall plane, not in the way of what walks
+      // through it.
+      const yaw = framed.get(cellKey(cell.x, cell.y))
+      if (yaw !== undefined) {
+        this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], 1, 1, tint, true, 'none', true, 0, yaw)
+        continue
+      }
       // a fixture takes its light from the shade map (featMat), so its vertex colour is the tint alone;
       // it stands FIXTURE_BACK back, so whatever stands on the cell reads in front of it rather than through it
       this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], heightOfFeature(cell), 1, tint, true, 'none', true, FIXTURE_BACK)
@@ -1527,6 +1577,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     thick = ghost === 'none',
     /** How far the whole sprite stands back from the cell's middle, away from the eye (FIXTURE_BACK). */
     back = 0,
+    /** A heading to stand at instead of turning with the camera (an open door in its wall run). */
+    yaw?: number,
   ): THREE.Object3D {
     const holder = new THREE.Group()
     holder.position.set(x + 0.5, 0, y + 0.5)
@@ -1554,7 +1606,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       holder.add(mesh)
       i++
     }
-    holder.userData.billboard = true
+    if (yaw !== undefined) holder.rotation.y = yaw
+    holder.userData.billboard = yaw === undefined
     holder.userData.fixedFacing = fixed
     group.add(holder)
     return holder
