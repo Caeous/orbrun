@@ -2066,31 +2066,37 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       }
       // whatever the 2D map shows on the cell shows through walls here (II.4):
       // the sprite and its status badges, so a sleeping or fleeing monster
-      // reads the same behind a wall as in the open
-      // what the server shows right now keeps a strong ghost at any depth; remembered knowledge stays a faint hint that fades with the gap
-      const ghostKind: GhostKind = cell?.visibility === 'visible' ? 'visible' : 'remembered'
-      // A ghost of something in view wears the sprite's own colours and light.
-      // A wall's edge cuts a sprite in two — the near half lit, the far half a
-      // ghost — and a tint there is a seam down the middle of a monster: the
-      // same rat brown one side and red the other. Only what the server is not
-      // showing takes a tint, where nothing lit stands beside it to clash and
-      // the tint is all that says how it is known.
-      const gt =
-        ghostKind === 'visible'
-          ? tint
-          : b.kind === 'monster'
-            ? GHOST_TINT.remembered
-            : b.kind === 'projectile'
-              ? GHOST_TINT.projectile
-              : b.kind === 'player'
-                ? DOLL_GHOST_TINT
-                : GHOST_TINT.item
-      // the badges keep their own colours so a damage bar or a "zzz" reads the same through a wall as in the open
-      const ghostLayers = layers.map((l, i) => (i < nSprite ? l : { ...l, tint: BADGE_TINT }))
-      const g = this.addStanding(this.billboardGroup, b.x, b.y, ghostLayers, bh, ghostKind === 'visible' ? (b.scenery ? 1 : shade) : 1, gt, false, ghostKind)
-      this.ghostCount++
-      if (b.kind === 'projectile') g.position.y = PROJECTILE_LIFT
-      g.userData.kind = 'ghost'
+      // reads the same behind a wall as in the open.
+      // Scenery is the exception: a plant, a bush or a tree is a fixture, not
+      // news. The ghost pass exists so the geometry never hides something the
+      // server is telling you about, and a plant behind a wall tells you
+      // nothing — showing it only puts foliage through the masonry.
+      if (!b.scenery) {
+        // what the server shows right now keeps a strong ghost at any depth; remembered knowledge stays a faint hint that fades with the gap
+        const ghostKind: GhostKind = cell?.visibility === 'visible' ? 'visible' : 'remembered'
+        // A ghost of something in view wears the sprite's own colours and light.
+        // A wall's edge cuts a sprite in two — the near half lit, the far half a
+        // ghost — and a tint there is a seam down the middle of a monster: the
+        // same rat brown one side and red the other. Only what the server is not
+        // showing takes a tint, where nothing lit stands beside it to clash and
+        // the tint is all that says how it is known.
+        const gt =
+          ghostKind === 'visible'
+            ? tint
+            : b.kind === 'monster'
+              ? GHOST_TINT.remembered
+              : b.kind === 'projectile'
+                ? GHOST_TINT.projectile
+                : b.kind === 'player'
+                  ? DOLL_GHOST_TINT
+                  : GHOST_TINT.item
+        // the badges keep their own colours so a damage bar or a "zzz" reads the same through a wall as in the open
+        const ghostLayers = layers.map((l, i) => (i < nSprite ? l : { ...l, tint: BADGE_TINT }))
+        const g = this.addStanding(this.billboardGroup, b.x, b.y, ghostLayers, bh, ghostKind === 'visible' ? shade : 1, gt, false, ghostKind)
+        this.ghostCount++
+        if (b.kind === 'projectile') g.position.y = PROJECTILE_LIFT
+        g.userData.kind = 'ghost'
+      }
       if (b.kind === 'projectile') holder.position.y = PROJECTILE_LIFT
       if (translucent) {
         let k = 0
