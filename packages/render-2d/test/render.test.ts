@@ -249,6 +249,17 @@ describe('Render2d draw order', () => {
     r.setOptions({ upYaw: null })
     r.render()
     expect(rotates).toEqual([])
+    // a closed door is a feature standing on its cell like any other: upright, over its turned wall edging
+    const doorway = fakeCanvas()
+    const d = new Render2d({ cellSize: 10, follow: true, up: 2 })
+    d.mount(doorway.canvas)
+    d.setTiles(tiles)
+    d.resize(30, 30, 1)
+    d.setScene(sceneWith([floor(1, 1), floor(2, 1, { kind: 'door', featureTile: 310, wallOverlays: [320] })]))
+    d.setCamera(makeCamera(1, 1, Math.PI / 2))
+    d.render()
+    expect(doorway.rotates).toEqual([-Math.PI / 2, Math.PI / 2])
+    expect(doorway.draws).toEqual([100, 100, 310, 320])
     // a wide canvas turned a quarter turn shows cells above and below the player that lie
     // past its rows but within its columns
     const wide = fakeCanvas()

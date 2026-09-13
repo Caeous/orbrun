@@ -75,8 +75,8 @@ export interface Render2dOptions {
    * WebTiles lays it out. A minimap that turns with the player passes the
    * heading they face; the map turns about the cell the view is centred on
    * (the player), in whole quarter turns, so cells stay square. Sprites,
-   * glyphs, the cursor's icon and the features standing on cells (fountains,
-   * altars, stairs) stay upright over the turned ground.
+   * glyphs, the cursor's icon and the features standing on cells (doors,
+   * fountains, altars, stairs) stay upright over the turned ground.
    */
   up?: Dir8
   /**
@@ -548,9 +548,9 @@ export class Render2d implements MapRenderer {
   }
 
   /**
-   * The ground (floor, walls, doors, their overlays) turns with the map;
-   * what stands on it (a fountain, an altar, stairs) is drawn `upright` like
-   * the monsters, so it never lies on its side over a turned map.
+   * The ground (floor, walls, their overlays) turns with the map; what
+   * stands on it (a door, a fountain, an altar, stairs) is drawn `upright`
+   * like the monsters, so it never lies on its side over a turned map.
    */
   private drawTileCell(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, cell: SceneCell, sx: number, sy: number, cs: number, upright?: (sx: number, sy: number, draw: () => void) => void) {
     if (cell.kind === 'unknown') return
@@ -563,7 +563,7 @@ export class Render2d implements MapRenderer {
     if (cell.underlays) for (const o of cell.underlays) this.drawTile(ctx, o, sx, sy, cs)
     if (cell.featureTile !== undefined) {
       const feature = cell.featureTile
-      if (upright && cell.kind !== 'door') upright(sx, sy, () => this.drawTile(ctx, feature, sx, sy, cs))
+      if (upright) upright(sx, sy, () => this.drawTile(ctx, feature, sx, sy, cs))
       else this.drawTile(ctx, feature, sx, sy, cs)
     }
     if (cell.kind === 'door' && cell.wallOverlays) for (const o of cell.wallOverlays) this.drawTile(ctx, o, sx, sy, cs)

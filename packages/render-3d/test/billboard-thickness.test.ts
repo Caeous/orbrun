@@ -23,12 +23,12 @@ type Priv = {
   atlas(name: string): { mask?: Uint8Array | null }
 }
 
-/** A 16x16 atlas, opaque only on the 2x2 square at the middle of the tile's 4x4 rect. */
-function maskedRenderer(): Priv {
+/** A 16x16 atlas, opaque on the given texels; by default the 2x2 square at the middle of the tile's 4x4 rect. */
+function maskedRenderer(texels: number[][] = [[5, 9], [6, 9], [5, 10], [6, 10]]): Priv {
   const r = new Render3d() as unknown as Priv
   r.setTiles(tiles)
   const mask = new Uint8Array(16 * 16)
-  for (const [x, y] of [[5, 9], [6, 9], [5, 10], [6, 10]]) mask[y * 16 + x] = 1
+  for (const [x, y] of texels) mask[y * 16 + x] = 1
   r.atlas('main').mask = mask
   return r
 }
@@ -70,7 +70,7 @@ describe('billboard thickness', () => {
     expect(x1).toBeCloseTo(-hw + 3 * k, 6)
     expect(y1).toBeCloseTo(hw - 1 * k, 6)
     expect(y0).toBeCloseTo(hw - 3 * k, 6)
-    // rim faces sample their own texel's centre and are darker than the front
+    // rim faces wear their own texel's centre — the block is body all through — and are darker than the front
     const uv = m.geometry.getAttribute('uv') as THREE.BufferAttribute
     const col = m.geometry.getAttribute('color') as THREE.BufferAttribute
     expect(uv.getX(4)).toBeCloseTo((5 + 0.5) / 16, 6)
@@ -78,6 +78,58 @@ describe('billboard thickness', () => {
     const front = col.getX(0)
     for (let i = 4; i < col.count; i++) expect(col.getX(i)).toBeLessThan(front)
   })
+  /**
+   * Crawl draws a black line a texel thick round every sprite and paints the
+   * shadow at its feet with the same ink. Standing that up walls the sprite
+   * into its own outline, and where the block shows its lid or its floor — the
+   * top and the bottom — a line a texel thick smears into a band BB_DEPTH deep
+   * that lines up with nothing the front quad draws. Ink is drawn, never stood
+   * up: the block is the body the ink outlines.
+   */
+  it('stands up the body and leaves the art\'s ink flat', () => {
+    const r = maskedRenderer()
+    // ink the top row of the opaque square: the block is then the row below it alone
+    const mask = r.atlas('main').mask!
+    mask[9 * 16 + 5] = 2
+    mask[9 * 16 + 6] = 2
+    r.rebuildBillboards(scene())
+    const [m] = quads(r, 'monster')
+    const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute
+    // the front quad, then a rim round the 2x1 body: two faces on the long sides, one at each end
+    expect(pos.count).toBe(4 + 6 * 4)
+    let y1 = -Infinity
+    for (let i = 4; i < pos.count; i++) y1 = Math.max(y1, pos.getY(i))
+    // the ink row is not stood up, so the block's top is a texel below the sprite's
+    const k = 1 / 32
+    expect(y1).toBeCloseTo((4 / 32) / 2 - 2 * k, 6)
+  })
+  /**
+   * The uvs are inset a quarter texel so a sample never reaches the next tile
+   * in the atlas, so the quad is inset by the same. Mapped across the whole
+   * tile instead, the art is drawn a shade larger than the tile it came from
+   * and every texel boundary drifts outward from the one the rim stands on —
+   * the flat part bigger than the block behind it, worst at the edges, and a
+   * sprite a couple of texels wide comes off its own block.
+   */
+  it('draws the tile at the scale the block is built at', () => {
+    const r = maskedRenderer()
+    r.rebuildBillboards(scene())
+    const [m] = quads(r, 'monster')
+    const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute
+    const uv = m.geometry.getAttribute('uv') as THREE.BufferAttribute
+    // the quad's top-left and top-right corners, and the uvs mapped onto them
+    const [x0, x1] = [pos.getX(0), pos.getX(1)]
+    const [u0, u1] = [uv.getX(0), uv.getX(1)]
+    const k = 1 / 32
+    const hw = (RECT.w * k) / 2
+    // every texel boundary of the block falls on the same boundary of the art
+    for (let tx = 0; tx <= RECT.w; tx++) {
+      const x = -hw + tx * k
+      const u = u0 + ((x - x0) / (x1 - x0)) * (u1 - u0)
+      expect(u * 16).toBeCloseTo(RECT.sx + tx, 6)
+    }
+  })
+
   it('leaves the damage bar and badges, the ghost, and a translucent sprite flat', () => {
     const r = maskedRenderer()
     r.rebuildBillboards(scene())

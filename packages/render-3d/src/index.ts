@@ -196,8 +196,34 @@ const BLOCK_SHADE = { front: 1, top: 0.86, side: 0.7, bottom: 0.5 }
  * So do the status badges and the damage bar: they are marks on the sprite.
  */
 const BB_DEPTH = 2
+/**
+ * How far `uvFor` insets a tile's uv rect, in texels, so a sample never
+ * reaches the neighbouring tile in the atlas. Whatever is mapped with those
+ * uvs must be inset by the same, or the tile is stretched over the quad and
+ * what it draws no longer lines up with what is built on the texel grid.
+ */
+const UV_INSET = 0.25
 /** Texel alpha at or above which a texel is opaque, bbMat's alpha test (0.1) in 8 bits. */
 const OPAQUE_ALPHA = 26
+/**
+ * The art's ink: an opaque texel this dark in every channel is the black line
+ * crawl draws round a sprite and the shadow it paints at its feet, not the
+ * body of the thing.
+ */
+const INK_LEVEL = 24
+/**
+ * The ink the eye can reach from outside a sprite is peeled off before the
+ * atlas is drawn (`atlasMask`), up to this many texels deep. 2D needs that
+ * line to tell a monster from the cell it stands on; in 3D the thing stands in
+ * the world, lit and cast on the floor by its own shadow, and the line is a
+ * black band round it that gains depth with the block, stands up where the art
+ * painted a shadow at its feet, and fills the holes the art leaves. Peeling
+ * eats only ink, so a body texel stops it: the eyes, the mouth and the lines
+ * drawn inside a sprite are not reachable and stay. Deep enough for the
+ * shadow crawl paints at a monster's feet, shallow enough that a sprite drawn
+ * in ink all through keeps most of itself.
+ */
+const INK_PEEL = 4
 /** Attack cue: the weapon thrusts this far (view units) toward the centre of the view and settles back over this many seconds. */
 const VM_LIFT_S = 0.22
 const VM_LIFT = 0.07
@@ -215,6 +241,17 @@ export const WALL_INSET = 12 / 32
  */
 const FIXTURE_H = 0.9
 const STAIR_H = 0.7
+/**
+ * How far an upright feature's board stands back from the middle of its cell,
+ * in cells. Actors, items and the doll stand at the cell's middle too, and
+ * every standing sprite faces the camera, so a board left there is coplanar
+ * with whatever stands on it: the two z-fight, and a character on a staircase
+ * is sliced by its steps. A sprite's own block deep is enough to put the
+ * board behind the whole block, and it is well inside the inset wall face
+ * (WALL_INSET), so a fixture against a wall never sinks into it. 2D draws the
+ * feature first and the actor over it; this is the same order in depth.
+ */
+const FIXTURE_BACK = BB_DEPTH / 32
 const DIAGONALS: [number, number][] = [[-1, -1], [1, -1], [-1, 1], [1, 1]]
 const PLINTH_H = 3 / 32
 // Ghost pass (rendering-3d.md II.4): anything the 2D client would show on the
@@ -545,6 +582,8 @@ export class Render3d implements MapRenderer {
   /** The layout revision the level geometry stands for, and the tint it was coloured with (Part IV). */
   private builtLayout = -1
   private builtTint = ''
+  /** Which upright features were standing when the level was built (`occupiedFeatures`). */
+  private builtOccupied = ''
   /** How many ghost sprites the billboards hold: none means no depth pass. */
   private ghostCount = 0
   /** One disc under every actor and item, shared. */
@@ -1035,8 +1074,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
   // -------------------------------------------------------------------------
 
   private uvFor(rect: TileRect, a: AtlasEntry) {
-    // inset by a quarter texel to stop bleeding
-    const e = 0.25
+    const e = UV_INSET
     return {
       u0: (rect.sx + e) / a.width,
       v0: (rect.sy + e) / a.height,
@@ -1089,6 +1127,27 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       this.cursorRingMat.color.set(cur.mode === 'map' ? 0xffffff : 0xff8800)
       this.cursorMesh.position.set(cur.x + 0.5, h + 0.012, cur.y + 0.5)
     }
+  }
+
+  /**
+   * The cells with an upright feature that something stands on. A board in
+   * such a cell is a board through whoever stands there: however the two are
+   * ordered in depth, a staircase's steps and its black outline run across a
+   * monster and the pair read as one jumble. Those features lie back down on
+   * the floor instead — the answer first person already gives for the cell
+   * underfoot — and what the player sees is 2D's own order, the feature under
+   * the actor. Clouds and things in flight pass over a cell rather than stand
+   * on it, and leave its feature standing.
+   */
+  private occupiedFeatures(scene: Scene): Set<CellKey> {
+    const out = new Set<CellKey>()
+    for (const b of scene.billboards) {
+      if (b.kind === 'cloud' || b.kind === 'projectile') continue
+      const k = cellKey(b.x, b.y)
+      const c = scene.cells.get(k)
+      if (c?.stance === 'upright' && c.featureTile !== undefined) out.add(k)
+    }
+    return out
   }
 
   private rebuildLevel(scene: Scene) {
@@ -1147,11 +1206,13 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     /**
      * Whether a cell's feature stands as a billboard here. Upright features do
      * — except the one underfoot in first person, where the camera sits in the
-     * middle of the sprite: there the tile lies back down on the floor, so a
-     * staircase you are standing on still reads as one.
+     * middle of the sprite, and any a monster, an item or the doll stands on:
+     * there the tile lies back down on the floor, so a staircase you or a
+     * centaur are standing on still reads as one.
      */
     const onPlayer = (c: SceneCell) => scene.playerOnLevel && c.x === scene.player.x && c.y === scene.player.y
-    const stands = (c: SceneCell) => c.stance === 'upright' && !(!this.shot && onPlayer(c))
+    const occupied = this.occupiedFeatures(scene)
+    const stands = (c: SceneCell) => c.stance === 'upright' && !(!this.shot && onPlayer(c)) && !occupied.has(cellKey(c.x, c.y))
     const heightOfFeature = (c: SceneCell) => (c.feature?.type === 'stairs' ? STAIR_H : FIXTURE_H)
     const isSolid = (c: SceneCell | undefined) => !c || c.kind === 'unknown' || c.occluder
     const isVoidCell = (c: SceneCell | undefined) => !c || c.kind === 'unknown'
@@ -1447,8 +1508,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       if (cell.featureTile === undefined || !stands(cell)) continue
       const ft = tileOf(cell.featureTile)
       if (!ft) continue
-      // a fixture takes its light from the shade map (featMat), so its vertex colour is the tint alone
-      this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], heightOfFeature(cell), 1, tint, true)
+      // a fixture takes its light from the shade map (featMat), so its vertex colour is the tint alone;
+      // it stands FIXTURE_BACK back, so whatever stands on the cell reads in front of it rather than through it
+      this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], heightOfFeature(cell), 1, tint, true, 'none', true, FIXTURE_BACK)
     }
   }
 
@@ -1463,6 +1525,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     fixed: boolean,
     ghost: GhostKind = 'none',
     thick = ghost === 'none',
+    /** How far the whole sprite stands back from the cell's middle, away from the eye (FIXTURE_BACK). */
+    back = 0,
   ): THREE.Object3D {
     const holder = new THREE.Group()
     holder.position.set(x + 0.5, 0, y + 0.5)
@@ -1484,7 +1548,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const lt = l.tint || tint
       const geo = this.standingGeometry(l, hTex, v1, wq, hq, scale / cell, { r: shade * lt.r, g: shade * lt.g, b: shade * lt.b }, x, y, thick && !l.flat)
       const mesh = new THREE.Mesh(geo, ghost === 'visible' ? l.a.ghostVisibleMat : ghost === 'remembered' ? l.a.ghostMat : fixed ? l.a.featMat : l.a.bbMat)
-      mesh.position.set(cx, bottom + hq / 2, i * 0.002)
+      mesh.position.set(cx, bottom + hq / 2, i * 0.002 - back)
       // ghosts draw before every sprite so a nearer billboard paints over them
       mesh.renderOrder = ghost === 'none' ? 1 + i : -1
       holder.add(mesh)
@@ -1524,7 +1588,13 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const col = new Float32Array(n * 3)
     const cells = new Float32Array(n * 2)
     const hw = wq / 2, hh = hq / 2
-    pos.set([-hw, hh, 0, hw, hh, 0, -hw, -hh, 0, hw, -hh, 0])
+    // The uvs are inset a quarter texel (`uvFor`), so the quad they are mapped across is inset by the same:
+    // stretched over the whole tile instead, the art is drawn a shade larger than the tile it came from and
+    // every texel boundary drifts outward, away from the rim, which stands on the texel grid itself. On a
+    // sprite two texels wide — a tail, a chain — that drift is a quarter of its width and it comes off its block.
+    const e = UV_INSET * k
+    const qw = hw - e, qh = hh - e
+    pos.set([-qw, qh, 0, qw, qh, 0, -qw, -qh, 0, qw, -qh, 0])
     uv.set([l.uv.u0, l.uv.v0, l.uv.u1, l.uv.v0, l.uv.u0, v1, l.uv.u1, v1])
     const index = [0, 2, 1, 2, 3, 1]
     if (rim) {
@@ -1562,7 +1632,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     let t = this.rims.get(key)
     if (t !== undefined) return t
     const aw = l.a.width, ah = l.a.height
-    const opaque = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && mask[(sy + ty) * aw + sx + tx] === 1
+    /** The block is exactly what the sprite draws: `atlasMask` has already peeled the art's outline off both. */
+    const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && mask[(sy + ty) * aw + sx + tx] === 1
     const pos: number[] = []
     const uv: number[] = []
     const shade: number[] = []
@@ -1579,14 +1650,15 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const z0 = -BB_DEPTH, z1 = 0
     for (let ty = 0; ty < hTex; ty++) {
       for (let tx = 0; tx < w; tx++) {
-        if (!opaque(tx, ty)) continue
+        if (!body(tx, ty)) continue
         const x0 = tx, x1 = tx + 1
         const y1 = -ty, y0 = y1 - 1
+        // every face wears its own texel: the block is body all through, so there is no line to step off
         const u = (sx + tx + 0.5) / aw, v = (sy + ty + 0.5) / ah
-        if (!opaque(tx, ty - 1)) face([x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0], u, v, BLOCK_SHADE.top)
-        if (!opaque(tx, ty + 1)) face([x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1], u, v, BLOCK_SHADE.bottom)
-        if (!opaque(tx - 1, ty)) face([x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0], u, v, BLOCK_SHADE.side)
-        if (!opaque(tx + 1, ty)) face([x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1], u, v, BLOCK_SHADE.side)
+        if (!body(tx, ty - 1)) face([x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0], u, v, BLOCK_SHADE.top)
+        if (!body(tx, ty + 1)) face([x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1], u, v, BLOCK_SHADE.bottom)
+        if (!body(tx - 1, ty)) face([x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0], u, v, BLOCK_SHADE.side)
+        if (!body(tx + 1, ty)) face([x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1], u, v, BLOCK_SHADE.side)
       }
     }
     t = index.length ? { pos: new Float32Array(pos), uv: new Float32Array(uv), shade: new Float32Array(shade), index } : null
@@ -1594,7 +1666,14 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     return t
   }
 
-  /** The atlas's opacity, one byte per texel, read once; null where its pixels cannot be read. */
+  /**
+   * The atlas's opacity, one byte per texel, read once; null where its pixels
+   * cannot be read. Reading the pixels is also where the art's outline comes
+   * off: the ink reachable from outside a sprite is cleared (`INK_PEEL`), the
+   * cleaned image becomes what the atlas draws, and the mask is the opacity of
+   * what is left — so the sprite, its block and its silhouette are all the one
+   * shape.
+   */
   private atlasMask(a: AtlasEntry): Uint8Array | null {
     if (a.mask !== undefined) return a.mask
     a.mask = null
@@ -1611,9 +1690,11 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null
       if (!ctx) return null
       ctx.drawImage(img as CanvasImageSource, 0, 0)
-      const data = ctx.getImageData(0, 0, a.width, a.height).data
-      const mask = new Uint8Array(a.width * a.height)
-      for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3] >= OPAQUE_ALPHA ? 1 : 0
+      const image = ctx.getImageData(0, 0, a.width, a.height)
+      const mask = peelInk(image.data, a.width, a.height, OPAQUE_ALPHA)
+      ctx.putImageData(image, 0, 0)
+      a.texture.image = canvas as unknown as TexImageSource
+      a.texture.needsUpdate = true
       a.mask = mask
     } catch {
       a.mask = null
@@ -1814,9 +1895,14 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       // billboards, which is cheap, and leave the level's meshes alone
       const t = scene.level.tint
       const tintKey = `${t.r},${t.g},${t.b}`
-      if (scene.layoutRevision !== this.builtLayout || tintKey !== this.builtTint) {
+      // a step onto or off a staircase changes which features stand and which lie flat (`occupiedFeatures`),
+      // which is part of the geometry; it is as rare as a layout change, and the rest of a monster's walk still
+      // leaves the level's meshes alone
+      const occKey = [...this.occupiedFeatures(scene)].sort().join('|')
+      if (scene.layoutRevision !== this.builtLayout || tintKey !== this.builtTint || occKey !== this.builtOccupied) {
         this.builtLayout = scene.layoutRevision
         this.builtTint = tintKey
+        this.builtOccupied = occKey
         this.rebuildLevel(scene)
       }
       this.updateFields(scene)
@@ -1961,6 +2047,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const px = this.paintIcon(item)
     if (!px) return null
     const { w, h, data } = px
+    // the hands are the same art as the world's sprites, so they lose the same outline (`peelInk`):
+    // the icon is measured and extruded from what is left, and the block is the whole of what it draws
+    peelInk(data, w, h, 128)
     const opaque = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && data[(y * w + x) * 4 + 3] >= 128
     let bx0 = w, bx1 = -1, by0 = h, by1 = -1
     for (let y = 0; y < h; y++)
@@ -2061,6 +2150,44 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     r.render(this.vmScene, this.vmCam)
     r.autoClear = prevAutoClear
   }
+}
+
+/**
+ * Peel the art's outline off `data` in place: the ink the eye can reach from
+ * outside is cleared, `INK_PEEL` layers deep, and what is left comes back as
+ * opacity, one byte per texel. Peeling eats only ink, so a body texel stops
+ * it: the eyes, the mouth and the lines drawn inside a sprite are not
+ * reachable and stay. `alphaMin` is the alpha at which a texel counts as
+ * drawn at all.
+ */
+function peelInk(data: Uint8ClampedArray, w: number, h: number, alphaMin: number): Uint8Array {
+  // 0 clear, 1 body, 2 ink
+  const mask = new Uint8Array(w * h)
+  for (let i = 0; i < mask.length; i++) {
+    if (data[i * 4 + 3] < alphaMin) mask[i] = 0
+    else mask[i] = data[i * 4] < INK_LEVEL && data[i * 4 + 1] < INK_LEVEL && data[i * 4 + 2] < INK_LEVEL ? 2 : 1
+  }
+  for (let pass = 0; pass < INK_PEEL; pass++) {
+    const peeled: number[] = []
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x
+        if (mask[i] !== 2) continue
+        const reached =
+          x === 0 || y === 0 || x === w - 1 || y === h - 1 ||
+          mask[i - 1] === 0 || mask[i + 1] === 0 || mask[i - w] === 0 || mask[i + w] === 0
+        if (reached) peeled.push(i)
+      }
+    }
+    if (!peeled.length) break
+    for (const i of peeled) {
+      mask[i] = 0
+      data[i * 4 + 3] = 0
+    }
+  }
+  // what is left of the ink is inside the art — an eye, a mouth, a line between limbs — and is body like any other texel
+  for (let i = 0; i < mask.length; i++) if (mask[i] === 2) mask[i] = 1
+  return mask
 }
 
 function nowSeconds(): number {
