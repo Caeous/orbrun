@@ -1757,16 +1757,16 @@ canvas.minimap.hidden {
     0 0 3px #000,
     0 1px 2px #000;
 }
-/* a pending --more-- is a hard stop, and the pane says so where it stands: it goes
-   black as #message_pane does in WebTiles, so the stopped text is the one thing to
-   read, and takes a plain light ring around its cells until the player acknowledges
-   it. The ring is an outline, not a border, so the pane keeps its cells and nothing
+/* a pending --more-- is a hard stop, and the pane says so where it stands: it keeps
+   its shadowed text over the scene under a faint teal wash and takes a teal ring
+   around its cells, the same colour as the --more-- line itself, until the player
+   acknowledges it.
+   The ring is an outline, not a border, so the pane keeps its cells and nothing
    rewraps, and it sits flush on them: square, still, no gap, as the console it
    stands for. */
 .messages.more {
-  background: #000;
-  text-shadow: none;
-  outline: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(33, 161, 161, 0.08);
+  outline: 2px solid var(--color-3);
   outline-offset: 0;
 }
 /* the player can dismiss it: a click on the pane sends space (hud.ts). A spectator cannot, so its pane takes none */
@@ -1775,7 +1775,7 @@ canvas.minimap.hidden {
   cursor: pointer;
 }
 .messages .line.more {
-  color: var(--color-7);
+  color: var(--color-3);
 }
 
 .messages input.text {
