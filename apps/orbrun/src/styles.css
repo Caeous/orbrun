@@ -442,9 +442,6 @@ img.room-poster.up {
 .frame .item.focused .sub {
   color: var(--color-7);
 }
-.frame .item.main {
-  color: var(--color-15);
-}
 .frame .item:disabled {
   opacity: 0.4;
   cursor: default;
@@ -567,9 +564,6 @@ img.room-poster.up {
 }
 .frame.menu-frame .item.focused::after {
   opacity: 0;
-}
-.frame.menu-frame .item.main::after {
-  color: var(--color-7);
 }
 .frame.menu-frame .item.off {
   opacity: 0.45;
@@ -757,9 +751,6 @@ img.room-poster.up {
 .frame.menu-frame .item.beside:is(.focused, :focus-visible) {
   outline: 1px solid var(--gold);
   outline-offset: -1px;
-}
-.frame.menu-frame .item.main .label {
-  color: var(--gold-bright);
 }
 .frame.menu-frame .menu-actions > .line:first-child > .item.gap {
   margin-top: 0;

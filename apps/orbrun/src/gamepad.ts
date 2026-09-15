@@ -39,6 +39,8 @@ export interface GamepadOptions {
   enterR?: number
   repeatDelay?: number
   repeatInterval?: number
+  buttonRepeatDelay?: number
+  buttonRepeatInterval?: number
 }
 
 export type PadKind = 'xbox' | 'playstation' | 'nintendo' | 'steamdeck' | 'generic'
@@ -74,6 +76,11 @@ export class GamepadInput {
       enterR: opts.enterR ?? 0.3,
       repeatDelay: opts.repeatDelay ?? 350,
       repeatInterval: opts.repeatInterval ?? 90,
+      // A held button repeats at the cadence a held key does, since what it repeats is
+      // autofight, which the keyboard plays by leaning on Tab (bindings.ts `repeatsHeld`):
+      // macOS's own defaults, 25 and 6 ticks of a 60Hz clock, are 417ms then every 100ms.
+      buttonRepeatDelay: opts.buttonRepeatDelay ?? 420,
+      buttonRepeatInterval: opts.buttonRepeatInterval ?? 100,
     }
   }
 
@@ -149,7 +156,7 @@ export class GamepadInput {
       const was = this.pressed.has(b)
       if (down && !was) {
         this.pressed.set(b, now)
-        this.repeatState.set(b, { next: now + this.opts.repeatDelay, n: 0 })
+        this.repeatState.set(b, { next: now + this.opts.buttonRepeatDelay, n: 0 })
         this.emit({ type: 'press', button: b, t: now })
       } else if (!down && was) {
         const t0 = this.pressed.get(b) ?? now
@@ -160,7 +167,7 @@ export class GamepadInput {
         const r = this.repeatState.get(b)
         if (r && now >= r.next) {
           r.n++
-          r.next = now + this.opts.repeatInterval
+          r.next = now + this.opts.buttonRepeatInterval
           this.emit({ type: 'repeat', button: b, n: r.n })
         }
       }

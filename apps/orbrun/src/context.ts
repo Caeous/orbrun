@@ -393,11 +393,13 @@ function parsePrompt(state: GameState): ParsedPrompt | undefined {
     let m: RegExpExecArray | null
     HOTKEY_RE.lastIndex = 0
     while ((m = HOTKEY_RE.exec(text))) {
-      // label: the word containing the hotkey
+      // label: the word containing the hotkey, parens and all, so a chip reads
+      // exactly as the prompt does in the message log ("(S)trength"); only the
+      // punctuation separating the options goes
       const start = text.lastIndexOf(' ', m.index) + 1
       let end = text.indexOf(' ', m.index)
       if (end < 0) end = text.length
-      const label = text.slice(start, end).replace(/[(),?]/g, '')
+      const label = text.slice(start, end).replace(/[,.?!:;]+$/, '')
       options.push({ hotkey: m[1], label: label || m[1] })
     }
     if (options.length) return { text, options, yesno: false, cancel: !STAT_GAIN_RE.test(text) }

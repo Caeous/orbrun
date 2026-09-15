@@ -93,7 +93,7 @@ interface Row {
   also?: { id: string; label: string; title?: string; fn: () => void }[]
   /** a text field: the row is the prompt, X (or a click) types into it */
   input?: HTMLInputElement
-  /** the way in: lit brighter, as the game lights the choice that matters */
+  /** the way in: where the cursor starts on this screen. It reads like every other row — the cursor is the only thing that lights up. */
   main?: boolean
   /** a row that cannot be taken right now (a setting that means nothing under the others) */
   off?: boolean

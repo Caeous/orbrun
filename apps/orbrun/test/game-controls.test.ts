@@ -196,7 +196,17 @@ describe('direct game input', () => {
     expect(h.execute).not.toHaveBeenCalled()
   })
 
-  it('holding RT neither repeats autofight nor confirms the resulting target/menu', () => {
+  it('holding RT keeps autofighting, and releasing adds nothing', () => {
+    const h = harness()
+    h.event({ type: 'press', button: 'RT', t: 0 })
+    h.event({ type: 'repeat', button: 'RT', n: 1 })
+    h.event({ type: 'repeat', button: 'RT', n: 2 })
+    h.event({ type: 'release', button: 'RT', t: 1000, held: 1000 })
+    expect(h.execute).toHaveBeenCalledTimes(3)
+    for (const call of h.execute.mock.calls) expect(call[0]).toEqual({ kind: 'fight' })
+  })
+
+  it('a held RT never confirms what the swing opened: the repeat is read against the mode of the moment', () => {
     const h = harness()
     h.event({ type: 'press', button: 'RT', t: 0 })
     h.ctx.mode = 'targeting'

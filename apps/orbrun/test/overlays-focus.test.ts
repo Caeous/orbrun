@@ -313,7 +313,7 @@ describe('prompt card', () => {
     expect(host.querySelector('.prompt-card .text')).toBeNull()
     expect(host.querySelector('.prompt-card .lead')).toBeNull()
     ov.focusOp(st, ctx, 'prev')
-    expect(ov.focusInfo(ctx)?.label).toBe('eat')
+    expect(ov.focusInfo(ctx)?.label).toBe('(e)at')
     ov.focusOp(st, ctx, 'select')
     expect(sent).toEqual([{ msg: 'input', text: 'e' }])
     sent.length = 0
@@ -321,7 +321,7 @@ describe('prompt card', () => {
     // the answers are not on the face buttons: the cursor and A pick one (this ctx is the frame's, cursor on the first chip)
     expect(t.X).toBeUndefined()
     expect(t.Y).toBeUndefined()
-    expect(actionLabel(t.A!, ctx)).toBe('Drop')
+    expect(actionLabel(t.A!, ctx)).toBe('(D)rop')
     // Escape may cancel this prompt, so B stays the layer's cancel: no cancel chip, so it is Esc
     expect(t.B).toEqual({ kind: 'focus', op: 'cancel' })
     ov.focusOp(st, ctx, 'cancel')
@@ -505,9 +505,9 @@ describe('prompt card', () => {
     expect(ctx.prompt).toMatchObject({
       cancel: false,
       options: [
-        { hotkey: 'S', label: 'Strength' },
-        { hotkey: 'I', label: 'Intelligence' },
-        { hotkey: 'D', label: 'Dexterity' },
+        { hotkey: 'S', label: '(S)trength' },
+        { hotkey: 'I', label: '(I)ntelligence' },
+        { hotkey: 'D', label: '(D)exterity' },
       ],
     })
     // the level-up lines stay in the message log; the card is the prompt alone
@@ -517,7 +517,7 @@ describe('prompt card', () => {
     expect(t.X).toBeUndefined()
     expect(t.Y).toBeUndefined()
     expect(t.B).toBeUndefined()
-    expect(actionLabel(t.A!, ctx)).toBe('Strength')
+    expect(actionLabel(t.A!, ctx)).toBe('(S)trength')
     expect(Array.from(host.querySelectorAll('.prompt-card .chip')).map((c) => c.className)).toEqual(['chip focused', 'chip', 'chip'])
     // after the pad the chips wear no glyph: the cursor marks the answer
     expect(host.querySelector('.prompt-card .chip svg')).toBeNull()
@@ -529,7 +529,7 @@ describe('prompt card', () => {
     frame('keyboard')
     expect(host.querySelector('.prompt-card.kbd')).not.toBeNull()
     expect(Array.from(host.querySelectorAll('.prompt-card .chip kbd')).map((c) => c.textContent)).toEqual(['S', 'I', 'D'])
-    expect(Array.from(host.querySelectorAll('.prompt-card .chip .label')).map((c) => c.textContent)).toEqual(['Strength', 'Intelligence', 'Dexterity'])
+    expect(Array.from(host.querySelectorAll('.prompt-card .chip .label')).map((c) => c.textContent)).toEqual(['(S)trength', '(I)ntelligence', '(D)exterity'])
     expect(host.querySelector('.prompt-card .chip svg')).toBeNull()
     // back on the pad, the chips are bare again
     frame('pad')

@@ -311,11 +311,16 @@ describe('direct command controls', () => {
     expect(actionLabel({ kind: 'contextual', alt: true }, c)).toBe('a +0 mace')
     expect(contextualLabel(ctx({ under: stairsDown }), true)).toBe(NO_ACTION)
   })
-  it('RT fires once on press; neither holding nor releasing repeats it', () => {
+  it('RT fires on press and goes on fighting while held, as a held Tab does; releasing adds nothing', () => {
     const c = ctx({})
     expect(resolve({ type: 'press', button: 'RT', t: 0 }, c)).toEqual({ kind: 'fight' })
-    for (let n = 1; n <= 20; n++) expect(resolve({ type: 'repeat', button: 'RT', n }, c)).toBeNull()
+    for (let n = 1; n <= 20; n++) expect(resolve({ type: 'repeat', button: 'RT', n }, c)).toEqual({ kind: 'fight' })
     expect(resolve({ type: 'release', button: 'RT', t: 1000, held: 1000 }, c)).toBeNull()
+  })
+  it('a held RT stops where the swing led somewhere else: nothing repeats in a more, an aim or a menu', () => {
+    for (const c of [ctx({ mode: 'more' }), ctx({ mode: 'targeting' }), ctx({ mode: 'targeting', examining: true }), ctx({ mode: 'menu' })]) {
+      expect(resolve({ type: 'repeat', button: 'RT', n: 1 }, c)).toBeNull()
+    }
   })
   it('the gear, travel, actions and explore have direct buttons; either stick click examines', () => {
     const t = bindingTable(ctx({}))

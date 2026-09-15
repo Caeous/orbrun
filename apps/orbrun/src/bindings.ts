@@ -107,7 +107,7 @@ const COMMAND: Partial<Record<Button, Action>> = {
   X: hold(k('.', 'Wait one turn'), k('5', 'Rest')),
   // the gear button: the pack itself is the first row of the menu it opens
   Y: { kind: 'ui', op: 'equipment' },
-  // The right hand attacks -- a shot on RB, autofight on RT -- and the left hand does everything
+  // The right hand attacks -- a shot on RB, autofight on RT, which repeats while held (`repeatsHeld`) -- and the left hand does everything
   // that is not attacking. Explore and autofight, the tightest loop there is, stay on opposite
   // hands, so the pair you alternate constantly never shares a finger.
   LB: { kind: 'ui', op: 'commands' },
@@ -699,6 +699,18 @@ export function holdAction(button: Button, ctx: Context): Action | null {
 }
 
 /**
+ * Whether a held button sends this action again and again, as a held key does
+ * on a keyboard: autofight alone, the one action pressed in a run of dozens,
+ * where holding Tab is how the keyboard plays it. Every repeat is resolved
+ * against the context of the moment, so whatever the last swing opened -- a
+ * `--more--`, a prompt, an aim -- binds the button to something else and the
+ * run stops there rather than answering it.
+ */
+function repeatsHeld(a: Action): boolean {
+  return a.kind === 'fight'
+}
+
+/**
  * Resolve a pad event into an action, or null. `turns` says whether left and
  * right turn the camera for the direction source the event came from; the
  * two pad sources are asked apart even though one setting answers for both
@@ -707,9 +719,9 @@ export function holdAction(button: Button, ctx: Context): Action | null {
 export function resolve(ev: PadEvent, ctx: Context, turns: (source: 'dpad' | 'lstick') => boolean = () => true): Action | null {
   const t = bindingTable(ctx)
   if (ev.type === 'press' || ev.type === 'repeat') {
-    // Buttons never auto-repeat: in particular, holding RT cannot fight continuously.
-    if (ev.type === 'repeat') return null
     const a = t[ev.button]
+    // all but a handful of buttons fire once a press (`repeatsHeld`)
+    if (ev.type === 'repeat') return a && repeatsHeld(a) ? a : null
     // a tap-or-hold binding is decided on release
     if (!a || a.kind === 'hold') return null
     return a
