@@ -121,20 +121,20 @@ describe('describeCharacter', () => {
   })
 })
 
-/** The tab's title in a game: the player and their title, the species, then the site. */
+/** The tab's title in a game: the player and their title, the species, then the site after a dash. */
 describe('gameTitle', () => {
-  it('names the player, the species and the site, pipes between', () => {
+  it('names the player, the species and the site, a dash before the site', () => {
     const c = { name: 'caeo', title: 'the Chiller', species: 'Vine Stalker', xl: 12, place: 'Snake Pit', depth: 2 }
-    expect(gameTitle(c, 'Orbrun')).toBe('caeo the Chiller | Vine Stalker | Orbrun')
+    expect(gameTitle(c, 'Orbrun')).toBe('caeo the Chiller | Vine Stalker - Orbrun')
   })
 
   it('names the god after the species, as the HUD does', () => {
     const c = { name: 'caeo', title: 'the Ruinous', species: 'Deep Elf', god: 'Vehumet', xl: 12, place: 'Snake Pit', depth: 2 }
-    expect(gameTitle(c, 'Orbrun')).toBe('caeo the Ruinous | Deep Elf of Vehumet | Orbrun')
+    expect(gameTitle(c, 'Orbrun')).toBe('caeo the Ruinous | Deep Elf of Vehumet - Orbrun')
   })
 
   it('leaves out what the game has not said yet', () => {
     const c = { name: 'caeo', title: '', species: '', xl: 0, place: '', depth: 0 }
-    expect(gameTitle(c, 'Orbrun')).toBe('caeo | Orbrun')
+    expect(gameTitle(c, 'Orbrun')).toBe('caeo - Orbrun')
   })
 })

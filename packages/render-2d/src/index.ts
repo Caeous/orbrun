@@ -424,7 +424,10 @@ export class Render2d implements MapRenderer {
       if (!inView(sx, sy)) continue
       if (minimap) this.drawMinimapCell(ctx, cell, sx, sy, cs)
       else if (glyphs) upright(sx, sy, () => this.drawGlyphCell(ctx, cell, sx, sy, cs, 'fill'))
-      else this.drawTileCell(ctx, cell, sx, sy, cs, lean)
+      // a feature standing on the dungeon (a statue, a fountain, a tree) is a
+      // thing in the cell, turned back the whole way like the monsters and
+      // items; a door or a staircase is built in and lies with the ground
+      else this.drawTileCell(ctx, cell, sx, sy, cs, cell.freestanding ? upright : lean)
     }
     if (!minimap && !glyphs) {
       // things standing in cells, in scene order, then their badges
@@ -580,7 +583,9 @@ export class Render2d implements MapRenderer {
    * of it: `upright` turns it back only as far as the ground's own rule says
    * (renderer `uprightYaw`), which is all the way on a quarter-turned map.
    * The monsters, items and the player standing in cells are turned back the
-   * whole way instead, wherever the ground has got to.
+   * whole way instead, wherever the ground has got to — and so is a feature
+   * that stands on the dungeon (`SceneCell.freestanding`): a statue, a tree
+   * stands in its cell like them, where a door or a staircase is built in.
    */
   private drawTileCell(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, cell: SceneCell, sx: number, sy: number, cs: number, upright?: (sx: number, sy: number, draw: () => void) => void) {
     if (cell.kind === 'unknown') return

@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { initialState, reduce, type Monster, type ServerMessage } from '@orbrun/webtiles'
 import { loadGamedata, type Gamedata } from '@orbrun/gamedata'
 import { cellKey, emptyScene, monstersInView, type Scene } from '@orbrun/scene'
-import { buildScene, missingTileNames, CEILING_REACH, classifyFeature, stanceFor, levelPresentation, isScenery, isVegetation, isExcludedFromList, monsterGroups, monsterSort, viewmodelFor, itemTileName } from '../src/index.js'
+import { buildScene, missingTileNames, CEILING_REACH, classifyFeature, stanceFor, standsFree, levelPresentation, isScenery, isVegetation, isExcludedFromList, monsterGroups, monsterSort, viewmodelFor, itemTileName } from '../src/index.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const gdRoot = join(here, 'fixtures', 'gamedata')
@@ -120,6 +120,25 @@ describe('classification', () => {
     expect(stanceFor('DNGN_GRANITE_STATUE', undefined)).toBe('upright')
     expect(stanceFor('DNGN_TREE', undefined)).toBe('upright')
     expect(stanceFor('DNGN_MANGROVE', undefined)).toBe('upright')
+  })
+  it('tells a feature that stands on the dungeon from one built into it', () => {
+    // what stands in its cell: turned upright over a turning map
+    expect(standsFree('DNGN_GRANITE_STATUE', undefined)).toBe(true)
+    expect(standsFree('DNGN_ALTAR_ZIN', { type: 'altar' })).toBe(true)
+    expect(standsFree('DNGN_BLUE_FOUNTAIN', { type: 'fountain', kind: 'blue' })).toBe(true)
+    expect(standsFree('DNGN_TREE', undefined)).toBe(true)
+    // built in: doors and gates in any state, Zot's wall-bedded runelights,
+    // and the stairs and hatches cut into the floor
+    expect(standsFree('DNGN_CLOSED_DOOR', { type: 'door', state: 'closed' })).toBe(false)
+    expect(standsFree('DNGN_OPEN_DOOR', { type: 'door', state: 'open' })).toBe(false)
+    expect(standsFree('DNGN_GATE_RUNED_LEFT', { type: 'door', state: 'runed' })).toBe(false)
+    expect(standsFree('DNGN_RUNELIGHT', undefined)).toBe(false)
+    expect(standsFree('DNGN_STONE_STAIRS_DOWN', { type: 'stairs', dir: 'down' })).toBe(false)
+    expect(standsFree('DNGN_ESCAPE_HATCH_UP', { type: 'hatch', dir: 'up' })).toBe(false)
+    expect(standsFree('DNGN_ENTER_LAIR', { type: 'stairs', dir: 'down', branch: true })).toBe(false)
+    // what lies on the floor stays lying: it is ground, not a thing in the cell
+    expect(standsFree('DNGN_TRAP_ARROW', { type: 'trap' })).toBe(false)
+    expect(standsFree('DNGN_TRAP_SHAFT', undefined)).toBe(false)
   })
   it('treats piles of debris and other stationary rubble as scenery', () => {
     expect(isScenery('pile of debris')).toBe(true)

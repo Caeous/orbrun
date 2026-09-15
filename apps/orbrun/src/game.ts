@@ -20,8 +20,8 @@ import { Overlays } from './overlays'
 import { directionKey, isTextEntry, keydownMessage } from './keys'
 import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
 import { gamepadHints, type PadHintEvidence } from './gamepad-hints'
-import { CHAMFER, getSavedView, saveSettings, saveView, WALL_INSET, type Settings } from './servers'
-import { CAM_DISTANCES, CAM_HEIGHTS } from './settings-rows'
+import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INSET, type Settings } from './servers'
+import { CAM_DISTANCES, CAM_HEIGHTS, type SettingGroup } from './settings-rows'
 
 /** The most drawn pixels per CSS pixel the game view gets (Part IV of rendering-3d.md): the display's density, capped here. */
 const VIEW_MAX_DPR = 1
@@ -48,7 +48,8 @@ export type InputDevice = 'pad' | 'keyboard' | 'pointer'
 
 export interface GameHooks {
   settings(): Settings
-  settingsPanel(): HTMLElement
+  /** one group's settings page, with what its Back does (settings-panel.ts) */
+  settingsPanel(group: SettingGroup, back: () => void): { el: HTMLElement; rows: HTMLElement[] }
   onSystem(op: 'disconnect'): void
   gamepad: GamepadInput
   initialInput?: InputDevice
@@ -159,6 +160,9 @@ export class GameScreen {
   private lastCursor: SceneCursor | null = null
   private lastOptKey = ''
   private drag: { id: number; x: number; y: number; x0: number; y0: number; moved: boolean; button: number } | null = null
+  /** Lets go of a drag with no click behind it: the window lost focus, or the button was released out of sight. */
+  private cancelDrag: () => void = () => {}
+  private onWindowBlur: () => void = () => {}
   /** Wheel scrolled since the last camera step, in css pixels; a trackpad arrives in crumbs. */
   private wheel = 0
   /** Shift was down for the wheel crumbs counted so far: distance and height do not pool each other's scroll. */
@@ -247,7 +251,7 @@ export class GameScreen {
         this.needsRender = true
       },
       onSystemAction: (op) => this.systemAction(op),
-      settingsPanel: () => this.hooks.settingsPanel(),
+      settingsPanel: (group, back) => this.hooks.settingsPanel(group, back),
     })
     this.runner = new Runner(session, this.cam, {
       context: () => this.ctx,
@@ -315,6 +319,7 @@ export class GameScreen {
     window.removeEventListener('keydown', this.onKeyDown, true)
     window.removeEventListener('resize', this.onResize)
     document.removeEventListener('pointerdown', this.onDocPointer, true)
+    window.removeEventListener('blur', this.onWindowBlur)
     document.removeEventListener('contextmenu', this.onDocContextMenu, true)
     for (const u of this.unsub) u()
     this.grid.destroy()
@@ -1185,7 +1190,7 @@ export class GameScreen {
       if ((ev.type === 'dir' || ev.type === 'dirRepeat') && ev.dir !== null) this.hud.scrollLog(ev.dir === 0 ? -1 : ev.dir === 4 ? 1 : 0)
       return
     }
-    const a = resolve(ev, this.ctx)
+    const a = resolve(ev, this.ctx, (source) => leftRightTurns(source, this.settings()))
     if (!a) return
     this.inputActed()
     this.executePadAction(a)
@@ -1322,9 +1327,10 @@ export class GameScreen {
       if (d) {
         ev.preventDefault()
         // the key's compass meaning is taken as relative to facing; the runner rotates it back
-        // (plain: step / cursor move, Shift: run / fire that way, Ctrl: attack)
+        // (plain: step / cursor move, Shift: run / fire that way, Ctrl: attack).
+        // Left and right turn or strafe as this key set's setting says
         this.inputActed()
-        this.runner.step(d.abs as RelDir, { run: d.mod === 'shift', attack: d.mod === 'ctrl', keyboard: true })
+        this.runner.step(d.abs as RelDir, { run: d.mod === 'shift', attack: d.mod === 'ctrl', turns: leftRightTurns(d.source, this.settings()) })
         this.needsRender = true
         return
       }
@@ -1371,6 +1377,11 @@ export class GameScreen {
       }
       const d = this.drag
       if (!d || ev.pointerId !== d.id) return
+      // the button came up somewhere the page could not see it (off the window
+      // entirely, so no pointerup was ever delivered): this move, with nothing
+      // held, is that release. Drop the drag instead of orbiting a held button
+      // that is not held.
+      if (ev.pointerType === 'mouse' && ev.buttons === 0) return this.cancelDrag()
       const dx = ev.clientX - d.x
       const dy = ev.clientY - d.y
       d.x = ev.clientX
@@ -1418,6 +1429,19 @@ export class GameScreen {
       if (shift) this.raiseCamera(-d)
       else this.zoomCamera(d)
     }, { passive: false })
+    // a drag does not survive leaving the page: the button released out there
+    // sends no pointerup, and coming back should not still be a press
+    this.onWindowBlur = () => this.cancelDrag()
+    window.addEventListener('blur', this.onWindowBlur)
+    this.cancelDrag = () => {
+      const d = this.drag
+      if (!d) return
+      this.drag = null
+      if (c.hasPointerCapture(d.id)) c.releasePointerCapture(d.id)
+      if (!d.moved) return
+      this.cam.endDrag()
+      this.needsRender = true
+    }
     c.addEventListener('pointerup', end)
     c.addEventListener('pointercancel', end)
     c.addEventListener('pointerleave', (ev) => {

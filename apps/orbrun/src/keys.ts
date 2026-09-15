@@ -14,6 +14,9 @@ import { Keys, cm, type ClientMessage } from '@orbrun/webtiles'
 
 type RelDir = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 // 0 = forward, clockwise
 
+/** Which set a direction key came from (servers.ts `DirSource`). */
+export type KeyDirSource = 'vim' | 'numpad' | 'arrows'
+
 export interface DirKey {
   rel: RelDir
   mod: 'none' | 'shift' | 'ctrl'
@@ -36,24 +39,26 @@ const NUMPAD: Record<string, number> = { Numpad8: 0, Numpad9: 1, Numpad6: 2, Num
 const ARROWS: Record<string, number> = { ArrowUp: 0, ArrowRight: 2, ArrowDown: 4, ArrowLeft: 6 }
 
 /**
- * Returns the absolute direction a key means, or null if it is not a
- * direction key. Numpad keys are recognised by `code`, so NumLock does not
+ * Returns the absolute direction a key means, which of the three key sets it
+ * came from, or null if it is not a direction key. The set is reported so
+ * left and right can turn on one and strafe on another (servers.ts
+ * `leftRightTurns`). Numpad keys are recognised by `code`, so NumLock does not
  * matter, and Ctrl / Shift ride along as the attack / run variants (Ctrl wins
  * when both are held, as in `mod`'s priority). Alt / Meta combos are not
  * directions and pass through to keydownMessage untouched.
  */
-export function directionKey(e: KeyLike): { abs: number; mod: DirKey['mod'] } | null {
+export function directionKey(e: KeyLike): { abs: number; mod: DirKey['mod']; source: KeyDirSource } | null {
   if (e.altKey || e.metaKey) return null
   const mod: DirKey['mod'] = e.ctrlKey ? 'ctrl' : e.shiftKey ? 'shift' : 'none'
-  if (e.code in NUMPAD) return { abs: NUMPAD[e.code], mod }
-  if (e.key in ARROWS) return { abs: ARROWS[e.key], mod }
+  if (e.code in NUMPAD) return { abs: NUMPAD[e.code], mod, source: 'numpad' }
+  if (e.key in ARROWS) return { abs: ARROWS[e.key], mod, source: 'arrows' }
   if (e.key.length === 1) {
     const k = e.key.toLowerCase()
     if (k in VIM) {
       // A capital letter without Shift (CapsLock) is still the run variant,
       // as it would be in the official client where `K` is "run north".
       const upper = e.key !== k
-      return { abs: VIM[k], mod: e.ctrlKey ? 'ctrl' : e.shiftKey || upper ? 'shift' : 'none' }
+      return { abs: VIM[k], mod: e.ctrlKey ? 'ctrl' : e.shiftKey || upper ? 'shift' : 'none', source: 'vim' }
     }
   }
   return null

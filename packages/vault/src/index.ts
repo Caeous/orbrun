@@ -10,7 +10,7 @@ import {
   type SceneCell,
   type TileId,
 } from '@orbrun/scene'
-import { classifyFeature, isVegetation, stanceFor } from '@orbrun/scene-webtiles'
+import { classifyFeature, isVegetation, stanceFor, standsFree } from '@orbrun/scene-webtiles'
 
 /**
  * @orbrun/vault
@@ -296,6 +296,7 @@ export function vaultScene(v: Vault, names: TileNames): Scene {
         } else {
           cell.kind = 'feature'
           cell.stance = stanceFor(e.tile, f)
+          cell.freestanding = standsFree(e.tile, f) || undefined
           if (f && (f.type === 'stairs' || f.type === 'hatch')) cell.beacon = f.dir
           else if (f && (f.type === 'portal' || f.type === 'transporter')) cell.beacon = 'portal'
           cell.label = e.tile.replace(/^DNGN_/, '').toLowerCase().replace(/_/g, ' ')

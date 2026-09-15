@@ -289,6 +289,36 @@ describe('the runner pairs its x with the targeting that follows', () => {
     expect(h.r.examining('targeting')).toBe(false)
   })
 
+  it('a look on a diagonal walks the cursor straight ahead and straight back, sides unchanged', () => {
+    // facing north-east: the grid reads north as forward for every other aim
+    const h = harness(1)
+    h.r.examine()
+    h.mode(MouseMode.TARGET)
+    expect(h.ctx.examining).toBe(true)
+    // forward runs along the facing itself: north-east, up the screen
+    h.r.step(0)
+    // and back along its opposite: south-west, down the screen
+    h.r.step(4)
+    expect(h.keys().slice(-2)).toEqual(['u', 'b'])
+    // the sides and the diagonals still read against the grid: l is east, up
+    // the right-hand edge, k is north, up the left, y is north-west
+    h.r.step(2)
+    h.r.step(6)
+    h.r.step(1)
+    h.r.step(7)
+    expect(h.keys().slice(-4)).toEqual(['l', 'h', 'u', 'y'])
+  })
+
+  it('a look on a compass facing is unchanged: the facing is its own grid', () => {
+    const h = harness(2)
+    h.r.examine()
+    h.mode(MouseMode.TARGET)
+    h.r.step(0)
+    h.r.step(4)
+    h.r.step(2)
+    expect(h.keys().slice(-3)).toEqual(['l', 'h', 'j'])
+  })
+
   it('a typed x counts too: the keyboard gets the same look mode', () => {
     const h = harness(3)
     h.r.send({ msg: 'input', text: 'x' })

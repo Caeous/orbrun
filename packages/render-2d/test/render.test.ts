@@ -278,6 +278,31 @@ describe('Render2d draw order', () => {
     // cells up, off a 3-row canvas
     expect(wide.images.map((i) => `${i.dx},${i.dy}`)).toEqual(['30,10', '30,40'])
   })
+  it('stands a feature upright over the turned ground, where a door lies with it', () => {
+    // `uprightYaw` 0 leaves what is built into the ground lying with it. A
+    // statue, a fountain, a tree stands in its cell, so it is turned back the
+    // whole way, like the monsters and items standing in cells; a door — or a
+    // staircase — is built into the dungeon and turns with it.
+    const { canvas, rotates, draws } = fakeCanvas()
+    const r = new Render2d({ cellSize: 10, follow: true, up: 2, uprightYaw: 0 })
+    r.mount(canvas)
+    r.setTiles(tiles)
+    r.resize(30, 30, 1)
+    r.setScene(sceneWith([floor(1, 1), floor(2, 1, { kind: 'feature', featureTile: 330, stance: 'upright', freestanding: true })]))
+    r.setCamera(makeCamera(1, 1, Math.PI / 2))
+    r.render()
+    expect(draws).toEqual([100, 100, 330])
+    expect(rotates).toEqual([-Math.PI / 2, Math.PI / 2])
+    // a closed door, and an open one: both lie with the ground
+    rotates.length = 0
+    r.setScene(sceneWith([floor(1, 1), floor(2, 1, { kind: 'door', featureTile: 310, stance: 'upright' })]))
+    r.render()
+    expect(rotates).toEqual([-Math.PI / 2])
+    rotates.length = 0
+    r.setScene(sceneWith([floor(1, 1), floor(2, 1, { kind: 'feature', featureTile: 311, stance: 'upright' })]))
+    r.render()
+    expect(rotates).toEqual([-Math.PI / 2])
+  })
   it('renderCell bare drops the terrain and the cell marks, keeping the sprite and its badges', () => {
     const { canvas, draws, rects } = fakeCanvas()
     const r = new Render2d({ cellSize: 32, follow: false })

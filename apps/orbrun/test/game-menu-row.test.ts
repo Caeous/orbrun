@@ -29,7 +29,7 @@ function setup() {
     watching: () => false,
     onClientOverlayChange: () => {},
     onSystemAction: () => {},
-    settingsPanel: () => panel,
+    settingsPanel: () => ({ el: panel, rows: [] }),
   })
   const st = initialState()
   st.phase = 'playing' as GameState['phase']
@@ -136,12 +136,13 @@ describe('the game menu', () => {
     const before = sent.length
     ov.menuOp(st, 'select')
     expect(sent.length).toBe(before)
-    expect(host.querySelector('.settings-panel')).toBeTruthy()
+    // the settings open on their groups, each a page of its own (settings-panel.ts)
+    expect(host.querySelector('.settings-groups')).toBeTruthy()
     ov.closeClientOverlay()
     // the letter reaches the row from anywhere on the menu, and never the server
     expect(ov.menuKey(st, { key: 'o', code: 'KeyO', shiftKey: false, ctrlKey: false, altKey: false })).toBe(true)
     expect(sent.length).toBe(before)
-    expect(host.querySelector('.settings-panel')).toBeTruthy()
+    expect(host.querySelector('.settings-groups')).toBeTruthy()
   })
 
   it('opens again on the row it was left on', () => {

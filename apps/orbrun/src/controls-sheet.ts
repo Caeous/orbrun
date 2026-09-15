@@ -1,4 +1,5 @@
 import { controlSheet } from './bindings'
+import { getSettings, leftRightTurns } from './servers'
 import { h } from './dom'
 import type { PadKind } from './gamepad'
 import { glyph, glyphName } from './glyphs'
@@ -6,9 +7,12 @@ import { glyph, glyphName } from './glyphs'
 /** The gamepad reference: one table of what every button does, in the front end and the in-game menu. */
 export function controlsSheet(padKind: PadKind = 'generic'): HTMLElement {
   const table = h('table', null, h('tr', null, h('th', null, 'Input'), h('th', null, 'Action')))
+  // what left and right do is the player's, one answer per stick (settings-rows.ts)
+  const s = getSettings()
+  const lr = (source: 'dpad' | 'lstick') => (leftRightTurns(source, s) ? 'Move one step; left / right turn' : 'Move one step; left / right strafe')
   for (const [g, name, action] of [
-    ['LSTICK', 'Left stick', 'Move one step; left / right turn'],
-    ['DPAD', 'D-pad', 'Move one step; left / right turn'],
+    ['LSTICK', 'Left stick', lr('lstick')],
+    ['DPAD', 'D-pad', lr('dpad')],
     ['RSTICK', 'Right stick', 'Turn and glance'],
   ] as const) {
     table.append(h('tr', null, h('td', { class: 'key', title: name }, glyph(g, padKind)), h('td', null, action)))

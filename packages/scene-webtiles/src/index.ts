@@ -230,6 +230,24 @@ function beaconFor(feature: Feature | undefined): 'down' | 'up' | 'portal' | und
   return undefined
 }
 
+/**
+ * Whether a feature stands on the dungeon rather than being built into it.
+ *
+ * Doors and gates in every state are masonry, and so are the runelights bedded
+ * in the walls that flank Zot's gate. The stairs and hatches cut into the floor
+ * belong to the ground the same way: they are the level's own fabric, and the
+ * way down is read off the map's own turn. What is left stands in its cell like
+ * a monster or an item — statues and idols, altars, fountains, shops, portals,
+ * trees — so a renderer that turns the ground can stand it upright over the
+ * turn; what is built in turns with the ground it is part of.
+ */
+const BUILT_IN = /DOOR|GATE|RUNELIGHT|STAIR|HATCH/
+export function standsFree(name: string | undefined, feature: Feature | undefined): boolean {
+  if (stanceFor(name, feature) !== 'upright') return false
+  if (feature && (feature.type === 'door' || feature.type === 'stairs' || feature.type === 'hatch')) return false
+  return !BUILT_IN.test(name || '')
+}
+
 /** Branch presentation from the place name. */
 export function levelPresentation(place: string): { sky: 'none' | 'open' | 'dark'; tint: { r: number; g: number; b: number } } {
   const p = place.toLowerCase()
@@ -493,6 +511,7 @@ function buildCell(mc: MapCell, gd: Gamedata): SceneCell | undefined {
       const f = classifyFeature(name, glyph, mc.mf, MF)
       base.feature = f
       base.stance = stanceFor(name, f)
+      base.freestanding = standsFree(name, f) || undefined
       base.label = featureLabel(f, name)
     }
   } else {
@@ -519,6 +538,7 @@ function buildCell(mc: MapCell, gd: Gamedata): SceneCell | undefined {
       base.featureTile = bgIdx
       base.feature = f
       base.stance = stanceFor(name, f)
+      base.freestanding = standsFree(name, f) || undefined
       base.beacon = beaconFor(f)
       base.label = featureLabel(f, name)
       // trees and statues block movement but not knowledge; treat as passable for rendering.

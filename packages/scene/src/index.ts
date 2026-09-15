@@ -118,6 +118,15 @@ export interface SceneCell {
   featureTile?: TileId
   feature?: Feature
   stance?: 'upright' | 'decal'
+  /**
+   * The cell's feature stands on the dungeon — a statue, a fountain, an altar,
+   * a tree — rather than being built into it, as a door, a gate, a runelight
+   * or a staircase is. What stands is a thing in the cell like the monsters
+   * and items (and the scenery billboards), so a renderer that turns the
+   * ground stands it upright over the turn; what is built in turns with the
+   * ground it is part of.
+   */
+  freestanding?: boolean
   beacon?: 'down' | 'up' | 'portal'
   /** Ground decals under the feature tile: floor patterns and blood beneath stairs, altars and the like. */
   underlays?: TileId[]

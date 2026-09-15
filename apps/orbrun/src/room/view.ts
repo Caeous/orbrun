@@ -76,6 +76,9 @@ export class RoomView {
   private lost = false
   private destroyed = false
   private drag: { id: number; x: number; y: number; x0: number; y0: number; moved: boolean } | null = null
+  /** Lets go of a look drag: the window lost focus, or the button was released out of sight. */
+  private cancelDrag: () => void = () => {}
+  private onWindowBlur: () => void = () => {}
   /** how far the idle turn has come up to speed, 0..1 */
   private driftEnv = 0
   /** seconds since the last look; the idle turn waits for IDLE_DELAY of them, and none on opening: the room comes in already turning */
@@ -125,6 +128,7 @@ export class RoomView {
     clearTimeout(this.driftTimer)
     this.ro?.disconnect()
     document.removeEventListener('visibilitychange', this.onVisibility)
+    window.removeEventListener('blur', this.onWindowBlur)
     this.room?.destroy()
     this.room = null
     this.el.remove()
@@ -282,24 +286,38 @@ export class RoomView {
     } else this.invalidate()
   }
 
-  /** A drag on the scenery looks around, as in the game (game.ts attachPointer); a press that never moves does nothing. */
+  /**
+   * A drag on the scenery looks around, as in the game (game.ts attachPointer);
+   * a press that never moves does nothing. The scenery is the whole screen but
+   * the menus themselves: the room is seen around and behind the words, so a
+   * press anywhere it shows takes hold of it (isScenery below), not only where
+   * the canvas is left uncovered.
+   */
   private attachPointer() {
     const c = this.el
-    c.addEventListener('pointerdown', (ev) => {
+    const surface = this.host
+    surface.addEventListener('pointerdown', (ev) => {
       if (this.drag || !this.room) return
+      if (!isScenery(ev.target)) return
+      // the press is the room's: no caret dropped in the words it went through, no row taking focus
+      ev.preventDefault()
       this.interrupt()
       this.drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, moved: false }
-      c.setPointerCapture(ev.pointerId)
+      surface.setPointerCapture(ev.pointerId)
     })
-    c.addEventListener('pointermove', (ev) => {
+    surface.addEventListener('pointermove', (ev) => {
       const d = this.drag
       if (!d || ev.pointerId !== d.id) return
+      // the button came up out of the window's sight, so no pointerup arrived:
+      // this move, with nothing held, is that release (game.ts attachPointer)
+      if (ev.pointerType === 'mouse' && ev.buttons === 0) return this.cancelDrag()
       const dx = ev.clientX - d.x
       const dy = ev.clientY - d.y
       d.x = ev.clientX
       d.y = ev.clientY
       if (!d.moved && Math.hypot(ev.clientX - d.x0, ev.clientY - d.y0) < DRAG_SLOP) return
       d.moved = true
+      surface.classList.add('looking')
       const st = getSettings()
       const k = (Math.PI / Math.max(300, c.clientWidth)) * st.lookSensitivity
       this.cam.lookBy(-dx * k, (st.invertLook ? -dy : dy) * k)
@@ -310,16 +328,59 @@ export class RoomView {
       const d = this.drag
       if (!d || ev.pointerId !== d.id) return
       this.drag = null
-      if (c.hasPointerCapture(ev.pointerId)) c.releasePointerCapture(ev.pointerId)
+      surface.classList.remove('looking')
+      if (surface.hasPointerCapture(ev.pointerId)) surface.releasePointerCapture(ev.pointerId)
       if (d.moved) {
         this.cam.endDrag()
         this.invalidate()
       }
     }
-    c.addEventListener('pointerup', end)
-    c.addEventListener('pointercancel', end)
+    // leaving the page lets go: the button released out there sends no pointerup
+    this.onWindowBlur = () => this.cancelDrag()
+    window.addEventListener('blur', this.onWindowBlur)
+    this.cancelDrag = () => {
+      const d = this.drag
+      if (!d) return
+      this.drag = null
+      surface.classList.remove('looking')
+      if (surface.hasPointerCapture(d.id)) surface.releasePointerCapture(d.id)
+      if (!d.moved) return
+      this.cam.endDrag()
+      this.invalidate()
+    }
+    surface.addEventListener('pointerup', end)
+    surface.addEventListener('pointercancel', end)
   }
 
+}
+
+/**
+ * What the menus keep for themselves: the rows the cursor walks, the fields
+ * and forms, the on-screen keyboard, and anything that scrolls (a document,
+ * the roster, the settings). Everything else on the screen — the canvas, the
+ * title, the splash line, the message line, the button legend, the empty
+ * space between them — is scenery, and a press on it takes hold of the room.
+ */
+const MENU_SELECTOR = [
+  'a',
+  'button',
+  'input',
+  'textarea',
+  'select',
+  'label',
+  'table',
+  '[data-focus]',
+  '[role="button"]',
+  '.item',
+  '.osk',
+  '.doc-scroll',
+  '.roster-scroll',
+  '.settings-scroll',
+  '.bindings-sheet',
+].join(',')
+
+export function isScenery(target: EventTarget | null): boolean {
+  return target instanceof Element ? !target.closest(MENU_SELECTOR) : false
 }
 
 function radians(deg: number): number {

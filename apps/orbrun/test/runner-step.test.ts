@@ -106,7 +106,7 @@ describe('left and right in command mode', () => {
     return { r: new Runner(session, cam, hooks), sent, turns, faced, swings: () => swung, scene }
   }
 
-  it('the stick strafes: a sideways step is sent and the camera keeps its heading', () => {
+  it('an input set to strafe steps sideways: the camera keeps its heading', () => {
     const { r, sent, turns } = runner()
     r.step(2)
     r.step(6)
@@ -133,33 +133,38 @@ describe('left and right in command mode', () => {
     expect(swings()).toBe(1)
   })
 
-  it('the keyboard and the d-pad turn: nothing is sent', () => {
+  it('an input set to turn turns: nothing is sent and no time passes', () => {
     const { r, sent, turns } = runner()
-    r.step(2, { keyboard: true })
-    r.step(6, { keyboard: true })
     r.step(2, { turns: true })
     r.step(6, { turns: true })
     expect(sent).toEqual([])
-    expect(turns).toEqual([1, -1, 1, -1])
+    expect(turns).toEqual([1, -1])
   })
 
-  it('spectating: h and l still turn the view, and no step is ever ours', () => {
+  it('only left and right answer to the setting: forward, back and the diagonals always step', () => {
+    const { r, sent, turns } = runner()
+    for (const dir of [0, 1, 3, 4, 5, 7] as const) r.step(dir, { turns: true })
+    expect(turns).toEqual([])
+    expect(sent).toHaveLength(6)
+  })
+
+  it('spectating: a turn still turns the view, and no step is ever ours', () => {
     const { r, sent, turns } = runner(true)
-    r.step(2, { keyboard: true })
-    r.step(6, { keyboard: true })
+    r.step(2, { turns: true })
+    r.step(6, { turns: true })
     expect(turns).toEqual([1, -1])
-    // a direction key that is not a turn does nothing: the camera follows the
+    // a direction that is not a turn does nothing: the camera follows the
     // watched player's own movement instead of a step we never took
-    r.step(0, { keyboard: true })
-    r.step(4, { keyboard: true })
+    r.step(0, { turns: true })
+    r.step(4, { turns: true })
     expect(sent).toEqual([])
     expect(r.lastStep).toBe(null)
   })
 
-  it('Shift and Ctrl with left / right step from the keyboard too', () => {
+  it('Shift and Ctrl with left / right step even on an input that turns', () => {
     const { r, sent, turns } = runner()
-    r.step(2, { keyboard: true, run: true })
-    r.step(6, { keyboard: true, attack: true })
+    r.step(2, { turns: true, run: true })
+    r.step(6, { turns: true, attack: true })
     expect(turns).toEqual([])
     expect(sent).toHaveLength(2)
   })

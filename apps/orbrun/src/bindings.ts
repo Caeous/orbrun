@@ -27,7 +27,7 @@ export const HOLD_MS = 400
  */
 
 export type Action =
-  | { kind: 'step'; dir: RelDir; run?: boolean; attack?: boolean; turns?: boolean; held?: boolean } // turns: left / right rotate the camera (the d-pad and the left stick alike) instead of strafing; held: a repeat tick of a held direction
+  | { kind: 'step'; dir: RelDir; run?: boolean; attack?: boolean; turns?: boolean; held?: boolean } // turns: left / right rotate the camera instead of strafing, as this input's setting says; held: a repeat tick of a held direction
   | { kind: 'turn'; dir: 'left' | 'right' }
   | { kind: 'look'; dx: number; dy: number }
   /** A: act underfoot, then ahead. Overlapping interactions open a chooser. */
@@ -673,8 +673,13 @@ export function holdAction(button: Button, ctx: Context): Action | null {
   return a?.kind === 'hold' ? a.hold : null
 }
 
-/** Resolve a pad event into an action, or null. */
-export function resolve(ev: PadEvent, ctx: Context): Action | null {
+/**
+ * Resolve a pad event into an action, or null. `turns` says whether left and
+ * right turn the camera for the direction source the event came from, the
+ * d-pad and the left stick answering for themselves (servers.ts
+ * `leftRightTurns`); left alone, both turn, as they always have.
+ */
+export function resolve(ev: PadEvent, ctx: Context, turns: (source: 'dpad' | 'lstick') => boolean = () => true): Action | null {
   const t = bindingTable(ctx)
   if (ev.type === 'press' || ev.type === 'repeat') {
     // Buttons never auto-repeat: in particular, holding RT cannot fight continuously.
@@ -700,10 +705,12 @@ export function resolve(ev: PadEvent, ctx: Context): Action | null {
     }
     switch (ctx.mode) {
       case 'command': {
-        // the left stick is a d-pad: left / right turn the camera, never strafe.
+        // the left stick is a d-pad, and each says for itself whether left and
+        // right turn the camera or strafe.
         // held: one more single step per tick, paced by the runner; never a run
-        if (ev.type === 'dirRepeat') return { kind: 'step', dir: ev.dir as RelDir, turns: true, held: true }
-        return { kind: 'step', dir: ev.dir as RelDir, turns: true }
+        const t = turns(ev.source)
+        if (ev.type === 'dirRepeat') return { kind: 'step', dir: ev.dir as RelDir, turns: t, held: true }
+        return { kind: 'step', dir: ev.dir as RelDir, turns: t }
       }
       case 'menu':
         if (ev.dir === 0) return { kind: 'menu', op: 'prev' }

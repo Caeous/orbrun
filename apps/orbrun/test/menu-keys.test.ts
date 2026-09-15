@@ -33,7 +33,7 @@ function setup() {
     watching: () => false,
     onClientOverlayChange: () => {},
     onSystemAction: () => {},
-    settingsPanel: () => document.createElement('div'),
+    settingsPanel: () => ({ el: document.createElement('div'), rows: [] }),
   })
   const st = initialState()
   st.phase = 'playing' as GameState['phase']
@@ -347,7 +347,7 @@ describe('a popup on the keyboard', () => {
     const sent: ClientMessage[] = []
     const host = document.createElement('div')
     document.body.append(host)
-    const ov = new Overlays(host, { send: (m) => sent.push(m), gamedata: () => null, watching: () => true, onClientOverlayChange: () => {}, onSystemAction: () => {}, settingsPanel: () => document.createElement('div') })
+    const ov = new Overlays(host, { send: (m) => sent.push(m), gamedata: () => null, watching: () => true, onClientOverlayChange: () => {}, onSystemAction: () => {}, settingsPanel: () => ({ el: document.createElement('div'), rows: [] }) })
     const st = initialState()
     st.phase = 'watching' as GameState['phase']
     reduce(st, { msg: 'ui-push', type: 'formatted-scroller', title: 'Help', text: 'x' })

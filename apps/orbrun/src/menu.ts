@@ -1,5 +1,6 @@
 import { cm, gameLinkRows, type GameLink, type GameState, type LobbyEntry } from '@orbrun/webtiles'
 import { settingsPanel } from './settings-panel'
+import { settingGroups, type SettingGroup } from './settings-rows'
 import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
 import { FocusNav, type Focusable } from './focus'
@@ -23,7 +24,7 @@ export type Intent = { kind: 'play'; gameId: string } | { kind: 'watch'; usernam
  * shoulder buttons walk; the rest are the flows off them: the account and
  * server flows off the account row, the login and register forms.
  */
-export type View = 'home' | 'watch' | 'settings' | 'controls' | 'accounts' | 'servers' | 'login' | 'register' | 'about' | 'exit' | 'doc'
+export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'servers' | 'login' | 'register' | 'about' | 'exit' | 'doc'
 
 const SECTIONS: View[] = ['home', 'watch', 'settings']
 
@@ -137,6 +138,8 @@ export class FrontEnd {
   private splash = pickSplash()
   /** what the settings screen goes back to: the screen it was opened from */
   private settingsFrom: (() => void) | null = null
+  /** the settings group whose page is up (settings-rows.ts) */
+  private settingsGroup: SettingGroup | null = null
   /** the name last typed into the login form: a refused login keeps it, as the official form does */
   private loginName = ''
   /** the server picked for an account being added: the login and register screens are its */
@@ -405,7 +408,7 @@ export class FrontEnd {
 
   /** The next or previous section: Play (the home screen), Watch, Settings. Inert off the sections and in a flow. */
   private section(d: number) {
-    const v: View = this._view === 'controls' ? 'settings' : this._view
+    const v: View = this._view === 'controls' || this._view === 'settings-group' ? 'settings' : this._view
     const i = SECTIONS.indexOf(v)
     if (i < 0) return
     const next = SECTIONS[(i + d + SECTIONS.length) % SECTIONS.length]
@@ -423,7 +426,7 @@ export class FrontEnd {
       this.settingsFrom = null
       if (from) from()
       else this.showHome()
-    } else if (v === 'controls') this.showSettings(this.settingsFrom ?? undefined)
+    } else if (v === 'controls' || v === 'settings-group') this.showSettings(this.settingsFrom ?? undefined)
     else if (v === 'doc') {
       const from = this.docFrom
       this.docFrom = null
@@ -1129,18 +1132,35 @@ export class FrontEnd {
   // ------------------------------------------------------------------ settings
 
   /**
-   * Orbrun's settings: the one panel the pause menu opens over the game
-   * (settings-panel.ts), in its groups, under Back; Gamepad, the sheet of
-   * what every button does, is a row of its own. Left and right turn a
-   * setting (A turns it on), the message line says what it does.
+   * Orbrun's settings: a row per group (settings-rows.ts), each opening its
+   * own page under a Back, as Gamepad — the sheet of what every button does —
+   * has always opened from here. The pause menu opens the same pages over the
+   * game (overlays.ts), so a setting is in the same place in both.
    */
   showSettings(from?: () => void) {
     if (this._view === 'settings') return
-    const back = from ?? (this._view === 'watch' ? () => this.showWatch() : this._view === 'controls' ? this.settingsFrom ?? (() => this.showHome()) : () => this.showHome())
+    const back = from ?? (this._view === 'watch' ? () => this.showWatch() : this._view === 'controls' || this._view === 'settings-group' ? this.settingsFrom ?? (() => this.showHome()) : () => this.showHome())
     this.settingsFrom = back
     this.setView('settings', 'settings')
+    const rows: Row[] = [
+      { id: BACK, label: 'Back', marker: '<', hint: 'Back to where you were.', fn: () => this.back() },
+      ...settingGroups().map((g) => ({ id: 'settings:' + g.group, label: g.group, sub: g.hint, marker: '>', hint: g.hint, fn: () => this.showSettingsGroup(g.group) })),
+      { id: 'controls', label: 'Gamepad', sub: 'what every button does', marker: '?', hint: 'The pad’s buttons on each layer.', fn: () => this.showControls() },
+    ]
+    this.list({ cls: 'settings-list', title: 'Settings', lede: 'They are kept on this device.', rows })
+  }
+
+  /**
+   * One group's settings (settings-panel.ts), the page the group's row opens:
+   * its rows under a Back, as the Gamepad sheet stands under one. Left and
+   * right turn a setting (A turns it on), the message line says what it does.
+   */
+  private showSettingsGroup(group: SettingGroup) {
+    if (this._view === 'settings-group' && this.settingsGroup === group) return
+    this.settingsGroup = group
+    this.setView('settings-group', 'settings')
     // a change shows on the room behind the panel at once: the camera rows are the room's camera too
-    const panel = settingsPanel({ close: false, onchange: () => this.roomView.applySettings() })
+    const panel = settingsPanel(group, { onchange: () => this.roomView.applySettings() })
     // Only the front-end instance gets the title-screen treatment; the pause
     // menu keeps its compact in-game rows and hotkeys.
     for (const el of panel.rows) {
@@ -1149,10 +1169,7 @@ export class FrontEnd {
       // Arrow clicks stop bubbling, so share their row's cursor in capture.
       el.addEventListener('click', () => el.focus({ preventScroll: true }), { capture: true })
     }
-    const rows: Row[] = [
-      { id: BACK, label: 'Back', marker: '<', hint: 'Back to where you were.', fn: () => this.back() },
-      { id: 'controls', label: 'Gamepad', sub: 'what every button does', marker: '?', hint: 'The pad’s buttons on each layer.', fn: () => this.showControls() },
-    ]
+    const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back to the settings.', fn: () => this.back() }]
     const extra: Focusable[] = panel.rows.map((el, i) => ({
       id: el.dataset.focus ?? 'setting:' + i,
       label: (el.querySelector('.label') as HTMLElement | null)?.textContent ?? '',
@@ -1163,7 +1180,8 @@ export class FrontEnd {
     }))
     // like the roster, the settings scroll in a region of their own under the head and the rows, so the message line keeps its place
     const scroller = h('div', { class: 'settings-scroll' }, panel.el)
-    this.list({ cls: 'settings-list', title: 'Settings', lede: 'Left and right turn a setting. They are kept on this device.', rows, below: [scroller], extra })
+    const hint = settingGroups().find((g) => g.group === group)?.hint ?? ''
+    this.list({ cls: 'settings-list', title: group, lede: hint, rows, below: [scroller], extra })
   }
 
   /** The gamepad sheet (controls-sheet.ts), as the pause menu shows it; a row of the settings. */

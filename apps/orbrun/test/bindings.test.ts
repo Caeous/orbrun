@@ -234,6 +234,17 @@ describe('direct command controls', () => {
     // the left stick is a d-pad: its left / right turn the camera rather than strafe
     expect(resolve({ type: 'dir', source: 'lstick', dir: 2 }, ctx({ layer: 'info' }))).toEqual({ kind: 'step', dir: 2, turns: true })
   })
+  it('the d-pad and the left stick each say for themselves whether left and right turn', () => {
+    const c = ctx({})
+    // the settings the game reads (servers.ts leftRightTurns): here the stick strafes, the d-pad turns
+    const turns = (source: 'dpad' | 'lstick') => source === 'dpad'
+    expect(resolve({ type: 'dir', source: 'lstick', dir: 2 }, c, turns)).toEqual({ kind: 'step', dir: 2, turns: false })
+    expect(resolve({ type: 'dir', source: 'dpad', dir: 2 }, c, turns)).toEqual({ kind: 'step', dir: 2, turns: true })
+    // a held direction carries the same answer
+    expect(resolve({ type: 'dirRepeat', source: 'lstick', dir: 6, n: 1 }, c, turns)).toEqual({ kind: 'step', dir: 6, turns: false, held: true })
+    // asked nothing, both turn, as they always have
+    expect(resolve({ type: 'dir', source: 'lstick', dir: 2 }, c)).toEqual({ kind: 'step', dir: 2, turns: true })
+  })
   it('triggers are actions, never modifiers', () => {
     for (const layer of ['micro', 'macro', 'info'] as const) {
       const t = bindingTable(ctx({ layer }))

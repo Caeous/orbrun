@@ -21,7 +21,7 @@ function setup(gamedata: unknown = null) {
     watching: () => false,
     onClientOverlayChange: () => {},
     onSystemAction: () => {},
-    settingsPanel: () => document.createElement('div'),
+    settingsPanel: () => ({ el: document.createElement('div'), rows: [] }),
   })
   const st = initialState()
   st.phase = 'playing' as GameState['phase']

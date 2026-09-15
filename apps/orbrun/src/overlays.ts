@@ -22,6 +22,7 @@ import { scrapeCrt } from './crt-scrape'
 import { focusFallback, promptButtons, type Action } from './bindings'
 import { BATTLE_COMMANDS, COMMAND_GROUPS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandGroup } from './command-menu'
 import { VIEW_OPTIONS } from './servers'
+import { settingGroups, type SettingGroup } from './settings-rows'
 import { glyph, glyphName } from './glyphs'
 import type { Button, PadKind } from './gamepad'
 import { isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt } from './context'
@@ -69,7 +70,8 @@ export interface OverlayHooks {
   /** client-side overlay closed (palette, system menu) */
   onClientOverlayChange(): void
   onSystemAction(op: string): void
-  settingsPanel(): HTMLElement
+  /** one group's settings page, with what its Back does (settings-panel.ts) */
+  settingsPanel(group: SettingGroup, back: () => void): { el: HTMLElement; rows: HTMLElement[] }
 }
 
 export interface TileRef {
@@ -2698,11 +2700,50 @@ export class Overlays {
     if (at > 0) this.setClientFocus(at)
   }
 
+  /**
+   * Orbrun's settings over the game: the groups as rows, each opening its own
+   * page (settings-panel.ts) under a Back, the way the Gamepad sheet opens
+   * from the same menu. `back` is where the last Back lands, the pause menu
+   * this was reached from.
+   */
   showSettings(back?: () => void) {
-    const panel = this.hooks.settingsPanel()
-    panel.classList.add('popup', 'settings')
-    const items = Array.from(panel.querySelectorAll('.row')) as HTMLElement[]
-    this.openClientOverlay('settings', panel, items, back)
+    const again = () => this.showSettings(back)
+    const el = h('div', { class: 'popup menu game settings-groups' })
+    el.append(h('div', { class: 'title' }, 'Orbrun settings'))
+    const ol = h('ol')
+    el.append(h('div', { class: 'body' }, ol))
+    const items: HTMLElement[] = []
+    const add = (label: string, fn: () => void, sep = false) => {
+      const k = String.fromCharCode(97 + items.length)
+      const it = h('li', { class: 'row level2 selectable fg7' + (sep ? ' sep' : ''), dataset: { hotkey: k } }, h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, label))
+      it.addEventListener('click', () => {
+        this.closeClientOverlay()
+        fn()
+      })
+      items.push(it)
+      ol.append(it)
+    }
+    for (const g of settingGroups()) add(g.group, () => this.showSettingsGroup(g.group, again))
+    add('Back', () => back?.(), true)
+    el.append(h('div', { class: 'more' }, '[Esc] back'))
+    this.openClientOverlay('settings', el, items, back)
+    // where it was left: the group opened last is under the cursor again
+    const at = items.findIndex((it) => rowLabel(it) === this.settingsAt)
+    if (at > 0) this.setClientFocus(at)
+  }
+
+  /** the group opened last, so the settings come back to it */
+  private settingsAt: string | null = null
+
+  /** One group's settings (settings-panel.ts): its rows, then the Back to the group list. */
+  private showSettingsGroup(group: SettingGroup, back: () => void) {
+    this.settingsAt = group
+    const panel = this.hooks.settingsPanel(group, () => {
+      this.closeClientOverlay()
+      back()
+    })
+    panel.el.classList.add('popup', 'settings')
+    this.openClientOverlay('settings', panel.el, panel.rows, back)
   }
 
   /** A letter in the pause menu or the settings: the item with that hotkey, as in the game's menus. */

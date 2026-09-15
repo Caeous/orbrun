@@ -263,7 +263,7 @@ describe('the one Hints preference, and activation', () => {
     basics(gamepadHints())
     saveSettings({ ...defaultSettings, hints: 'off' })
     const change = vi.fn()
-    const panel = settingsPanel({ onchange: change })
+    const panel = settingsPanel('Controls', { onchange: change })
     panel.el.querySelector<HTMLElement>('[data-focus="replay-gamepad-tips"]')!.click()
     expect(gamepadHints().knows('move')).toBe(false)
     expect(getSettings().hints).toBe('adaptive')

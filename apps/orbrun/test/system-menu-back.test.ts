@@ -14,15 +14,21 @@ function setup() {
   const sent: ClientMessage[] = []
   const host = document.createElement('div')
   document.body.append(host)
+  // the settings pages are the real ones (settings-panel.ts); this stands for one
   const panel = document.createElement('div')
   panel.className = 'settings-panel'
   const settingRow = document.createElement('div')
   settingRow.className = 'row'
   panel.append(settingRow)
-  const ov = new Overlays(host, { send: (m) => sent.push(m), gamedata: () => null, watching: () => false, onClientOverlayChange: () => {}, onSystemAction: () => {}, settingsPanel: () => panel })
+  const ov = new Overlays(host, { send: (m) => sent.push(m), gamedata: () => null, watching: () => false, onClientOverlayChange: () => {}, onSystemAction: () => {}, settingsPanel: (_group, back) => {
+    settingRow.onclick = back
+    return { el: panel, rows: [settingRow] }
+  } })
   const rows = () => Array.from(host.querySelectorAll('.sysmenu li')).map((li) => li.querySelector('.label')?.textContent ?? '')
   const focused = () => (host.querySelector('.sysmenu li.focused .label') as HTMLElement | null)?.textContent ?? null
-  return { ov, host, rows, focused }
+  const groupRows = () => Array.from(host.querySelectorAll('.settings-groups li')).map((li) => li.querySelector('.label')?.textContent ?? '')
+  const groupFocused = () => (host.querySelector('.settings-groups li.focused .label') as HTMLElement | null)?.textContent ?? null
+  return { ov, host, rows, focused, groupRows, groupFocused }
 }
 
 const inGame = { spectating: false, inGame: true }
@@ -46,17 +52,35 @@ describe('the pause menu', () => {
   })
 
   it('comes back to it from the settings, on the row that opened them', () => {
-    const { ov, host, rows, focused } = setup()
+    const { ov, host, rows, focused, groupRows, groupFocused } = setup()
     ov.showSystem(inGame)
     ov.clientOverlayInput('next')
     while (focused() !== 'Settings') ov.clientOverlayInput('next')
     ov.clientOverlayInput('select')
-    expect(host.querySelector('.settings-panel')).toBeTruthy()
+    // the settings are the groups, each its own page under a Back, as the Gamepad sheet is
     expect(host.querySelector('.sysmenu')).toBeNull()
+    expect(groupRows()).toEqual(['Camera', 'Controls', 'Interface', 'Back'])
+    while (groupFocused() !== 'Camera') ov.clientOverlayInput('next')
+    ov.clientOverlayInput('select')
+    expect(host.querySelector('.settings-panel')).toBeTruthy()
+    // back out of the page: the group list again, on the group that was opened
     ov.clientOverlayInput('cancel')
     expect(host.querySelector('.settings-panel')?.isConnected).toBeFalsy()
+    expect(groupFocused()).toBe('Camera')
+    ov.clientOverlayInput('cancel')
     expect(rows()).toContain('Settings')
     expect(focused()).toBe('Settings')
+  })
+
+  it('leaves a settings page by its own Back, to the group list', () => {
+    const { ov, host, groupFocused } = setup()
+    ov.showSettings()
+    while (groupFocused() !== 'Controls') ov.clientOverlayInput('next')
+    ov.clientOverlayInput('select')
+    expect(host.querySelector('.settings-panel')).toBeTruthy()
+    // the page's own Back, the one the panel was given
+    ;(host.querySelector('.settings-panel .row') as HTMLElement).click()
+    expect(groupFocused()).toBe('Controls')
   })
 
   it('comes back to it from the controls too, and the game is reached in one more press', () => {
@@ -76,6 +100,7 @@ describe('the pause menu', () => {
     ov.showSettings()
     ov.clientOverlayInput('cancel')
     expect(host.querySelector('.sysmenu')).toBeNull()
+    expect(host.querySelector('.settings-groups')?.isConnected).toBeFalsy()
     expect(host.querySelector('.settings-panel')?.isConnected).toBeFalsy()
   })
 })

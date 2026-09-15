@@ -38,8 +38,10 @@ let retries = 0
 const RETRY_MS = 1000
 const RETRY_MAX_MS = 30_000
 document.documentElement.style.setProperty('--ui-scale', String(getSettings().uiScale))
-/** The tab's title as the page loaded: "Orbrun" from the site title's first words, restored once out of a game. */
-const BASE_TITLE = document.title.split(/\s[—–-]\s/)[0] || 'Orbrun'
+/** The tab's title as the page loaded, restored once out of a game. */
+const BASE_TITLE = document.title || 'Orbrun'
+/** What a character's tab title ends in: the site title's first words, so a game in progress reads as "caeo the Chiller | Vine Stalker - Orbrun". */
+const SHORT_TITLE = BASE_TITLE.split(/\s[—–-]\s/)[0] || 'Orbrun'
 
 /**
  * The tab says whose game this is (playing or watching), from the game's
@@ -49,7 +51,7 @@ const BASE_TITLE = document.title.split(/\s[—–-]\s/)[0] || 'Orbrun'
 function updateTitle(s: Session | null) {
   const p = s?.state.player
   const t = p?.name && s && s.state.phase !== 'lobby' && s.state.phase !== 'ended'
-    ? gameTitle({ name: p.name, title: p.title || '', species: p.species_display_name || p.species || '', god: p.god || '', xl: p.xl, place: p.place || '', depth: p.depth || 0 }, BASE_TITLE)
+    ? gameTitle({ name: p.name, title: p.title || '', species: p.species_display_name || p.species || '', god: p.god || '', xl: p.xl, place: p.place || '', depth: p.depth || 0 }, SHORT_TITLE)
     : BASE_TITLE
   if (document.title !== t) document.title = t
 }
@@ -421,7 +423,7 @@ function startGame() {
 function makeGame(GameScreen: typeof import('./game').GameScreen, s: Session): GameScreen {
   return new GameScreen(app, s, {
     settings: getSettings,
-    settingsPanel: () => settingsPanel({ onchange: () => game?.applySettings() }).el,
+    settingsPanel: (group, back) => settingsPanel(group, { onchange: () => game?.applySettings(), back }),
     gamepad,
     initialInput: lastInput,
     onSystem() {

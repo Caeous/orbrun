@@ -242,15 +242,17 @@ export function describePlace(c: LastCharacter): string {
 }
 
 /**
- * "caeo the Chiller | Vine Stalker of Vehumet | Orbrun": the browser tab's
+ * "caeo the Chiller | Vine Stalker of Vehumet - Orbrun": the browser tab's
  * title while in a game, so a tab (or a window in a taskbar) says whose game
- * it is. The species and god read as the HUD's second line does.
+ * it is. The species and god read as the HUD's second line does, and the site
+ * follows a dash, as the page's own title has it.
  * `base` is the page's own title.
  */
 export function gameTitle(c: LastCharacter, base: string): string {
   const who = c.name + (c.title ? ((c.title[0] === ',' ? '' : ' ') + c.title) : '')
   const what = c.species + (c.god ? (c.species ? ' of ' : 'of ') + c.god : '')
-  return [who, what, base].filter(Boolean).join(' | ')
+  const game = [who, what].filter(Boolean).join(' | ')
+  return [game, base].filter(Boolean).join(' - ')
 }
 
 const MORGUE_KEY = 'orbrun.morgue'
@@ -334,6 +336,36 @@ export function morgueUrlFor(server: ServerInfo, dump: string): string | null {
  */
 type Nearby = 'list' | 'pips'
 
+/**
+ * What left and right do for one family of direction inputs: turn the camera
+ * on the spot, or strafe — one step sideways, heading kept. Forward, back and
+ * the diagonals are the same either way (runner.ts `step`).
+ */
+export type LeftRight = 'turn' | 'strafe'
+
+/**
+ * The families that choose for themselves: the three keyboard sets keys.ts
+ * `directionKey` tells apart, and the pad's two direction sources
+ * (gamepad.ts `PadEvent`). They are kept separate because one player's hands
+ * want different things of each — the numpad walking the grid while the
+ * arrows steer, a stick that strafes under a d-pad that turns.
+ */
+export type DirSource = 'arrows' | 'vim' | 'numpad' | 'dpad' | 'lstick'
+
+/** The setting each family reads. */
+export const LEFT_RIGHT_KEYS: Record<DirSource, keyof Settings> = {
+  arrows: 'leftRightArrows',
+  vim: 'leftRightVim',
+  numpad: 'leftRightNumpad',
+  dpad: 'leftRightDpad',
+  lstick: 'leftRightStick',
+}
+
+/** Whether left and right turn (rather than strafe) for `source`. */
+export function leftRightTurns(source: DirSource, s: Settings = getSettings()): boolean {
+  return s[LEFT_RIGHT_KEYS[source]] === 'turn'
+}
+
 export interface Settings {
   renderer: '3d' | '2d'
   /** Where the 3D camera stands: in the eyes, or on a cell behind the player (rendering-3d.md II.11). */
@@ -361,6 +393,16 @@ export interface Settings {
   minimapCell: number
   /** The gamepad prompts in the corner of the view (gamepad-hints.ts `HintMode`). */
   hints: HintMode
+  /** Arrow keys: what left and right do. */
+  leftRightArrows: LeftRight
+  /** Vim keys (h and l): what left and right do. */
+  leftRightVim: LeftRight
+  /** Numpad (4 and 6): what left and right do. */
+  leftRightNumpad: LeftRight
+  /** D-pad: what left and right do. */
+  leftRightDpad: LeftRight
+  /** Left stick: what left and right do. */
+  leftRightStick: LeftRight
 }
 
 const HINT_MODES: readonly string[] = ['adaptive', 'contextual', 'off']
@@ -419,6 +461,11 @@ export const defaultSettings: Settings = {
   minimapTiles: 19,
   minimapCell: 20,
   hints: 'adaptive',
+  leftRightArrows: 'turn',
+  leftRightVim: 'turn',
+  leftRightNumpad: 'turn',
+  leftRightDpad: 'turn',
+  leftRightStick: 'turn',
 }
 
 export function getSettings(): Settings {
@@ -433,8 +480,27 @@ export function getSettings(): Settings {
   return s
 }
 
+/**
+ * Only what the player changed is written down: a setting still at its
+ * default is left out of storage, so a default we move later moves for
+ * everyone who never touched that row. Settings the build has taken away
+ * (`VIEW_OPTIONS`) keep whatever a saved session said — `getSettings` reads
+ * them back as 3D first person, but the choice is not erased on the next save.
+ */
 export function saveSettings(s: Settings) {
-  save(SETTINGS_KEY, s)
+  const saved = load<Partial<Settings>>(SETTINGS_KEY, {})
+  const out: Partial<Settings> = {}
+  for (const key of Object.keys(defaultSettings) as (keyof Settings)[]) {
+    if (s[key] !== defaultSettings[key]) (out as Record<string, unknown>)[key] = s[key]
+  }
+  if (!VIEW_OPTIONS) {
+    for (const key of ['renderer', 'view'] as const) {
+      const was = saved[key]
+      if (was !== undefined && was !== defaultSettings[key]) (out as Record<string, unknown>)[key] = was
+      else delete out[key]
+    }
+  }
+  save(SETTINGS_KEY, out)
 }
 
 /** Where the camera pointed when the game was last left: yaw and pitch in radians. */

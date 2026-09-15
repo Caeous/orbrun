@@ -1,4 +1,4 @@
-import { getSettings, saveSettings, VIEW_OPTIONS, type Settings } from './servers'
+import { getSettings, saveSettings, VIEW_OPTIONS, type LeftRight, type Settings } from './servers'
 
 /**
  * Orbrun's own settings, one row each: what it is called, which key it sets,
@@ -13,9 +13,18 @@ import { getSettings, saveSettings, VIEW_OPTIONS, type Settings } from './server
  * `rowKey`, `rowHint` and `rowOff` resolve those; consumers redraw every row
  * after any change, since one row's change can move another's.
  */
-/** The groups the settings screen is laid out in, in order (the plan's "one settings destination"). */
-const SETTING_GROUPS = ['Display', 'Camera', 'Controls', 'Interface'] as const
-export type SettingGroup = (typeof SETTING_GROUPS)[number]
+/**
+ * The groups the settings screen is laid out in, in order (the plan's "one
+ * settings destination"), each with the line it prints under its tab: the
+ * settings panel draws one group at a time, the way a game's options screen
+ * has a tab per kind of setting, so no group is ever a scroll long.
+ */
+const SETTING_GROUPS = [
+  ['Camera', 'Where the view stands, how wide it opens and what it draws.'],
+  ['Controls', 'What the keys, the d-pad and the sticks do.'],
+  ['Interface', 'What the HUD shows around the view, and how big it is.'],
+] as const
+export type SettingGroup = (typeof SETTING_GROUPS)[number][0]
 
 export interface SettingRow<K extends keyof Settings = keyof Settings> {
   label: string
@@ -120,13 +129,32 @@ export const MINIMAP_CELLS: readonly number[] = [8, 10, 12, 14, 16, 20, 24, 28, 
  */
 const VIEW_MODE_ROWS = ['View', 'Camera', 'Camera distance']
 
+
+/**
+ * What left and right do, one row per input family (servers.ts `DirSource`).
+ * They are separate rows because the choice is a matter of which hand is on
+ * which input: a player may want the numpad to walk the grid as console Crawl
+ * does while the arrows steer the camera, or a stick that strafes under a
+ * d-pad that turns. Every family turns by default, which is what Orbrun has
+ * always done. Forward, back and the diagonals are untouched: they step, and
+ * only forward turns the view onto the way it went.
+ */
+const LEFT_RIGHT_VALUES: readonly LeftRight[] = ['turn', 'strafe']
+const leftRightRows: SettingRow[] = ([
+  // a key set always steps under Shift (a run) or Ctrl (an attack), whatever it does plain; the pad has no such modifier
+  ['Arrow keys', 'leftRightArrows', 'Left and right on the arrow keys', true],
+  ['Vim keys', 'leftRightVim', 'h and l', true],
+  ['Numpad', 'leftRightNumpad', '4 and 6 on the numpad', true],
+  ['D-pad', 'leftRightDpad', 'Left and right on the d-pad', false],
+  ['Left stick', 'leftRightStick', 'The left stick pushed left or right', false],
+] as const).map(([label, key, what, keys]) =>
+  row<typeof key>('Controls', label, key, LEFT_RIGHT_VALUES, `${what}: turn the camera on the spot, or strafe one step sideways keeping the heading.${keys ? ' Shift (run) and Ctrl (attack) always step.' : ''}`, (v) => (v === 'turn' ? 'Turn' : 'Strafe')),
+)
+
 /** Every row, whatever is offered; `SETTING_ROWS` is what the player sees. */
 export const ALL_SETTING_ROWS: readonly SettingRow[] = [
-  // Display
-  row('Display', 'View', 'renderer', ['3d', '2d'], 'In the dungeon in 3D, or from above as the console shows it.', (v) => (v === '3d' ? '3D' : 'Top down (2D)')),
-  row('Display', 'Hands', 'viewmodel', [true, false], 'The wielded weapon and off-hand item, drawn in view.', (v) => (v ? 'Weapon and shield shown' : 'Hidden')),
-  row('Display', 'UI scale', 'uiScale', [1, 1.15, 1.3, 1.5, 0.85], 'The size of the HUD, menus and messages.', (v) => Math.round(v * 100) + '%'),
   // Camera
+  row('Camera', 'View', 'renderer', ['3d', '2d'], 'In the dungeon in 3D, or from above as the console shows it.', (v) => (v === '3d' ? '3D' : 'Top down (2D)')),
   row('Camera', 'Camera', 'view', ['first', 'third'], 'From the eyes of the @, or from a cell behind them with the @ in view.', (v) => (v === 'first' ? 'First person' : 'Third person')),
   row(
     'Camera',
@@ -147,11 +175,14 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   ),
   row('Camera', 'Camera angle', 'restPitch', CAM_ANGLES, 'Where the view points at rest: level with the horizon, or tipped down toward the floor ahead.', (v) => ((v as number) === 0 ? 'Level' : Math.abs(v as number) + '° ' + ((v as number) < 0 ? 'down' : 'up'))),
   row('Camera', 'Field of view', 'fov', [60, 70, 75, 85, 95], 'How wide the first-person view opens.', (v) => v + '°'),
+  row('Camera', 'Hands', 'viewmodel', [true, false], 'The wielded weapon and off-hand item, drawn in view.', (v) => (v ? 'Weapon and shield shown' : 'Hidden')),
   // Controls
+  ...leftRightRows,
   row('Controls', 'Look sensitivity', 'lookSensitivity', [1, 1.3, 1.6, 0.7], 'How far the right stick turns you.', (v) => Math.round(v * 100) + '%'),
   row('Controls', 'Invert look', 'invertLook', [false, true], 'Push the right stick up to look down.', (v) => (v ? 'On' : 'Off')),
   row('Controls', 'Hints', 'hints', ['adaptive', 'contextual', 'off'], 'Gamepad prompts in the corner of the view for what is in front of you. Adaptive also teaches the controls until used, across all runs. Contextual only skips the teaching. Off hides gameplay hints; menu and targeting controls remain.', (v) => ({ adaptive: 'Adaptive', contextual: 'Contextual only', off: 'Off' })[v]),
   // Interface
+  row('Interface', 'UI scale', 'uiScale', [1, 1.15, 1.3, 1.5, 0.85], 'The size of the HUD, menus and messages.', (v) => Math.round(v * 100) + '%'),
   row(
     'Interface',
     'Nearby',
@@ -165,9 +196,9 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   row('Interface', 'Minimap tile size', 'minimapCell', MINIMAP_CELLS, 'How big each minimap tile is drawn: the same tiles, larger, until the map runs out of room over the view.', (v) => v + 'px'),
 ]
 
-/** The offered rows by group, in group order, groups with no row left out. */
-export function settingGroups(rows: readonly SettingRow[] = SETTING_ROWS): { group: SettingGroup; rows: SettingRow[] }[] {
-  return SETTING_GROUPS.map((group) => ({ group, rows: rows.filter((r) => r.group === group) })).filter((g) => g.rows.length)
+/** The offered rows by group, in group order, each with its tab's line; groups with no row left out. */
+export function settingGroups(rows: readonly SettingRow[] = SETTING_ROWS): { group: SettingGroup; hint: string; rows: SettingRow[] }[] {
+  return SETTING_GROUPS.map(([group, hint]) => ({ group, hint, rows: rows.filter((r) => r.group === group) })).filter((g) => g.rows.length)
 }
 
 export const SETTING_ROWS: readonly SettingRow[] = VIEW_OPTIONS ? ALL_SETTING_ROWS : ALL_SETTING_ROWS.filter((r) => !VIEW_MODE_ROWS.includes(r.label))

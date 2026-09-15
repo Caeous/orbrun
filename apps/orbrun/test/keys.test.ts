@@ -337,19 +337,25 @@ describe('whichOf', () => {
 
 describe('directionKey', () => {
   it('reads numpad by code with any of none / shift / ctrl', () => {
-    expect(directionKey(ev('8', 'Numpad8'))).toEqual({ abs: 0, mod: 'none' })
-    expect(directionKey(ev('ArrowUp', 'Numpad8'))).toEqual({ abs: 0, mod: 'none' })
-    expect(directionKey(ev('8', 'Numpad8', { shiftKey: true }))).toEqual({ abs: 0, mod: 'shift' })
-    expect(directionKey(ev('8', 'Numpad8', { ctrlKey: true }))).toEqual({ abs: 0, mod: 'ctrl' })
-    expect(directionKey(ev('3', 'Numpad3', { ctrlKey: true }))).toEqual({ abs: 3, mod: 'ctrl' })
+    expect(directionKey(ev('8', 'Numpad8'))).toEqual({ abs: 0, mod: 'none', source: 'numpad' })
+    expect(directionKey(ev('ArrowUp', 'Numpad8'))).toEqual({ abs: 0, mod: 'none', source: 'numpad' })
+    expect(directionKey(ev('8', 'Numpad8', { shiftKey: true }))).toEqual({ abs: 0, mod: 'shift', source: 'numpad' })
+    expect(directionKey(ev('8', 'Numpad8', { ctrlKey: true }))).toEqual({ abs: 0, mod: 'ctrl', source: 'numpad' })
+    expect(directionKey(ev('3', 'Numpad3', { ctrlKey: true }))).toEqual({ abs: 3, mod: 'ctrl', source: 'numpad' })
     expect(directionKey(ev('5', 'Numpad5'))).toBeNull()
   })
   it('reads arrows and vim keys', () => {
-    expect(directionKey(ev('ArrowLeft', 'ArrowLeft', { ctrlKey: true }))).toEqual({ abs: 6, mod: 'ctrl' })
-    expect(directionKey(ev('y', 'KeyY'))).toEqual({ abs: 7, mod: 'none' })
-    expect(directionKey(ev('J', 'KeyJ', { shiftKey: true }))).toEqual({ abs: 4, mod: 'shift' })
-    expect(directionKey(ev('J', 'KeyJ'))).toEqual({ abs: 4, mod: 'shift' }) // CapsLock still runs
-    expect(directionKey(ev('k', 'KeyK', { ctrlKey: true }))).toEqual({ abs: 0, mod: 'ctrl' })
+    expect(directionKey(ev('ArrowLeft', 'ArrowLeft', { ctrlKey: true }))).toEqual({ abs: 6, mod: 'ctrl', source: 'arrows' })
+    expect(directionKey(ev('y', 'KeyY'))).toEqual({ abs: 7, mod: 'none', source: 'vim' })
+    expect(directionKey(ev('J', 'KeyJ', { shiftKey: true }))).toEqual({ abs: 4, mod: 'shift', source: 'vim' })
+    expect(directionKey(ev('J', 'KeyJ'))).toEqual({ abs: 4, mod: 'shift', source: 'vim' }) // CapsLock still runs
+    expect(directionKey(ev('k', 'KeyK', { ctrlKey: true }))).toEqual({ abs: 0, mod: 'ctrl', source: 'vim' })
+  })
+  it('tells the three key sets apart, so each can turn or strafe on its own', () => {
+    // the arrow on a numpad key is the numpad's: it is read by `code`, NumLock or not
+    expect(directionKey(ev('ArrowLeft', 'Numpad4'))?.source).toBe('numpad')
+    expect(directionKey(ev('ArrowLeft', 'ArrowLeft'))?.source).toBe('arrows')
+    expect(directionKey(ev('h', 'KeyH'))?.source).toBe('vim')
   })
   it('ignores Alt / Meta combos and non-direction keys', () => {
     expect(directionKey(ev('k', 'KeyK', { altKey: true }))).toBeNull()

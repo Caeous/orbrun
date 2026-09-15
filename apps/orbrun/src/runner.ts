@@ -309,24 +309,36 @@ export class Runner {
    * Absolute direction for a key in an aim: read against the grid the
    * player sees, one axis per key (camera `gridFacing`), so a diagonal
    * facing has `k` up its left-hand edge and `l` up its right.
+   *
+   * In a look (`x`), forward and back are the exception: they run along the
+   * facing itself, not the grid. On a diagonal the grid's north is the axis
+   * beside the view, so forward used to walk the cursor up the left edge and
+   * back down the right; now, facing north-east, forward keeps it stepping
+   * north-east and back south-west, straight up and down the screen. The
+   * cursor stays on the ray it set out along, so the view holds its heading
+   * instead of swinging off it. The sides and the diagonals are untouched:
+   * they keep reading against the grid, `l` still up the right-hand edge.
    */
-  absoluteAim(rel: RelDir): Dir8 {
+  absoluteAim(rel: RelDir, opts: { look?: boolean } = {}): Dir8 {
+    if (opts.look && (rel === 0 || rel === 4)) return rotateDir(this.cam.facing, rel)
     return rotateDir(this.cam.gridFacing, rel)
   }
 
   /**
    * Movement in command mode: forward turns the camera; the diagonals and
-   * back strafe. A keyboard, d-pad or left-stick left / right (`opts.turns`)
-   * is a turn. Every step is remembered (`lastStep`), and
+   * back strafe. Left and right turn the camera or strafe as `opts.turns`
+   * says, which the caller reads off the setting for the input the player
+   * used (servers.ts `leftRightTurns`). Every step is remembered (`lastStep`), and
    * only one that aimed the camera (forward, or an attack) snaps the view onto
    * the vector the feet took once the server echoes the new position (game.ts
    * onScene); j, y, u, b and n strafe and keep the heading.
    * In targeting the same key moves the cursor (plain), fires that way
    * (Shift: the uppercase letter is CMD_TARGET_DIR_*) or sends the Ctrl
-   * variant, read against the grid the player sees (`absoluteAim`). The
+   * variant, read against the grid the player sees (`absoluteAim`), whose
+   * forward and back run along the facing itself in a look. The
    * level map is north-up: absolute.
    */
-  step(rel: RelDir, opts: { run?: boolean; attack?: boolean; keyboard?: boolean; turns?: boolean } = {}) {
+  step(rel: RelDir, opts: { run?: boolean; attack?: boolean; turns?: boolean } = {}) {
     const ctx = this.hooks.context()
     if (ctx.mode !== 'command' && ctx.mode !== 'targeting' && ctx.mode !== 'levelmap' && ctx.mode !== 'prompt') return
     if (ctx.mode === 'targeting' || ctx.mode === 'prompt') {
@@ -334,7 +346,7 @@ export class Runner {
       // fire's cursor releases the held view: from here the cursor's walk
       // turns the view as any aim's does (game.ts `faceCursor`)
       if (ctx.mode === 'targeting') this.hold = { state: 'idle', t: 0 }
-      this.send(dirMessage(this.absoluteAim(rel), opts))
+      this.send(dirMessage(this.absoluteAim(rel, { look: ctx.examining }), opts))
       return
     }
     if (ctx.mode === 'levelmap') {
@@ -342,13 +354,14 @@ export class Runner {
       this.send(dirMessage(rel, opts))
       return
     }
-    // keyboard, d-pad and left-stick left / right are pure turns (h / l,
-    // input.md); a pad step without `turns` (none today) would strafe
-    if ((rel === 2 || rel === 6) && (opts.keyboard || opts.turns) && !opts.attack && !opts.run) {
+    // left / right on an input set to turn is a pure turn: nothing is sent and
+    // no time passes. Set to strafe, it falls through and steps sideways.
+    // A run or an attack is always a step, whatever the setting says.
+    if ((rel === 2 || rel === 6) && opts.turns && !opts.attack && !opts.run) {
       this.cam.turn(rel === 2 ? 1 : -1)
       return
     }
-    // spectating: h / l above still turn the view, but nothing else is a step
+    // spectating: a turn above still turns the view, but nothing else is a step
     // of ours. No feet are ours here, so the camera follows the player being
     // watched wherever they go (game.ts onScene, faceAfterMove).
     if (this.session.watching) return

@@ -17,7 +17,7 @@ function setup() {
   const ov = new Overlays(host, {
     send: (m) => sent.push(m), gamedata: () => null, watching: () => false,
     onClientOverlayChange: changed, onSystemAction: () => {},
-    settingsPanel: () => document.createElement('div'),
+    settingsPanel: () => ({ el: document.createElement('div'), rows: [] }),
   })
   const run = vi.fn<(a: Action) => void>()
   const focused = () => host.querySelector('.command-menu .focused .label')?.textContent

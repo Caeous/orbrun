@@ -1010,6 +1010,7 @@ describe('the front end: settings and marks', () => {
   it('uses the shared front-end controls without changing the in-game settings panel', () => {
     const { screen } = make()
     pick(screen, 'Settings')
+    pick(screen, 'Camera')
     expect(screen.root.querySelector('.menu-actions [data-focus="back"]')).not.toBeNull()
     const row = screen.root.querySelector<HTMLElement>('[data-focus="setting:Hands"]')!
     expect(row.classList.contains('item')).toBe(true)
@@ -1019,7 +1020,7 @@ describe('the front end: settings and marks', () => {
     expect(row.querySelector('.val')?.textContent).toBe('Hidden')
     // The same setting changes once, not once for the arrow and again for the row.
     expect(JSON.parse(localStorage.getItem('orbrun.settings')!).viewmodel).toBe(false)
-    const inGame = settingsPanel()
+    const inGame = settingsPanel('Camera')
     expect(inGame.el.querySelector('.front-setting, .item, .marker')).toBeNull()
     expect(inGame.el.querySelector('.hotkey')).not.toBeNull()
   })
@@ -1028,9 +1029,11 @@ describe('the front end: settings and marks', () => {
     const { screen } = make()
     pick(screen, 'Settings')
     expect(screen.view).toBe('settings')
-    // Controls first, then the panel the pause menu shares, in its groups
-    expect(focused(screen)).toBe('controls')
-    expect(Array.from(screen.root.querySelectorAll('li.group')).map((g) => g.textContent)).toEqual(['Display', 'Camera', 'Controls', 'Interface'])
+    // a row per group, each its own page, then the Gamepad sheet
+    expect(labels(screen)).toEqual(['Back', 'Camera', 'Controls', 'Interface', 'Gamepad'])
+    expect(focused(screen)).toBe('settings:Camera')
+    pick(screen, 'Camera')
+    expect(screen.view).toBe('settings-group')
     const value = (label: string) => (Array.from(screen.root.querySelectorAll('li.row')).find((r) => r.querySelector('.label')?.textContent === label)?.querySelector('.val') as HTMLElement).textContent
     expect(value('Field of view')).toBe('85°')
     while (focused(screen) !== 'setting:Field of view') press(screen, 'j')
@@ -1038,8 +1041,13 @@ describe('the front end: settings and marks', () => {
     expect(value('Field of view')).toBe('95°')
     press(screen, 'h')
     expect(value('Field of view')).toBe('85°')
-    expect(JSON.parse(localStorage.getItem('orbrun.settings')!).fov).toBe(85)
+    // back at the default, so it is not written down at all: a default we move later moves for this player too
+    expect('fov' in JSON.parse(localStorage.getItem('orbrun.settings')!)).toBe(false)
     expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('How wide the first-person view opens.')
+    // the page's Back is the settings again, on the group it was opened from
+    pad(screen, 'B')
+    expect(screen.view).toBe('settings')
+    expect(focused(screen)).toBe('settings:Camera')
     pick(screen, 'Gamepad')
     expect(screen.view).toBe('controls')
     expect(screen.root.querySelector('.bindings-sheet table')).toBeTruthy()
@@ -1070,7 +1078,7 @@ describe('the front end: settings and marks', () => {
     press(screen, 'ArrowDown')
     press(screen, 'ArrowDown')
     const row = focused(screen)
-    expect(row).toBe('setting:UI scale')
+    expect(row).toBe('settings:Interface')
     pad(screen, 'B')
     expect(screen.view).toBe('home')
     expect(focused(screen)).toBe('settings')

@@ -205,7 +205,10 @@ export class CameraController {
    * facing is itself. A diagonal one is not turned (the view stays where
    * the player left it): the grid runs off at 45 degrees either side, and
    * the keys take the left-hand axis as north, so `k` walks the cursor up
-   * the left edge of the view, `l` up the right, and `u` straight ahead.
+   * the left edge of the view, `l` up the right, and `u` straight ahead. A
+   * look's forward and back are the one exception, running along the facing
+   * itself instead (runner `absoluteAim`), so there `k` steps straight up
+   * the screen and `j` straight down it.
    */
   get gridFacing(): Dir8 {
     return gridFacingOf(this.camera.facing)

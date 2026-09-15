@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach } from 'vitest'
-import { CHAMFER, defaultSettings, getSettings, saveSettings, VIEW_OPTIONS, WALL_INSET } from '../src/servers'
+import { CHAMFER, defaultSettings, getSettings, leftRightTurns, saveSettings, VIEW_OPTIONS, WALL_INSET, type DirSource } from '../src/servers'
 import { REST_PITCH } from '@orbrun/scene'
-import { adjustSetting, ALL_SETTING_ROWS, CAM_ANGLES, CAM_HEIGHTS, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowKey, rowOff, SETTING_ROWS, settingValue } from '../src/settings-rows'
+import { adjustSetting, ALL_SETTING_ROWS, settingGroups, CAM_ANGLES, CAM_HEIGHTS, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowKey, rowOff, SETTING_ROWS, settingValue } from '../src/settings-rows'
 
 // happy-dom's localStorage has no working methods; give servers.ts a plain one
 const store = new Map<string, string>()
@@ -18,6 +18,36 @@ Object.defineProperty(globalThis, 'localStorage', {
 /** Any row, offered or not; `SETTING_ROWS` is what the player sees. */
 const row = (label: string) => ALL_SETTING_ROWS.find((r) => r.label === label)!
 const third = () => ({ ...defaultSettings, view: 'third' as const })
+
+describe('what is written down', () => {
+  beforeEach(() => store.clear())
+
+  it('is only what the player changed, so a later default reaches everyone who never touched the row', () => {
+    saveSettings({ ...defaultSettings })
+    expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({})
+    saveSettings({ ...defaultSettings, fov: 95 })
+    expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({ fov: 95 })
+    // the row goes back to its default: the override is dropped, not pinned at today's value
+    saveSettings({ ...defaultSettings })
+    expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({})
+    expect(getSettings().fov).toBe(defaultSettings.fov)
+  })
+
+  it('drops the old split hint fields once hints are saved once', () => {
+    store.set('orbrun.settings', JSON.stringify({ gamepadHints: 'contextual', keyHints: false }))
+    const s = getSettings()
+    expect(s.hints).toBe('contextual')
+    saveSettings(s)
+    expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({ hints: 'contextual' })
+  })
+
+  it('keeps a view the build has taken away rather than erasing it on the next save', () => {
+    if (VIEW_OPTIONS) return
+    store.set('orbrun.settings', JSON.stringify({ renderer: '2d', view: 'third' }))
+    saveSettings(getSettings())
+    expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({ renderer: '2d', view: 'third' })
+  })
+})
 
 describe('camera rows follow the Camera setting', () => {
   beforeEach(() => saveSettings({ ...defaultSettings }))
@@ -225,5 +255,65 @@ describe('Minimap tile size', () => {
     expect(adjustSetting(cell, -1)).toBe('16px')
     expect(getSettings().minimapCell).toBe(16)
     expect(getSettings().minimapTiles).toBe(defaultSettings.minimapTiles)
+  })
+})
+
+describe('what left and right do', () => {
+  beforeEach(() => {
+    store.clear()
+    saveSettings({ ...defaultSettings })
+  })
+
+  const families: [string, DirSource][] = [
+    ['Arrow keys', 'arrows'],
+    ['Vim keys', 'vim'],
+    ['Numpad', 'numpad'],
+    ['D-pad', 'dpad'],
+    ['Left stick', 'lstick'],
+  ]
+
+  it('is a Controls row per input family, turning by default', () => {
+    for (const [label, source] of families) {
+      const r = row(label)
+      expect(SETTING_ROWS).toContain(r)
+      expect(r.group).toBe('Controls')
+      expect(settingValue(r)).toBe('Turn')
+      expect(rowOff(r)).toBe(false)
+      expect(leftRightTurns(source)).toBe(true)
+    }
+  })
+
+  it('is chosen per family: the numpad can strafe while the arrows still turn', () => {
+    expect(adjustSetting(row('Numpad'), 1)).toBe('Strafe')
+    expect(leftRightTurns('numpad')).toBe(false)
+    expect(leftRightTurns('arrows')).toBe(true)
+    expect(leftRightTurns('vim')).toBe(true)
+    // and the two pad sources answer apart from each other
+    expect(adjustSetting(row('Left stick'), 1)).toBe('Strafe')
+    expect(leftRightTurns('lstick')).toBe(false)
+    expect(leftRightTurns('dpad')).toBe(true)
+  })
+
+  it('cycles back to turning, and only what was changed is written down', () => {
+    const numpad = row('Numpad')
+    adjustSetting(numpad, 1)
+    expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({ leftRightNumpad: 'strafe' })
+    expect(adjustSetting(numpad, 1)).toBe('Turn')
+    expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({})
+  })
+
+  /**
+   * One group to a page (settings-panel.ts): the settings screen and the pause
+   * menu both list the groups as rows, so every offered row has to sit in one
+   * of them, and every group has to have a line to print under its name.
+   */
+  it('lays every offered row out in one of the groups, each with its own line', () => {
+    const groups = settingGroups()
+    expect(groups.map((g) => g.group)).toEqual(['Camera', 'Controls', 'Interface'])
+    for (const g of groups) {
+      expect(g.hint.length).toBeGreaterThan(0)
+      expect(g.rows.length).toBeGreaterThan(0)
+    }
+    expect(groups.flatMap((g) => g.rows)).toEqual([...SETTING_ROWS])
   })
 })
