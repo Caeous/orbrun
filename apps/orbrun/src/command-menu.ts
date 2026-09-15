@@ -47,10 +47,9 @@ export const BATTLE_COMMANDS: CommandEntry[] = [
   chord('Use ability', 'a', '*', 'what your god, your form and your mutations grant', 'CMD_USE_ABILITY'),
   command('Evoke item', 'V', 'wands, and the gear that has a use of its own', 'WAND_OFFSET'),
   command('Swap weapons', "'", 'to the weapon in slot b, and back again', 'WPN_DAGGER'),
+  // `)` and `(` step the quiver without opening anything (cmd-keys.h CMD_CYCLE_QUIVER_*); they are
+  // the command palette's, not the button's -- a menu opened mid-fight is for choosing, not nudging
   command('Quiver item / action', 'Q', 'choose what firing throws or casts', 'MI_BOOMERANG'),
-  // `)` and `(` step the quiver through the actions it finds suitable, without opening anything (cmd-keys.h CMD_CYCLE_QUIVER_*)
-  command('Next quiver action', ')', 'step the quiver on, without opening it', 'MI_BOOMERANG'),
-  command('Previous quiver action', '(', 'step the quiver back, without opening it', 'MI_BOOMERANG'),
   command('Primary attack', 'v', 'strike whatever stands next to you', 'CMD_AUTOFIGHT'),
   command('Shout / order allies', 't', 'a yell, or an order to what follows you', 'BATTLECRY'),
 ]

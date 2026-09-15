@@ -64,7 +64,7 @@ describe('billboard thickness', () => {
     let zmin = 0
     for (let i = 0; i < 4; i++) expect(pos.getZ(i)).toBe(0)
     for (let i = 4; i < pos.count; i++) zmin = Math.min(zmin, pos.getZ(i))
-    expect(zmin).toBeCloseTo(-2 * k, 6)
+    expect(zmin).toBeCloseTo(-k, 6)
     // the rim spans the opaque square: texels 1..3 of the 4-wide rect, rows 1..3
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity
     for (let i = 4; i < pos.count; i++) {
@@ -167,7 +167,7 @@ describe('billboard thickness', () => {
     expect(x1).toBeCloseTo(hw, 6)
     expect(y1).toBeCloseTo(hw, 6)
     expect(y0).toBeCloseTo(-hw, 6)
-    expect(z0).toBeCloseTo(-2 * k, 6)
+    expect(z0).toBeCloseTo(-k, 6)
     expect(z1).toBe(0)
     // no front face: nothing lies wholly at z = 0
     const idx = ink.geometry.getIndex()!

@@ -186,16 +186,20 @@ const VM_FOV = 40
 /** Shade of an extruded block's faces relative to the texel colour: front, top, side, bottom. The hands and the standing sprites share it. */
 const BLOCK_SHADE = { front: 1, top: 0.86, side: 0.7, bottom: 0.5 }
 /**
- * Standing sprites (monsters, items, the doll, doors and statues) have the
- * hands' thickness: behind the front quad every opaque texel is extruded
- * this many texels deep, with the rim of side faces shaded as the hands' are,
- * so a sprite seen from off-centre or from above reads as a slab rather
- * than a sheet of paper. The front quad is untouched, so what the sprite
- * shows is exactly what it showed flat. Ghosts, clouds and translucent
- * sprites stay flat: they blend, and a rim behind a blended face doubles up.
- * So do the status badges and the damage bar: they are marks on the sprite.
+ * Standing sprites (monsters, items, the doll, doors and statues) are given
+ * thickness: behind the front quad every opaque texel is extruded this many
+ * texels deep, with the rim of side faces shaded as the hands' are, so a
+ * sprite seen from off-centre or from above reads as a slab rather than a
+ * sheet of paper. A texel deep and no more: the extrusion is the same texel
+ * grid stood up, so a block's sides are square and the rim reads as one texel
+ * of depth rather than a smear the eye takes for a second column of art. (The
+ * hands are held close and lit in their own overlay, so they keep VM_DEPTH.)
+ * The front quad is untouched, so what the sprite shows is exactly what it
+ * showed flat. Ghosts, clouds and translucent sprites stay flat: they blend,
+ * and a rim behind a blended face doubles up. So do the status badges and the
+ * damage bar: they are marks on the sprite.
  */
-const BB_DEPTH = 2
+const BB_DEPTH = 1
 /**
  * How far `uvFor` insets a tile's uv rect, in texels, so a sample never
  * reaches the neighbouring tile in the atlas. Whatever is mapped with those

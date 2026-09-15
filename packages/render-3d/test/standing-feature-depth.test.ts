@@ -89,6 +89,6 @@ describe('an upright feature and what stands on it', () => {
     const [drift] = holders(r.billboardGroup)
     expect(feature.position).toEqual(drift.position)
     // the sprite's block is BB_DEPTH texels of its own scale deep; the board clears all of it
-    expect(front(feature)).toBeLessThanOrEqual(front(drift) - 2 / 32)
+    expect(front(feature)).toBeLessThanOrEqual(front(drift) - 1 / 32)
   })
 })
