@@ -3204,19 +3204,31 @@ canvas.minimap.hidden {
 .command-menu .body {
   padding: 0.4rem 0.4rem 0.5rem;
 }
+/*
+ * Label then key, with the space between them: the key is pushed to the right
+ * edge by an auto margin rather than by growing the label, and it is as wide as
+ * its own text (`max-content`, so a long one like `Ctrl-O` is not squeezed down
+ * to `min-width` and left to paint outside its box, over the row's edge). The
+ * label keeps its content width and may shrink; only the key holds its size.
+ */
 .command-menu li.row .label {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+  min-width: 0;
 }
-.command-menu li.row .hotkey {
+/* `.menu.game` is two classes in one compound, so it outweighs `.command-menu` on its own: these
+   carry it too, or the key keeps the settings row's `width: 1.2em` (.menu.game li.row .hotkey). */
+.menu.game.command-menu li.row .hotkey {
   flex: none;
-  width: auto;
+  width: max-content;
+  /* short keys still line up: a single letter keeps a key column this wide */
   min-width: 4.5ch;
-  margin-left: 1.5em;
+  margin-left: auto;
+  padding-left: 1.5em;
   color: var(--ink-dim);
   white-space: nowrap;
   text-align: right;
 }
-.command-menu li.row.focused .hotkey {
+.menu.game.command-menu li.row.focused .hotkey {
   color: #fff;
 }
 /*
@@ -3274,10 +3286,12 @@ canvas.minimap.hidden {
 .command-menu .sysrows li.row .label {
   flex: 0 1 auto;
 }
-.command-menu .sysrows li.row .hotkey {
+/* the letter leads those rows, so it takes no auto margin and no space before it */
+.menu.game.command-menu .sysrows li.row .hotkey {
   width: 1.2em;
   min-width: 0;
   margin-left: 0;
+  padding-left: 0;
 }
 /* the palette and More rows stand apart from the commands, under a rule; the Orbrun menu's runs the same way */
 .command-menu li.row.sep,
