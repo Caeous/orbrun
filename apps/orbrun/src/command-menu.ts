@@ -10,16 +10,27 @@ export interface CommandEntry {
    * at all -- and never a restatement of the label.
    */
   sub?: string
+  /**
+   * The row's icon, as a tile name (overlays.ts `commandTileId` looks it up).
+   * Crawl draws its own icon for the commands its touch command bar offers
+   * (the GUI atlas's `CMD_*`, tilereg-cmd.cc), and those come first; the rest
+   * take the tile of what they act on, from the main atlas -- a potion for
+   * Quaff, a scroll for Read. A command that is neither (Shout, Equip, the
+   * inventory letters) has none, and its row leaves the column empty rather
+   * than wear an icon that means something else.
+   */
+  tile?: string
   action: Action
 }
 
-const command = (label: string, key: string, sub?: string): CommandEntry => ({ label, key, sub, action: { kind: 'keys', label, seq: [{ text: key }] } })
-const control = (label: string, key: string, code: number, sub?: string): CommandEntry => ({ label, key, sub, action: { kind: 'keys', label, seq: [{ key: code }] } })
+const command = (label: string, key: string, sub?: string, tile?: string): CommandEntry => ({ label, key, sub, tile, action: { kind: 'keys', label, seq: [{ text: key }] } })
+const control = (label: string, key: string, code: number, sub?: string, tile?: string): CommandEntry => ({ label, key, sub, tile, action: { kind: 'keys', label, seq: [{ key: code }] } })
 /** A command whose second key is only sent once the first has opened a prompt or menu (a `G>` style macro). */
-const chord = (label: string, first: string, second: string, sub?: string): CommandEntry => ({
+const chord = (label: string, first: string, second: string, sub?: string, tile?: string): CommandEntry => ({
   label,
   key: `${first} ${second}`,
   sub,
+  tile,
   action: { kind: 'keys', label, seq: [{ text: first }, { text: second, await: 'prompt' }] },
 })
 
@@ -29,56 +40,56 @@ const chord = (label: string, first: string, second: string, sub?: string): Comm
 
 /** Stable, action-first shortcuts. Crawl owns the filtered lists and their warnings. */
 export const BATTLE_COMMANDS: CommandEntry[] = [
-  command('Quaff potion', 'q', 'drink one of the potions in the pack'),
-  command('Read scroll', 'r', 'read one of the scrolls in the pack'),
+  command('Quaff potion', 'q', 'drink one of the potions in the pack', 'POTION_OFFSET'),
+  command('Read scroll', 'r', 'read one of the scrolls in the pack', 'SCROLL'),
   // `z` and `a` only print "(? or * to list)" and wait for a letter; `*` opens the list (crawl spl-cast.cc, ability.cc)
-  chord('Cast spell', 'z', '*', 'the spells you have memorised'),
-  chord('Use ability', 'a', '*', 'what your god, your form and your mutations grant'),
-  command('Evoke item', 'V', 'wands, and the gear that has a use of its own'),
-  command('Swap weapons', "'", 'to the weapon in slot b, and back again'),
-  command('Quiver item / action', 'Q', 'choose what firing throws or casts'),
+  chord('Cast spell', 'z', '*', 'the spells you have memorised', 'CMD_CAST_SPELL'),
+  chord('Use ability', 'a', '*', 'what your god, your form and your mutations grant', 'CMD_USE_ABILITY'),
+  command('Evoke item', 'V', 'wands, and the gear that has a use of its own', 'WAND_OFFSET'),
+  command('Swap weapons', "'", 'to the weapon in slot b, and back again', 'WPN_DAGGER'),
+  command('Quiver item / action', 'Q', 'choose what firing throws or casts', 'MI_BOOMERANG'),
   // `)` and `(` step the quiver through the actions it finds suitable, without opening anything (cmd-keys.h CMD_CYCLE_QUIVER_*)
-  command('Next quiver action', ')', 'step the quiver on, without opening it'),
-  command('Previous quiver action', '(', 'step the quiver back, without opening it'),
-  command('Primary attack', 'v', 'strike whatever stands next to you'),
-  command('Shout / order allies', 't', 'a yell, or an order to what follows you'),
+  command('Next quiver action', ')', 'step the quiver on, without opening it', 'MI_BOOMERANG'),
+  command('Previous quiver action', '(', 'step the quiver back, without opening it', 'MI_BOOMERANG'),
+  command('Primary attack', 'v', 'strike whatever stands next to you', 'CMD_AUTOFIGHT'),
+  command('Shout / order allies', 't', 'a yell, or an order to what follows you', 'BATTLECRY'),
 ]
 
 export const TRAVEL_COMMANDS: CommandEntry[] = [
-  command('Level map', 'X', 'the floor as far as you have seen it'),
-  chord('Find downstairs', 'G', '>', 'walk to the nearest way down'),
-  chord('Find upstairs', 'G', '<', 'walk to the nearest way up'),
-  command('Travel to branch / floor', 'G', 'name a branch and a depth, and walk there'),
-  control('Dungeon overview', 'Ctrl-O', 15, 'the branches, altars and shops you have found'),
-  control('Find items / shops', 'Ctrl-F', 6, 'search everything you have seen, by name'),
+  command('Level map', 'X', 'the floor as far as you have seen it', 'CMD_DISPLAY_MAP'),
+  chord('Find downstairs', 'G', '>', 'walk to the nearest way down', 'CMD_MAP_FIND_DOWNSTAIR'),
+  chord('Find upstairs', 'G', '<', 'walk to the nearest way up', 'CMD_MAP_FIND_UPSTAIR'),
+  command('Travel to branch / floor', 'G', 'name a branch and a depth, and walk there', 'CMD_INTERLEVEL_TRAVEL'),
+  control('Dungeon overview', 'Ctrl-O', 15, 'the branches, altars and shops you have found', 'CMD_DISPLAY_OVERMAP'),
+  control('Find items / shops', 'Ctrl-F', 6, 'search everything you have seen, by name', 'CMD_SEARCH_STASHES'),
 ]
 
 export const EQUIPMENT_COMMANDS: CommandEntry[] = [
   // Y is the gear button, and the pack is the first thing it opens: crawl's own `i`, at the top of the list
-  command('Inventory', 'i', 'everything you are carrying'),
-  command('Wield weapon', 'w', 'take a weapon in hand'),
-  command('Wear armour', 'W', 'put a piece of armour on'),
-  command('Put on jewellery', 'P', 'a ring or an amulet'),
-  command('Drop items', 'd', 'leave things here on the floor'),
-  command('Equip', 'e', 'wield, wear or put on, whatever the item asks for'),
-  command('Take off armour', 'T', 'out of a piece of armour'),
-  command('Remove jewellery', 'R', 'off with a ring or an amulet'),
+  command('Inventory', 'i', 'everything you are carrying', 'CMD_DISPLAY_INVENTORY'),
+  command('Wield weapon', 'w', 'take a weapon in hand', 'WPN_DAGGER'),
+  command('Wear armour', 'W', 'put a piece of armour on', 'ARM_ROBE'),
+  command('Put on jewellery', 'P', 'a ring or an amulet', 'RING_NORMAL_OFFSET'),
+  command('Drop items', 'd', 'leave things here on the floor', 'CMD_DROP'),
+  command('Equip', 'e', 'wield, wear or put on, whatever the item asks for', 'ARM_GLOVES'),
+  command('Take off armour', 'T', 'out of a piece of armour', 'ARM_ROBE'),
+  command('Remove jewellery', 'R', 'off with a ring or an amulet', 'AMU_NORMAL_OFFSET'),
 ]
 
 /** Character includes management screens (skills, memorisation, letter assignments), not just read-only views. */
 export const CHARACTER_COMMANDS: CommandEntry[] = [
-  command('Skills', 'm', 'what you are training, and how fast'),
-  command('Character status', '@', 'what is on you right now'),
-  command('Resistances / equipment', '%', 'what you resist, and what you are wearing'),
-  command('Memorise spell', 'M', 'learn a spell out of a book you carry'),
-  command('Spell list', 'I', 'the spells you know, and what they cost'),
-  command('Religion', '^', 'your god, and what they ask of you'),
-  command('Mutations', 'A', 'what the dungeon has made of you'),
-  control('Message history', 'Ctrl-P', 16, 'everything the game has told you'),
-  command('Adjust inventory letters', '=', 'move an item to a letter you will remember'),
-  command('Known items / autopickup', '\\', 'what you have identified, and what to pick up'),
-  command('Runes collected', '}', 'the runes you are carrying out'),
-  command('Show gold', '$', 'what you have found, and what you have spent'),
+  command('Skills', 'm', 'what you are training, and how fast', 'CMD_DISPLAY_SKILLS'),
+  command('Character status', '@', 'what is on you right now', 'CMD_DISPLAY_CHARACTER_STATUS'),
+  command('Resistances / equipment', '%', 'what you resist, and what you are wearing', 'CMD_RESISTS_SCREEN'),
+  command('Memorise spell', 'M', 'learn a spell out of a book you carry', 'CMD_MEMORISE_SPELL'),
+  command('Spell list', 'I', 'the spells you know, and what they cost', 'BOOK'),
+  command('Religion', '^', 'your god, and what they ask of you', 'CMD_DISPLAY_RELIGION'),
+  command('Mutations', 'A', 'what the dungeon has made of you', 'CMD_DISPLAY_MUTATIONS'),
+  control('Message history', 'Ctrl-P', 16, 'everything the game has told you', 'CMD_REPLAY_MESSAGES'),
+  command('Adjust inventory letters', '=', 'move an item to a letter you will remember', 'CMD_DISPLAY_INVENTORY'),
+  command('Known items / autopickup', '\\', 'what you have identified, and what to pick up', 'CMD_KNOWN_ITEMS'),
+  command('Runes collected', '}', 'the runes you are carrying out', 'MISC_RUNE_OF_ZOT'),
+  command('Show gold', '$', 'what you have found, and what you have spent', 'GOLD01'),
 ]
 
 /** Repeat and Help live on the Start menu's System tab (Overlays.showSystem), with the game options. */

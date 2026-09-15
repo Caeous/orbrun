@@ -116,6 +116,19 @@ function tileCanvas(gd: Gamedata | null, tiles: TileRef[], scale = 1): HTMLCanva
   return c
 }
 
+/**
+ * A command row's icon, by tile name (command-menu.ts `tile`). Crawl's own
+ * command icons live in the GUI atlas (`CMD_*`, the ones its touch command bar
+ * draws, tilereg-cmd.cc); the item tiles the other rows borrow live in main.
+ * The id carries its own atlas -- `Gamedata.tile` finds the module by id range
+ * -- so the caller needs no texture index. Undefined until gamedata has
+ * loaded, and for a name this version of crawl does not have.
+ */
+export function commandTileId(gd: Gamedata | null, name: string | undefined): number | undefined {
+  if (!gd || !name) return undefined
+  return gd.gui.id(name) ?? gd.main.id(name)
+}
+
 function fmtBody(txt: string): string {
   return txt
     .split('\n\n')
@@ -2357,12 +2370,31 @@ export class Overlays {
     )
   }
 
+  /**
+   * The line under a client menu's list: what the row the cursor is on does,
+   * the way the front end's message line reads the row under `@` (menu.ts
+   * `say`). One line for the menu rather than a subline on every row -- the
+   * list stays a list, and only the row being considered explains itself.
+   * Every row's line is stacked behind it, hidden, so the block stands as tall
+   * as the longest and the dialog does not resize as the cursor moves. No
+   * block at all when no row has anything to say.
+   */
+  private clientHint(rows: HTMLElement[]): HTMLElement | null {
+    const hints = rows.map((r) => r.dataset.hint || '').filter(Boolean)
+    if (!hints.length) return null
+    return h('div', { class: 'menu-hint' },
+      h('div', { class: 'line', 'aria-live': 'polite' }),
+      h('div', { class: 'reserve', 'aria-hidden': 'true' }, ...hints.map((t) => h('span', null, t))))
+  }
+
   private setClientFocus(i: number, scroll = true) {
     const o = this.clientOverlay
     if (!o || !o.items.length) return
     o.items[o.focus]?.classList.remove('focused')
     o.focus = ((i % o.items.length) + o.items.length) % o.items.length
     o.items[o.focus].classList.add('focused')
+    const line = o.el.querySelector('.menu-hint > .line')
+    if (line) line.textContent = o.items[o.focus].dataset.hint || ''
     // the mouse asks for no scrolling: a half-shown row scrolled under a resting pointer would hover the next row
     if (scroll) o.items[o.focus].scrollIntoView({ block: 'nearest' })
   }
@@ -2493,14 +2525,20 @@ export class Overlays {
    * game key. `remember` names the cursor memory (the title by default), so
    * screens that share a title can still each keep their own row.
    */
-  private choiceRows(choices: { label: string; key?: string; sub?: string; sep?: boolean; run(): void }[]): HTMLElement[] {
-    return choices.map((choice) => {
-      // a row with a subline lays out as a grid (styles.css .command-menu li.row.has-sub): the label
-      // and the key on the first line, the subline under the label, so the key column stays put
-      const row = h('li', { class: 'row level2 selectable fg7' + (choice.sub ? ' has-sub' : '') + (choice.sep ? ' sep' : ''), role: 'button', tabindex: -1, dataset: { hotkey: choice.key && !choice.key.includes(' ') ? choice.key : '' } },
+  private choiceRows(choices: { label: string; key?: string; sub?: string; tile?: string; sep?: boolean; run(): void }[]): HTMLElement[] {
+    const gd = this.hooks.gamedata()
+    const ids = choices.map((c) => commandTileId(gd, c.tile))
+    // the icon column belongs to the list, not to the row: one icon anywhere gives every row the
+    // column, blank where a command has no tile of its own, so the labels stay in one line. A list
+    // that resolves none of its names (gamedata still loading, an older crawl) keeps no column at all.
+    const icons = ids.some((id) => id !== undefined)
+    return choices.map((choice, i) => {
+      // the subline is the row's, but it is not drawn on the row: the line under the list says it
+      // for whichever row the cursor is on (`clientHint`), so the list stays a list
+      const row = h('li', { class: 'row level2 selectable fg7' + (icons ? ' has-tile' : '') + (choice.sep ? ' sep' : ''), role: 'button', tabindex: -1, dataset: { hotkey: choice.key && !choice.key.includes(' ') ? choice.key : '', hint: choice.sub ?? '' } },
+        icons ? (ids[i] === undefined ? h('span', { class: 'tile blank', 'aria-hidden': 'true' }) : tileCanvas(gd, [{ t: ids[i]! }])) : null,
         h('span', { class: 'label' }, choice.label),
-        choice.key ? h('span', { class: 'hotkey' }, choice.key) : null,
-        choice.sub ? h('span', { class: 'sub' }, choice.sub) : null)
+        choice.key ? h('span', { class: 'hotkey' }, choice.key) : null)
       row.addEventListener('click', () => {
         // a touch does not hover first: the clicked row is the one remembered
         const o = this.clientOverlay
@@ -2553,10 +2591,12 @@ export class Overlays {
     else if (device !== 'pad' && this.osk.visible && this.osk.input === t.input) this.osk.detach()
   }
 
-  showChoices(title: string, choices: { label: string; key?: string; sub?: string; sep?: boolean; run(): void }[], back?: () => void, remember = title) {
+  showChoices(title: string, choices: { label: string; key?: string; sub?: string; tile?: string; sep?: boolean; run(): void }[], back?: () => void, remember = title) {
     const el = h('div', { class: 'popup menu game command-menu', dataset: { remember } })
     const items = this.choiceRows(choices)
     el.append(h('div', { class: 'title' }, title), h('div', { class: 'body' }, h('ol', null, ...items)))
+    const hint = this.clientHint(items)
+    if (hint) el.append(hint)
     el.append(this.clientFooter(false))
     this.openClientOverlay('choices', el, items, back)
     this.setClientFocus(this.choiceAt.get(remember) ?? 0)
@@ -2575,7 +2615,7 @@ export class Overlays {
   }
 
   private commandChoices(entries: CommandEntry[], run: (action: Action) => void) {
-    return entries.map((c) => ({ label: c.label, key: c.key, sub: c.sub, run: () => run(c.action) }))
+    return entries.map((c) => ({ label: c.label, key: c.key, sub: c.sub, tile: c.tile, run: () => run(c.action) }))
   }
 
   /**
@@ -2724,13 +2764,13 @@ export class Overlays {
     const body = h('div', { class: 'body' }, ol)
     el.append(body)
     const items: HTMLElement[] = []
-    // the subline under a row says what it does, as the command rows of the Character tab do
-    // (command-menu.ts `sub`); both tabs carry one, so neither leaves the shared cell half empty
-    const add = (label: string, sub: string, fn: () => void, sep = false) => {
+    // what the row does, for the line under the list (`clientHint`), as the command rows of the
+    // Character tab carry theirs (command-menu.ts `sub`): both tabs speak, so the line never goes
+    // quiet on one of them
+    const add = (label: string, hint: string, fn: () => void, sep = false) => {
       const k = String.fromCharCode(97 + items.length)
-      const it = h('li', { class: 'row level2 selectable fg7 has-sub' + (sep ? ' sep' : ''), dataset: { hotkey: k } },
-        h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, label),
-        h('span', { class: 'sub' }, sub))
+      const it = h('li', { class: 'row level2 selectable fg7' + (sep ? ' sep' : ''), dataset: { hotkey: k, hint } },
+        h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, label))
       it.addEventListener('click', () => {
         this.closeClientOverlay()
         fn()
@@ -2758,9 +2798,13 @@ export class Overlays {
     // save and goes back to the Watch screen (`#lobby`) the game was picked from
     if (playing) add('Save and exit (S)', 'the game keeps; come back to it whenever', () => this.hooks.send(cm.input('S')), true)
     else add(opts.spectating ? 'Stop watching' : 'Leave game', opts.spectating ? 'back to the list of games being played' : 'back to the front door', () => this.hooks.onSystemAction('disconnect'), true)
-    el.append(h('div', { class: 'more' }, '[Esc] resume'))
     // a spectator sends no keys, so the character commands are the player's alone
     const run = playing ? opts.run : undefined
+    const character = run ? this.choiceRows(this.commandChoices(CHARACTER_COMMANDS, run)) : []
+    // the line is sized by every row of both tabs, so changing tab does not resize the dialog
+    const hint = this.clientHint([...items, ...character])
+    if (hint) el.append(hint)
+    el.append(h('div', { class: 'more' }, '[Esc] resume'))
     if (!run) {
       this.openClientOverlay('system', el, items)
       // where it was left: the same row again, by its name, since which rows are drawn depends on the game
@@ -2769,7 +2813,6 @@ export class Overlays {
       return
     }
     el.classList.add('command-menu')
-    const character = this.choiceRows(this.commandChoices(CHARACTER_COMMANDS, run))
     const characterPanel = h('ol', null, ...character)
     body.prepend(characterPanel)
     this.openClientOverlay('system', el, items)

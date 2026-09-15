@@ -1,8 +1,12 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { readFileSync, readdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { loadGamedata, type Gamedata } from '@orbrun/gamedata'
 import { initialState, MouseMode, reduce, type ClientMessage } from '@orbrun/webtiles'
 import { emptyScene } from '@orbrun/scene'
-import { Overlays } from '../src/overlays'
+import { Overlays, commandTileId } from '../src/overlays'
 import { BATTLE_COMMANDS, CHARACTER_COMMANDS, COMMAND_MENUS, EQUIPMENT_COMMANDS, GAMEPAD_COMMAND_KEYS, REPEAT_COMMAND, TRAVEL_COMMANDS } from '../src/command-menu'
 import { deriveContext } from '../src/context'
 import { resolve, type Action } from '../src/bindings'
@@ -299,5 +303,42 @@ describe('the command menus', () => {
     expect(h.sent.some((m) => m.msg === 'key' && m.keycode === 13)).toBe(false)
     expect(h.sent.some((m) => m.msg === 'key')).toBe(true)
     expect(resolve({ type: 'press', button: 'START', t: 1 }, ctx)).toMatchObject({ kind: 'keys', seq: [{ key: 13 }] })
+  })
+})
+
+/**
+ * The icons are named, not numbered, so a name that this version of crawl does
+ * not have fails quietly -- the row simply keeps an empty column. This pins
+ * every name in the catalogue against real gamedata, so a typo is a failure
+ * here rather than a hole in the menu.
+ */
+describe('the command icons', () => {
+  let gd: Gamedata
+  beforeAll(async () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), '../../../packages/scene-webtiles/test/fixtures/gamedata')
+    const version = readdirSync(root)[0]
+    gd = await loadGamedata({
+      base: 'fixture://x', version, skipImages: true,
+      io: {
+        async fetchText(url) { return readFileSync(join(root, version, url.split('/').pop()!), 'utf8') },
+        async loadImage() { throw new Error('no images in tests') },
+      },
+    })
+  })
+
+  it('names a tile crawl has, for every command that carries one', () => {
+    const named = [...BATTLE_COMMANDS, ...TRAVEL_COMMANDS, ...EQUIPMENT_COMMANDS, ...CHARACTER_COMMANDS].filter((c) => c.tile)
+    expect(named.length).toBeGreaterThan(0)
+    expect(named.filter((c) => commandTileId(gd, c.tile) === undefined).map((c) => `${c.label}: ${c.tile}`)).toEqual([])
+  })
+
+  // the menu a button opens should read as icons, not as a column of gaps
+  it("gives every travel command an icon of crawl's own", () => {
+    expect(TRAVEL_COMMANDS.filter((c) => !c.tile)).toEqual([])
+  })
+
+  it('has no icon where gamedata has not loaded', () => {
+    expect(commandTileId(null, 'CMD_DISPLAY_MAP')).toBeUndefined()
+    expect(commandTileId(gd, undefined)).toBeUndefined()
   })
 })

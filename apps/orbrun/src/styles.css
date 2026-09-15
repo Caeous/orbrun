@@ -3220,43 +3220,59 @@ canvas.minimap.hidden {
   color: #fff;
 }
 /*
- * A row with a subline (command-menu.ts `sub`): what the command does, for a
- * player who knows the dungeon but not the key. The row becomes a two column
- * grid -- label and key on the first line, the subline under the label -- so
- * the key column stands where it does on the rows that have no subline, and a
- * long subline wraps inside the label's column rather than under the key.
- * Rows without one (the Start menu's own `sysrows`) keep the flex layout.
+ * The icon column (command-menu.ts `tile`): crawl's own tile for the command,
+ * at the size the game draws it. Every row in a list that has one keeps the
+ * column -- blank where the command has no tile of its own -- so the labels
+ * line up down the list.
  */
-.command-menu li.row.has-sub {
+.command-menu li.row.has-tile {
+  gap: 0.7em;
+  padding-top: 0.18em;
+  padding-bottom: 0.18em;
+}
+.command-menu li.row.has-tile > .tile {
+  flex: none;
+  width: 32px;
+  height: 32px;
+}
+/* a row the cursor is not on keeps its icon quiet, so the lit row's reads first */
+.command-menu li.row.has-tile > canvas.tile {
+  opacity: 0.72;
+  transition: opacity var(--menu-hover-in) ease;
+}
+.command-menu li.row.has-tile:is(.focused, :hover) > canvas.tile {
+  opacity: 1;
+}
+
+/*
+ * The line under the list (overlays.ts `clientHint`): what the row the cursor
+ * is on does. The hidden copies of every row's line stack in the same grid
+ * cell, so the block is as tall as the longest one can wrap and the dialog
+ * keeps its height as the cursor moves down the list.
+ */
+.command-menu .menu-hint,
+.command-menu .menu-hint .reserve {
   display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: baseline;
-  padding-top: 0.34em;
-  padding-bottom: 0.34em;
 }
-.command-menu li.row .sub {
-  grid-column: 1;
-  margin-top: 0.15em;
+.command-menu .menu-hint > .line,
+.command-menu .menu-hint .reserve > span {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+.command-menu .menu-hint .reserve {
+  visibility: hidden;
+  pointer-events: none;
+}
+.command-menu .menu-hint {
+  padding: 0.5rem 0.8rem 0.1rem;
   color: var(--ink-dim);
-  font-size: 0.8em;
-  line-height: 1.35;
+  font-size: 0.85em;
+  line-height: 1.4;
   text-wrap: pretty;
-  transition: color var(--menu-hover-in) ease;
-}
-/* the cursor's row reads at full strength; the rest stay quiet enough that the list still scans by label */
-.command-menu li.row:is(.focused, :hover) .sub {
-  color: var(--ink);
 }
 /* the Start menu's own rows keep the game menu's shape (a letter, a dash, the label) next to the command rows of its Character tab */
 .command-menu .sysrows li.row .label {
   flex: 0 1 auto;
-}
-/* ... so their subline sits in a third column, under the label rather than under the letter */
-.command-menu .sysrows li.row.has-sub {
-  grid-template-columns: auto auto 1fr;
-}
-.command-menu .sysrows li.row.has-sub .sub {
-  grid-column: 3;
 }
 .command-menu .sysrows li.row .hotkey {
   width: 1.2em;
