@@ -435,8 +435,9 @@ export class FrontEnd {
     } else if (v === 'watch') this.goHome()
     else if (v === 'accounts' || v === 'about') this.showHome()
     else if (v === 'exit') {
+      // the screen behind the dialog is still the one to show: it is drawn again as it was (the shape it was
+      // drawn from is kept, so it comes back as a redraw and does not play its way in a second time)
       if (this.session) this.session.state.exit = null
-      this.shape.delete('home')
       this.showHome()
     } else if (v === 'servers') {
       if (this.watchOn || this.serversFrom === 'home') this.showHome()
@@ -892,7 +893,6 @@ export class FrontEnd {
     this.setView('exit', 'exit')
     const close = () => {
       s.state.exit = null
-      this.shape.delete('home')
       this.showHome()
     }
     const parts: HTMLElement[] = []

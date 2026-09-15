@@ -280,6 +280,14 @@ const GHOST_TINT = {
  */
 const PROJECTILE_LIFT = 0.1
 /**
+ * Where the cursor sits in the transparent pass. It skips the depth test, so
+ * order is all that holds it down: after the level and a sprite's ground
+ * shadow (0), before the sprites themselves (1 and up), so whoever stands on
+ * the marked cell is drawn over the far arm of the marker instead of under it
+ * — the cursor rings the cell rather than the monster's face.
+ */
+const CURSOR_ORDER = 0.5
+/**
  * Ghost fade: a ghost holds full strength until it sits `GHOST_FADE_START`
  * cells behind its occluder, then falls to nothing by `GHOST_FADE`. Sight
  * reaches seven cells, so everything at fighting range reads as a sprite; only
@@ -745,7 +753,7 @@ export class Render3d implements MapRenderer {
     cur.rotateX(-Math.PI / 2)
     this.cursorRingMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.95, depthTest: false })
     this.cursorMesh = new THREE.Mesh(cur, this.cursorRingMat)
-    this.cursorMesh.renderOrder = 11
+    this.cursorMesh.renderOrder = CURSOR_ORDER
     this.cursorMesh.visible = false
     this.overlayGroup.add(this.cursorMesh)
     // the WebTiles cursor icon laid flat on the cell; swapped in for the ring when the gamedata has it
@@ -753,7 +761,7 @@ export class Render3d implements MapRenderer {
     // +90 about X puts v=1 (the image bottom, flipY off) at the south edge, as the floor decals are
     cq.rotateX(Math.PI / 2)
     this.cursorTileMesh = new THREE.Mesh(cq, this.cursorRingMat)
-    this.cursorTileMesh.renderOrder = 11
+    this.cursorTileMesh.renderOrder = CURSOR_ORDER
     this.cursorTileMesh.visible = false
     this.overlayGroup.add(this.cursorTileMesh)
     this.voidMat = new THREE.MeshBasicMaterial({ color: 0x000000 })
@@ -1177,8 +1185,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     }
     const k = cellKey(cur.x, cur.y)
     // the cursor marks a cell, not a wall cap: it lies on the ground even when the cell is solid
-    // (its materials skip the depth test, so it shows through the wall at eye level), and rides a
-    // lowered wall's plinth so it is not buried inside it
+    // (its materials skip the depth test, so it shows through the wall at eye level, though a
+    // sprite on the cell still covers it, CURSOR_ORDER), and rides a lowered wall's plinth so it
+    // is not buried inside it
     const h = this.plinths.has(k) ? PLINTH_H : 0
     const rect = cur.tile !== undefined && this.tiles ? this.tiles.tile(cur.tile) : undefined
     const a = rect ? this.atlas(rect.atlas) : null
