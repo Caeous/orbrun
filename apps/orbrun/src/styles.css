@@ -3414,22 +3414,57 @@ canvas.minimap.hidden {
     animation: none;
   }
 }
-/* how the last game ended: a screen of its own, the server's words in the console face */
+/* A dialog over the screen already up (menu.ts `list` with `over`): the front stays readable behind it,
+   as client.html's own #exit_game dialog stands over the lobby. What is behind keeps its place, so a
+   report that lands a moment after a game was left never replaces the screen it just arrived on. */
+.frame.menu-frame.dialog-over {
+  z-index: 3;
+  pointer-events: auto;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 2, 6, 0.6);
+}
+/* the card is as wide as the game's own parting words need (the server sends them already laid out, line by
+   line, as the console prints them), never narrower than a menu column and never wider than the screen */
+.frame.menu-frame.dialog-over .dialog-card {
+  width: max-content;
+  min-width: min(38rem, 100%);
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden auto;
+  padding: 1.4rem 1.6rem;
+  border: 1px solid rgba(216, 180, 95, 0.3);
+  background: linear-gradient(180deg, rgba(11, 9, 17, 0.97), rgba(6, 5, 11, 0.97));
+  box-shadow: 0 1.5rem 3rem rgba(0, 0, 0, 0.6);
+}
+.frame.menu-frame.dialog-over .brand {
+  width: 100%;
+}
+/* the dialog carries the whole answer: nothing under it is walked, so its own hint line stays quiet */
+.frame.menu-frame.dialog-over .menu-msg {
+  margin-top: 0.4rem;
+}
+
+/* how the last game ended: the server's words in the console face */
 .exit-report {
   font-family: var(--mono);
   color: var(--color-14);
-  max-width: 60ch;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
 }
+/* our own line about the end wraps in the usual column; the game's words below it do not */
 .exit-report .exit-why {
   margin: 0;
+  max-width: 60ch;
 }
+/* the server's own lines stand as it wrote them: nothing is re-wrapped, and a window too narrow for them
+   scrolls sideways over the message alone, as the official client's dialog does */
 .exit-report .exit-message {
   margin: 0;
   font: inherit;
-  white-space: pre-wrap;
+  white-space: pre;
+  overflow-x: auto;
 }
 .exit-report .exit-links a {
   text-decoration: none;

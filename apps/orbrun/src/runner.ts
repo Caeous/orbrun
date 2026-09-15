@@ -91,10 +91,6 @@ export class Runner {
    * turns nothing; the first cursor step releases it (`step`).
    */
   private hold: { state: 'idle' | 'pending' | 'active'; t: number } = { state: 'idle', t: 0 }
-  /** the facing when the last command went out: where an aim it opens starts */
-  private aimFacing: Dir8 = 0
-  /** the aim up now already had its cursor started ahead (or arrived elsewhere) */
-  private aimed = false
   /**
    * The cells a walk round the player (`orbitStep`) has sent the cursor to
    * and the server has not echoed back yet, oldest first, with the time the
@@ -117,9 +113,6 @@ export class Runner {
     // no longer what the cursor is doing. `step` re-records it after its send.
     this.orbit = null
     if (this.hooks.context().mode === 'command') {
-      // any command may open an aim; its cursor starts where the player faced
-      // as the key went out, before a look snaps the view (`startAimAhead`)
-      this.aimFacing = this.cam.facing
       // autofight swings at the nearest hostile: face it, whichever path sent
       // the key. Only swing when the press actually attacks: with the target
       // out of reach autofight walks toward it, and the camera closes on that
@@ -138,51 +131,22 @@ export class Runner {
         this.lastStep = null
         this.cam.faceBlocker(this.session.scene)
       }
-      // look mode (`x`, typed or from LB): the view is not turned; the
-      // direction keys and the d-pad read against the grid the player sees
-      // (camera `gridFacing`), and the heading is kept while the cursor
-      // walks in front (game.ts `faceCursor`). The targeting that follows
-      // `x` is remembered as look mode, which the server does not
-      // distinguish from an aim (`examining`). Fire (`f`, typed or from LT)
-      // locks onto crawl's default target wherever it stands, and the view
-      // is not to swing for that: it holds its heading until the cursor is
-      // first stepped (`step`, `holdingView`). Any other command drops a
-      // hold a refused `f` left behind.
+      // an aim's cursor is the server's: nothing is sent to place it, so it
+      // opens on the cell crawl chose. What is ours is the view. Look mode
+      // (`x`, typed or from LB) does not turn it: the direction keys and the
+      // d-pad read against the grid the player sees (camera `gridFacing`),
+      // and the heading is kept while the cursor walks in front (game.ts
+      // `faceCursor`). The targeting that follows `x` is remembered as look
+      // mode, which the server does not distinguish from an aim
+      // (`examining`). Fire holds the heading until the cursor is first
+      // stepped (`step`, `holdingView`); any other command drops a hold a
+      // refused `f` left behind.
       if (isLookAround(msg)) this.look = { state: 'pending', t: this.hooks.now() }
       this.hold = isFire(msg) ? { state: 'pending', t: this.hooks.now() } : { state: 'idle', t: 0 }
       this.session.send(msg)
-      // a look, or a fire with no hostile for crawl to pick, opens on the
-      // player: the cell ahead goes out with the key, before the server
-      // has even opened the aim (`aimAt`; safe wherever it lands)
-      const ctx = this.hooks.context()
-      if (isLookAround(msg) || (isFire(msg) && ctx.hostilesInView === 0 && ctx.readiedAction)) this.aimAt(this.aimAhead())
       return
     }
     this.session.send(msg)
-  }
-
-  /** The cell one step from the player along the facing an aim started from. */
-  private aimAhead(): { x: number; y: number } | null {
-    const scene = this.session.scene
-    if (!scene.playerOnLevel) return null
-    return { x: scene.player.x + DIR8_DX[this.aimFacing], y: scene.player.y + DIR8_DY[this.aimFacing] }
-  }
-
-  /**
-   * Put an open aim's cursor on a cell with the WebTiles `target_cursor`
-   * message, the one the mouse sends as it hovers while aiming. It is safe
-   * to send before the aim is up, or when it never comes: tileweb.cc
-   * `_handle_cell_target` moves the target only inside a direction chooser
-   * (MOUSE_MODE_TARGET / _PATH, `targeting_mouse_move`) and yields
-   * CK_REDRAW otherwise, which the command loop, a --more-- and the spell
-   * prompt all treat as a redraw; a direction key in their place would step,
-   * dismiss, or pick a spell. Messages reach crawl in order, one per read,
-   * so one sent right after `x` lands inside the look it opens.
-   */
-  private aimAt(cell: { x: number; y: number } | null) {
-    if (!cell || this.session.watching) return
-    this.orbit = null // the cursor is being placed, not walked
-    this.session.send(cm.targetCursor(cell.x, cell.y))
   }
 
   /**
@@ -221,38 +185,6 @@ export class Runner {
       if (mode !== 'more' && mode !== 'popup') h.state = 'idle'
     } else if (h.state === 'pending' && this.hooks.now() - h.t > LOOK_WINDOW_MS) h.state = 'idle'
     return h.state === 'active' && mode === 'targeting'
-  }
-
-  /**
-   * An aim that opens on the player starts on the cell ahead instead. Crawl
-   * puts the targeting cursor on a default target when it has one (the
-   * nearest monster for `f` or a spell, directn.cc `find_default_target`),
-   * and on the player otherwise, always for look mode (`x`, `just_looking`);
-   * the player's own cell is never what a pad user meant to aim at, so when
-   * the server's cursor (id 0) appears on the player it is sent to the cell
-   * faced as the command went out (`aimAt`). A look or a fire had that cell
-   * sent along with its key already; sending it again is the same target,
-   * so this costs nothing where the first arrived. Once per aim: a cursor
-   * walked back onto the player stays, and a --more-- or popup over the aim
-   * (a description) does not start it again. The compass prompt
-   * (MOUSE_MODE_TARGET_DIR, "Which direction?") has no cursor and is left
-   * alone. Called once a frame with the mode the server reports.
-   */
-  startAimAhead(mode: Mode) {
-    if (mode !== 'targeting') {
-      if (mode !== 'more' && mode !== 'popup') this.aimed = false
-      return
-    }
-    if (this.aimed) return
-    const st = this.session.state
-    if (st.inputMode === MouseMode.TARGET_DIR) return
-    const c = st.cursors[0]
-    if (!c) return // the cursor follows the mode change; wait for it
-    this.aimed = true
-    const scene = this.session.scene
-    if (this.session.watching || !scene.playerOnLevel) return
-    if (c.x !== scene.player.x || c.y !== scene.player.y) return
-    this.aimAt(this.aimAhead())
   }
 
   /**
@@ -581,21 +513,13 @@ export class Runner {
   }
 
   /**
-   * R3: examine. In command mode it opens look mode (`x`); the cursor starts
-   * on the player (directn.cc `_look_around_target`), and the cell faced goes
-   * out with the key (`send`), `startAimAhead` covering a miss. In look
-   * mode the same button describes the cell under the cursor (`v`,
-   * CMD_TARGET_DESCRIBE); Enter would travel there instead.
-   */
-  /**
-   * LT: fire. In command mode `f` fires what is quivered, opening the aim
-   * prompt on the default target; the view holds as the key goes out
-   * (`send`), and the d-pad walks the cursor along the grid in view. Inside
-   * that prompt `f` is
-   * CMD_TARGET_SELECT as `.` and Enter are (cmd-keys.h), so the same button
-   * confirms the shot. The key is the same either side of the server's
-   * round trip, which is what lets LT be tapped as fast as `f` is spammed
-   * on a keyboard. Look mode is not an aim: nothing is sent there.
+   * LT: fire. `f` in command mode, and `f` again inside the aim it opens,
+   * where it is CMD_TARGET_SELECT as `.` and Enter are (cmd-keys.h): one
+   * key either side of the server's round trip, which is what lets LT be
+   * tapped as fast as `f` is spammed on a keyboard, however late the aim
+   * arrives. The view holds as the key goes out (`send`) so the aim's own
+   * target does not swing it, and the d-pad walks the cursor along the grid
+   * in view. Look mode is not an aim: nothing is sent there.
    */
   fire() {
     const ctx = this.hooks.context()
@@ -607,6 +531,11 @@ export class Runner {
     this.send(cm.input('f'))
   }
 
+  /**
+   * R3: examine. `x` in command mode, and inside the look it opens the same
+   * button describes the cell under the cursor (`v`, CMD_TARGET_DESCRIBE)
+   * rather than travelling there, which is what Enter would do.
+   */
   examine() {
     const ctx = this.hooks.context()
     if (ctx.mode === 'targeting') {

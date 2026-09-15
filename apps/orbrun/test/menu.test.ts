@@ -121,6 +121,11 @@ function pick(screen: FrontEnd, label: string) {
   ;(item as HTMLElement).click()
 }
 
+/** the rows of the dialog on show (the exit report), which stands over a screen with rows of its own */
+function dialogLabels(screen: FrontEnd): string[] {
+  return Array.from(screen.root.querySelectorAll('.dialog-over .menu .item .label')).map((el) => el.textContent ?? '')
+}
+
 function focused(screen: FrontEnd): string | undefined {
   return (screen.root.querySelector('.focused') as HTMLElement | null)?.dataset.focus
 }
@@ -258,23 +263,26 @@ describe('the front end: the home screen', () => {
     expect(focused(screen)).toBe('settings')
   })
 
-  it('shows how the last game ended on a screen of its own, as the official lobby’s exit dialog, until closed', () => {
+  it('shows how the last game ended in a dialog over the front, as the official lobby’s exit dialog, until closed', () => {
     // another client took over the account: the server hung this game up, crawl saved, and game_ended said so
     localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
     localStorage.setItem('orbrun.account', JSON.stringify(caeo))
     const s = fakeSession(cdi, 'caeo', { username: 'caeo', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
     s.state.exit = { reason: 'disconnect', message: 'Game saved, see you later!\n', dump: 'https://crawl.dcss.io/morgue/caeo/caeo' }
     const { screen } = make(() => s)
-    // the front waits behind it: no Play or Watch row while the report is up
+    // the report is a dialog laid over the front, which stands behind it with its rows and its cursor put by
     expect(screen.view).toBe('exit')
-    expect(screen.root.querySelector('.frame.exit-list')).not.toBeNull()
-    expect(screen.root.querySelector('h1')?.textContent).toBe('Disconnected')
+    const dialog = screen.root.querySelector('.frame.dialog-over.exit-list')!
+    expect(dialog).not.toBeNull()
+    expect(dialog.querySelector('h1')?.textContent).toBe('Disconnected')
+    expect(screen.root.querySelector('.frame.home-list h1')?.textContent).toBe('Orbrun')
+    expect(labels(screen)).toContain('Play DCSS 0.34')
     const report = screen.root.querySelector('.exit-report')!
     expect(report.querySelector('p')?.textContent).toBe('You have been disconnected.')
     expect(report.querySelector('pre')?.textContent).toBe('Game saved, see you later!')
     // the morgue file is a row, read here rather than in a tab
     expect(report.querySelector('a')).toBeNull()
-    expect(labels(screen)).toEqual(['Close', 'Morgue file'])
+    expect(dialogLabels(screen)).toEqual(['Close', 'Morgue file'])
     expect(focused(screen)).toBe('exit:close')
     // the cursor reaches the row, and Escape (B) closes the report from anywhere on it
     press(screen, 'ArrowDown')
@@ -288,8 +296,8 @@ describe('the front end: the home screen', () => {
     s.state.exit = { reason: 'crash', dump: 'https://crawl.dcss.io/morgue/caeo/crash' }
     screen.showHome()
     expect(screen.view).toBe('exit')
-    expect(screen.root.querySelector('h1')?.textContent).toBe('Your game crashed')
-    expect(labels(screen)).toEqual(['Close', 'Crash log'])
+    expect(screen.root.querySelector('.dialog-over h1')?.textContent).toBe('Your game crashed')
+    expect(dialogLabels(screen)).toEqual(['Close', 'Crash log'])
     ;(screen.root.querySelector('[data-focus="exit:close"]') as HTMLButtonElement).click()
     expect(s.state.exit).toBeNull()
     expect(screen.view).toBe('home')

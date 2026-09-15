@@ -545,7 +545,7 @@ export class FrontEnd {
    * cursor starts on the row the screen was left on, else where the caller
    * says, else the first row past Back.
    */
-  private list(opts: { cls: string; title: string; lede?: string | null; splash?: string; rows: Row[]; utilities?: Row[]; notices?: HTMLElement[]; below?: HTMLElement[]; extra?: Focusable[]; wrap?: (list: HTMLElement) => HTMLElement; focus?: string }): HTMLElement {
+  private list(opts: { cls: string; title: string; lede?: string | null; splash?: string; rows: Row[]; utilities?: Row[]; notices?: HTMLElement[]; below?: HTMLElement[]; extra?: Focusable[]; wrap?: (list: HTMLElement) => HTMLElement; focus?: string; over?: boolean }): HTMLElement {
     this.rows = [...opts.rows, ...(opts.utilities ?? [])]
     const items: Focusable[] = []
     const home = this._view === 'home'
@@ -607,7 +607,13 @@ export class FrontEnd {
       })
       brand.append(h('footer', { class: 'home-footer' }, utilities))
     }
-    this.screen(opts.cls, [brand])
+    // a dialog (the exit report) is laid over the screen that is already up, which keeps its place behind it;
+    // the next screen drawn clears both, as it clears everything but the room
+    if (opts.over) {
+      // the cursor is the dialog's while it is up: the row it stood on behind keeps its place, not its bar
+      for (const lit of Array.from(this.root.querySelectorAll('.focused'))) lit.classList.remove('focused')
+      this.root.append(h('div', { class: 'frame menu-frame dialog-over ' + opts.cls }, h('div', { class: 'dialog-card' }, brand)))
+    } else this.screen(opts.cls, [brand])
     this.prepareFocus(all)
     // Back is never where the cursor lands on its own: a screen drawn before its rows arrived
     // (Play while connecting) stood on Back, and the redraw that brings the rows must not stay there
@@ -779,6 +785,8 @@ export class FrontEnd {
     const rows: Row[] = []
     const notices: HTMLElement[] = []
     const extra: Focusable[] = []
+    /** how the last game ended, when there is something to say about it: a dialog over this screen */
+    let report: { s: Session; exit: NonNullable<GameState['exit']>; why: string | null; words: string } | null = null
     if (chosen) {
       const { account, server } = chosen
       const login = loginState(account, loggedIn)
@@ -838,14 +846,14 @@ export class FrontEnd {
         extra.push({ id: 'terminate:yes', label: 'Yes', el: yes, row: 100, col: 0, activate: () => answer(true) }, { id: 'terminate:no', label: 'No', el: no, row: 100, col: 1, activate: () => answer(false) })
       }
       if (open && lobby && !lobby.username && lobby.loginFailed) notices.push(h('div', { class: 'error' }, lobby.loginFailed))
-      // how the last game ended (client.html #exit_game) stands on a screen of its own, over the front, until
-      // closed; a saved game says nothing unless the server had words
+      // how the last game ended (client.html #exit_game): a dialog over this screen, put up once it is drawn,
+      // until closed; a saved game says nothing unless the server had words
       if (s && st?.exit && st.exit.reason) {
         const exit = st.exit
         const why = exitReasonMessage(exit.reason, exit.watched ?? null)
         const words = (exit.message ?? '').replace(/\s+$/, '')
-        if (exit.watched || why || words) return this.showExit(s, exit, why, words)
-        s.state.exit = null
+        if (exit.watched || why || words) report = { s, exit, why, words }
+        else s.state.exit = null
       }
     } else {
       rows.push({ id: 'account', label: 'Play', marker: '>', main: true, hint: 'Choose a public server, then log in or create an account.', fn: () => this.showServers('add') })
@@ -858,19 +866,27 @@ export class FrontEnd {
     const onPad = !!this.hooks.padConnected?.()
     rows.push({ id: 'settings', label: 'Settings', marker: '?', hint: 'Camera, controls, the HUD: kept on this device.' + (onPad ? ' (X)' : ''), fn: () => this.showSettings(() => this.showHome()) })
     const shape = JSON.stringify([[...rows, ...utilities].map((r) => [r.id, r.label, r.sub, r.conn, r.main, !!r.also]), notices.map((n) => n.textContent)])
-    if (this._view === 'home' && this.shape.get('home') === shape && !this.error) return
-    const redraw = this._view === 'home' && this.shape.has('home')
-    const keep = redraw ? this.nav.current()?.id : undefined
+    // a report to put up has its screen drawn first, however little of it changed: the dialog stands on it
+    if (this._view === 'home' && this.shape.get('home') === shape && !this.error && !report) return
+    // the screen under a dialog is drawn again as a redraw, not a fresh screen: it must not slide in behind it
+    const redraw = (this._view === 'home' || this._view === 'exit') && this.shape.has('home')
+    const keep = this._view === 'home' && redraw ? this.nav.current()?.id : undefined
     this.setView('home', 'accounts')
     this.shape.set('home', shape)
     const first = rows.find((r) => r.main)?.id ?? rows[0]?.id
     this.list({ cls: 'home-list' + (redraw ? ' still' : ''), title: 'Orbrun', lede: 'An unofficial first-person client for Dungeon Crawl Stone Soup.', splash: this.splash, rows, utilities, notices, extra, focus: keep ?? this.marks.get('home') ?? first })
+    if (report) this.showExit(report.s, report.exit, report.why, report.words)
   }
 
   /**
    * How the last game ended, as the official lobby's exit dialog (client.html
    * #exit_game): the reason, the game's parting words, and its morgue file or
-   * character dump. Close, Escape or B put it away and show the front.
+   * character dump. It stands over the home screen rather than in its place,
+   * so a report that lands a moment after the game was left (the server stops
+   * the process before it answers, so `game_ended` follows its `go_lobby`)
+   * arrives as a dialog on a screen that is already there, instead of
+   * replacing the front the player was just shown. Close, Escape or B put it
+   * away.
    */
   private showExit(s: Session, exit: NonNullable<GameState['exit']>, why: string | null, words: string) {
     this.setView('exit', 'exit')
@@ -896,7 +912,8 @@ export class FrontEnd {
         id: 'exit:dump', label: text, marker: '?', hint: `Read the ${text.toLowerCase()} here.`,
         fn: () => this.showDoc({
           title: text, lede: `${s.server.name} keeps it; it reads here.`, links: [{ label: 'Open in a new tab', href }],
-          from: () => this.showExit(s, exit, why, words),
+          // the report is still the session's, so the front screen puts the dialog back up with it
+          from: () => this.showHome(),
           body: () => (url ? fetchText(url) : Promise.reject(new Error('not a URL the proxy carries'))).then((t) => h('pre', { class: 'doc-text' }, t)),
         }),
       })
@@ -904,7 +921,9 @@ export class FrontEnd {
     this.list({
       cls: 'exit-list', title: exitTitle(exit.reason, exit.watched ?? null),
       rows,
-      below: [h('div', { class: 'exit-report' }, ...parts)],
+      // the words first, then the way out of them: the report reads under the title, over the rows
+      notices: [h('div', { class: 'exit-report' }, ...parts)],
+      over: true,
     })
   }
 

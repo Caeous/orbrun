@@ -7,17 +7,15 @@ import type { CameraController } from '../src/camera'
 import type { Context } from '../src/context'
 
 /**
- * R3: examine. Crawl's look mode (directn.cc `_look_around_target`) starts
- * its cursor on the player, so the runner sends `x`, and, once the server
- * has opened the mode with its cursor on the player, one direction key
- * moves it to the cell ahead, so A (`v`, CMD_TARGET_DESCRIBE) describes what
- * LB was pointed at. The cell is sent as a `target_cursor` message, the
- * mouse's hover while aiming, which is inert outside an aim: so it goes out
- * with `x` itself, a round trip early, and again on the cursor's arrival
- * should the first have missed. The view is not turned as `x` goes out:
- * the cell is the one faced. The same start
- * serves every aim (`f`, a spell, a wand): only a cursor the server put on
- * the player is moved, a default target is kept.
+ * R3: examine, and LT: fire. Both send their key and nothing besides: no
+ * `target_cursor` of the runner's places the cursor, so an aim opens on the
+ * cell crawl chose (the player for a look, directn.cc
+ * `_look_around_target`; a default target for `f` or a spell where there is
+ * one). What these cover is what the pad adds on top: `x` does not turn the
+ * view, the look is paired with the targeting that follows it so A
+ * describes instead of travelling, the fire holds the heading until the
+ * cursor is first stepped, and the d-pad walks that cursor round the player
+ * against the grid in view.
  */
 function harness(facing = 0, ahead: Context['ahead'] = { kind: 'monster', monster: {} as never, hostile: true, label: 'goblin' }) {
   const sent: { msg: string; text?: string }[] = []
@@ -55,7 +53,6 @@ function harness(facing = 0, ahead: Context['ahead'] = { kind: 'monster', monste
   }
   const frame = () => {
     ctx.examining = r.examining(ctx.mode)
-    r.startAimAhead(ctx.mode)
   }
   // what went out: a key's text, or `@x,y` for a target_cursor
   const keys = () => sent.map((m) => (m.msg === 'target_cursor' ? `@${(m as { x: number }).x},${(m as { y: number }).y}` : m.text))
@@ -72,28 +69,20 @@ function harness(facing = 0, ahead: Context['ahead'] = { kind: 'monster', monste
 /** the step each movement key takes, x east and y south */
 const DIRS = { k: [0, -1], u: [1, -1], l: [1, 0], n: [1, 1], j: [0, 1], b: [-1, 1], h: [-1, 0], y: [-1, -1] } as const
 
-describe('LB opens look mode on the cell ahead', () => {
-  it('sends x and the cell faced together, then the cell again once the server shows its cursor on the player', () => {
-    // facing north-east: the goblin is on the diagonal
+describe('LB opens look mode without touching the cursor', () => {
+  it('sends x alone: the cursor crawl opens on the player is left there', () => {
+    // facing north-east: nothing about the facing reaches the cursor
     const h = harness(1)
     h.r.examine()
-    // the target went out with x, in the same burst, before any round trip
-    expect(h.keys()).toEqual(['x', '@11,9'])
+    expect(h.keys()).toEqual(['x'])
     // the view did not turn as x went out
     expect(h.cam.facing).toBe(1)
-    // the server opened the look with its cursor on the player: the same cell again, in case the first missed
+    // the server opened the look with its cursor on the player: it stays there
     h.mode(MouseMode.TARGET)
-    expect(h.keys()).toEqual(['x', '@11,9', '@11,9'])
+    expect(h.keys()).toEqual(['x'])
   })
 
-  it('needs no second send when the cursor arrives already ahead', () => {
-    const h = harness(1)
-    h.r.examine()
-    h.mode(MouseMode.TARGET, { x: 11, y: 9 })
-    expect(h.keys()).toEqual(['x', '@11,9'])
-  })
-
-  it('starts on the cell ahead whatever stands there: empty floor and unexplored ground too', () => {
+  it('never sends a direction key or a target message of its own, whatever stands ahead', () => {
     for (const ahead of [
       { kind: 'none', label: 'floor' },
       { kind: 'unknown', label: 'unexplored' },
@@ -102,42 +91,11 @@ describe('LB opens look mode on the cell ahead', () => {
     ] as Context['ahead'][]) {
       const h = harness(4, ahead)
       h.r.examine()
+      h.frame()
       h.mode(MouseMode.TARGET)
-      expect(h.keys()).toEqual(['x', '@10,11', '@10,11'])
+      h.frame()
+      expect(h.keys()).toEqual(['x'])
     }
-  })
-
-  it('never sends a direction key: the target message is a redraw wherever x failed to open a look', () => {
-    const h = harness(0)
-    h.r.examine()
-    h.frame()
-    h.mode(MouseMode.TARGET, null)
-    h.state.cursors = [{ x: 10, y: 10 }]
-    h.frame()
-    expect(h.sent.every((m) => m.msg === 'target_cursor' || m.text === 'x')).toBe(true)
-    expect(h.keys()).toEqual(['x', '@10,9', '@10,9'])
-  })
-
-  it('moves the cursor once per look: walked back onto the player it stays, and a description popup does not restart it', () => {
-    const h = harness(0)
-    h.r.examine()
-    h.mode(MouseMode.TARGET)
-    expect(h.keys()).toEqual(['x', '@10,9', '@10,9'])
-    // the player brought the cursor home
-    h.frame()
-    h.frame()
-    expect(h.keys()).toEqual(['x', '@10,9', '@10,9'])
-    // v opened a description over the look, then the look resumed with the cursor where it was
-    h.ctx.mode = 'popup'
-    h.frame()
-    h.ctx.mode = 'targeting'
-    h.frame()
-    expect(h.keys()).toEqual(['x', '@10,9', '@10,9'])
-    // the look ended; the next one starts ahead again
-    h.mode(MouseMode.COMMAND)
-    h.r.examine()
-    h.mode(MouseMode.TARGET)
-    expect(h.keys()).toEqual(['x', '@10,9', '@10,9', 'x', '@10,9', '@10,9'])
   })
 
   it('in look mode A describes the cell under the cursor with v', () => {
@@ -147,7 +105,7 @@ describe('LB opens look mode on the cell ahead', () => {
     expect(h.r.examining('targeting')).toBe(true)
     h.ctx.examining = true
     h.r.examine()
-    expect(h.keys()).toEqual(['x', '@10,9', '@10,9', 'v'])
+    expect(h.keys()).toEqual(['x', 'v'])
   })
 })
 
@@ -222,52 +180,42 @@ describe('LT fires', () => {
     expect(e.r.holdingView('targeting')).toBe(false)
   })
 
-  it('with nothing for crawl to pick, the cell ahead goes out with f, in the direction faced as f went out', () => {
+  it('with nothing for crawl to pick, f still goes out alone: the aim opens on the player and stays there', () => {
     const h = harness(3)
     h.ctx.readiedAction = 'a stone'
     h.r.fire()
-    expect(h.keys()).toEqual(['f', '@11,11'])
-    // the view did not turn as f went out; the cell is the one faced
+    expect(h.keys()).toEqual(['f'])
+    // the view did not turn as f went out
     expect(h.cam.facing).toBe(3)
-    // the view turned on before the server answered; the aim still starts where f was aimed
-    h.cam.facing = 6
-    h.mode(MouseMode.TARGET_PATH, { x: 11, y: 11 })
-    expect(h.keys()).toEqual(['f', '@11,11'])
+    h.mode(MouseMode.TARGET_PATH)
+    expect(h.keys()).toEqual(['f'])
   })
 
-  it('with a hostile in view, or nothing quivered, f goes out alone; a cursor that still lands on the player is moved after', () => {
+  it('with a hostile in view, or nothing quivered, f goes out alone too', () => {
     const h = harness(3)
     h.ctx.readiedAction = 'a stone'
     h.ctx.hostilesInView = 2
     h.r.fire()
     expect(h.keys()).toEqual(['f'])
-    // the hostile was out of range: crawl opened on the player
+    // the hostile was out of range: crawl opened on the player, and it stays
     h.mode(MouseMode.TARGET_PATH)
-    expect(h.keys()).toEqual(['f', '@11,11'])
+    expect(h.keys()).toEqual(['f'])
     const e = harness(3)
     e.r.fire()
     expect(e.keys()).toEqual(['f'])
   })
 
-  it('a typed z (a spell), or any key, gets the start once its aim is up; the compass prompt has no cursor and is left alone', () => {
+  it('a typed z (a spell), or any key, opens its aim untouched; the compass prompt is left alone too', () => {
     const h = harness(2)
     h.r.send({ msg: 'input', text: 'z' })
     h.r.send({ msg: 'input', text: 'a' })
-    // the spell prompt would take a stray target message as a redraw, but nothing is sent until the aim shows
     expect(h.keys()).toEqual(['z', 'a'])
     h.mode(MouseMode.TARGET)
-    expect(h.keys()).toEqual(['z', 'a', '@11,10'])
+    expect(h.keys()).toEqual(['z', 'a'])
     const d = harness(2)
     d.r.send({ msg: 'input', text: 'C' })
     d.mode(MouseMode.TARGET_DIR, null)
     expect(d.keys()).toEqual(['C'])
-  })
-
-  it('nothing while spectating: the cursor is the player being watched', () => {
-    const h = harness(0)
-    ;(h.r as unknown as { session: { watching: boolean } }).session.watching = true
-    h.mode(MouseMode.TARGET)
-    expect(h.keys()).toEqual([])
   })
 
   it('does nothing in look mode: the look is not an aim', () => {
@@ -275,7 +223,7 @@ describe('LT fires', () => {
     h.r.examine()
     h.mode(MouseMode.TARGET)
     h.r.fire()
-    expect(h.keys()).toEqual(['x', '@10,9', '@10,9'])
+    expect(h.keys()).toEqual(['x'])
   })
 })
 
