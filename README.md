@@ -63,7 +63,10 @@ curl -fsSL https://orbrun.app/deck | sh
 
 It installs a kiosk browser, lets it see the controller, and adds Orbrun to
 your Steam library with artwork. Read [the script](apps/orbrun/public/deck.sh)
-first if you like; it needs no `sudo` and is safe to re-run.
+first if you like; it needs no `sudo` and is safe to re-run. Once, in Gaming
+Mode, set the controller layout to the **Gamepad with Joystick Trackpad**
+template: Steam Input's default for a non-Steam shortcut turns the pad into a
+mouse.
 
 ## DCSS as a library
 
