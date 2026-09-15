@@ -85,6 +85,8 @@ export interface ShopContext {
   hoveredListed: boolean
   anyMarked: boolean
   anyListed: boolean
+  /** the order `/` sorts by, as the footer names it in `[/] sort (type)`; absent when the line was not printed */
+  sortOrder?: string
 }
 
 export interface Context {
@@ -421,6 +423,9 @@ function menuContext(state: GameState): MenuContext | undefined {
 /** A shop row's state sign, from the text `ShopEntry::get_text` prints: ` a + 30 gold   item`. */
 const SHOP_ROW_RE = /^\s*[a-zA-Z]\s([+$-])\s/
 
+/** The sort switch the more line prints: `[<w>/</w>] sort (type)`, the name being the current order. */
+const SHOP_SORT_RE = /sort \(([^)]+)\)/
+
 export function shopContext(menu: MenuState): ShopContext {
   const more = (menu.more || '') + '\n' + (menu.alt_more || '')
   // a live shop (crawl.dcss.io, 2026-09) prints `<white>buy<lightgrey>|examine items`; `<w>` is the same colour tag
@@ -445,7 +450,10 @@ export function shopContext(menu: MenuState): ShopContext {
       hoveredListed = listed
     }
   }
-  return { canBuy, mode: buy ? 'buy' : 'examine', hoveredMarked, hoveredListed, anyMarked, anyListed }
+  const sort = SHOP_SORT_RE.exec(more)
+  const ctx: ShopContext = { canBuy, mode: buy ? 'buy' : 'examine', hoveredMarked, hoveredListed, anyMarked, anyListed }
+  if (sort) ctx.sortOrder = sort[1]
+  return ctx
 }
 
 /**

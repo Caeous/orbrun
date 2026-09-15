@@ -40,9 +40,9 @@ const ARROWS: Record<string, number> = { ArrowUp: 0, ArrowRight: 2, ArrowDown: 4
 
 /**
  * Returns the absolute direction a key means, which of the three key sets it
- * came from, or null if it is not a direction key. The set is reported so
- * left and right can turn on one and strafe on another (servers.ts
- * `leftRightTurns`). Numpad keys are recognised by `code`, so NumLock does not
+ * came from, or null if it is not a direction key. The set is reported for
+ * what reads it (servers.ts `leftRightTurns` answers the same for all three).
+ * Numpad keys are recognised by `code`, so NumLock does not
  * matter, and Ctrl / Shift ride along as the attack / run variants (Ctrl wins
  * when both are held, as in `mod`'s priority). Alt / Meta combos are not
  * directions and pass through to keydownMessage untouched.

@@ -265,14 +265,14 @@ describe('what left and right do', () => {
   })
 
   const families: [string, DirSource][] = [
-    ['Arrow keys', 'arrows'],
-    ['Vim keys', 'vim'],
-    ['Numpad', 'numpad'],
-    ['D-pad', 'dpad'],
-    ['Left stick', 'lstick'],
+    ['Keyboard left/right', 'arrows'],
+    ['Keyboard left/right', 'vim'],
+    ['Keyboard left/right', 'numpad'],
+    ['Gamepad left/right', 'dpad'],
+    ['Gamepad left/right', 'lstick'],
   ]
 
-  it('is a Controls row per input family, turning by default', () => {
+  it('is a Controls row per hand, turning by default', () => {
     for (const [label, source] of families) {
       const r = row(label)
       expect(SETTING_ROWS).toContain(r)
@@ -281,25 +281,39 @@ describe('what left and right do', () => {
       expect(rowOff(r)).toBe(false)
       expect(leftRightTurns(source)).toBe(true)
     }
+    // two rows, not the five it was: one per hand, whatever key set or stick the direction came from
+    expect(SETTING_ROWS.filter((r) => r.label.endsWith('left/right'))).toHaveLength(2)
   })
 
-  it('is chosen per family: the numpad can strafe while the arrows still turn', () => {
-    expect(adjustSetting(row('Numpad'), 1)).toBe('Strafe')
-    expect(leftRightTurns('numpad')).toBe(false)
-    expect(leftRightTurns('arrows')).toBe(true)
-    expect(leftRightTurns('vim')).toBe(true)
-    // and the two pad sources answer apart from each other
-    expect(adjustSetting(row('Left stick'), 1)).toBe('Strafe')
+  it('is chosen per hand: the keyboard can strafe while the pad still turns', () => {
+    expect(adjustSetting(row('Keyboard left/right'), 1)).toBe('Strafe')
+    for (const source of ['arrows', 'vim', 'numpad'] as const) expect(leftRightTurns(source)).toBe(false)
+    for (const source of ['dpad', 'lstick'] as const) expect(leftRightTurns(source)).toBe(true)
+    expect(adjustSetting(row('Gamepad left/right'), 1)).toBe('Strafe')
     expect(leftRightTurns('lstick')).toBe(false)
-    expect(leftRightTurns('dpad')).toBe(true)
+    expect(leftRightTurns('dpad')).toBe(false)
   })
 
   it('cycles back to turning, and only what was changed is written down', () => {
-    const numpad = row('Numpad')
-    adjustSetting(numpad, 1)
-    expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({ leftRightNumpad: 'strafe' })
-    expect(adjustSetting(numpad, 1)).toBe('Turn')
+    const keys = row('Keyboard left/right')
+    adjustSetting(keys, 1)
+    expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({ leftRightKeys: 'strafe' })
+    expect(adjustSetting(keys, 1)).toBe('Turn')
     expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({})
+  })
+
+  /**
+   * The five rows this replaced (2026-09-15, one per input family) are read
+   * back by hand: a session that strafed on any keyboard set strafes on all
+   * three, and the same for the pad's two sources.
+   */
+  it('reads a session saved with the old row per family back by hand', () => {
+    store.set('orbrun.settings', JSON.stringify({ leftRightNumpad: 'strafe' }))
+    expect(getSettings().leftRightKeys).toBe('strafe')
+    expect(getSettings().leftRightPad).toBe('turn')
+    store.set('orbrun.settings', JSON.stringify({ leftRightStick: 'strafe', leftRightArrows: 'turn' }))
+    expect(getSettings().leftRightKeys).toBe('turn')
+    expect(getSettings().leftRightPad).toBe('strafe')
   })
 
   /**

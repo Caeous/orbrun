@@ -9,12 +9,12 @@ import type { Context } from './context'
  */
 export type HintMode = 'adaptive' | 'contextual' | 'off'
 const STORAGE_KEY = 'orbrun.gamepad-learning.v1'
-const LESSONS = ['move', 'look', 'commands', 'inventory', 'explore', 'examine', 'travel', 'wait', 'rest', 'navigate', 'target-cursor', 'map-cursor', 'fight'] as const
+const LESSONS = ['move', 'look', 'commands', 'equipment', 'explore', 'examine', 'travel', 'wait', 'rest', 'navigate', 'target-cursor', 'map-cursor', 'fight'] as const
 export type PadLesson = (typeof LESSONS)[number]
 const STEPS_TO_LEARN = 3
 const LOOK_TO_LEARN = 0.3 // radians of actual camera movement, not stick polling ticks
 const RESPONSE_WINDOW = 1500
-const KEY_LESSONS: Readonly<Record<string, PadLesson>> = { i: 'inventory', o: 'explore', '.': 'wait', '5': 'rest' }
+const KEY_LESSONS: Readonly<Record<string, PadLesson>> = { o: 'explore', '.': 'wait', '5': 'rest' }
 
 /** Only observable outcomes count; sending a key is not proof that it worked. */
 export interface PadHintEvidence {
@@ -31,7 +31,7 @@ export interface PadHintEvidence {
 export function padLesson(a: Action, ctx: Context): PadLesson | null {
   if (ctx.mode === 'command') {
     if (a.kind === 'fight') return 'fight'
-    if (a.kind === 'ui' && (a.op === 'commands' || a.op === 'travel')) return a.op
+    if (a.kind === 'ui' && (a.op === 'commands' || a.op === 'travel' || a.op === 'equipment')) return a.op
     if (a.kind === 'examine') return 'examine'
     if (a.kind === 'keys' && a.seq.length === 1 && 'text' in a.seq[0]) {
       return KEY_LESSONS[a.seq[0].text] ?? null
@@ -106,8 +106,7 @@ export class GamepadHints {
     const b = p.before
     let worked = false
     switch (p.lesson) {
-      case 'commands': case 'travel': worked = !b.clientOverlay && after.clientOverlay; break
-      case 'inventory': worked = after.mode === 'menu' && b.mode !== 'menu'; break
+      case 'commands': case 'travel': case 'equipment': worked = !b.clientOverlay && after.clientOverlay; break
       case 'examine': worked = after.mode === 'targeting' && b.mode !== 'targeting'; break
       case 'explore': worked = after.x !== b.x || after.y !== b.y; break
       // autofight either swings or takes a step toward the threat; both spend the turn
@@ -143,7 +142,7 @@ export class GamepadHints {
       if (!this.knows('look')) teaching.push(tip('RSTICK', 'Look around', { kind: 'look', dx: 0, dy: 0 }))
       if (!teaching.length) {
         const table = bindingTable(ctx)
-        for (const button of ['R3', 'SELECT', 'LB'] as const) {
+        for (const button of ['R3', 'SELECT', 'X'] as const) {
           const a = table[button]
           if (!a) continue
           if (a.kind === 'hold') {

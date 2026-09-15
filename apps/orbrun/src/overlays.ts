@@ -20,7 +20,7 @@ import commands from '../data/commands.json'
 import { FocusNav, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
 import { scrapeCrt } from './crt-scrape'
 import { focusFallback, promptButtons, type Action } from './bindings'
-import { BATTLE_COMMANDS, COMMAND_GROUPS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandGroup } from './command-menu'
+import { CHARACTER_COMMANDS, COMMAND_MENUS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandMenu } from './command-menu'
 import { VIEW_OPTIONS } from './servers'
 import { settingGroups, type SettingGroup } from './settings-rows'
 import { glyph, glyphName } from './glyphs'
@@ -272,16 +272,23 @@ const TRAVEL_DEPTH_KEYS: { ch: string; label: string }[] = [
   { ch: '$', label: 'Deepest' },
 ]
 
-/** The `actions` string is joined with ", " on the server (describe.cc _actions_desc). */
+/**
+ * The `actions` string is joined with ", " on the server (describe.cc
+ * _actions_desc). A word keeps the text the line prints, parentheses and all
+ * ("(d)rop", not "Drop"): the word is a row of the popup, and the pad's chip
+ * names the row it fires with the row's own characters, so what the hint says
+ * and what the screen says are the same string. The "or " prefix and the
+ * trailing period are the sentence's, not the word's (`parseActionWord`), and
+ * `clickifyActions` leaves them outside the clickable span too.
+ */
 function parseActions(text: string): { key: string; label: string }[] {
   if (!text) return []
   const out: { key: string; label: string }[] = []
   for (const w of text.split(', ')) {
     const a = parseActionWord(w)
     if (!a.key) continue
-    // "(r)ead" is Read; "(G) Travel" (a row the client wrote in the overview's own style) is Travel
-    const label = (/^\(.\) /.test(a.text) ? a.text.slice(4) : a.text.replace(/[()]/g, '')).trim()
-    out.push({ key: a.key, label: label ? label[0].toUpperCase() + label.slice(1) : a.key })
+    const label = a.text.trim()
+    out.push({ key: a.key, label: label || a.key })
   }
   return out
 }
@@ -497,11 +504,33 @@ export class Overlays {
   /** bumped whenever either focus set is rebuilt, so syncFocus re-seats the cursor once */
   private focusGen = 0
   private focusSynced = -1
+  /**
+   * The mouse's position still counts: a hover takes the cursor only while it
+   * does. A key or a pad button puts the pointer to sleep and only a real
+   * move of the mouse wakes it — because moving the cursor scrolls the list,
+   * and the row that slides under a resting pointer fires a `mouseenter` of
+   * its own, which would drag the cursor back to the mouse and pin it there.
+   * (menu.js has nothing like this: it hovers on `mouseover` and never moves
+   * a hover of its own, so its lists have no cursor to lose.)
+   */
+  private pointerLive = true
+  private pointerAt = { x: -1, y: -1 }
 
   constructor(host: HTMLElement, hooks: OverlayHooks) {
     this.hooks = hooks
     this.root = h('div', { class: 'overlay-stack' })
     host.append(this.root)
+    this.root.addEventListener('pointermove', (ev) => this.pointerWakes(ev), { passive: true })
+    // a click is the mouse speaking: the hover under it counts again, so a click straight after a key lands where the mouse is
+    this.root.addEventListener('pointerdown', (ev) => this.pointerWakes(ev, true), { passive: true })
+  }
+
+  /** A mouse event over an overlay. Only a move that really moved wakes the pointer: a list scrolled under a still mouse can report one that did not. */
+  private pointerWakes(ev: PointerEvent, always = false) {
+    if (ev.pointerType !== 'mouse') return
+    if (!always && ev.clientX === this.pointerAt.x && ev.clientY === this.pointerAt.y) return
+    this.pointerAt = { x: ev.clientX, y: ev.clientY }
+    this.pointerLive = true
   }
 
   get hasClientOverlay(): boolean {
@@ -1391,14 +1420,20 @@ export class Overlays {
       el.append(a)
       for (const x of parsed) acts.push({ key: x.key, label: x.label, send: () => this.hooks.send(cm.input(x.key)) })
     }
-    const paneAction = (key: string, names: string[], pane: number, foot: HTMLElement) => {
+    /**
+     * The pane switch is one row of the popup, and the row is the whole list
+     * ("Description | Quote"). The chip wears that list, not the pane the
+     * press would land on: a hint that read "Quote" would name half of what
+     * the cursor is sitting on, and would rename itself on every press.
+     */
+    const paneAction = (key: string, names: string[], foot: HTMLElement) => {
       if (names.length < 2) return
-      const next = names[(pane + 1) % names.length]
+      const label = names.join(' | ')
       const send = () => this.hooks.send(cm.input(key))
-      acts.push({ key, label: next, send })
+      acts.push({ key, label, send })
       foot.classList.add('pane-switch')
       foot.addEventListener('click', send)
-      items.push({ label: next, el: foot, activate: send, row: row++, id: 'pane' })
+      items.push({ label, el: foot, activate: send, row: row++, id: 'pane' })
     }
     /**
      * A describe popup's scrolling body. The server marks where the spell list
@@ -1496,7 +1531,7 @@ export class Overlays {
         const footEl = h('div', { class: 'footer', html: foot + (typeof p.state.prompt === 'string' ? '<br>' + formattedStringToHtml(p.state.prompt as string) : '') })
         el.append(footEl)
         // '!' cycles panes in both (ui-layouts.js; '^' too for gods)
-        paneAction('!', names, cur, footEl)
+        paneAction('!', names, footEl)
         actions(str('actions'))
         break
       }
@@ -1519,21 +1554,25 @@ export class Overlays {
         header(str('title'))
         el.append(h('div', { class: 'body', html: str('body') }))
         const input = h('input', { class: 'text', type: 'text', placeholder: 'seed (digits)', disabled: true })
-        const clearBtn = h('button', { class: 'btn' }, '[-] Clear')
-        const daily = h('button', { class: 'btn' }, "[d] Today's daily seed")
+        // the buttons' words are the chips' words: one name each, so a hint never
+        // says something the button does not
+        const CLEAR = 'Clear'
+        const DAILY = "Today's daily seed"
+        const clearBtn = h('button', { class: 'btn' }, '[-] ' + CLEAR)
+        const daily = h('button', { class: 'btn' }, '[d] ' + DAILY)
         clearBtn.addEventListener('click', () => this.hooks.send(cm.key(45)))
         daily.addEventListener('click', () => this.hooks.send(cm.key(100)))
         el.append(h('div', { class: 'footer seed-input' }, h('span', null, 'Enter seed: '), input, clearBtn, daily))
         el.append(h('div', { class: 'footer', html: str('footer') }))
         this.seedInput = input
-        acts.push({ key: '-', label: 'Clear', send: () => this.hooks.send(cm.key(45)) })
-        acts.push({ key: 'd', label: 'Daily seed', send: () => this.hooks.send(cm.key(100)) })
+        acts.push({ key: '-', label: CLEAR, send: () => this.hooks.send(cm.key(45)) })
+        acts.push({ key: 'd', label: DAILY, send: () => this.hooks.send(cm.key(100)) })
         acts.push({ key: '?', label: 'Help', send: () => this.hooks.send(cm.key(63)) })
         // the field opens the keyboard; the buttons send their keys
         const r = row++
         items.push({ label: 'Type seed', el: input, activate: () => this.oskOp('shift'), row: r, col: 0, id: 'seed' })
-        items.push({ label: 'Clear', el: clearBtn, activate: () => this.hooks.send(cm.key(45)), row: r, col: 1, id: 'clear' })
-        items.push({ label: 'Daily seed', el: daily, activate: () => this.hooks.send(cm.key(100)), row: r, col: 2, id: 'daily' })
+        items.push({ label: CLEAR, el: clearBtn, activate: () => this.hooks.send(cm.key(45)), row: r, col: 1, id: 'clear' })
+        items.push({ label: DAILY, el: daily, activate: () => this.hooks.send(cm.key(100)), row: r, col: 2, id: 'daily' })
         break
       }
       case 'msgwin-get-line': {
@@ -1696,6 +1735,7 @@ export class Overlays {
         }
         btn.addEventListener('mouseenter', () => {
           // the pointer moves the one cursor too, so A and Enter take what the mouse is over
+          if (!this.pointerLive) return
           const i = this.focusables.indexOf(item)
           if (i >= 0 && this.nav.count === this.focusables.length) this.nav.focus(i)
           else show()
@@ -1953,6 +1993,7 @@ export class Overlays {
    * popup or cancel, Enter to confirm, the arrow to scroll or move.
    */
   focusOp(state: GameState, ctx: Context, op: FocusOp) {
+    this.pointerLive = false
     if (ctx.mode === 'menu' && ctx.menu?.menu.type !== 'crt') return this.menuOp(state, op)
     if (!this.focusKeyOp(ctx, op, false)) this.focusFallbackKey(ctx, op)
   }
@@ -1966,6 +2007,7 @@ export class Overlays {
    */
   focusKey(state: GameState, ctx: Context, op: FocusOp): boolean {
     void state
+    this.pointerLive = false
     return this.focusKeyOp(ctx, op, true)
   }
 
@@ -2279,8 +2321,9 @@ export class Overlays {
   closeClientOverlay() {
     if (!this.clientOverlay) return
     // the pause menu is a place, not a step: it opens again on the row it was left on
-    if (this.clientOverlay.kind === 'system') this.systemAt = rowLabel(this.clientOverlay.items[this.clientOverlay.focus])
-    if (this.clientOverlay.kind === 'choices') this.choiceAt.set(this.clientOverlay.el.dataset.remember ?? '', this.clientOverlay.focus)
+    const remember = this.clientOverlay.el.dataset.remember
+    if (this.clientOverlay.kind === 'system' && !remember) this.systemAt = rowLabel(this.clientOverlay.items[this.clientOverlay.focus])
+    else if (remember) this.choiceAt.set(remember, this.clientOverlay.focus)
     if (this.osk.input && this.clientOverlay.el.contains(this.osk.input)) this.osk.detach()
     this.clientOverlay.el.remove()
     this.clientOverlay = null
@@ -2302,11 +2345,14 @@ export class Overlays {
    * focused row, so left and right (and Enter after) act on what is under
    * the mouse and not on where the keyboard was left. The server's own menus
    * do the same with the hover their buttons send (ui-layouts.js).
+   *
+   * Only while the pointer is awake (`pointerLive`): once a key or a pad
+   * button has the cursor, the mouse must be moved to take it back.
    */
   private itemsTakeMouse(items: HTMLElement[]) {
     items.forEach((it, i) =>
       it.addEventListener('mouseenter', () => {
-        if (this.clientOverlay?.items === items) this.setClientFocus(i, false)
+        if (this.pointerLive && this.clientOverlay?.items === items) this.setClientFocus(i, false)
       }),
     )
   }
@@ -2335,6 +2381,7 @@ export class Overlays {
   clientOverlayInput(op: ClientOverlayOp): boolean {
     const o = this.clientOverlay
     if (!o) return false
+    this.pointerLive = false
     // Select is a toggle: the screen it opened goes away whole, not one step back
     // (`cancel`'s `back` would land on the screen this one was reached from). A
     // filter keyboard is the one thing it puts away first.
@@ -2438,8 +2485,8 @@ export class Overlays {
   }
 
   private choiceAt = new Map<string, number>()
-  /** the Select tab that was open last: Select comes back to it, on the row it was left on */
-  private commandGroup: CommandGroup = 'travel'
+  /** the Start menu tab that was open last: Start comes back to it, on the row it was left on */
+  private systemTab = 'character'
 
   /**
    * Small controller menus. Opening, highlighting and backing out never send a
@@ -2513,47 +2560,52 @@ export class Overlays {
   }
 
   /**
-   * RB opens battle actions only; Select owns the remaining commands. Game
-   * options are on the Start menu (showSystem). `select` opens the tab that was
-   * open last, on the row it was left on, so a command picked once is under
-   * the cursor the next time.
+   * One button, one list (command-menu.ts COMMAND_MENUS): LB the battle
+   * actions, Select the travel commands, Y the gear, each opening on the row
+   * it was left on, so a command picked once is under the cursor the next
+   * time. The character screens and the game options are tabs of the Start
+   * menu (showSystem).
    */
-  showCommands(run: (action: Action) => void, start: CommandGroup | 'battle' | 'select' = 'battle') {
-    const rows = (entries: CommandEntry[]) => entries.map((c) => ({ label: c.label, key: c.key, run: () => run(c.action) }))
-    if (start === 'battle') {
-      this.showChoices('Actions', rows(BATTLE_COMMANDS), undefined, 'commands:battle')
-      return
-    }
-    if (start === 'select') start = this.commandGroup
-    this.showChoices('Commands', [], undefined, 'commands:' + start)
+  showCommands(run: (action: Action) => void, which: CommandMenu = 'battle') {
+    const menu = COMMAND_MENUS.find((m) => m.id === which)!
+    this.showChoices(menu.title, this.commandChoices(menu.entries, run), undefined, 'commands:' + which)
+  }
+
+  private commandChoices(entries: CommandEntry[], run: (action: Action) => void) {
+    return entries.map((c) => ({ label: c.label, key: c.key, run: () => run(c.action) }))
+  }
+
+  /**
+   * Tabs over the client overlay that is open: the panels share one grid cell,
+   * so the largest sizes the dialog while only the current one is visible and
+   * takes hotkeys. The bumpers and left / right change tabs, and a change
+   * never closes the overlay or restarts its opening animation (or the
+   * world's dimming). Each tab keeps its own cursor, under `remember` + its
+   * id, and `onTab` is told which one the player left on.
+   */
+  private installTabs(panels: { id: string; label: string; hint: string; items: HTMLElement[]; panel: HTMLElement }[], remember: string, start: string, onTab: (id: string) => void) {
     const o = this.clientOverlay!
     o.el.classList.add('tabbed')
-    const body = o.el.querySelector('.body')!
-    body.replaceChildren()
-    const tabs = h('div', { class: 'command-tabs', role: 'tablist', 'aria-label': 'Command groups' })
+    const tabs = h('div', { class: 'command-tabs', role: 'tablist', 'aria-label': 'Sections' })
     const hints = h('div', { class: 'command-hints' })
-    // Keep every panel in one grid cell: the largest sizes the dialog, while
-    // only the current panel is visible/interactive. Tab changes never close
-    // the overlay or restart its opening animation (or the world's dimming).
-    const panels = COMMAND_GROUPS.map((group, index) => {
-      const items = this.choiceRows(rows(group.entries))
-      const tabId = 'command-tab-' + group.id
-      const panelId = 'command-panel-' + group.id
-      const panel = h('ol', { id: panelId, role: 'tabpanel', 'aria-labelledby': tabId }, ...items)
-      const hint = h('div', { class: 'command-hint' }, group.hint)
-      const tab = h('button', { id: tabId, type: 'button', role: 'tab', 'aria-controls': panelId, title: group.hint, onclick: () => { o.category = index; o.rebuild!() } }, group.label)
-      this.itemsTakeMouse(items)
+    const built = panels.map((p, index) => {
+      const tabId = 'command-tab-' + p.id
+      p.panel.id = 'command-panel-' + p.id
+      p.panel.setAttribute('role', 'tabpanel')
+      p.panel.setAttribute('aria-labelledby', tabId)
+      const hint = h('div', { class: 'command-hint' }, p.hint)
+      const tab = h('button', { id: tabId, type: 'button', role: 'tab', 'aria-controls': p.panel.id, title: p.hint, onclick: () => { o.category = index; o.rebuild!() } }, p.label)
+      this.itemsTakeMouse(p.items)
       tabs.append(tab)
       hints.append(hint)
-      body.append(panel)
-      return { group, items, panel, hint, tab }
+      return { ...p, hint, tab }
     })
-    o.category = COMMAND_GROUPS.findIndex((g) => g.id === start)
-    o.categories = COMMAND_GROUPS.map((g) => g.id)
+    o.category = Math.max(0, panels.findIndex((p) => p.id === start))
+    o.categories = panels.map((p) => p.id)
     o.rebuild = () => {
-      if (o.items.length) this.choiceAt.set(o.el.dataset.remember!, o.focus)
+      if (o.items.length && o.el.dataset.remember) this.choiceAt.set(o.el.dataset.remember, o.focus)
       o.items[o.focus]?.classList.remove('focused')
-      panels.forEach(({ panel, hint, tab }, i) => {
+      built.forEach(({ panel, hint, tab }, i) => {
         const active = i === o.category
         panel.inert = !active
         panel.classList.toggle('inactive', !active)
@@ -2561,12 +2613,13 @@ export class Overlays {
         tab.classList.toggle('current', active)
         tab.setAttribute('aria-selected', String(active))
       })
-      const current = panels[o.category!]
-      this.commandGroup = current.group.id
-      o.el.dataset.remember = 'commands:' + current.group.id
+      const current = built[o.category!]
+      onTab(current.id)
+      o.el.dataset.remember = remember + current.id
       o.items = current.items
       o.focus = 0
-      body.scrollTop = 0
+      const body = o.el.querySelector('.body')
+      if (body) body.scrollTop = 0
       this.setClientFocus(this.choiceAt.get(o.el.dataset.remember) ?? 0)
     }
     o.el.querySelector('.title')!.after(tabs, hints)
@@ -2651,17 +2704,22 @@ export class Overlays {
   }
 
   /**
-   * The pause menu, drawn as the game draws a menu: a letter per item, the
-   * hovered line lit. It is a place of its own, so it opens again on the row
-   * it was left on, and the screens it leads to (the settings, the controls)
-   * come back to it, on the row that led away.
+   * The Start menu, drawn as the game draws a menu: a letter per item, the
+   * hovered line lit. It is a place of its own, so it opens again on the tab
+   * and row it was left on, and the screens it leads to (the settings, the
+   * controls) come back to it, on the row that led away.
+   *
+   * While playing it has two tabs: Character, the screens that review and
+   * manage the character, and System, the game's own options and the way out.
+   * A spectator has no character to read, so the System rows stand alone.
    */
-  showSystem(opts: { spectating: boolean; inGame: boolean }) {
+  showSystem(opts: { spectating: boolean; inGame: boolean; run?: (action: Action) => void }) {
     const again = () => this.showSystem(opts)
     const el = h('div', { class: 'popup menu game sysmenu' })
     el.append(h('div', { class: 'title' }, 'Orbrun'))
-    const ol = h('ol')
-    el.append(h('div', { class: 'body' }, ol))
+    const ol = h('ol', { class: 'sysrows' })
+    const body = h('div', { class: 'body' }, ol)
+    el.append(body)
     const items: HTMLElement[] = []
     const add = (label: string, fn: () => void, sep = false) => {
       const k = String.fromCharCode(97 + items.length)
@@ -2694,10 +2752,24 @@ export class Overlays {
     if (playing) add('Save and exit (S)', () => this.hooks.send(cm.input('S')), true)
     else add(opts.spectating ? 'Stop watching' : 'Leave game', () => this.hooks.onSystemAction('disconnect'), true)
     el.append(h('div', { class: 'more' }, '[Esc] resume'))
+    // a spectator sends no keys, so the character commands are the player's alone
+    const run = playing ? opts.run : undefined
+    if (!run) {
+      this.openClientOverlay('system', el, items)
+      // where it was left: the same row again, by its name, since which rows are drawn depends on the game
+      const at = items.findIndex((it) => rowLabel(it) === this.systemAt)
+      if (at > 0) this.setClientFocus(at)
+      return
+    }
+    el.classList.add('command-menu')
+    const character = this.choiceRows(this.commandChoices(CHARACTER_COMMANDS, run))
+    const characterPanel = h('ol', null, ...character)
+    body.prepend(characterPanel)
     this.openClientOverlay('system', el, items)
-    // where it was left: the same row again, by its name, since which rows are drawn depends on the game
-    const at = items.findIndex((it) => rowLabel(it) === this.systemAt)
-    if (at > 0) this.setClientFocus(at)
+    this.installTabs([
+      { id: 'character', label: 'Character', hint: 'Review and manage · character, skills and spells', items: character, panel: characterPanel },
+      { id: 'system', label: 'System', hint: 'Orbrun and the game · options, help and the way out', items, panel: ol },
+    ], 'system:', this.systemTab, (id) => { this.systemTab = id })
   }
 
   /**

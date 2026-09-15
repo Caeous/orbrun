@@ -64,8 +64,8 @@ direction keys are relative to where you are facing.
 
 Every other physical key passes through to the server untouched. Menus,
 prompts, targeting and text input take the same keys, in the same modes, with
-the same results as WebTiles. Orbrun's own menu (settings, controls, save and
-exit) is on the HUD; while spectating, Escape opens it.
+the same results as WebTiles. Orbrun's own menu (character, settings, controls,
+save and exit) is on the HUD; while spectating, Escape opens it.
 
 ### Gamepad (standard mapping)
 
@@ -74,17 +74,18 @@ exit) is on the HUD; while spectating, Escape opens it.
 - **A** does what the situation calls for: takes the stairs underfoot, opens
   or closes the door ahead, attacks, picks up, steps.
 - **B** cancels or backs out; in play it sends Escape.
-- **X** autoexplores. In a menu, X describes the row under the cursor.
-- **Y** opens the inventory.
-- **LB** waits a turn; hold to rest.
-- **R3** or **L3** (either stick clicked in) examines; the d-pad walks the cursor and A describes what it is on.
-- **RB** opens the Actions menu.
-- **LT** fires your readied action; tap again to let it fly.
+- **X** waits a turn; hold to rest. In a menu, X describes the row under the cursor.
+- **Y** opens the gear menu, your pack at the top of it.
+- **LB** opens the Actions menu.
+- **RB** fires your readied action; tap again to let it fly.
+- **LT** autoexplores.
 - **RT** autofights.
-- **Select** opens the command menus (Travel, Equipment, Character); it comes
-  back to the row you last chose.
-- **Start** opens the Orbrun menu: resume, repeat, the game menu, help, chat,
-  gamepad, settings, save and exit.
+- **R3** or **L3** (either stick clicked in) examines; the d-pad walks the cursor and A describes what it is on.
+- **Select** opens the travel commands; each menu comes back to the row you
+  last chose.
+- **Start** opens the Orbrun menu, on two tabs: Character (skills, spells,
+  status, religion and the rest) and System (resume, repeat, the game menu,
+  help, chat, gamepad, settings, save and exit).
 
 The action bar at the bottom of the screen always shows what each button does
 in the current mode, because the server, not a guess, says what mode you are

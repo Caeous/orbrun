@@ -131,22 +131,17 @@ const VIEW_MODE_ROWS = ['View', 'Camera', 'Camera distance']
 
 
 /**
- * What left and right do, one row per input family (servers.ts `DirSource`).
- * They are separate rows because the choice is a matter of which hand is on
- * which input: a player may want the numpad to walk the grid as console Crawl
- * does while the arrows steer the camera, or a stick that strafes under a
- * d-pad that turns. Every family turns by default, which is what Orbrun has
- * always done. Forward, back and the diagonals are untouched: they step, and
- * only forward turns the view onto the way it went.
+ * What left and right do, one row per hand: the keyboard (arrows, h/l and the
+ * numpad alike) and the pad (d-pad and left stick alike). Both turn by
+ * default, which is what Orbrun has always done. Forward, back and the
+ * diagonals are untouched: they step, and only forward turns the view onto
+ * the way it went.
  */
 const LEFT_RIGHT_VALUES: readonly LeftRight[] = ['turn', 'strafe']
 const leftRightRows: SettingRow[] = ([
-  // a key set always steps under Shift (a run) or Ctrl (an attack), whatever it does plain; the pad has no such modifier
-  ['Arrow keys', 'leftRightArrows', 'Left and right on the arrow keys', true],
-  ['Vim keys', 'leftRightVim', 'h and l', true],
-  ['Numpad', 'leftRightNumpad', '4 and 6 on the numpad', true],
-  ['D-pad', 'leftRightDpad', 'Left and right on the d-pad', false],
-  ['Left stick', 'leftRightStick', 'The left stick pushed left or right', false],
+  // a key always steps under Shift (a run) or Ctrl (an attack), whatever it does plain; the pad has no such modifier
+  ['Keyboard left/right', 'leftRightKeys', 'Left and right on the arrow keys, h and l, and 4 and 6 on the numpad', true],
+  ['Gamepad left/right', 'leftRightPad', 'Left and right on the d-pad and the left stick', false],
 ] as const).map(([label, key, what, keys]) =>
   row<typeof key>('Controls', label, key, LEFT_RIGHT_VALUES, `${what}: turn the camera on the spot, or strafe one step sideways keeping the heading.${keys ? ' Shift (run) and Ctrl (attack) always step.' : ''}`, (v) => (v === 'turn' ? 'Turn' : 'Strafe')),
 )

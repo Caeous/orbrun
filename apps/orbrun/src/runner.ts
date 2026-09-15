@@ -357,7 +357,7 @@ export class Runner {
   /**
    * Movement in command mode: forward turns the camera; the diagonals and
    * back strafe. Left and right turn the camera or strafe as `opts.turns`
-   * says, which the caller reads off the setting for the input the player
+   * says, which the caller reads off the setting for the hand the player
    * used (servers.ts `leftRightTurns`). Every step is remembered (`lastStep`), and
    * only one that aimed the camera (forward, or an attack) snaps the view onto
    * the vector the feet took once the server echoes the new position (game.ts

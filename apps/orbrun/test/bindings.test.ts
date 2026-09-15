@@ -194,10 +194,10 @@ describe('direct command controls', () => {
   const ogre = { kind: 'monster' as const, monster: { id: 1, name: 'ogre' } as never, hostile: true, label: 'ogre' }
   it('a tap-or-hold binding waits for release, then splits on HOLD_MS', () => {
     const c = ctx({})
-    expect(resolve({ type: 'press', button: 'LB', t: 0 }, c)).toBeNull()
-    expect(resolve({ type: 'release', button: 'LB', t: 100, held: 100 }, c)).toMatchObject({ seq: [{ text: '.' }] })
-    expect(resolve({ type: 'release', button: 'LB', t: 900, held: 900 }, c)).toBeNull()
-    expect(holdAction('LB', c)).toMatchObject({ seq: [{ text: '5' }] })
+    expect(resolve({ type: 'press', button: 'X', t: 0 }, c)).toBeNull()
+    expect(resolve({ type: 'release', button: 'X', t: 100, held: 100 }, c)).toMatchObject({ seq: [{ text: '.' }] })
+    expect(resolve({ type: 'release', button: 'X', t: 900, held: 900 }, c)).toBeNull()
+    expect(holdAction('X', c)).toMatchObject({ seq: [{ text: '5' }] })
   })
   it('a press that acted at once never becomes a tap when the server changes mode under it', () => {
     // A on a --more-- while standing on stairs: space goes on press, the
@@ -213,13 +213,13 @@ describe('direct command controls', () => {
     const command = ctx({ under: stairsUp })
     expect(contextualLabel(command)).toBe('Ascend')
     expect(armsTapOrHold('A', command)).toBe(false)
-    expect(armsTapOrHold('LB', command)).toBe(true)
+    expect(armsTapOrHold('X', command)).toBe(true)
     expect(armsTapOrHold('B', command)).toBe(false)
     expect(armsTapOrHold('Y', command)).toBe(false)
-    expect(resolve({ type: 'press', button: 'Y', t: 0 }, command)).toMatchObject({ seq: [{ text: 'i' }] })
+    expect(resolve({ type: 'press', button: 'Y', t: 0 }, command)).toEqual({ kind: 'ui', op: 'equipment' })
     expect(resolve({ type: 'release', button: 'Y', t: 100, held: 100 }, command)).toBeNull()
-    // X acts on press in command mode too: its release is never a tap
-    expect(armsTapOrHold('X', command)).toBe(false)
+    // LB acts on press in command mode too: its release is never a tap
+    expect(armsTapOrHold('LB', command)).toBe(false)
   })
   it('a held direction is a typewriter of single steps, never a run', () => {
     const c = ctx({})
@@ -249,9 +249,10 @@ describe('direct command controls', () => {
     for (const layer of ['micro', 'macro', 'info'] as const) {
       const t = bindingTable(ctx({ layer }))
       expect(t.A).toEqual({ kind: 'contextual' })
-      expect(t.LT).toEqual({ kind: 'fire' })
+      expect(t.RB).toEqual({ kind: 'fire' })
       expect(t.RT).toEqual({ kind: 'fight' })
-      expect(t.RB).toEqual({ kind: 'ui', op: 'commands' })
+      expect(t.LT).toMatchObject({ seq: [{ text: 'o' }] })
+      expect(t.LB).toEqual({ kind: 'ui', op: 'commands' })
       expect(t.SELECT).toEqual({ kind: 'ui', op: 'travel' })
       expect(t.START).toEqual({ kind: 'ui', op: 'system' })
     }
@@ -262,29 +263,29 @@ describe('direct command controls', () => {
       expect(resolve({ type: 'dirRepeat', source: 'dpad', dir: 4, n: 1 }, ctx({ layer }))).toEqual({ kind: 'step', dir: 4, turns: true, held: true })
     }
   })
-  it('offers wait/rest on LB only while hurt with nothing in view', () => {
+  it('offers wait/rest on X only while hurt with nothing in view', () => {
     const hurt = ctx({ injured: true })
-    const b = promptLabels(hurt).find((l) => l.button === 'LB')!
+    const b = promptLabels(hurt).find((l) => l.button === 'X')!
     expect(b).toMatchObject({ label: 'Wait one turn', hold: 'Rest', contextual: true })
     // whole: nothing to rest for
-    expect(promptLabels(ctx({})).find((l) => l.button === 'LB')).toBeUndefined()
+    expect(promptLabels(ctx({})).find((l) => l.button === 'X')).toBeUndefined()
     // a hostile in view: resting is not the move, so autofight takes the corner instead
     const fight = ctx({ injured: true, hostilesInView: 1 })
-    expect(promptLabels(fight).find((l) => l.button === 'LB')).toBeUndefined()
+    expect(promptLabels(fight).find((l) => l.button === 'X')).toBeUndefined()
     // not outside command mode
-    expect(promptLabels(ctx({ injured: true, mode: 'menu' })).find((l) => l.button === 'LB')).toBeUndefined()
+    expect(promptLabels(ctx({ injured: true, mode: 'menu' })).find((l) => l.button === 'X')).toBeUndefined()
   })
-  it('shows the server-provided readied action on LT when there is something to shoot', () => {
+  it('shows the server-provided readied action on RB when there is something to shoot', () => {
     const c = ctx({ readiedAction: 'Stone Arrow', hostilesInView: 1 })
-    expect(promptLabels(c)).toContainEqual(expect.objectContaining({ button: 'LT', label: 'Stone Arrow' }))
-    expect(bindingTable(c).LT).toEqual({ kind: 'fire' })
+    expect(promptLabels(c)).toContainEqual(expect.objectContaining({ button: 'RB', label: 'Stone Arrow' }))
+    expect(bindingTable(c).RB).toEqual({ kind: 'fire' })
     // a hostile ahead is a threat too, the same as autofight's
-    expect(promptLabels(ctx({ readiedAction: 'Stone Arrow', ahead: ogre }))).toContainEqual(expect.objectContaining({ button: 'LT' }))
+    expect(promptLabels(ctx({ readiedAction: 'Stone Arrow', ahead: ogre }))).toContainEqual(expect.objectContaining({ button: 'RB' }))
     // quivered but nothing in view: the corner stays quiet, as autofight's does
-    expect(promptLabels(ctx({ readiedAction: 'Stone Arrow' })).find((l) => l.button === 'LT')).toBeUndefined()
+    expect(promptLabels(ctx({ readiedAction: 'Stone Arrow' })).find((l) => l.button === 'RB')).toBeUndefined()
     // with nothing quivered the bar does not volunteer it
     expect(actionLabel({ kind: 'fire' }, ctx({}))).toBe('Fire')
-    expect(promptLabels(ctx({})).find((l) => l.button === 'LT')).toBeUndefined()
+    expect(promptLabels(ctx({})).find((l) => l.button === 'RB')).toBeUndefined()
   })
   it('reads the readied action from the formatted quiver line; an empty quiver is no action', () => {
     expect(readiedAction('<brown>Throw: <lightgreen>23 darts (poison)')).toBe('Throw: 23 darts (poison)')
@@ -292,7 +293,7 @@ describe('direct command controls', () => {
     expect(readiedAction('<darkgrey>Nothing quivered</darkgrey>')).toBeUndefined()
     expect(readiedAction('')).toBeUndefined()
     expect(readiedAction(undefined)).toBeUndefined()
-    expect(promptLabels(ctx({ hostilesInView: 1, readiedAction: readiedAction('<darkgrey>Nothing quivered</darkgrey>') })).find((l) => l.button === 'LT')).toBeUndefined()
+    expect(promptLabels(ctx({ hostilesInView: 1, readiedAction: readiedAction('<darkgrey>Nothing quivered</darkgrey>') })).find((l) => l.button === 'RB')).toBeUndefined()
   })
   it('A takes the stairs underfoot even with a monster ahead; RT offers autofight', () => {
     const c = ctx({ ahead: ogre, under: stairsDown })
@@ -316,20 +317,21 @@ describe('direct command controls', () => {
     for (let n = 1; n <= 20; n++) expect(resolve({ type: 'repeat', button: 'RT', n }, c)).toBeNull()
     expect(resolve({ type: 'release', button: 'RT', t: 1000, held: 1000 }, c)).toBeNull()
   })
-  it('inventory, explore and commands have direct buttons; either stick click examines', () => {
+  it('the gear, travel, actions and explore have direct buttons; either stick click examines', () => {
     const t = bindingTable(ctx({}))
-    expect(t.Y).toMatchObject({ seq: [{ text: 'i' }] })
+    expect(t.Y).toEqual({ kind: 'ui', op: 'equipment' })
+    expect(t.SELECT).toEqual({ kind: 'ui', op: 'travel' })
     expect(t.R3).toEqual({ kind: 'examine' })
     expect(t.L3).toEqual({ kind: 'examine' })
-    expect(t.X).toMatchObject({ seq: [{ text: 'o' }] })
-    expect(t.RB).toEqual({ kind: 'ui', op: 'commands' })
-    expect(t.LB).toMatchObject({ kind: 'hold', tap: { seq: [{ text: '.' }] }, hold: { seq: [{ text: '5' }] } })
+    expect(t.LT).toMatchObject({ seq: [{ text: 'o' }] })
+    expect(t.LB).toEqual({ kind: 'ui', op: 'commands' })
+    expect(t.X).toMatchObject({ kind: 'hold', tap: { seq: [{ text: '.' }] }, hold: { seq: [{ text: '5' }] } })
     expect(t.B).toMatchObject({ seq: [{ key: Keys.ESC }] })
   })
-  it('the controls sheet describes Cancel, LB wait/rest and R3 examine', () => {
+  it('the controls sheet describes Cancel, X wait/rest and R3 examine', () => {
     const sheet = controlSheet()
     expect(sheet.find((r) => r.button === 'B')?.action).toEqual({ tap: 'Cancel' })
-    expect(sheet.find((r) => r.button === 'LB')?.action).toEqual({ tap: 'Wait one turn', hold: 'Rest' })
+    expect(sheet.find((r) => r.button === 'X')?.action).toEqual({ tap: 'Wait one turn', hold: 'Rest' })
     expect(sheet.find((r) => r.button === 'R3')?.action).toEqual({ tap: 'Examine' })
   })
   it.each(['R3', 'L3'] as const)('%s examines once on press without repeating or acting on release', (button) => {
@@ -389,7 +391,7 @@ describe('look mode (x): A describes, named for what the cursor rests on', () =>
     const t = bindingTable(aim)
     expect(t.A).toEqual({ kind: 'fire' })
     expect(t.X).toMatchObject({ seq: [{ text: 'v' }] })
-    expect(promptLabels(aim).map((l) => l.button + ' ' + l.label)).toEqual(['A Fire at goblin', 'LT Fire at goblin'])
+    expect(promptLabels(aim).map((l) => l.button + ' ' + l.label)).toEqual(['A Fire at goblin', 'RB Fire at goblin'])
     expect(promptLabels(ctx({ mode: 'targeting' })).map((l) => l.label)).toEqual(['Fire', 'Fire'])
   })
   it('Y cycles the quiver inside the aim, and the corner shows it while something is quivered', () => {
@@ -402,14 +404,16 @@ describe('look mode (x): A describes, named for what the cursor rests on', () =>
     // a look is not an aim: the quiver has no place there (Y is the server's own help prompt)
     expect(bindingTable(look({ readiedAction: 'Throw: 23 darts' })).Y).toMatchObject({ seq: [{ text: '?' }] })
   })
-  it('LT is the same action before and inside the aim, so tapping it fires shot after shot as `f f f` does', () => {
+  it('RB is the same action before and inside the aim, so tapping it fires shot after shot as `f f f` does', () => {
     // the second tap may land either side of the server reporting the aim; both send f (CMD_TARGET_SELECT inside the prompt)
-    expect(resolve({ type: 'press', button: 'LT', t: 0 }, ctx({}))).toEqual({ kind: 'fire' })
-    expect(resolve({ type: 'press', button: 'LT', t: 0 }, ctx({ mode: 'targeting' }))).toEqual({ kind: 'fire' })
+    expect(resolve({ type: 'press', button: 'RB', t: 0 }, ctx({}))).toEqual({ kind: 'fire' })
+    expect(resolve({ type: 'press', button: 'RB', t: 0 }, ctx({ mode: 'targeting' }))).toEqual({ kind: 'fire' })
     // holding never repeats, as with every button
-    expect(resolve({ type: 'repeat', button: 'LT', n: 1 }, ctx({ mode: 'targeting' }))).toBeNull()
-    // a look is not an aim: LT there stays what the look table says
-    expect(bindingTable(look()).LT).not.toEqual({ kind: 'fire' })
+    expect(resolve({ type: 'repeat', button: 'RB', n: 1 }, ctx({ mode: 'targeting' }))).toBeNull()
+    // the aim's other bumper walks the targets; `-` is left to the palette
+    expect(bindingTable(ctx({ mode: 'targeting' })).LB).toMatchObject({ seq: [{ text: '+' }] })
+    // a look is not an aim: RB there stays what the look table says
+    expect(bindingTable(look()).RB).not.toEqual({ kind: 'fire' })
   })
   it('the d-pad still moves the cursor, facing-relative', () => {
     expect(resolve({ type: 'dir', source: 'dpad', dir: 0 }, look())).toEqual({ kind: 'cursor', dir: 0 })
@@ -436,41 +440,49 @@ describe('the shop menu', () => {
     const v = shopContext(shopMenu('none', [row('a', '$', 'a potion')]) as unknown as MenuState)
     expect(v).toMatchObject({ canBuy: false, mode: 'examine', hoveredListed: true })
   })
-  it('A marks or unmarks the row, Y lists it, Start buys, X flips buy/examine, R3 sorts, B leaves', () => {
+  it('every button that stands for a footer switch wears that switch\u2019s own words, lower case and all', () => {
     const c = shopCtx('buy', [row('a', '-', 'a potion'), row('b', '+', 'a scroll')])
     const t = bindingTable(c)
     expect(t.A).toEqual({ kind: 'menu', op: 'select' })
-    expect(actionLabel(t.A!, c)).toBe('Mark')
+    expect(actionLabel(t.A!, c)).toBe('mark item for purchase')
     expect(t.Y).toEqual({ kind: 'menu', op: 'altSelect' })
-    expect(actionLabel(t.Y!, c)).toBe('Add to list')
-    expect(actionLabel(t.B!, c)).toBe('Leave')
-    expect(t.X).toMatchObject({ kind: 'keys', seq: [{ text: '!' }], label: 'Buy|examine' })
-    expect(t.START).toMatchObject({ kind: 'keys', seq: [{ key: Keys.ENTER }], label: 'Buy marked' })
+    expect(actionLabel(t.Y!, c)).toBe('put item on shopping list')
+    expect(actionLabel(t.B!, c)).toBe('exit')
+    expect(t.X).toMatchObject({ kind: 'keys', seq: [{ text: '!' }], label: 'buy|examine items' })
+    expect(t.START).toMatchObject({ kind: 'keys', seq: [{ key: Keys.ENTER }], label: 'buy marked items' })
     expect(t.LT).toMatchObject({ kind: 'keys', seq: [{ text: '$' }], label: 'List marked' })
     expect(t.R3).toMatchObject({ kind: 'keys', seq: [{ text: '/' }] })
-    // the hovered row is marked: A unmarks it
+    // the letters read the same on a marked row, as the footer's own line does
     const c2 = shopCtx('buy', [row('a', '-', 'a potion'), row('b', '+', 'a scroll')], 1)
-    expect(actionLabel(bindingTable(c2).A!, c2)).toBe('Unmark')
+    expect(actionLabel(bindingTable(c2).A!, c2)).toBe('mark item for purchase')
+    expect(actionLabel(bindingTable(c2).Y!, c2)).toBe('put item on shopping list')
     // the d-pad still hovers rows
     expect(resolve({ type: 'dir', source: 'dpad', dir: 4 }, c)).toEqual({ kind: 'menu', op: 'next' })
   })
   it('with nothing marked, Enter buys the shopping list, or nothing at all', () => {
     const listed = shopCtx('buy', [row('a', '$', 'a potion')])
-    expect(bindingTable(listed).START).toMatchObject({ label: 'Buy list' })
+    expect(bindingTable(listed).START).toMatchObject({ label: 'buy shopping list' })
     expect(bindingTable(listed).LT).toMatchObject({ label: 'Mark listed' })
-    expect(actionLabel(bindingTable(listed).Y!, listed)).toBe('Drop from list')
     const bare = shopCtx('buy', [row('a', '-', 'a potion')])
     expect(bindingTable(bare).START).toMatchObject({ seq: [{ key: Keys.ENTER }] })
     expect(bindingTable(bare).LT).toBeUndefined()
   })
+  it('R3 names the order the footer is sorting by', () => {
+    const rows = [row('a', '-', 'a potion')]
+    const menu = { ...shopMenu('buy', rows), more: `[<w>/</w>] sort (price)   [<w>Enter</w>] buy marked items` } as unknown as MenuState
+    const c = ctx({ mode: 'menu', menu: { menu, hoverable: [0], arrowsSelect: false, multiselect: true, wrap: false, shop: shopContext(menu) } })
+    expect(bindingTable(c).R3).toMatchObject({ seq: [{ text: '/' }], label: 'sort (price)' })
+    // a shop that printed no sort line leaves the bare verb
+    expect(bindingTable(shopCtx('buy', rows)).R3).toMatchObject({ label: 'Sort' })
+  })
   it('in examine mode A describes; a view-only shop offers no buy or mode switch', () => {
     const ex = shopCtx('examine', [row('a', '-', 'a potion')])
-    expect(actionLabel(bindingTable(ex).A!, ex)).toBe('Examine')
-    expect(bindingTable(ex).X).toMatchObject({ label: 'Buy|examine' })
-    expect(bindingTable(ex).START).toMatchObject({ label: 'Describe' })
+    expect(actionLabel(bindingTable(ex).A!, ex)).toBe('examine item')
+    expect(bindingTable(ex).X).toMatchObject({ label: 'buy|examine items' })
+    expect(bindingTable(ex).START).toMatchObject({ label: 'describe' })
     const view = shopCtx('none', [row('a', '-', 'a potion')])
     expect(bindingTable(view).X).toBeUndefined()
-    expect(actionLabel(bindingTable(view).A!, view)).toBe('Examine')
+    expect(actionLabel(bindingTable(view).A!, view)).toBe('examine item')
   })
 })
 
@@ -522,15 +534,15 @@ describe('the action bar shows only what the situation created', () => {
   })
   it('a menu shows Start to confirm; a shop shows its marks and what Enter buys', () => {
     const menu = { menu: { tag: 'inv', type: 'menu', items: [], flags: 0 } as never, hoverable: [], arrowsSelect: false, multiselect: false, wrap: false }
-    expect(show(ctx({ mode: 'menu', menu }))).toEqual(['START Confirm'])
+    expect(show(ctx({ mode: 'menu', menu }))).toEqual(['START accept'])
     const shop = { canBuy: true, mode: 'buy', hoveredMarked: true, hoveredListed: false, anyMarked: true, anyListed: false } as const
-    expect(show(ctx({ mode: 'menu', menu: { ...menu, shop } }))).toEqual(['A Unmark', 'X Buy|examine', 'Y Add to list', 'LT List marked', 'START Buy marked'])
+    expect(show(ctx({ mode: 'menu', menu: { ...menu, shop } }))).toEqual(['A mark item for purchase', 'X buy|examine items', 'Y put item on shopping list', 'LT List marked', 'START buy marked items'])
     // nothing marked: the flip still shows, since the footer's `[!] buy|examine items` is the only way to it on a pad
     const bare = { ...shop, hoveredMarked: false, anyMarked: false } as const
-    expect(show(ctx({ mode: 'menu', menu: { ...menu, shop: bare } }))).toEqual(['A Mark', 'X Buy|examine', 'Y Add to list'])
-    expect(show(ctx({ mode: 'menu', menu: { ...menu, shop: { ...bare, mode: 'examine' } } }))).toEqual(['A Examine', 'X Buy|examine', 'Y Add to list'])
+    expect(show(ctx({ mode: 'menu', menu: { ...menu, shop: bare } }))).toEqual(['A mark item for purchase', 'X buy|examine items', 'Y put item on shopping list'])
+    expect(show(ctx({ mode: 'menu', menu: { ...menu, shop: { ...bare, mode: 'examine' } } }))).toEqual(['A examine item', 'X buy|examine items', 'Y put item on shopping list'])
     // a view-only shop has no mode to flip
-    expect(show(ctx({ mode: 'menu', menu: { ...menu, shop: { ...bare, canBuy: false, mode: 'examine' } } }))).toEqual(['A Examine', 'Y Add to list'])
+    expect(show(ctx({ mode: 'menu', menu: { ...menu, shop: { ...bare, canBuy: false, mode: 'examine' } } }))).toEqual(['A examine item', 'Y put item on shopping list'])
   })
   it('a prompt shows its answers without a Start confirmation hint', () => {
     expect(show(ctx({ mode: 'yesno', focus: { label: 'Yes', cancelLabel: 'No', index: 0, count: 2 } }))).toEqual(['A Yes'])

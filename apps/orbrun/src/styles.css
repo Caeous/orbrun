@@ -3217,6 +3217,15 @@ canvas.minimap.hidden {
 .command-menu li.row.focused .hotkey {
   color: #fff;
 }
+/* the Start menu's own rows keep the game menu's shape (a letter, a dash, the label) next to the command rows of its Character tab */
+.command-menu .sysrows li.row .label {
+  flex: 0 1 auto;
+}
+.command-menu .sysrows li.row .hotkey {
+  width: 1.2em;
+  min-width: 0;
+  margin-left: 0;
+}
 /* the palette and More rows stand apart from the commands, under a rule; the Orbrun menu's runs the same way */
 .command-menu li.row.sep,
 .sysmenu li.row.sep {

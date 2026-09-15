@@ -45,7 +45,9 @@ export const TRAVEL_COMMANDS: CommandEntry[] = [
   control('Find items / shops', 'Ctrl-F', 6),
 ]
 
-const EQUIPMENT_COMMANDS: CommandEntry[] = [
+export const EQUIPMENT_COMMANDS: CommandEntry[] = [
+  // Y is the gear button, and the pack is the first thing it opens: crawl's own `i`, at the top of the list
+  command('Inventory', 'i'),
   command('Wield weapon', 'w'),
   command('Wear armour', 'W'),
   command('Put on jewellery', 'P'),
@@ -55,8 +57,8 @@ const EQUIPMENT_COMMANDS: CommandEntry[] = [
   command('Remove jewellery', 'R'),
 ]
 
-/** Info includes management screens (skills, memorisation, letter assignments), not just read-only views. */
-const INFO_COMMANDS: CommandEntry[] = [
+/** Character includes management screens (skills, memorisation, letter assignments), not just read-only views. */
+export const CHARACTER_COMMANDS: CommandEntry[] = [
   command('Skills', 'm'),
   command('Character status', '@'),
   command('Resistances / equipment', '%'),
@@ -71,17 +73,22 @@ const INFO_COMMANDS: CommandEntry[] = [
   command('Show gold', '$'),
 ]
 
-/** Game options live on the Start menu (Overlays.showSystem), not on a Select tab. */
+/** Repeat and Help live on the Start menu's System tab (Overlays.showSystem), with the game options. */
 export const REPEAT_COMMAND: CommandEntry = command('Repeat previous command', '`')
 export const HELP_COMMAND: CommandEntry = command('Help', '?')
 
-export type CommandGroup = 'travel' | 'equipment' | 'info'
-/** Select owns non-battle commands; RB is a separate, flat battle menu; the Start menu has the game options. */
-export const COMMAND_GROUPS: { id: CommandGroup; label: string; hint: string; entries: CommandEntry[] }[] = [
-  { id: 'travel', label: 'Travel', hint: 'Explore the dungeon · maps, destinations and items', entries: TRAVEL_COMMANDS },
-  { id: 'equipment', label: 'Equipment', hint: 'Manage your gear · weapons, armour and jewellery', entries: EQUIPMENT_COMMANDS },
-  { id: 'info', label: 'Character', hint: 'Review and manage · character, skills and spells', entries: INFO_COMMANDS },
+export type CommandMenu = 'battle' | 'travel' | 'equipment'
+/**
+ * One button, one list: LB the actions of a fight, Select the ways across the
+ * floor, Y the gear. The lists are flat -- what a button opens is what it
+ * says on the bar -- and the character and the game's own options are tabs of
+ * the Start menu (Overlays.showSystem) instead.
+ */
+export const COMMAND_MENUS: { id: CommandMenu; title: string; entries: CommandEntry[] }[] = [
+  { id: 'battle', title: 'Actions', entries: BATTLE_COMMANDS },
+  { id: 'travel', title: 'Travel', entries: TRAVEL_COMMANDS },
+  { id: 'equipment', title: 'Equipment', entries: EQUIPMENT_COMMANDS },
 ]
 
 /** Direct pad controls (including contextual A), with Crawl's alternate keys. */
-export const GAMEPAD_COMMAND_KEYS = new Set(['o', '5', '.', 's', 'i', 'x', 'f', '\t', ',', 'g', '<', '>', 'O', 'C'])
+export const GAMEPAD_COMMAND_KEYS = new Set(['o', '5', '.', 's', 'x', 'f', '\t', ',', 'g', '<', '>', 'O', 'C'])

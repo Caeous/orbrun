@@ -76,9 +76,9 @@ describe('describe popup', () => {
     expect(ov.focusInfo(ctx)?.label).toBe('Flame Tongue')
     ov.focusOp(st, ctx, 'next')
     ctx = frame()
-    expect(ctx.focus?.label).toBe('Read')
+    expect(ctx.focus?.label).toBe('(r)ead')
     ov.focusOp(st, ctx, 'right')
-    expect(ov.focusInfo(ctx)?.label).toBe('Drop')
+    expect(ov.focusInfo(ctx)?.label).toBe('(d)rop')
     ov.focusOp(st, ctx, 'select')
     expect(sent).toEqual([{ msg: 'input', text: 'd' }])
     sent.length = 0
@@ -141,10 +141,11 @@ describe('describe popup', () => {
     reduce(st, { msg: 'ui-push', type: 'newgame-random-combo', prompt: 'You are a Minotaur Fighter.' })
     let ctx = frame()
     expect(ctx.focus?.count).toBe(3)
-    expect(ctx.focus?.label).toBe('Yes')
+    // the answers are the popup's own words, as the line prints them
+    expect(ctx.focus?.label).toBe('(Y)es')
     ov.focusOp(st, ctx, 'right')
     ctx = frame()
-    expect(ctx.focus?.label).toBe('No')
+    expect(ctx.focus?.label).toBe('(n)o')
     ov.focusOp(st, ctx, 'select')
     expect(sent).toEqual([{ msg: 'input', text: 'n' }])
   })
@@ -152,12 +153,13 @@ describe('describe popup', () => {
     const { ov, st, frame, sent } = setup()
     reduce(st, { msg: 'ui-push', type: 'describe-monster', title: 'a rat', body: 'A rat.', status: 'sleeping', quote: '', actions: '(x)amine.' })
     let ctx = frame()
-    expect(ctx.focus?.label).toBe('Status')
+    // the switch is one row, and the row is the whole list: the chip says what the footer says
+    expect(ctx.focus?.label).toBe('Description | Status')
     ov.focusOp(st, ctx, 'select')
     expect(sent).toEqual([{ msg: 'input', text: '!' }])
     ov.focusOp(st, ctx, 'next')
     ctx = frame()
-    expect(ctx.focus?.label).toBe('Xamine')
+    expect(ctx.focus?.label).toBe('(x)amine')
   })
 })
 
@@ -658,6 +660,24 @@ describe('newgame', () => {
     frame()
     expect(host.querySelector('.button.selected')?.textContent).toBe('Octopode')
   })
+
+  it('stops hovering once a key has the cursor, until the mouse is moved again', () => {
+    // the grid scrolls under a resting pointer as the cursor walks it: the
+    // `mouseenter` that fires must not drag the cursor back to the mouse
+    const { ov, st, frame, host, focusedText } = setup()
+    push(st)
+    reduce(st, { msg: 'ui-state', button_focus: 97 })
+    const ctx = frame()
+    const btn = host.querySelector('.button[data-hotkey="99"]') as HTMLElement
+    expect(focusedText()).toBe('Human')
+    expect(ov.focusKey(st, ctx, 'next')).toBe(true)
+    expect(focusedText()).toBe('Minotaur')
+    btn.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(focusedText()).toBe('Minotaur')
+    ov.root.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', clientX: 4, clientY: 9, bubbles: true } as PointerEventInit))
+    btn.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(focusedText()).toBe('Octopode')
+  })
 })
 
 describe('dialog', () => {
@@ -774,8 +794,8 @@ describe('scroller popups with unprinted keys', () => {
     reduce(st, { msg: 'ui-push', type: 'formatted-scroller', title: '', text: '<lightgrey>                    <white>Dungeon Overview and Level Annotations<lightgrey>\n\n<green>Branches:<lightgrey> (press <white>G<lightgrey> to reach them and <white>?/b<lightgrey> for more information)\n<yellow>Dungeon<lightgrey> <darkgrey>(2/15)<lightgrey>            \n\n<green>Altars:<lightgrey> (press <white>_<lightgrey> to reach them and <white>?/g<lightgrey> for information about gods)\n<darkgrey>Ashenzari<lightgrey>          <darkgrey>Cheibriados<lightgrey>' })
     let ctx = frame()
     expect(ctx.mode).toBe('popup')
-    expect(ctx.popupActions?.map((a) => a.key + '=' + a.label)).toEqual(['G=Travel', '_=Altar', '$=Shops', '!=Annotate'])
-    expect(ctx.focus).toMatchObject({ label: 'Travel', count: 4 })
+    expect(ctx.popupActions?.map((a) => a.key + '=' + a.label)).toEqual(['G=(G) Travel', '_=(_) Altar', '$=($) Shops', '!=(!) Annotate'])
+    expect(ctx.focus).toMatchObject({ label: '(G) Travel', count: 4 })
     expect(host.querySelector('.popup .actions')?.textContent).toBe('(G) Travel, (_) Altar, ($) Shops, (!) Annotate')
     ov.focusOp(st, ctx, 'right')
     ov.focusOp(st, ctx, 'right')
@@ -784,7 +804,7 @@ describe('scroller popups with unprinted keys', () => {
     expect(sent).toEqual([{ msg: 'input', text: '!' }])
     sent.length = 0
     ctx = frame()
-    expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('Annotate')
+    expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('(!) Annotate')
   })
   it("a god's description at an altar: the keyboard's Enter joins (raw to the server) until an arrow has taken the cursor; J stays raw too", () => {
     const { ov, st, sent, frame, host } = setup()
@@ -794,7 +814,7 @@ describe('scroller popups with unprinted keys', () => {
     expect(ctx.mode).toBe('popup')
     expect(host.querySelector('.popup .footer')?.textContent).toContain('J/Enter: join religion')
     // the cursor rests on the pane switch, but Enter is not its until the keyboard walked there
-    expect(ctx.focus?.label).toBe('Powers')
+    expect(ctx.focus?.label).toBe('Overview | Powers | Wrath')
     expect(ov.focusKey(st, ctx, 'select')).toBe(false)
     expect(sent).toEqual([])
     // an arrow the cursor cannot take (one item) is not a walk either: it scrolls the text, Enter stays raw
@@ -809,7 +829,7 @@ describe('scroller popups with unprinted keys', () => {
     const { ov, st, sent, frame } = setup()
     reduce(st, { msg: 'ui-push', type: 'formatted-scroller', title: '', text: '<white>Dungeon Overview and Level Annotations<lightgrey>\n<yellow>Dungeon<lightgrey>' })
     const ctx = frame('keyboard')
-    expect(ctx.focus).toMatchObject({ label: 'Travel', count: 4 })
+    expect(ctx.focus).toMatchObject({ label: '(G) Travel', count: 4 })
     expect(ov.focusKey(st, ctx, 'select')).toBe(false)
     expect(ov.focusKey(st, ctx, 'right')).toBe(true)
     expect(ov.focusKey(st, ctx, 'select')).toBe(true)
@@ -819,7 +839,7 @@ describe('scroller popups with unprinted keys', () => {
     const { st, frame } = setup()
     reduce(st, { msg: 'ui-push', type: 'formatted-scroller', tag: 'help', title: '', text: '<h>Dungeon Crawl Help\n\nPress one of the following keys to\nobtain more information on a certain\naspect of Dungeon Crawl.\n<w>?</w>: List of commands\n<w>^</w>: Quickstart Guide\n<darkgrey>:: Browse character notes</darkgrey>\n<w>~</w>: Macros help\n<w>/</w>: Lookup description\n<w>Q</w>: FAQ' })
     let ctx = frame()
-    expect(ctx.popupActions?.map((a) => a.key + '=' + a.label)).toEqual(['?=List of commands', '^=Quickstart Guide', '~=Macros help', '/=Lookup description', 'Q=FAQ'])
+    expect(ctx.popupActions?.map((a) => a.key + '=' + a.label)).toEqual(['?=(?) List of commands', '^=(^) Quickstart Guide', '~=(~) Macros help', '/=(/) Lookup description', 'Q=(Q) FAQ'])
     reduce(st, { msg: 'ui-state', text: '<h>Macros\n\nA macro is...' })
     ctx = frame()
     expect(ctx.popupActions?.map((a) => a.key)).toEqual(['?', '^', '~', '/', 'Q'])

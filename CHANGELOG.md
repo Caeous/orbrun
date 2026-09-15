@@ -14,9 +14,10 @@ of what Orbrun does today.
   the monster list, the stats pane, the message log, chat with spectators, the
   level map, the dungeon overview, and targeting.
 - Full gamepad support: a contextual A button, tap-or-hold buttons, an action
-  bar that always shows what each button does in the current mode, command
-  menus for travel, equipment, character and actions, an on-screen keyboard,
-  and hints that teach the controls as you use them.
+  bar that always shows what each button does in the current mode, a menu per
+  button (actions on LB, travel on Select, your gear on Y, your character and
+  the game options on Start), an on-screen keyboard, and hints that teach the
+  controls as you use them.
 - Aiming on a controller: fire, examine, spells and wands open on the cell
   ahead, keep their heading while the d-pad walks the cursor, and repeat
   with repeated taps.

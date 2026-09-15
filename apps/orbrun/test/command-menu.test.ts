@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { initialState, MouseMode, reduce, type ClientMessage } from '@orbrun/webtiles'
 import { emptyScene } from '@orbrun/scene'
 import { Overlays } from '../src/overlays'
-import { BATTLE_COMMANDS, COMMAND_GROUPS, GAMEPAD_COMMAND_KEYS, REPEAT_COMMAND, TRAVEL_COMMANDS } from '../src/command-menu'
+import { BATTLE_COMMANDS, CHARACTER_COMMANDS, COMMAND_MENUS, EQUIPMENT_COMMANDS, GAMEPAD_COMMAND_KEYS, REPEAT_COMMAND, TRAVEL_COMMANDS } from '../src/command-menu'
 import { deriveContext } from '../src/context'
 import { resolve, type Action } from '../src/bindings'
 import commands from '../data/commands.json'
@@ -20,27 +20,26 @@ function setup() {
     settingsPanel: () => ({ el: document.createElement('div'), rows: [] }),
   })
   const run = vi.fn<(a: Action) => void>()
-  const focused = () => host.querySelector('.command-menu .focused .label')?.textContent
-  return { ov, host, sent, run, focused, changed }
+  const focused = () => host.querySelector('.command-menu .focused .label, .sysmenu .focused .label')?.textContent
+  const system = (spectating = false) => ov.showSystem({ spectating, inGame: true, run })
+  return { ov, host, sent, run, focused, changed, system }
 }
 
 afterEach(() => { document.body.replaceChildren() })
 
-describe('the grouped command menu', () => {
+describe('the command menus', () => {
   it('offers native commands in stable order and sends exactly their keys', () => {
     const h = setup()
-    for (const group of [{ id: 'battle' as const, entries: BATTLE_COMMANDS }, ...COMMAND_GROUPS]) {
-      h.ov.showCommands(h.run, group.id)
-      expect([...h.host.querySelectorAll('.command-menu ol:not(.inactive) .label')].map((r) => r.textContent)).toEqual([
-        ...group.entries.map((c) => c.label),
-      ])
-      expect(new Set(group.entries.map((c) => c.key)).size).toBe(group.entries.length)
-      for (const c of group.entries) {
+    for (const menu of COMMAND_MENUS) {
+      h.ov.showCommands(h.run, menu.id)
+      expect([...h.host.querySelectorAll('.command-menu ol .label')].map((r) => r.textContent)).toEqual(menu.entries.map((c) => c.label))
+      expect(new Set(menu.entries.map((c) => c.key)).size).toBe(menu.entries.length)
+      for (const c of menu.entries) {
         if (c.action.kind !== 'keys' || c.action.seq.length !== 1) continue
         const step = c.action.seq[0]
         const native = 'text' in step ? step.text : String.fromCharCode(step.key)
         expect(commands.some((entry) => entry.mode === 'command' && entry.key === native)).toBe(true)
-        h.ov.showCommands(h.run, group.id)
+        h.ov.showCommands(h.run, menu.id)
         expect(h.ov.clientOverlayHotkey(c.key)).toBe(true)
         expect(h.run).toHaveBeenLastCalledWith(c.action)
         expect(h.ov.hasClientOverlay).toBe(false)
@@ -50,7 +49,7 @@ describe('the grouped command menu', () => {
 
   it('puts the whole menu away on Select, wherever in it the cursor stands', () => {
     const h = setup()
-    h.ov.showCommands(h.run, 'select')
+    h.ov.showCommands(h.run, 'travel')
     expect(h.ov.hasClientOverlay).toBe(true)
     expect(h.ov.clientOverlayInput('close')).toBe(true)
     expect(h.ov.hasClientOverlay).toBe(false)
@@ -65,32 +64,32 @@ describe('the grouped command menu', () => {
     expect(back).not.toHaveBeenCalled()
   })
 
-  it('keeps battle actions on RB and non-battle commands on Select', () => {
+  it('gives each button its own list, with no command on two of them', () => {
     expect(BATTLE_COMMANDS.map((c) => c.key)).toEqual(['q', 'r', 'z *', 'a *', 'V', "'", 'Q', ')', '(', 'v', 't'])
-    const expected = [
-      ['Ctrl-F', 'G', 'Ctrl-O', 'X', 'G <', 'G >'],
-      ['e', 'w', 'W', 'T', 'P', 'R', 'd'],
-      ['@', '%', '^', '=', 'A', 'm', '}', '\\', '$', 'M', 'I'],
-    ]
-    COMMAND_GROUPS.forEach((g, i) => {
-      expect(g.entries.map((c) => c.key)).toEqual(expect.arrayContaining(expected[i]))
-      expect(g.entries.some((c) => BATTLE_COMMANDS.some((b) => b.key === c.key))).toBe(false)
-    })
-    for (const c of [...BATTLE_COMMANDS, ...COMMAND_GROUPS.flatMap((g) => g.entries)]) {
-      expect(GAMEPAD_COMMAND_KEYS.has(c.key)).toBe(false)
-    }
+    // Y is the gear button, and the pack is the first thing it opens
+    expect(EQUIPMENT_COMMANDS[0].key).toBe('i')
+    const lists = [...COMMAND_MENUS.map((m) => m.entries), CHARACTER_COMMANDS]
+    const every = lists.flat()
+    expect(new Set(every.map((c) => c.key)).size).toBe(every.length)
+    for (const c of every) expect(GAMEPAD_COMMAND_KEYS.has(c.key)).toBe(false)
+    // Repeat and Save are the Start menu's own rows, not commands on a list
     expect(REPEAT_COMMAND.key).toBe('`')
-    expect(COMMAND_GROUPS.flatMap((g) => g.entries).some((c) => c.key === '`' || c.key === 'S')).toBe(false)
+    expect(every.some((c) => c.key === '`' || c.key === 'S')).toBe(false)
   })
 
-  it('RB has no management tabs, search or More, and group navigation stays in battle', () => {
+  it('a button menu has no tabs, search or More, and tab navigation stays in it', () => {
     const h = setup()
-    h.ov.showCommands(h.run)
-    expect(h.host.querySelector('.title')?.textContent).toBe('Actions')
-    expect(h.host.querySelector('.command-tabs')).toBeNull()
-    h.ov.clientOverlayInput('right')
-    h.ov.clientOverlayInput('catNext')
-    expect([...h.host.querySelectorAll('.command-menu .label')].map((r) => r.textContent)).toEqual(BATTLE_COMMANDS.map((c) => c.label))
+    for (const menu of COMMAND_MENUS) {
+      h.ov.showCommands(h.run, menu.id)
+      expect(h.host.querySelector('.title')?.textContent).toBe(menu.title)
+      expect(h.host.querySelector('.command-tabs')).toBeNull()
+      h.ov.clientOverlayInput('right')
+      h.ov.clientOverlayInput('catNext')
+      expect([...h.host.querySelectorAll('.command-menu .label')].map((r) => r.textContent)).toEqual(menu.entries.map((c) => c.label))
+      expect(h.host.textContent).not.toContain('All commands / search')
+      expect(h.host.textContent).not.toContain('More…')
+      expect(h.host.querySelector('input')).toBeNull()
+    }
     expect(h.run).not.toHaveBeenCalled()
     expect(h.sent).toEqual([])
   })
@@ -106,32 +105,32 @@ describe('the grouped command menu', () => {
     expect(h.host.querySelectorAll('.palette .item').length).toBe(commands.filter((c) => c.mode === 'targeting').length)
   })
 
-  it('switches groups with arrows or tabs, wraps, and remembers each selection without sending keys', () => {
+  it('the Start menu switches tabs with arrows or clicks, wraps, and remembers each selection without sending keys', () => {
     const h = setup()
-    h.ov.showCommands(h.run, 'travel')
-    h.ov.clientOverlayInput('next')
-    h.ov.clientOverlayInput('right')
-    expect(h.focused()).toBe('Wield weapon')
-    h.ov.clientOverlayInput('next')
-    h.ov.clientOverlayInput('right')
+    h.system()
+    expect([...h.host.querySelectorAll('.command-tabs button')].map((r) => r.textContent)).toEqual(['Character', 'System'])
     expect(h.focused()).toBe('Skills')
+    h.ov.clientOverlayInput('next')
     h.ov.clientOverlayInput('right')
-    expect(h.focused()).toBe('Find downstairs')
+    expect(h.focused()).toBe('Resume')
+    h.ov.clientOverlayInput('next')
+    h.ov.clientOverlayInput('right')
+    expect(h.focused()).toBe('Character status')
     h.ov.clientOverlayInput('left')
-    expect(h.focused()).toBe('Skills')
-    h.host.querySelectorAll<HTMLButtonElement>('.command-tabs button')[1].click()
-    expect(h.focused()).toBe('Wear armour')
-    expect(h.host.querySelector('.command-tabs .current')?.textContent).toBe('Equipment')
+    expect(h.focused()).toBe('Repeat previous command (`)')
+    h.host.querySelectorAll<HTMLButtonElement>('.command-tabs button')[0].click()
+    expect(h.focused()).toBe('Character status')
+    expect(h.host.querySelector('.command-tabs .current')?.textContent).toBe('Character')
     h.ov.clientOverlayInput('cancel')
     expect(h.ov.hasClientOverlay).toBe(false)
     expect(h.run).not.toHaveBeenCalled()
     expect(h.sent).toEqual([])
   })
+
   it('the footer reads in the words of the device that spoke last: key caps on the keyboard, glyphs on the pad', () => {
     const h = setup()
-    h.ov.showCommands(h.run, 'select')
+    h.system()
     const more = h.host.querySelector('.command-menu .more')!
-    const shown = () => [...more.querySelectorAll<HTMLElement>('.pad-only, .kbd-only')].filter((e) => getComputedStyle(e).display !== 'none').map((e) => e.className)
     // by default and after the keyboard, the pad reading is hidden and the keyboard one carries key caps, no glyphs
     h.ov.setDevice('keyboard')
     expect(h.host.querySelector('.overlay-stack')?.classList.contains('device-keyboard')).toBe(true)
@@ -147,12 +146,16 @@ describe('the grouped command menu', () => {
     // a pointer counts as the keyboard's side, as the prompt card does
     h.ov.setDevice('pointer')
     expect(h.host.querySelector('.overlay-stack')?.classList.contains('device-keyboard')).toBe(true)
-    void shown
+    // a button's own list has no tabs to switch, so its footer says only what fires a row
+    h.ov.showCommands(h.run, 'travel')
+    const flat = h.host.querySelector('.command-menu .more')!
+    expect([...flat.querySelectorAll('.kbd-only kbd')].map((k) => k.textContent)).toEqual(['Enter', 'Esc'])
+    expect(flat.querySelectorAll('.pad-only svg')).toHaveLength(1)
   })
 
   it('keeps the dialog and tabs mounted when bumpers, arrows or pointer change tabs', () => {
     const h = setup()
-    h.ov.showCommands(h.run, 'travel')
+    h.system()
     const dialog = h.host.querySelector('.command-menu')!
     const tabs = h.host.querySelector('.command-tabs')!
     const panels = [...h.host.querySelectorAll<HTMLOListElement>('[role="tabpanel"]')]
@@ -164,21 +167,21 @@ describe('the grouped command menu', () => {
       expect(h.host.querySelector('.command-tabs')).toBe(tabs)
       expect(panels.filter((p) => !p.inert)).toHaveLength(1)
     }
-    expect(h.host.querySelector('.command-tabs .current')?.textContent).toBe('Travel')
-    expect(h.focused()).toBe('Find downstairs')
+    expect(h.host.querySelector('.command-tabs .current')?.textContent).toBe('Character')
+    expect(h.focused()).toBe('Character status')
     h.ov.clientOverlayInput('right')
-    h.host.querySelector<HTMLButtonElement>('#command-tab-info')!.click()
+    h.host.querySelector<HTMLButtonElement>('#command-tab-character')!.click()
     expect(h.host.querySelector('.command-menu')).toBe(dialog)
     expect([...h.host.querySelectorAll('[role="tabpanel"]')]).toEqual(panels)
-    expect(h.ov.clientOverlayHotkey('G')).toBe(false) // inactive Travel panel
+    expect(h.ov.clientOverlayHotkey('a')).toBe(false) // inactive System panel
     expect(h.changed).not.toHaveBeenCalled()
     expect(h.run).not.toHaveBeenCalled()
     expect(h.sent).toEqual([])
   })
 
-  it('keeps Page Up / Down for rows and bumpers page a menu without tabs', () => {
+  it('keeps Page Up / Down for rows, and bumpers page a menu without tabs', () => {
     const h = setup()
-    h.ov.showCommands(h.run, 'info')
+    h.system()
     h.ov.clientOverlayInput('pageNext')
     expect(h.focused()).toBe('Runes collected')
     expect(h.host.querySelector('.command-tabs .current')?.textContent).toBe('Character')
@@ -190,19 +193,6 @@ describe('the grouped command menu', () => {
     h.ov.clientOverlayInput('bumperPrev')
     expect(h.focused()).toBe('Quaff potion')
     expect(h.run).not.toHaveBeenCalled()
-  })
-
-  it('uses only the command tabs, with no search or More submenu', () => {
-    const h = setup()
-    for (const group of COMMAND_GROUPS) {
-      h.ov.showCommands(h.run, group.id)
-      expect([...h.host.querySelectorAll('.command-tabs button')].map((r) => r.textContent)).toEqual(['Travel', 'Equipment', 'Character'])
-      expect(h.host.textContent).not.toContain('All commands / search')
-      expect(h.host.textContent).not.toContain('More…')
-      expect(h.host.querySelector('input')).toBeNull()
-    }
-    expect(h.run).not.toHaveBeenCalled()
-    expect(h.sent).toEqual([])
   })
 
   it('does not spend a turn browsing, remembers selection, and Start submits it', () => {
@@ -219,47 +209,66 @@ describe('the grouped command menu', () => {
     expect(h.ov.hasClientOverlay).toBe(false)
   })
 
-  it('Select comes back to the tab and row a command was picked from, by click or by pad', () => {
+  it('each button comes back to the row a command was picked from, by click or by pad', () => {
     const h = setup()
-    h.ov.showCommands(h.run, 'select')
-    expect(h.host.querySelector('.command-tabs .current')?.textContent).toBe('Travel')
-    h.ov.clientOverlayInput('right')
-    const wear = [...h.host.querySelectorAll<HTMLElement>('.command-menu ol:not(.inactive) li')].find((r) => r.textContent?.startsWith('Wear armour'))!
+    h.ov.showCommands(h.run, 'equipment')
+    expect(h.focused()).toBe('Inventory')
+    const wear = [...h.host.querySelectorAll<HTMLElement>('.command-menu ol li')].find((r) => r.textContent?.startsWith('Wear armour'))!
     wear.click()
     expect(h.run).toHaveBeenCalledTimes(1)
     expect(h.ov.hasClientOverlay).toBe(false)
-    h.ov.showCommands(h.run, 'select')
-    expect(h.host.querySelector('.command-tabs .current')?.textContent).toBe('Equipment')
-    expect(h.focused()).toBe('Wear armour')
-    h.ov.clientOverlayInput('right')
+    // another button's list keeps its own cursor, untouched by the one next door
+    h.ov.showCommands(h.run, 'travel')
+    expect(h.focused()).toBe('Level map')
     h.ov.clientOverlayInput('next')
     h.ov.clientOverlayInput('submit')
     expect(h.run).toHaveBeenCalledTimes(2)
-    h.ov.showCommands(h.run, 'select')
-    expect(h.host.querySelector('.command-tabs .current')?.textContent).toBe('Character')
-    expect(h.focused()).toBe(COMMAND_GROUPS[2].entries[1].label)
+    h.ov.showCommands(h.run, 'equipment')
+    expect(h.focused()).toBe('Wear armour')
+    h.ov.clientOverlayInput('close')
+    h.ov.showCommands(h.run, 'travel')
+    expect(h.focused()).toBe('Find downstairs')
     expect(h.sent).toEqual([])
   })
 
-  it('the Start menu holds the game options, Save and exit last while playing and Stop watching last as a spectator', () => {
+  it('the Start menu comes back to the tab it was left on', () => {
     const h = setup()
-    const labels = () => [...h.host.querySelectorAll('.sysmenu .label')].map((r) => r.textContent)
-    h.ov.showSystem({ spectating: false, inGame: true })
-    expect(labels()).toEqual(['Resume', 'Repeat previous command (`)', 'Game menu (F1)', 'Help (?)', 'Chat (F12)', 'Gamepad', 'Settings', 'Save and exit (S)'])
-    expect([...h.host.querySelectorAll('.sysmenu li.sep .label')].map((r) => r.textContent)).toEqual(['Gamepad', 'Save and exit (S)'])
+    h.system()
+    h.ov.clientOverlayInput('right')
+    expect(h.host.querySelector('.command-tabs .current')?.textContent).toBe('System')
+    h.ov.clientOverlayInput('cancel')
+    h.system()
+    expect(h.host.querySelector('.command-tabs .current')?.textContent).toBe('System')
+    expect(h.focused()).toBe('Resume')
+    expect(h.sent).toEqual([])
+  })
+
+  it('the Start menu holds the character screens and the game options, and a spectator only the options', () => {
+    const h = setup()
+    const options = () => [...h.host.querySelectorAll('.sysrows .label')].map((r) => r.textContent)
+    h.system()
+    expect([...h.host.querySelectorAll('#command-panel-character .label')].map((r) => r.textContent)).toEqual(CHARACTER_COMMANDS.map((c) => c.label))
+    expect(options()).toEqual(['Resume', 'Repeat previous command (`)', 'Game menu (F1)', 'Help (?)', 'Chat (F12)', 'Gamepad', 'Settings', 'Save and exit (S)'])
+    expect([...h.host.querySelectorAll('.sysrows li.sep .label')].map((r) => r.textContent)).toEqual(['Gamepad', 'Save and exit (S)'])
+    // the System tab, from its third row: the game's own menu
+    h.ov.clientOverlayInput('right')
     h.ov.clientOverlayInput('next')
     h.ov.clientOverlayInput('next')
     h.ov.clientOverlayInput('select')
     expect(h.sent).toEqual([{ msg: 'input', text: '~' }])
     h.sent.length = 0
-    h.ov.showSystem({ spectating: false, inGame: true })
+    h.system()
     h.ov.clientOverlayInput('last')
     h.ov.clientOverlayInput('select')
     expect(h.sent).toEqual([{ msg: 'input', text: 'S' }])
-    h.ov.showSystem({ spectating: true, inGame: true })
-    expect(labels()).toEqual(['Resume', 'Chat (F12)', 'Gamepad', 'Settings', 'Stop watching'])
-    expect([...h.host.querySelectorAll('.sysmenu li.sep .label')].map((r) => r.textContent)).toEqual(['Gamepad', 'Stop watching'])
+    h.sent.length = 0
+    // a spectator sends no keys, so there is no character to read and no tabs
+    h.system(true)
+    expect(h.host.querySelector('.command-tabs')).toBeNull()
+    expect(options()).toEqual(['Resume', 'Chat (F12)', 'Gamepad', 'Settings', 'Stop watching'])
+    expect([...h.host.querySelectorAll('.sysrows li.sep .label')].map((r) => r.textContent)).toEqual(['Gamepad', 'Stop watching'])
     expect(h.run).not.toHaveBeenCalled()
+    expect(h.sent).toEqual([])
   })
 
   it('Select offers map and G travel, with prompt-gated nearest-stairs shortcuts', () => {

@@ -42,7 +42,7 @@ describe('adaptive gamepad teaching', () => {
     expect(teaching(h).map((l) => l.button)).toEqual(['R3'])
   })
 
-  it('teaches examine on R3 and wait/rest on LB, never B', () => {
+  it('teaches examine on R3 and wait/rest on X, never B', () => {
     const h = new GamepadHints()
     basics(h)
     expect(teaching(h)).toMatchObject([{ button: 'R3', label: 'Examine' }])
@@ -50,7 +50,7 @@ describe('adaptive gamepad teaching', () => {
     h.observe(evidence({ mode: 'targeting' }), 10)
     h.attempt(bindingTable(ctx()).SELECT!, ctx(), evidence(), 20)
     h.observe(evidence({ clientOverlay: true }), 30)
-    expect(teaching(h)).toMatchObject([{ button: 'LB', label: 'Wait one turn', hold: 'Rest' }])
+    expect(teaching(h)).toMatchObject([{ button: 'X', label: 'Wait one turn', hold: 'Rest' }])
     expect(padLesson(bindingTable(ctx()).B!, ctx())).toBeNull()
   })
 
@@ -115,17 +115,17 @@ describe('adaptive gamepad teaching', () => {
 describe('nothing standing: only the context and the lessons', () => {
   const standing = (h: GamepadHints, c = ctx()) => h.prompts(c, 'adaptive').filter((l) => !l.contextual && !l.teaching)
 
-  it('never adds Autoexplore, Actions or Inventory on their own, before or after learning them', () => {
+  it('never adds Autoexplore, Actions or Equipment on their own, before or after learning them', () => {
     const h = new GamepadHints()
     expect(standing(h)).toEqual([])
     basics(h)
     h.attempt({ kind: 'ui', op: 'commands' }, ctx(), evidence(), 0)
     h.observe(evidence({ clientOverlay: true }), 10)
-    h.attempt(keys('i'), ctx(), evidence(), 20)
-    h.observe(evidence({ mode: 'menu' }), 30)
+    h.attempt({ kind: 'ui', op: 'equipment' }, ctx(), evidence(), 20)
+    h.observe(evidence({ clientOverlay: true }), 30)
     h.attempt(keys('o'), ctx(), evidence(), 40)
     h.observe(evidence({ x: 11 }), 50)
-    for (const id of ['commands', 'inventory', 'explore'] as const) expect(h.knows(id)).toBe(true)
+    for (const id of ['commands', 'equipment', 'explore'] as const) expect(h.knows(id)).toBe(true)
     expect(standing(h)).toEqual([])
     expect(h.prompts(ctx(), 'adaptive').every((l) => l.teaching)).toBe(true)
   })
@@ -166,7 +166,7 @@ describe('successful outcomes, not button presses', () => {
   it.each([
     ['commands', { kind: 'ui', op: 'commands' }, { clientOverlay: true }],
     ['travel', { kind: 'ui', op: 'travel' }, { clientOverlay: true }],
-    ['inventory', keys('i'), { mode: 'menu' }],
+    ['equipment', { kind: 'ui', op: 'equipment' }, { clientOverlay: true }],
     ['examine', { kind: 'examine' }, { mode: 'targeting' }],
     ['explore', keys('o'), { x: 11 }],
     ['wait', keys('.'), { turn: 2 }],
@@ -182,20 +182,20 @@ describe('successful outcomes, not button presses', () => {
     expect(h.knows(id)).toBe(true)
   })
 
-  it('does not mistake a refusal or a --more-- for opening inventory', () => {
+  it('does not mistake a refusal or a --more-- for a menu that opened', () => {
     const h = new GamepadHints()
-    h.attempt(keys('i'), ctx(), evidence(), 0)
+    h.attempt({ kind: 'ui', op: 'equipment' }, ctx(), evidence(), 0)
     h.observe(evidence({ mode: 'more' }), 10)
-    h.observe(evidence({ mode: 'menu' }), 2000)
-    expect(h.knows('inventory')).toBe(false)
+    h.observe(evidence({ clientOverlay: true }), 2000)
+    expect(h.knows('equipment')).toBe(false)
   })
 
   it('switching input devices or taking another action cancels pending attribution', () => {
     const h = new GamepadHints()
-    h.attempt(keys('i'), ctx(), evidence(), 0)
+    h.attempt({ kind: 'ui', op: 'equipment' }, ctx(), evidence(), 0)
     h.cancel()
-    h.observe(evidence({ mode: 'menu' }), 10)
-    expect(h.knows('inventory')).toBe(false)
+    h.observe(evidence({ clientOverlay: true }), 10)
+    expect(h.knows('equipment')).toBe(false)
     h.attempt(keys('o'), ctx(), evidence(), 20)
     h.attempt({ kind: 'step', dir: 0 }, ctx(), evidence(), 21)
     h.observe(evidence({ x: 11 }), 30)

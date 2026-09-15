@@ -50,7 +50,7 @@ export type Action =
   | { kind: 'prompt'; hotkey: string }
   /** the focus layer's cursor over the top overlay (popup, prompt, CRT screen, dialog) */
   | { kind: 'focus'; op: FocusOp }
-  | { kind: 'ui'; op: 'commands' | 'travel' | 'palette' | 'system' | 'keyboard' | 'faceHostile' | 'toggleRenderer' | 'toggleView' | 'levelmap' | 'bindings' | 'scrollLog' | 'popupAction'; arg?: number; category?: CommandCategory; section?: string }
+  | { kind: 'ui'; op: 'commands' | 'travel' | 'equipment' | 'palette' | 'system' | 'keyboard' | 'faceHostile' | 'toggleRenderer' | 'toggleView' | 'levelmap' | 'bindings' | 'scrollLog' | 'popupAction'; arg?: number; category?: CommandCategory; section?: string }
   | { kind: 'osk'; op: 'move' | 'type' | 'backspace' | 'space' | 'submit' | 'cancel' | 'shift'; dir?: Dir8 }
 
 /** Which section of the command palette applies: the cmd-keys.h key table for the mode. */
@@ -101,11 +101,18 @@ export const LEVEL_MAP: Action = k('X', 'Level map')
 const COMMAND: Partial<Record<Button, Action>> = {
   A: { kind: 'contextual' },
   B: ESC,
-  X: k('o', 'Autoexplore'),
-  Y: k('i', 'Inventory'),
-  LB: hold(k('.', 'Wait one turn'), k('5', 'Rest')),
-  RB: { kind: 'ui', op: 'commands' },
-  LT: { kind: 'fire' },
+  // wait and rest are the same verb at two lengths, so they share a button; X because the
+  // hold wants a thumb rather than an index finger, and because autoexplore, pressed far more
+  // often, earns a shoulder button and never sits a tap-or-hold's decision out until release
+  X: hold(k('.', 'Wait one turn'), k('5', 'Rest')),
+  // the gear button: the pack itself is the first row of the menu it opens
+  Y: { kind: 'ui', op: 'equipment' },
+  // The right hand attacks -- a shot on RB, autofight on RT -- and the left hand does everything
+  // that is not attacking. Explore and autofight, the tightest loop there is, stay on opposite
+  // hands, so the pair you alternate constantly never shares a finger.
+  LB: { kind: 'ui', op: 'commands' },
+  RB: { kind: 'fire' },
+  LT: k('o', 'Autoexplore'),
   RT: { kind: 'fight' },
   // either stick click examines: R3 for a right thumb already on the look stick, L3 for a left thumb resting on the move stick
   L3: { kind: 'examine' },
@@ -115,6 +122,14 @@ const COMMAND: Partial<Record<Button, Action>> = {
   START: SYSTEM,
 }
 
+/**
+ * A server menu. Where a button stands for one of the switches the menu
+ * prints in its keyhelp (menu.cc `Menu::get_keyhelp`: select, page down, page
+ * up, exit, toggle selected, accept) it wears that switch's own word, lower
+ * case as the footer prints it, so the glyph reads as the key the footer
+ * names. The rest (help, the filter, select all) are keys the keyhelp does
+ * not print, and keep our names and our capitals.
+ */
 const MENU: Partial<Record<Button, Action>> = {
   A: { kind: 'menu', op: 'select' },
   B: { kind: 'menu', op: 'cancel' },
@@ -130,16 +145,23 @@ const MENU: Partial<Record<Button, Action>> = {
   L3: palette('menu'),
   R3: k(',', 'Select all'),
   SELECT: ctrl('F', 'Filter'),
-  START: situational(ENTER),
+  START: situational(kc(Keys.ENTER, 'accept')),
 }
 
 /**
  * The shop (`ShopMenu`): letters mark a row for purchase (or describe it in
  * examine mode), Enter buys what is marked (or the shopping list when
  * nothing is), `!` flips buy/examine, `$` moves the marks to the shopping
- * list and back, a shifted letter lists one row, `/` sorts. Every button's
- * label follows the state the server printed, so the bar reads "Unmark",
- * "Buy list" and so on rather than the key.
+ * list and back, a shifted letter lists one row, `/` sorts.
+ *
+ * Every button that stands for one of the switches the shop prints in its
+ * more line (shopping.cc `ShopMenu::update_help`) wears that switch's own
+ * words, lower case and all: "buy marked items", "put item on shopping
+ * list". The glyph stands where the footer prints the key, so the two read as
+ * one sentence and nothing has to be translated between them -- and the
+ * borrowed words stay lower case, which is what marks them as the game's
+ * rather than ours. `$` is the exception: the shop binds it but never prints
+ * it, so its label is ours and wears our capital.
  */
 function shopTable(shop: ShopContext): Partial<Record<Button, Action>> {
   const t: Partial<Record<Button, Action>> = {
@@ -149,19 +171,19 @@ function shopTable(shop: ShopContext): Partial<Record<Button, Action>> {
     LB: { kind: 'menu', op: 'pagePrev' },
     RB: { kind: 'menu', op: 'pageNext' },
     L3: palette('menu'),
-    R3: k('/', 'Sort'),
+    R3: k('/', shop.sortOrder ? `sort (${shop.sortOrder})` : 'Sort'),
     START: ENTER,
   }
   // the server prints the mode as a live prompt (`[!] buy|examine items`, its lit half the current one), so the bar shows the
   // flip unasked. The label is the prompt's own text and does not change with the mode: the footer already lights the
   // current half, and a steady label lets the eye stay on the shop while the mode flips instead of re-reading the bar
-  if (shop.canBuy) t.X = situational(k('!', 'Buy|examine'))
+  if (shop.canBuy) t.X = situational(k('!', 'buy|examine items'))
   if (shop.anyMarked) t.LT = situational(k('$', 'List marked'))
   else if (shop.canBuy && shop.anyListed) t.LT = situational(k('$', 'Mark listed'))
   // Enter with nothing marked and nothing listed does nothing in buy mode (purchase_selected returns)
-  if (shop.canBuy && shop.anyMarked) t.START = situational(kc(Keys.ENTER, 'Buy marked'))
-  else if (shop.canBuy && shop.anyListed) t.START = situational(kc(Keys.ENTER, 'Buy list'))
-  else if (shop.mode === 'examine') t.START = kc(Keys.ENTER, 'Describe')
+  if (shop.canBuy && shop.anyMarked) t.START = situational(kc(Keys.ENTER, 'buy marked items'))
+  else if (shop.canBuy && shop.anyListed) t.START = situational(kc(Keys.ENTER, 'buy shopping list'))
+  else if (shop.mode === 'examine') t.START = kc(Keys.ENTER, 'describe')
   return t
 }
 
@@ -169,14 +191,15 @@ function shopTable(shop: ShopContext): Partial<Record<Button, Action>> {
 const TARGETING: Partial<Record<Button, Action>> = {
   A: { kind: 'fire' },
   B: ESC,
-  LB: k('-', 'Previous'),
-  RB: k('+', 'Next'),
+  // one button walks the targets, so the other bumper can stay the shot: `-` (previous) is in the
+  // palette, and the cycle wraps, so nothing is out of reach with only the forward step bound
+  LB: k('+', 'Next target'),
+  // the same button as opened the aim confirms it, so tapping RB again and again fires shot after shot as `f f f` does
+  RB: { kind: 'fire' },
   X: k('v', 'Describe'),
   // the quiver, cycled inside the aim (CMD_TARGET_CYCLE_QUIVER_FORWARD / _BACKWARD): the shot to take is chosen
   // where it is aimed, and the bar's Fire label follows the server's new quiver line
   Y: hold(k(')', 'Next quiver'), k('(', 'Previous quiver')),
-  // the same button as opened the aim confirms it, so tapping LT again and again fires shot after shot as `f f f` does
-  LT: { kind: 'fire' },
   SELECT: palette('targeting'),
   START: ENTER,
 }
@@ -240,8 +263,9 @@ const FOCUS: Partial<Record<Button, Action>> = {
 /**
  * A popup's first action, on X: a describe screen's pane switch
  * (Description | Status | Quote on a monster, `!`), or the first verb of a
- * popup without panes (the overview's Travel). The label is the action's own,
- * so the chip reads "Status" and then "Quote" as the panes cycle.
+ * popup without panes (the overview's Travel). The label is the row's own
+ * words, so the chip reads the whole pane list and does not rename itself as
+ * the panes cycle (overlays.ts `paneAction`).
  */
 const POPUP_ACTION: Action = { kind: 'ui', op: 'popupAction', arg: 0 }
 
@@ -453,7 +477,7 @@ function menuRowExamines(m: MenuContext): boolean {
   return i !== undefined && i >= 0 && m.hoverable.includes(i) && !!menu.items[i]?.hotkeys?.length
 }
 
-/** The wait (`.`) or rest (`5`) key on its own, as the LB tap-or-hold sends them. */
+/** The wait (`.`) or rest (`5`) key on its own, as the X tap-or-hold sends them. */
 function isRest(a: Action): boolean {
   return a.kind === 'keys' && a.seq.length === 1 && 'text' in a.seq[0] && (a.seq[0].text === '.' || a.seq[0].text === '5')
 }
@@ -530,7 +554,7 @@ function staticLabel(a: Action): string {
     case 'keys':
       return a.label
     case 'ui':
-      return { commands: 'Actions', travel: 'Commands', palette: 'Commands', system: 'Orbrun menu', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', toggleView: 'Camera', levelmap: 'Map', bindings: 'Gamepad', scrollLog: 'Log', popupAction: 'Action' }[a.op]
+      return { commands: 'Actions', travel: 'Travel', equipment: 'Equipment', palette: 'Commands', system: 'Orbrun menu', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', toggleView: 'Camera', levelmap: 'Map', bindings: 'Gamepad', scrollLog: 'Log', popupAction: 'Action' }[a.op]
     default:
       return actionLabel(a, EMPTY_CTX)
   }
@@ -556,15 +580,16 @@ export function actionLabel(a: Action, ctx: Context, button?: Button): string {
       return actionLabel(a.tap, ctx, button)
     case 'menu': {
       const shop = ctx.menu?.shop
-      if (shop && a.op === 'select') return shop.mode === 'buy' ? (shop.hoveredMarked ? 'Unmark' : 'Mark') : 'Examine'
-      if (shop && a.op === 'altSelect') return shop.hoveredListed ? 'Drop from list' : 'Add to list'
-      if (shop && a.op === 'cancel') return 'Leave'
+      // the letter switches, in the shop's own words; they read the same marked or not, as the footer does
+      if (shop && a.op === 'select') return shop.mode === 'buy' ? 'mark item for purchase' : 'examine item'
+      if (shop && a.op === 'altSelect') return 'put item on shopping list'
       if (a.op === 'sectionNext' || a.op === 'sectionPrev') {
         // the bumpers read as the jump they make: sections where the menu has headers, pages otherwise
         const sections = !!ctx.menu && menuHasSections(ctx.menu.menu)
         return a.op === 'sectionNext' ? (sections ? 'Next section' : 'Page down') : sections ? 'Previous section' : 'Page up'
       }
-      return { next: 'Next', prev: 'Previous', pageNext: 'Page down', pagePrev: 'Page up', first: 'First', last: 'Last', select: 'Select', altSelect: 'List', examine: 'Examine', toggle: 'Toggle', cancel: 'Back', left: 'Left', right: 'Right' }[a.op]
+      // select, page down, page up, exit and toggle selected are the keyhelp's own words (menu.cc Menu::get_keyhelp)
+      return { next: 'Next', prev: 'Previous', pageNext: 'page down', pagePrev: 'page up', first: 'First', last: 'Last', select: 'select', altSelect: 'List', examine: 'Examine', toggle: 'toggle selected', cancel: 'exit', left: 'Left', right: 'Right' }[a.op]
     }
     case 'prompt': {
       const o = ctx.prompt?.options.find((x) => x.hotkey.toLowerCase() === a.hotkey.toLowerCase())
@@ -586,7 +611,7 @@ export function actionLabel(a: Action, ctx: Context, button?: Button): string {
     }
     case 'ui':
       if (a.op === 'popupAction') return ctx.popupActions?.[a.arg ?? 0]?.label || 'Action'
-      return { commands: 'Actions', travel: 'Commands', palette: 'Commands', system: 'Menu', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', toggleView: 'Camera', levelmap: 'Map', bindings: 'Gamepad', scrollLog: 'Log' }[a.op]
+      return { commands: 'Actions', travel: 'Travel', equipment: 'Equipment', palette: 'Commands', system: 'Menu', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', toggleView: 'Camera', levelmap: 'Map', bindings: 'Gamepad', scrollLog: 'Log' }[a.op]
     case 'osk':
       return { move: 'Move', type: 'Type', backspace: 'Backspace', space: 'Space', submit: 'Done', cancel: 'Cancel', shift: 'Shift' }[a.op]
     case 'step':
@@ -658,8 +683,8 @@ export function contextualLabel(ctx: Context, alt = false): string {
 /**
  * Whether a press of `button` now opens a tap-or-hold decision. The decision
  * is taken on release (or after HOLD_MS), by which time the server may have
- * changed mode: LB in a menu pages on press, the menu closes,
- * and the release lands in command mode where LB is wait/rest. Only a
+ * changed mode: X in a menu examines on press, the menu closes,
+ * and the release lands in command mode where X is wait/rest. Only a
  * press that began as a tap-or-hold may fire a tap or a hold, so a button that
  * already acted on press does nothing more (game.ts `pad`).
  */
@@ -675,9 +700,9 @@ export function holdAction(button: Button, ctx: Context): Action | null {
 
 /**
  * Resolve a pad event into an action, or null. `turns` says whether left and
- * right turn the camera for the direction source the event came from, the
- * d-pad and the left stick answering for themselves (servers.ts
- * `leftRightTurns`); left alone, both turn, as they always have.
+ * right turn the camera for the direction source the event came from; the
+ * two pad sources are asked apart even though one setting answers for both
+ * (servers.ts `leftRightTurns`). Left alone, both turn, as they always have.
  */
 export function resolve(ev: PadEvent, ctx: Context, turns: (source: 'dpad' | 'lstick') => boolean = () => true): Action | null {
   const t = bindingTable(ctx)

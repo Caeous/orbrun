@@ -95,6 +95,17 @@ describe('describe popup', () => {
     expect(foot.textContent?.replace(/ /g, ' ')).toContain('[!]: Description | Quote')
   })
 
+  it('the pad chip wears the whole pane list, and the same one on every pane', () => {
+    const { ov, st } = setup()
+    reduce(st, { msg: 'ui-push', type: 'describe-monster', title: 'a rat', body: 'A rat.', status: 'sleeping', quote: 'Squeak.' })
+    ov.update(st)
+    expect(ov.popupActions()).toEqual([{ key: '!', label: 'Description | Status | Quote' }])
+    // the second pane is up: the chip still names the row, not the pane it would land on
+    reduce(st, { msg: 'ui-state', pane: 1 })
+    ov.update(st)
+    expect(ov.popupActions()).toEqual([{ key: '!', label: 'Description | Status | Quote' }])
+  })
+
   it("holds the spell description's Level line together, as format_spell_html does", () => {
     const { ov, st, host } = setup()
     reduce(st, { msg: 'ui-push', type: 'describe-spell', title: 'Fireball', desc: 'A ball of fire.\n\nLevel: 5        School: Conjurations\n\nIt burns.' })

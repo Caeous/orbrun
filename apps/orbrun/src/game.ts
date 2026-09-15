@@ -1256,7 +1256,7 @@ export class GameScreen {
       if (!ev.repeat && !this.session.watching) {
         // the keyboard's Select: it toggles, as the button does
         if (this.overlays.hasClientOverlay) this.overlays.clientOverlayInput('close')
-        else if (this.ctx.mode === 'command') this.overlays.showCommands((a) => this.runner.execute(a), 'select')
+        else if (this.ctx.mode === 'command') this.overlays.showCommands((a) => this.runner.execute(a), 'travel')
         else this.overlays.showPalette(this.ctx.mode === 'targeting' || this.ctx.mode === 'levelmap' || this.ctx.mode === 'menu' ? this.ctx.mode : 'command')
       }
       return
@@ -1605,7 +1605,8 @@ export class GameScreen {
     switch (op) {
       case 'commands':
       case 'travel':
-        this.overlays.showCommands((a) => this.runner.execute(a), op === 'travel' ? 'select' : 'battle')
+      case 'equipment':
+        this.overlays.showCommands((a) => this.runner.execute(a), op === 'travel' ? 'travel' : op === 'equipment' ? 'equipment' : 'battle')
         break
       case 'interact':
         this.overlays.showChoices('Interact', [
@@ -1620,7 +1621,7 @@ export class GameScreen {
         this.overlays.triggerPopupAction(arg ?? 0)
         break
       case 'system':
-        this.overlays.showSystem({ spectating: this.session.watching, inGame: true })
+        this.overlays.showSystem({ spectating: this.session.watching, inGame: true, run: (a) => this.runner.execute(a) })
         break
       case 'bindings':
         this.overlays.showBindings(this.hooks.gamepad.kind)

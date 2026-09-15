@@ -344,21 +344,21 @@ type Nearby = 'list' | 'pips'
 export type LeftRight = 'turn' | 'strafe'
 
 /**
- * The families that choose for themselves: the three keyboard sets keys.ts
- * `directionKey` tells apart, and the pad's two direction sources
- * (gamepad.ts `PadEvent`). They are kept separate because one player's hands
- * want different things of each — the numpad walking the grid while the
- * arrows steer, a stick that strafes under a d-pad that turns.
+ * Where a direction came from: the three keyboard sets keys.ts `directionKey`
+ * tells apart, and the pad's two direction sources (gamepad.ts `PadEvent`).
+ * The five are reported apart but answered in two — the hand matters, the key
+ * set does not (2026-09-15: there was a row per family, and five rows to read
+ * for one question was worse than the mixed setups they bought).
  */
 export type DirSource = 'arrows' | 'vim' | 'numpad' | 'dpad' | 'lstick'
 
-/** The setting each family reads. */
+/** The setting each source reads: one answer for the keyboard, one for the pad. */
 export const LEFT_RIGHT_KEYS: Record<DirSource, keyof Settings> = {
-  arrows: 'leftRightArrows',
-  vim: 'leftRightVim',
-  numpad: 'leftRightNumpad',
-  dpad: 'leftRightDpad',
-  lstick: 'leftRightStick',
+  arrows: 'leftRightKeys',
+  vim: 'leftRightKeys',
+  numpad: 'leftRightKeys',
+  dpad: 'leftRightPad',
+  lstick: 'leftRightPad',
 }
 
 /** Whether left and right turn (rather than strafe) for `source`. */
@@ -393,16 +393,10 @@ export interface Settings {
   minimapCell: number
   /** The gamepad prompts in the corner of the view (gamepad-hints.ts `HintMode`). */
   hints: HintMode
-  /** Arrow keys: what left and right do. */
-  leftRightArrows: LeftRight
-  /** Vim keys (h and l): what left and right do. */
-  leftRightVim: LeftRight
-  /** Numpad (4 and 6): what left and right do. */
-  leftRightNumpad: LeftRight
-  /** D-pad: what left and right do. */
-  leftRightDpad: LeftRight
-  /** Left stick: what left and right do. */
-  leftRightStick: LeftRight
+  /** Keyboard (arrows, h/l, numpad 4/6): what left and right do. */
+  leftRightKeys: LeftRight
+  /** Gamepad (d-pad and left stick): what left and right do. */
+  leftRightPad: LeftRight
 }
 
 const HINT_MODES: readonly string[] = ['adaptive', 'contextual', 'off']
@@ -417,6 +411,20 @@ function hintsFrom(saved: Partial<Settings> & { gamepadHints?: unknown; keyHints
   for (const v of [saved.hints, saved.gamepadHints]) if (typeof v === 'string' && HINT_MODES.includes(v)) return v as HintMode
   if (saved.keyHints === false) return 'off'
   return 'adaptive'
+}
+
+/**
+ * What a saved settings object says about left and right, in the two fields
+ * or in the five it used to be split into — one per input family, merged
+ * 2026-09-15 into one answer for the keyboard and one for the pad. An old
+ * session that set any of a hand's families to strafe comes back strafing on
+ * that whole hand.
+ */
+type OldLeftRight = Partial<Record<'leftRightArrows' | 'leftRightVim' | 'leftRightNumpad' | 'leftRightDpad' | 'leftRightStick', unknown>>
+function leftRightFrom(saved: Partial<Settings> & OldLeftRight, now: keyof Settings, old: readonly (keyof OldLeftRight)[]): LeftRight {
+  const v = saved[now]
+  if (v === 'turn' || v === 'strafe') return v
+  return old.some((k) => saved[k] === 'strafe') ? 'strafe' : 'turn'
 }
 
 const SETTINGS_KEY = 'orbrun.settings'
@@ -461,17 +469,16 @@ export const defaultSettings: Settings = {
   minimapTiles: 19,
   minimapCell: 20,
   hints: 'adaptive',
-  leftRightArrows: 'turn',
-  leftRightVim: 'turn',
-  leftRightNumpad: 'turn',
-  leftRightDpad: 'turn',
-  leftRightStick: 'turn',
+  leftRightKeys: 'turn',
+  leftRightPad: 'turn',
 }
 
 export function getSettings(): Settings {
   const saved = load<Partial<Settings>>(SETTINGS_KEY, {})
   const s = { ...defaultSettings, ...saved }
   s.hints = hintsFrom(saved)
+  s.leftRightKeys = leftRightFrom(saved, 'leftRightKeys', ['leftRightArrows', 'leftRightVim', 'leftRightNumpad'])
+  s.leftRightPad = leftRightFrom(saved, 'leftRightPad', ['leftRightDpad', 'leftRightStick'])
   // while 2D and third person are out, a session saved in either comes back in 3D first person
   if (!VIEW_OPTIONS) {
     s.renderer = '3d'
