@@ -18,6 +18,14 @@ export const OWN_STEP_WINDOW_MS = 1500
 /** How long after an `x` went out the targeting mode that follows may still be its look mode. */
 export const LOOK_WINDOW_MS = 1500
 
+/**
+ * How long a cursor walk the server has not echoed yet is still walked from
+ * (`orbitStep`). Past it the walk is taken to have been refused — crawl
+ * keeps the cursor inside the level, so a ring that runs off the map stops
+ * dead — and the server's own cursor is read again.
+ */
+export const ORBIT_WINDOW_MS = 1000
+
 /** The last step the runner initiated, so auto-facing knows a move was ours. */
 export interface LastStep {
   /** the absolute direction sent */
@@ -87,6 +95,14 @@ export class Runner {
   private aimFacing: Dir8 = 0
   /** the aim up now already had its cursor started ahead (or arrived elsewhere) */
   private aimed = false
+  /**
+   * The cells a walk round the player (`orbitStep`) has sent the cursor to
+   * and the server has not echoed back yet, oldest first, with the time the
+   * oldest went out. The next step is walked from the last of them rather
+   * than from the cursor the server reports, which trails the keys by a
+   * round trip.
+   */
+  private orbit: { path: { x: number; y: number }[]; t: number } | null = null
 
   constructor(session: Session, cam: CameraController, hooks: RunnerHooks) {
     this.session = session
@@ -96,6 +112,10 @@ export class Runner {
 
   send(msg: ClientMessage) {
     if (this.session.watching) return
+    // anything but the walk's own key may move the cursor itself (a click, a
+    // grid direction, the key that ends the aim): the walk's unechoed path is
+    // no longer what the cursor is doing. `step` re-records it after its send.
+    this.orbit = null
     if (this.hooks.context().mode === 'command') {
       // any command may open an aim; its cursor starts where the player faced
       // as the key went out, before a look snaps the view (`startAimAhead`)
@@ -161,6 +181,7 @@ export class Runner {
    */
   private aimAt(cell: { x: number; y: number } | null) {
     if (!cell || this.session.watching) return
+    this.orbit = null // the cursor is being placed, not walked
     this.session.send(cm.targetCursor(cell.x, cell.y))
   }
 
@@ -325,6 +346,83 @@ export class Runner {
   }
 
   /**
+   * The compass step that walks an aim's cursor one cell round the player,
+   * to the right (1) or the left (-1): left and right keep the cursor the
+   * distance from the player it is already at (the ring of cells that far
+   * out, as crawl counts distance) and walk it round, so a cursor two cells
+   * out stays two cells out however far it goes. It holds its heading along
+   * a side of that ring and changes it at the corners, the cells on a
+   * diagonal from the player, where the ring turns: from the cell
+   * north-east of the player, right heads south down the ring's east side
+   * and left heads west along its north side. The two are mirror images at
+   * every cell, which reading both against one compass heading never was.
+   *
+   * The walk is stepped from where the runner's own unechoed steps have
+   * already sent the cursor (`orbit`), not from the cursor the server
+   * reports, which trails a held key by a round trip: read against a stale
+   * cell every repeat in a lag spike computes the same heading, and the
+   * cursor walks off its ring in a straight line instead of round it. The
+   * server's cursor reconciles that path as it catches up — it is the truth
+   * wherever it lands on one of those cells — and a walk it never echoes is
+   * dropped after ORBIT_WINDOW_MS, crawl having refused it.
+   *
+   * Null where there is no cursor to walk — a compass prompt, a cursor the
+   * server has not placed, or one standing on the player — and the key
+   * falls back to the grid in view (`absoluteAim`). A fire or an attack
+   * that way (Shift, Ctrl) is a direction, not a walk, and never orbits.
+   */
+  private orbitStep(side: 1 | -1): { dir: Dir8; x: number; y: number } | null {
+    const scene = this.session.scene
+    if (!scene.playerOnLevel) return null
+    const c = this.orbitFrom()
+    if (!c) return null
+    const dx = c.x - scene.player.x
+    const dy = c.y - scene.player.y
+    // the ring the cursor stands on, and where on it: a side of the ring
+    // (one of sx, sy zero) or a corner (neither)
+    const r = Math.max(Math.abs(dx), Math.abs(dy))
+    if (r === 0) return null
+    const at = dirFromDelta(Math.abs(dx) === r ? dx : 0, Math.abs(dy) === r ? dy : 0)
+    if (at === null) return null
+    // a corner turns the walk a further eighth: it is stepping off one side of the ring onto the next
+    const dir = rotateDir(at, (at % 2 === 1 ? 3 : 2) * side)
+    return { dir, x: c.x + DIR8_DX[dir], y: c.y + DIR8_DY[dir] }
+  }
+
+  /**
+   * The cell the next walk steps from: the end of the runner's own unechoed
+   * path where it has one, else the server's cursor. The server's cursor
+   * confirms that path as it arrives — everything up to and including the
+   * cell it reports is echoed, and the rest is still in flight — and a path
+   * it has not reached within ORBIT_WINDOW_MS is abandoned, so a walk crawl
+   * refused at the level's edge cannot drift on forever under a held key.
+   */
+  private orbitFrom(): { x: number; y: number } | null {
+    const server = this.session.state.cursors[0] ?? null
+    const p = this.orbit
+    if (!p) return server
+    if (server) {
+      const echoed = p.path.findIndex((cell) => cell.x === server.x && cell.y === server.y)
+      if (echoed >= 0) {
+        p.path.splice(0, echoed + 1)
+        p.t = this.hooks.now()
+      }
+    }
+    if (p.path.length === 0 || this.hooks.now() - p.t > ORBIT_WINDOW_MS) {
+      this.orbit = null
+      return server
+    }
+    return p.path[p.path.length - 1]
+  }
+
+  /** Record a walk's cell as sent but not echoed (`orbitFrom`). */
+  private orbitSent(cell: { x: number; y: number }) {
+    const p = this.orbit
+    if (p) p.path.push(cell)
+    else this.orbit = { path: [cell], t: this.hooks.now() }
+  }
+
+  /**
    * Movement in command mode: forward turns the camera; the diagonals and
    * back strafe. Left and right turn the camera or strafe as `opts.turns`
    * says, which the caller reads off the setting for the input the player
@@ -335,7 +433,9 @@ export class Runner {
    * In targeting the same key moves the cursor (plain), fires that way
    * (Shift: the uppercase letter is CMD_TARGET_DIR_*) or sends the Ctrl
    * variant, read against the grid the player sees (`absoluteAim`), whose
-   * forward and back run along the facing itself in a look. The
+   * forward and back run along the facing itself in a look; a plain left or
+   * right walks the cursor round the player instead, keeping its distance
+   * (`orbitStep`). The
    * level map is north-up: absolute.
    */
   step(rel: RelDir, opts: { run?: boolean; attack?: boolean; turns?: boolean } = {}) {
@@ -346,7 +446,11 @@ export class Runner {
       // fire's cursor releases the held view: from here the cursor's walk
       // turns the view as any aim's does (game.ts `faceCursor`)
       if (ctx.mode === 'targeting') this.hold = { state: 'idle', t: 0 }
-      this.send(dirMessage(this.absoluteAim(rel, { look: ctx.examining }), opts))
+      // left and right walk the cursor round the player instead (`orbitStep`)
+      const orbit = (rel === 2 || rel === 6) && !opts.run && !opts.attack ? this.orbitStep(rel === 2 ? 1 : -1) : null
+      this.send(dirMessage(orbit?.dir ?? this.absoluteAim(rel, { look: ctx.examining }), opts))
+      // after the send, which drops the path any other cursor move invalidates
+      if (orbit) this.orbitSent(orbit)
       return
     }
     if (ctx.mode === 'levelmap') {

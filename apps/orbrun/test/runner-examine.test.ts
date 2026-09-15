@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { emptyScene } from '@orbrun/scene'
 import { MouseMode } from '@orbrun/webtiles'
-import { LOOK_WINDOW_MS, Runner, type RunnerHooks } from '../src/runner'
+import { LOOK_WINDOW_MS, ORBIT_WINDOW_MS, Runner, type RunnerHooks } from '../src/runner'
 import type { Session, SessionEvent } from '../src/session'
 import type { CameraController } from '../src/camera'
 import type { Context } from '../src/context'
@@ -59,8 +59,18 @@ function harness(facing = 0, ahead: Context['ahead'] = { kind: 'monster', monste
   }
   // what went out: a key's text, or `@x,y` for a target_cursor
   const keys = () => sent.map((m) => (m.msg === 'target_cursor' ? `@${(m as { x: number }).x},${(m as { y: number }).y}` : m.text))
-  return { r, sent, ctx, cam, mode, frame, state, keys, tick: (ms: number) => (now += ms) }
+  // the server's cursor, with the runner's own walk settled: a cell put
+  // there by anything but a walk of ours (the mouse, the aim opening) with
+  // no step of ours still in flight
+  const cursor = (c: { x: number; y: number }) => {
+    state.cursors = [c]
+    now += ORBIT_WINDOW_MS + 1
+  }
+  return { r, sent, ctx, cam, mode, frame, state, keys, cursor, tick: (ms: number) => (now += ms) }
 }
+
+/** the step each movement key takes, x east and y south */
+const DIRS = { k: [0, -1], u: [1, -1], l: [1, 0], n: [1, 1], j: [0, 1], b: [-1, 1], h: [-1, 0], y: [-1, -1] } as const
 
 describe('LB opens look mode on the cell ahead', () => {
   it('sends x and the cell faced together, then the cell again once the server shows its cursor on the player', () => {
@@ -174,10 +184,16 @@ describe('LT fires', () => {
     expect(h.cam.facing).toBe(1)
     expect(h.keys()).toEqual(['f', 'f', 'k'])
     expect(h.r.holdingView('targeting')).toBe(false)
-    // l is east, up the right-hand edge; u is straight ahead
-    h.r.step(2)
+    // u is straight ahead, up the right-hand edge of the grid in view
     h.r.step(1)
-    expect(h.keys()).toEqual(['f', 'f', 'k', 'l', 'u'])
+    // left and right walk the ring the cursor is on instead (`orbitStep`):
+    // it stands two cells south-west of the player, the ring's corner, so
+    // right turns the walk north up the ring's west side. Left then walks
+    // back down it: the walk steps from where our own last step sent the
+    // cursor, not from the cursor the server last reported (`orbitFrom`)
+    h.r.step(2)
+    h.r.step(6)
+    expect(h.keys()).toEqual(['f', 'f', 'k', 'u', 'k', 'j'])
   })
 
   it('the hold ends with the aim, and any other command drops one a refused f left behind', () => {
@@ -300,13 +316,144 @@ describe('the runner pairs its x with the targeting that follows', () => {
     // and back along its opposite: south-west, down the screen
     h.r.step(4)
     expect(h.keys().slice(-2)).toEqual(['u', 'b'])
-    // the sides and the diagonals still read against the grid: l is east, up
-    // the right-hand edge, k is north, up the left, y is north-west
+    // the diagonals still read against the grid: u is straight ahead, y is
+    // north-west. The sides walk the ring the cursor stands on instead
+    // (`orbitStep`); with the cursor still on the player there is no ring,
+    // so they fall back to the grid: l is east, h is west
     h.r.step(2)
     h.r.step(6)
     h.r.step(1)
     h.r.step(7)
     expect(h.keys().slice(-4)).toEqual(['l', 'h', 'u', 'y'])
+  })
+
+  it('left and right walk the cursor round the player, keeping its distance, and turn at the diagonals', () => {
+    const h = harness(1)
+    h.r.examine()
+    // the cursor stands two cells north-east of the player: the corner of
+    // its ring. Right heads south down the ring's east side, left west
+    // along its north side — mirror images, as they are at every cell
+    h.mode(MouseMode.TARGET, { x: 12, y: 8 })
+    h.r.step(2)
+    expect(h.keys().slice(-1)).toEqual(['j'])
+    h.cursor({ x: 12, y: 8 })
+    h.r.step(6)
+    expect(h.keys().slice(-1)).toEqual(['h'])
+    // along a side of the ring the walk holds its heading: south all the way
+    // down the east side, until the south-east corner turns it west
+    for (const [at, right] of [
+      [{ x: 12, y: 9 }, 'j'],
+      [{ x: 12, y: 10 }, 'j'],
+      [{ x: 12, y: 11 }, 'j'],
+      [{ x: 12, y: 12 }, 'h'],
+      [{ x: 11, y: 12 }, 'h'],
+      [{ x: 8, y: 12 }, 'k'],
+      [{ x: 8, y: 10 }, 'k'],
+      [{ x: 8, y: 8 }, 'l'],
+      [{ x: 10, y: 8 }, 'l'],
+    ] as const) {
+      h.cursor({ ...at })
+      h.r.step(2)
+      expect(h.keys().slice(-1)).toEqual([right])
+    }
+    // a whole lap of the ring: the cursor never leaves it, either way round
+    for (const side of [2, 6] as const) {
+      const at = { x: 12, y: 8 }
+      h.cursor({ ...at })
+      for (let i = 0; i < 16; i++) {
+        h.state.cursors = [{ ...at }]
+        h.r.step(side)
+        const d = DIRS[h.keys()[h.keys().length - 1] as keyof typeof DIRS]
+        at.x += d[0]
+        at.y += d[1]
+        expect(Math.max(Math.abs(at.x - 10), Math.abs(at.y - 10))).toBe(2)
+      }
+      // and comes back where it set out, a lap being 8 cells a ring-step out
+      expect(at).toEqual({ x: 12, y: 8 })
+    }
+  })
+
+  it('a held key keeps walking the ring while the server\'s cursor trails it', () => {
+    const h = harness(1)
+    h.r.examine()
+    // the cursor stands two cells north-east of the player, on the corner of
+    // its ring, and the key repeats faster than the round trip: every repeat
+    // is walked from where our own last step sent it, never from the cursor
+    // the server last reported, which has not moved yet
+    h.mode(MouseMode.TARGET, { x: 12, y: 8 })
+    const at = { x: 12, y: 8 }
+    for (let i = 0; i < 12; i++) {
+      h.r.step(2)
+      const d = DIRS[h.keys()[h.keys().length - 1] as keyof typeof DIRS]
+      at.x += d[0]
+      at.y += d[1]
+      // read against the stale cursor every repeat would send j, and the
+      // cursor would walk straight off the ring down the column
+      expect(Math.max(Math.abs(at.x - 10), Math.abs(at.y - 10))).toBe(2)
+    }
+    // three quarters of the way round the ring (16 cells to the lap), not
+    // twelve cells south of where it started
+    expect(at).toEqual({ x: 8, y: 8 })
+  })
+
+  it('takes the server\'s cursor as it catches up, and the rest of the walk with it', () => {
+    const h = harness(1)
+    h.r.examine()
+    h.mode(MouseMode.TARGET, { x: 12, y: 8 })
+    // four steps out, none echoed yet: the cursor is walked down the ring's
+    // east side to its south-east corner, (12,12)
+    h.r.step(2)
+    h.r.step(2)
+    h.r.step(2)
+    h.r.step(2)
+    expect(h.keys().slice(-4)).toEqual(['j', 'j', 'j', 'j'])
+    // the server echoes the first of them: the three behind it are still in
+    // flight, so the walk carries on from the corner and turns west. Rewound
+    // to (12,9) it would head south down the side again
+    h.state.cursors = [{ x: 12, y: 9 }]
+    h.r.step(2)
+    expect(h.keys().slice(-1)).toEqual(['h'])
+  })
+
+  it('gives the walk up and reads the server again when crawl never moves the cursor', () => {
+    const h = harness(1)
+    h.r.examine()
+    // the walk runs off the level's edge, where crawl holds the cursor: our
+    // own path is never echoed, and after the window the cursor the server
+    // reports is believed again rather than drifting on under a held key
+    h.mode(MouseMode.TARGET, { x: 12, y: 12 })
+    h.r.step(2)
+    expect(h.keys().slice(-1)).toEqual(['h'])
+    h.tick(ORBIT_WINDOW_MS + 1)
+    h.r.step(2)
+    expect(h.keys().slice(-1)).toEqual(['h'])
+  })
+
+  it('drops the walk when anything else moves the cursor', () => {
+    const h = harness(1)
+    h.r.examine()
+    h.mode(MouseMode.TARGET, { x: 12, y: 8 })
+    h.r.step(2)
+    expect(h.keys().slice(-1)).toEqual(['j'])
+    // a click put the cursor somewhere of its own: the walk starts again
+    // from what the server reports, not from where our step had sent it
+    h.r.clickCell(8, 8, 1)
+    h.state.cursors = [{ x: 8, y: 8 }]
+    h.r.step(2)
+    expect(h.keys().slice(-1)).toEqual(['l'])
+  })
+
+  it('a fire or an attack down a side is a direction, not a walk round the player', () => {
+    const h = harness(1)
+    h.r.examine()
+    h.mode(MouseMode.TARGET, { x: 12, y: 8 })
+    // Shift fires that way, Ctrl sends the ctrl key: both read against the
+    // grid in view, as every aim's keys but the plain walk do
+    h.r.step(2, { run: true })
+    expect(h.keys().slice(-1)).toEqual(['L'])
+    // ctrl-h: west, the grid's own left, not the ring's
+    h.r.step(6, { attack: true })
+    expect(h.sent[h.sent.length - 1]).toEqual({ msg: 'key', keycode: 'H'.charCodeAt(0) - 64 })
   })
 
   it('a look on a compass facing is unchanged: the facing is its own grid', () => {
