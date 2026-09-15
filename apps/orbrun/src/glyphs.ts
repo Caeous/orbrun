@@ -156,13 +156,13 @@ export function glyph(name: GlyphName, kind: PadKind): SVGSVGElement {
     case 'Y':
       return kind === 'playstation' ? psShape('triangle') : kind === 'nintendo' ? letter(NINTENDO, 'X') : letter(XBOX.Y, 'Y')
     case 'LB':
-      return bumper(kind === 'playstation' || kind === 'steamdeck' ? 'L1' : kind === 'nintendo' ? 'L' : 'LB')
+      return bumper(kind === 'playstation' ? 'L1' : kind === 'nintendo' ? 'L' : 'LB')
     case 'RB':
-      return bumper(kind === 'playstation' || kind === 'steamdeck' ? 'R1' : kind === 'nintendo' ? 'R' : 'RB')
+      return bumper(kind === 'playstation' ? 'R1' : kind === 'nintendo' ? 'R' : 'RB')
     case 'LT':
-      return trigger(kind === 'playstation' || kind === 'steamdeck' ? 'L2' : kind === 'nintendo' ? 'ZL' : 'LT')
+      return trigger(kind === 'playstation' ? 'L2' : kind === 'nintendo' ? 'ZL' : 'LT')
     case 'RT':
-      return trigger(kind === 'playstation' || kind === 'steamdeck' ? 'R2' : kind === 'nintendo' ? 'ZR' : 'RT')
+      return trigger(kind === 'playstation' ? 'R2' : kind === 'nintendo' ? 'ZR' : 'RT')
     case 'L3':
       return stickClick('L')
     case 'R3':
@@ -198,7 +198,6 @@ export function glyph(name: GlyphName, kind: PadKind): SVGSVGElement {
 export function glyphName(name: GlyphName, kind: PadKind): string {
   const ps = kind === 'playstation'
   const sw = kind === 'nintendo'
-  const sd = kind === 'steamdeck'
   switch (name) {
     case 'A':
       return ps ? 'Cross' : sw ? 'B' : 'A'
@@ -209,13 +208,13 @@ export function glyphName(name: GlyphName, kind: PadKind): string {
     case 'Y':
       return ps ? 'Triangle' : sw ? 'X' : 'Y'
     case 'LB':
-      return ps || sd ? 'L1' : sw ? 'L' : 'LB'
+      return ps ? 'L1' : sw ? 'L' : 'LB'
     case 'RB':
-      return ps || sd ? 'R1' : sw ? 'R' : 'RB'
+      return ps ? 'R1' : sw ? 'R' : 'RB'
     case 'LT':
-      return ps || sd ? 'L2' : sw ? 'ZL' : 'LT'
+      return ps ? 'L2' : sw ? 'ZL' : 'LT'
     case 'RT':
-      return ps || sd ? 'R2' : sw ? 'ZR' : 'RT'
+      return ps ? 'R2' : sw ? 'ZR' : 'RT'
     case 'L3':
       return 'Left stick click'
     case 'R3':

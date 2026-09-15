@@ -33,7 +33,7 @@ function setup(width = 1280, height = 800) {
     renderBar(ctx: Context, kind: string, spectating: boolean, device: string, hints: boolean): void
     actionbar: HTMLElement
   }
-  const render = (device = 'pad', hints = true) => inner.renderBar(context, 'steamdeck', false, device, hints)
+  const render = (device = 'pad', hints = true) => inner.renderBar(context, 'xbox', false, device, hints)
   layout()
   return { hud, host, grid, cells, layout, render, bar: inner.actionbar }
 }

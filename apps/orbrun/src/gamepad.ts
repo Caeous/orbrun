@@ -43,12 +43,17 @@ export interface GamepadOptions {
   buttonRepeatInterval?: number
 }
 
-export type PadKind = 'xbox' | 'playstation' | 'nintendo' | 'steamdeck' | 'generic'
+/**
+ * Whose button names the glyphs use. There is no Steam Deck kind: Steam
+ * Input hands a browser a virtual Xbox 360 pad whatever is in the player's
+ * hands, and the Deck's own labels are Xbox's letters anyway, so a Deck is
+ * an Xbox pad here.
+ */
+export type PadKind = 'xbox' | 'playstation' | 'nintendo' | 'generic'
 
 function detectKind(id: string): PadKind {
   const s = id.toLowerCase()
-  if (/valve|steam/.test(s)) return 'steamdeck'
-  if (/xbox|xinput|045e/.test(s)) return 'xbox'
+  if (/xbox|xinput|045e|valve|steam/.test(s)) return 'xbox'
   if (/playstation|dualshock|dualsense|054c|sony/.test(s)) return 'playstation'
   if (/nintendo|switch|057e|pro controller/.test(s)) return 'nintendo'
   return 'generic'

@@ -27,7 +27,7 @@ describe('forward attack hints', () => {
   const goblin: Context['ahead'] = { kind: 'monster', monster: { name: 'goblin' } as never, hostile: true, label: 'goblin' }
   const facing = ctx({ ahead: goblin, hostilesInView: 1 })
 
-  it.each(['xbox', 'playstation', 'nintendo', 'steamdeck', 'generic'] as const)('shows left stick forward, not a stick click, on %s', (kind) => {
+  it.each(['xbox', 'playstation', 'nintendo', 'generic'] as const)('shows left stick forward, not a stick click, on %s', (kind) => {
     const pad = bar(facing, 'pad', { kind })
     const attack = pad.querySelector('.chip.LSTICK_UP')!
     expect(attack.getAttribute('title')).toBe('Left stick forward')
