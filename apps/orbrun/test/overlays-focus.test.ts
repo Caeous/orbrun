@@ -782,7 +782,8 @@ describe('client overlays', () => {
     ov.clientOverlayInput('last')
     expect(focused()).toBe(rows().length - 1)
     // space fires what the cursor is on, as it does in a server menu
-    rows().forEach((r) => r.addEventListener('click', () => acts.push(r.textContent || '')))
+    // the letter and the label, not the subline under them
+    rows().forEach((r) => r.addEventListener('click', () => acts.push(`${r.querySelector('.hotkey')?.textContent}-${r.querySelector('.label')?.textContent}`)))
     ov.clientOverlayInput('space')
     expect(acts).toEqual(['e-Stop watching'])
   })

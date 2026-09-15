@@ -3155,8 +3155,10 @@ canvas.minimap.hidden {
 }
 
 /* Command tabs keep the same shell and share a grid cell so their size stays steady. */
-.popup.command-menu {
-  min-width: min(28rem, 92vw);
+/* wider than a plain game menu (`.popup.menu.game`, 26rem): the rows carry a subline under the label,
+   and it should read as a line, not as a column -- so the selector carries that rule's weight too */
+.popup.menu.game.command-menu {
+  min-width: min(34rem, 92vw);
 }
 .command-menu.tabbed .body,
 .command-menu .command-hints {
@@ -3217,9 +3219,44 @@ canvas.minimap.hidden {
 .command-menu li.row.focused .hotkey {
   color: #fff;
 }
+/*
+ * A row with a subline (command-menu.ts `sub`): what the command does, for a
+ * player who knows the dungeon but not the key. The row becomes a two column
+ * grid -- label and key on the first line, the subline under the label -- so
+ * the key column stands where it does on the rows that have no subline, and a
+ * long subline wraps inside the label's column rather than under the key.
+ * Rows without one (the Start menu's own `sysrows`) keep the flex layout.
+ */
+.command-menu li.row.has-sub {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  padding-top: 0.34em;
+  padding-bottom: 0.34em;
+}
+.command-menu li.row .sub {
+  grid-column: 1;
+  margin-top: 0.15em;
+  color: var(--ink-dim);
+  font-size: 0.8em;
+  line-height: 1.35;
+  text-wrap: pretty;
+  transition: color var(--menu-hover-in) ease;
+}
+/* the cursor's row reads at full strength; the rest stay quiet enough that the list still scans by label */
+.command-menu li.row:is(.focused, :hover) .sub {
+  color: var(--ink);
+}
 /* the Start menu's own rows keep the game menu's shape (a letter, a dash, the label) next to the command rows of its Character tab */
 .command-menu .sysrows li.row .label {
   flex: 0 1 auto;
+}
+/* ... so their subline sits in a third column, under the label rather than under the letter */
+.command-menu .sysrows li.row.has-sub {
+  grid-template-columns: auto auto 1fr;
+}
+.command-menu .sysrows li.row.has-sub .sub {
+  grid-column: 3;
 }
 .command-menu .sysrows li.row .hotkey {
   width: 1.2em;

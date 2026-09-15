@@ -2493,11 +2493,14 @@ export class Overlays {
    * game key. `remember` names the cursor memory (the title by default), so
    * screens that share a title can still each keep their own row.
    */
-  private choiceRows(choices: { label: string; key?: string; sep?: boolean; run(): void }[]): HTMLElement[] {
+  private choiceRows(choices: { label: string; key?: string; sub?: string; sep?: boolean; run(): void }[]): HTMLElement[] {
     return choices.map((choice) => {
-      const row = h('li', { class: 'row level2 selectable fg7' + (choice.sep ? ' sep' : ''), role: 'button', tabindex: -1, dataset: { hotkey: choice.key && !choice.key.includes(' ') ? choice.key : '' } },
+      // a row with a subline lays out as a grid (styles.css .command-menu li.row.has-sub): the label
+      // and the key on the first line, the subline under the label, so the key column stays put
+      const row = h('li', { class: 'row level2 selectable fg7' + (choice.sub ? ' has-sub' : '') + (choice.sep ? ' sep' : ''), role: 'button', tabindex: -1, dataset: { hotkey: choice.key && !choice.key.includes(' ') ? choice.key : '' } },
         h('span', { class: 'label' }, choice.label),
-        choice.key ? h('span', { class: 'hotkey' }, choice.key) : null)
+        choice.key ? h('span', { class: 'hotkey' }, choice.key) : null,
+        choice.sub ? h('span', { class: 'sub' }, choice.sub) : null)
       row.addEventListener('click', () => {
         // a touch does not hover first: the clicked row is the one remembered
         const o = this.clientOverlay
@@ -2550,7 +2553,7 @@ export class Overlays {
     else if (device !== 'pad' && this.osk.visible && this.osk.input === t.input) this.osk.detach()
   }
 
-  showChoices(title: string, choices: { label: string; key?: string; sep?: boolean; run(): void }[], back?: () => void, remember = title) {
+  showChoices(title: string, choices: { label: string; key?: string; sub?: string; sep?: boolean; run(): void }[], back?: () => void, remember = title) {
     const el = h('div', { class: 'popup menu game command-menu', dataset: { remember } })
     const items = this.choiceRows(choices)
     el.append(h('div', { class: 'title' }, title), h('div', { class: 'body' }, h('ol', null, ...items)))
@@ -2572,7 +2575,7 @@ export class Overlays {
   }
 
   private commandChoices(entries: CommandEntry[], run: (action: Action) => void) {
-    return entries.map((c) => ({ label: c.label, key: c.key, run: () => run(c.action) }))
+    return entries.map((c) => ({ label: c.label, key: c.key, sub: c.sub, run: () => run(c.action) }))
   }
 
   /**
@@ -2721,9 +2724,13 @@ export class Overlays {
     const body = h('div', { class: 'body' }, ol)
     el.append(body)
     const items: HTMLElement[] = []
-    const add = (label: string, fn: () => void, sep = false) => {
+    // the subline under a row says what it does, as the command rows of the Character tab do
+    // (command-menu.ts `sub`); both tabs carry one, so neither leaves the shared cell half empty
+    const add = (label: string, sub: string, fn: () => void, sep = false) => {
       const k = String.fromCharCode(97 + items.length)
-      const it = h('li', { class: 'row level2 selectable fg7' + (sep ? ' sep' : ''), dataset: { hotkey: k } }, h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, label))
+      const it = h('li', { class: 'row level2 selectable fg7 has-sub' + (sep ? ' sep' : ''), dataset: { hotkey: k } },
+        h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, label),
+        h('span', { class: 'sub' }, sub))
       it.addEventListener('click', () => {
         this.closeClientOverlay()
         fn()
@@ -2734,23 +2741,23 @@ export class Overlays {
     const playing = opts.inGame && !opts.spectating
     // three runs under rules: the game (back to it, its own commands and screens), Orbrun (the pad, the settings),
     // and last the way out
-    add('Resume', () => {})
+    add('Resume', 'back to the dungeon, where you left it', () => {})
     if (playing) {
-      add(`${REPEAT_COMMAND.label} (${REPEAT_COMMAND.key})`, () => this.hooks.send(cm.input(REPEAT_COMMAND.key)))
+      add(`${REPEAT_COMMAND.label} (${REPEAT_COMMAND.key})`, 'do the last thing again', () => this.hooks.send(cm.input(REPEAT_COMMAND.key)))
       // crawl binds CMD_GAME_MENU to `~` and F1 (cmd-keys.h); Escape does nothing in the main view
-      add('Game menu (F1)', () => this.hooks.send(cm.input('~')))
-      add(`${HELP_COMMAND.label} (${HELP_COMMAND.key})`, () => this.hooks.send(cm.input(HELP_COMMAND.key)))
+      add('Game menu (F1)', "crawl's own menu: saving, options, the lot", () => this.hooks.send(cm.input('~')))
+      add(`${HELP_COMMAND.label} (${HELP_COMMAND.key})`, 'the manual, and what every key does', () => this.hooks.send(cm.input(HELP_COMMAND.key)))
     }
-    if (opts.inGame) add('Chat (F12)', () => this.hooks.onSystemAction('chat'))
+    if (opts.inGame) add('Chat (F12)', 'talk to whoever is watching', () => this.hooks.onSystemAction('chat'))
     // 2D and third person are out for now (VIEW_OPTIONS in servers.ts); the camera is client-side, so a spectator may move it too
-    if (playing && VIEW_OPTIONS) add('Toggle 2D / 3D view', () => this.hooks.onSystemAction('toggleRenderer'))
-    if (opts.inGame && VIEW_OPTIONS) add('Toggle first / third person', () => this.hooks.onSystemAction('toggleView'))
-    add('Gamepad', () => this.showBindings(this.hooks.padKind?.() ?? 'generic', again), true)
-    add('Settings', () => this.showSettings(again))
+    if (playing && VIEW_OPTIONS) add('Toggle 2D / 3D view', 'the floor laid flat, or stood up around you', () => this.hooks.onSystemAction('toggleRenderer'))
+    if (opts.inGame && VIEW_OPTIONS) add('Toggle first / third person', 'out of your own eyes, or over your shoulder', () => this.hooks.onSystemAction('toggleView'))
+    add('Gamepad', 'what each button does, and how to change it', () => this.showBindings(this.hooks.padKind?.() ?? 'generic', again), true)
+    add('Settings', "Orbrun's own options: the camera, the controls, the HUD", () => this.showSettings(again))
     // a player saves (crawl's S, which asks first, then go_lobby brings the front end back); a spectator has nothing to
     // save and goes back to the Watch screen (`#lobby`) the game was picked from
-    if (playing) add('Save and exit (S)', () => this.hooks.send(cm.input('S')), true)
-    else add(opts.spectating ? 'Stop watching' : 'Leave game', () => this.hooks.onSystemAction('disconnect'), true)
+    if (playing) add('Save and exit (S)', 'the game keeps; come back to it whenever', () => this.hooks.send(cm.input('S')), true)
+    else add(opts.spectating ? 'Stop watching' : 'Leave game', opts.spectating ? 'back to the list of games being played' : 'back to the front door', () => this.hooks.onSystemAction('disconnect'), true)
     el.append(h('div', { class: 'more' }, '[Esc] resume'))
     // a spectator sends no keys, so the character commands are the player's alone
     const run = playing ? opts.run : undefined
