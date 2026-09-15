@@ -18,15 +18,16 @@ const tiles: TileSource = {
 
 type Priv = {
   setTiles(t: TileSource): void
+  setCursor(c: { x: number; y: number; mode?: string } | null): void
   billboardGroup: THREE.Group
   rebuildBillboards(s: Scene): void
   atlas(name: string): { mask?: Uint8Array | null }
 }
 
 /** A 16x16 atlas, opaque on the given texels; by default the 2x2 square at the middle of the tile's 4x4 rect. */
-function maskedRenderer(texels: number[][] = [[5, 9], [6, 9], [5, 10], [6, 10]]): Priv {
+function maskedRenderer(texels: number[][] = [[5, 9], [6, 9], [5, 10], [6, 10]], rect: TileRect = RECT): Priv {
   const r = new Render3d() as unknown as Priv
-  r.setTiles(tiles)
+  r.setTiles({ ...tiles, tile: () => rect })
   const mask = new Uint8Array(16 * 16)
   for (const [x, y] of texels) mask[y * 16 + x] = 1
   r.atlas('main').mask = mask
@@ -234,6 +235,55 @@ describe('billboard thickness', () => {
     r.rebuildBillboards(scene(0.5))
     expect((quads(r, 'monster')[0].geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
     expect(hulls(r, 'monster')).toHaveLength(0)
+  })
+  it('puts a wider shell round the sprite under the cursor, outside the black hull', () => {
+    const r = maskedRenderer()
+    const shells = () => hulls(r, 'monster').filter((m) => m.userData.shell)
+    const width = (m: THREE.Mesh) => {
+      const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute
+      let x0 = Infinity, x1 = -Infinity
+      for (let i = 0; i < pos.count; i++) { x0 = Math.min(x0, pos.getX(i)); x1 = Math.max(x1, pos.getX(i)) }
+      return x1 - x0
+    }
+    r.rebuildBillboards(scene())
+    expect(shells()).toHaveLength(0)
+    r.setCursor({ x: 3, y: 3 })
+    r.rebuildBillboards(scene())
+    const [shell] = shells()
+    // the hull's black is untouched: the shell is a second mesh beside it, in the cursor's colour
+    const ink = hulls(r, 'monster').find((m) => !m.userData.shell)!
+    expect((ink.material as THREE.MeshBasicMaterial).color.getHex()).toBe(0x000000)
+    expect((shell.material as THREE.MeshBasicMaterial).color.getHex()).not.toBe(0x000000)
+    // a texel wider each side than the hull — the shell is free of the tile's bounds, which the ink keeps to —
+    // and its back sits deeper so the hull paints over what they share
+    const k = 1 / 32
+    expect(width(shell)).toBeCloseTo(width(ink) + 2 * k, 6)
+    const sz = shell.geometry.getAttribute('position') as THREE.BufferAttribute
+    const iz = ink.geometry.getAttribute('position') as THREE.BufferAttribute
+    let smin = 0, imin = 0
+    for (let i = 0; i < sz.count; i++) smin = Math.min(smin, sz.getZ(i))
+    for (let i = 0; i < iz.count; i++) imin = Math.min(imin, iz.getZ(i))
+    expect(smin).toBeLessThan(imin)
+    // the ghost is never shelled, and a cursor on another cell leaves the sprite alone
+    expect(hulls(r, 'ghost').some((m) => m.userData.shell)).toBe(false)
+    r.setCursor({ x: 4, y: 3 })
+    r.rebuildBillboards(scene())
+    expect(shells()).toHaveLength(0)
+  })
+  it('keeps the shell above the floor where the sprite stands on it', () => {
+    // a standing sprite's art runs to the bottom of its rect (oy + h is the cell), so its base is the
+    // ground: a shell grown below there would lie under the floor and tear against it
+    const grounded: TileRect = { ...RECT, oy: 28 }
+    const r = maskedRenderer(undefined, grounded)
+    r.setCursor({ x: 3, y: 3 })
+    r.rebuildBillboards(scene())
+    const holder = r.billboardGroup.children.find((c) => c.userData.kind === 'monster')!
+    const shell = (holder.children as THREE.Mesh[]).find((m) => m.userData.shell)!
+    const pos = shell.geometry.getAttribute('position') as THREE.BufferAttribute
+    let y0 = Infinity
+    for (let i = 0; i < pos.count; i++) y0 = Math.min(y0, pos.getY(i))
+    // the holder stands on the cell, so the sprite's own frame puts the floor at -(mesh y)
+    expect(y0 + shell.position.y).toBeGreaterThanOrEqual(-1e-6)
   })
   it('stays flat where the atlas pixels cannot be read', () => {
     const r = new Render3d() as unknown as Priv

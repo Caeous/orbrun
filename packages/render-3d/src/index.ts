@@ -287,6 +287,26 @@ const PROJECTILE_LIFT = 0.1
  * — the cursor rings the cell rather than the monster's face.
  */
 const CURSOR_ORDER = 0.5
+
+/** The cursor's ring. */
+const CURSOR_COLOUR = 0xff8800
+/** The cursor's colour on the level map, where it marks a cell rather than a target. */
+const CURSOR_MAP_COLOUR = 0xffffff
+/** The shell round the sprite the cursor stands on (`SEL_GROW`, `hullSelMat`). */
+const HULL_SEL_COLOUR = 0xffdd33
+/**
+ * How many texels the selected sprite's shell stands out from its body, against
+ * the hull's one. The black hull keeps its texel between the art and the yellow,
+ * so the highlight is a line beside the sprite rather than a glow over it.
+ */
+const SEL_GROW = 2
+/**
+ * How much deeper than the hull the selected shell's back sits, in texels. The
+ * shell is the whole hull grown a texel further, not a ring of the difference,
+ * so over the body the two lie in one plane; this puts the black in front,
+ * leaving only what the shell adds outside the hull's silhouette showing.
+ */
+const SEL_BACK = 0.1
 /**
  * Ghost fade: a ghost holds full strength until it sits `GHOST_FADE_START`
  * cells behind its occluder, then falls to nothing by `GHOST_FADE`. Sight
@@ -725,6 +745,13 @@ export class Render3d implements MapRenderer {
   private ghostVisibleInkMat!: THREE.ShaderMaterial
   /** The ink round every standing sprite (`HullTemplate`): black, back faces only. */
   private hullMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide })
+  /**
+   * The ink round the sprite standing on the cursor's cell. WebTiles picks a
+   * cell out with its cursor alone; here the ring under a monster's feet is
+   * covered by the monster, so what is examined or targeted says so in its own
+   * line instead — the hull's black swapped for HULL_SEL_COLOUR.
+   */
+  private hullSelMat = new THREE.MeshBasicMaterial({ color: HULL_SEL_COLOUR, side: THREE.BackSide })
   /** The ink on a sprite that does not turn to the eye (an open door): a flat ring (`RingTemplate`) in its plane. */
   private inkMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
   /** Attack lift start, in seconds on the render clock; NaN when at rest. */
@@ -751,7 +778,7 @@ export class Render3d implements MapRenderer {
     this.three.background = new THREE.Color(0x000000)
     const cur = new THREE.RingGeometry(0.34, 0.46, 4)
     cur.rotateX(-Math.PI / 2)
-    this.cursorRingMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.95, depthTest: false })
+    this.cursorRingMat = new THREE.MeshBasicMaterial({ color: CURSOR_COLOUR, transparent: true, opacity: 0.95, depthTest: false })
     this.cursorMesh = new THREE.Mesh(cur, this.cursorRingMat)
     this.cursorMesh.renderOrder = CURSOR_ORDER
     this.cursorMesh.visible = false
@@ -1069,7 +1096,11 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.camera = cam
   }
   setCursor(cursor: SceneCursor | null): void {
+    // the sprite on the cursor's cell wears the highlight ink (`hullSelMat`), so a
+    // cursor that moves between cells repaints the billboards the scene's revision has not
+    const before = this.cursor ? `${this.cursor.x},${this.cursor.y}` : ''
     this.cursor = cursor
+    if ((cursor ? `${cursor.x},${cursor.y}` : '') !== before) this.billboardsDirty = true
   }
   /** What the hands hold. The overlay rebuilds only when the items change. */
   setViewmodel(vm: Viewmodel | null): void {
@@ -1112,6 +1143,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.rings.clear()
     this.vmMat.dispose()
     this.hullMat.dispose()
+    this.hullSelMat.dispose()
     this.inkMat.dispose()
     this.ghostInkMat.dispose()
     this.ghostVisibleInkMat.dispose()
@@ -1213,7 +1245,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     } else {
       this.cursorTileMesh.visible = false
       this.cursorMesh.visible = true
-      this.cursorRingMat.color.set(cur.mode === 'map' ? 0xffffff : 0xff8800)
+      this.cursorRingMat.color.set(cur.mode === 'map' ? CURSOR_MAP_COLOUR : CURSOR_COLOUR)
       this.cursorMesh.position.set(cur.x + 0.5, h + 0.012, cur.y + 0.5)
     }
   }
@@ -1639,6 +1671,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     back = 0,
     /** A heading to stand at instead of turning with the camera (an open door in its wall run). */
     yaw?: number,
+    /** The cursor stands on this sprite's cell: it wears the selected shell (`SEL_GROW`). */
+    selected = false,
   ): THREE.Object3D {
     const holder = new THREE.Group()
     holder.position.set(x + 0.5, 0, y + 0.5)
@@ -1691,6 +1725,22 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         ink.renderOrder = mesh.renderOrder
         ink.userData.hull = true
         holder.add(ink)
+      }
+      // The shell round the sprite the cursor stands on: the same hull grown SEL_GROW texels
+      // instead of one, so what shows outside the black is a second line of ink beside it —
+      // the sprite picked out where the ring on the cell is hidden under the sprite itself.
+      // A sprite that stands at a heading is inked with a flat ring, which has no shell.
+      // the shell may only grow below the art as far as the sprite stands off the ground: `bottom` is
+      // where the tile's last row sits, and below that is the floor
+      const room = Math.max(0, Math.min(SEL_GROW - 1, Math.round((bottom / scale) * cell)))
+      const shell = selected && solid && yaw === undefined ? this.hullGeometry(l, hTex, wq, hq, scale / cell, SEL_GROW, room) : null
+      if (shell) {
+        const sel = new THREE.Mesh(shell, this.hullSelMat)
+        sel.position.copy(mesh.position)
+        sel.renderOrder = mesh.renderOrder
+        sel.userData.hull = true
+        sel.userData.shell = true
+        holder.add(sel)
       }
       i++
     }
@@ -1766,9 +1816,13 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     return geo
   }
 
-  /** The hull's geometry placed on the same quad the rim is (`standingGeometry`); null where there is no rim to line. */
-  private hullGeometry(l: SpriteLayer, hTex: number, wq: number, hq: number, k: number): THREE.BufferGeometry | null {
-    const t = this.hullTemplate(l, hTex)
+  /**
+   * The hull's geometry placed on the same quad the rim is (`standingGeometry`); null where
+   * there is no rim to line. `grow` wider than a texel is the selected sprite's shell, which
+   * also sits SEL_BACK deeper so the hull inside it paints over the part they share.
+   */
+  private hullGeometry(l: SpriteLayer, hTex: number, wq: number, hq: number, k: number, grow = 1, down = grow - 1): THREE.BufferGeometry | null {
+    const t = this.hullTemplate(l, hTex, grow, down)
     if (!t) return null
     const n = t.pos.length / 3
     const pos = new Float32Array(n * 3)
@@ -1776,7 +1830,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     for (let i = 0; i < n; i++) {
       pos[i * 3] = -hw + t.pos[i * 3] * k
       pos[i * 3 + 1] = hh + t.pos[i * 3 + 1] * k
-      pos[i * 3 + 2] = t.pos[i * 3 + 2] * k
+      pos[i * 3 + 2] = (t.pos[i * 3 + 2] - (grow > 1 ? SEL_BACK : 0)) * k
     }
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
@@ -1844,19 +1898,31 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * every face wound outward. No front: from the front it would be culled
    * anyway, and from behind (an open door, which stands in its wall and can
    * be walked round) it would paint over the art at the same depth.
+   * `grow` is how many texels out it reaches — one for the ink, SEL_GROW for
+   * the shell round the sprite the cursor stands on — and `down` how many of
+   * those it may take below the tile, which is the sprite's own base: a
+   * standing sprite's art runs to the bottom of its rect, so a shell that grew
+   * there would lie under the floor and come back as a torn fringe where it
+   * fights the floor for the same depth.
    */
-  private hullTemplate(l: SpriteLayer, hTex: number): HullTemplate | null {
+  private hullTemplate(l: SpriteLayer, hTex: number, grow = 1, down = grow - 1): HullTemplate | null {
     const mask = this.atlasMask(l.a)
     if (!mask) return null
     const { sx, sy, w } = l.r
-    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex}`
+    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex},${grow},${down}`
     let t = this.hulls.get(key)
     if (t !== undefined) return t
     const aw = l.a.width
     const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && mask[(sy + ty) * aw + sx + tx] === 1
-    const inked = (tx: number, ty: number) =>
-      tx >= 0 && ty >= 0 && tx < w && ty < hTex &&
-      (body(tx, ty) || body(tx - 1, ty) || body(tx + 1, ty) || body(tx, ty - 1) || body(tx, ty + 1))
+    // a texel of the hull is one within `grow` steps of the body, counted along the axes as the ink is
+    const near = (tx: number, ty: number, d: number): boolean =>
+      body(tx, ty) || (d > 0 && (near(tx - 1, ty, d - 1) || near(tx + 1, ty, d - 1) || near(tx, ty - 1, d - 1) || near(tx, ty + 1, d - 1)))
+    // The ink is kept inside the tile: the art's own line never left it, and a sprite whose art
+    // reaches the edge is inked along it. The shell has no such bound — it carries no texels of
+    // the atlas, only its own colour — and a clipped one would break off wherever the art came
+    // near the edge, so it is allowed the texels it needs outside, `down` of them below.
+    const pad = grow - 1
+    const inked = (tx: number, ty: number) => tx >= -pad && ty >= -pad && tx < w + pad && ty < hTex + down && near(tx, ty, grow)
     const pos: number[] = []
     const index: number[] = []
     const face = (p: number[]) => {
@@ -1865,8 +1931,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       index.push(base, base + 1, base + 2, base, base + 2, base + 3)
     }
     const z0 = -BB_DEPTH, z1 = 0
-    for (let ty = 0; ty < hTex; ty++) {
-      for (let tx = 0; tx < w; tx++) {
+    for (let ty = -pad; ty < hTex + down; ty++) {
+      for (let tx = -pad; tx < w + pad; tx++) {
         if (!inked(tx, ty)) continue
         const x0 = tx, x1 = tx + 1
         const y1 = -ty, y0 = y1 - 1
@@ -2067,7 +2133,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const bh = b.kind === 'player' ? b.height * DOLL_SCALE : b.height
       // scenery monsters (plants, bushes) are fixtures: they stand square like statues and take their light from the shade map
       const translucent = b.alpha !== undefined && b.alpha < 1
-      const holder = this.addStanding(this.billboardGroup, b.x, b.y, layers, bh, b.scenery ? 1 : shade, tint, !!b.scenery, 'none', !translucent)
+      const sel = !!this.cursor && this.cursor.x === b.x && this.cursor.y === b.y
+      const holder = this.addStanding(this.billboardGroup, b.x, b.y, layers, bh, b.scenery ? 1 : shade, tint, !!b.scenery, 'none', !translucent, 0, undefined, sel)
       holder.userData.kind = b.kind
       if (b.kind === 'player') {
         this.doll = holder
