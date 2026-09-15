@@ -22,7 +22,7 @@ import type { GridHost } from './grid/host'
 import { paneRows } from './grid/messages'
 import { panelCellAt, panelCellIndex, panelGrid, panelSpan, type PanelBox, type PanelGrid } from './grid/panel'
 import { paintRow } from './grid/paint'
-import { PORTRAIT_ROWS, statsRows, type BarMemory } from './grid/stats'
+import { portraitRows, statsRows, type BarMemory } from './grid/stats'
 import { edgePlace, pipSizeInView, pipTargets, placePips, type EdgePlace, type EdgePipMode, type Projector, type PxRect } from './pips'
 
 const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖']
@@ -175,7 +175,7 @@ export class Hud {
    */
   private portraitCanvas = h('canvas', { class: 'portrait' })
   private portrait = new Render2d({ mode: 'tiles', cellSize: 32 })
-  /** the portrait's side in css px (PORTRAIT_ROWS of the grid) and the cells the rows beside it give up */
+  /** the portrait's side in css px (`portraitRows` of the grid) and the cells the rows beside it give up */
   private portraitPx = 0
   private portraitCols = 0
   private portraitPre: unknown[] | undefined
@@ -349,8 +349,8 @@ export class Hud {
     host.place(this.messages, cells.messages)
     this.stats.hidden = hidden.stats || cells.stats.w === 0
     this.sidebar.hidden = hidden.sidebar || cells.sidebar.w === 0
-    // the portrait is a square PORTRAIT_ROWS tall; the rows beside it start a cell after it
-    const side = cells.stats.w > 0 ? host.grid.ch * PORTRAIT_ROWS : 0
+    // the portrait is a square as tall as the pane's rows for it (one row on a compact pane); the rows beside it start a cell after it
+    const side = cells.stats.w > 0 ? host.grid.ch * portraitRows(cells.stats.w) : 0
     this.portraitCols = side ? Math.min(cells.stats.w, Math.ceil(side / host.grid.cw) + 1) : 0
     if (side !== this.portraitPx) {
       this.portraitPx = side

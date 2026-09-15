@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { initialState, reduce, type ServerMessage } from '@orbrun/webtiles'
 import { HP_BAR, MP_BAR, PORTRAIT_ROWS, statsRows } from '../src/grid/stats'
-import { rowLength } from '../src/grid/rows'
+import { rowLength, type Row } from '../src/grid/rows'
 import { STAT_WIDTH } from '../src/grid/console'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -198,5 +198,44 @@ describe('stats pane bars in WebTiles’ style', () => {
       { colour: MP_BAR.full, from: 0, to: 37.5 },
       { colour: TRACK, from: 37.5, to: 100 },
     ])
+  })
+})
+
+/**
+ * The narrow pane (grid/stats.ts `COMPACT_WIDTH`), which WebTiles has no
+ * counterpart for: its `#stats` is always `enums.stat_width` wide.
+ */
+describe('stats pane on a narrow sidebar', () => {
+  const st = recordedState()
+  const width = 30
+  const HP = 2
+  const text = (row: Row) => row.map((s) => s.text).join('')
+  const rowWith = (rows: Row[], re: RegExp) => rows.find((r) => re.test(text(r))) as Row | undefined
+
+  it('cuts the captions to what names them and keeps every row inside the pane', () => {
+    const { rows } = statsRows(st.player, st.options, {}, width, 4)
+    for (const row of rows) expect(rowLength(row)).toBeLessThanOrEqual(width)
+    // `Next:` goes entirely; the percentage follows the level
+    expect(text(rowWith(rows, /XL:/)!)).toMatch(/XL: \d+ +\d+%/)
+    expect(rowWith(rows, /Next/)).toBeUndefined()
+    for (const short of [/ St: /, / In: /, / Dx: /, / @: /, / T: /, /^N:/]) expect(rowWith(rows, short)).toBeDefined()
+    for (const long of [/Str:/, /Int:/, /Dex:/, /Place:/, /Turn:|Time:/, /Noise:/]) expect(rowWith(rows, long)).toBeUndefined()
+    // the caption WebTiles prints stays as the short one's tooltip
+    expect(rowWith(rows, / @: /)!.find((s) => s.text === '@:')!.title).toBe('Place')
+  })
+
+  it('stands the portrait on two rows, so the bars keep the pane’s full width', () => {
+    const lead = 4
+    const blank = ' '.repeat(lead)
+    const wide = statsRows(st.player, st.options, {}, STAT_WIDTH, lead).rows
+    const narrow = statsRows(st.player, st.options, {}, width, lead).rows
+    // the wide pane keeps its four rows beside the portrait; the narrow one the title and the species line
+    expect(wide[1][0].text).toBe(blank)
+    expect(narrow[0][0].text).toBe(blank)
+    expect(narrow[1][0].text).toBe(blank)
+    expect(narrow[2][0].text).not.toBe(blank)
+    // the Health bar starts at the pane's left edge and the row still ends at its right one
+    expect(narrow[HP][0].bg).toBeTypeOf('string')
+    expect(rowLength(narrow[HP])).toBe(width)
   })
 })
