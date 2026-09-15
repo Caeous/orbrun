@@ -214,6 +214,45 @@ describe('direct game input', () => {
     expect(h.execute).toHaveBeenCalledOnce()
   })
 
+  it.each([
+    ['START', { kind: 'ui', op: 'system' }],
+    ['LB', { kind: 'ui', op: 'commands' }],
+    ['Y', { kind: 'ui', op: 'equipment' }],
+    ['SELECT', { kind: 'ui', op: 'travel' }],
+  ] as const)('%s opens its menu and the same button puts it away', (button, action) => {
+    const h = harness()
+    // the real uiOp opens the overlay; the mocked runner stands in for it
+    h.execute.mockImplementation(() => { h.overlays.hasClientOverlay = true })
+    h.event({ type: 'press', button, t: 0 })
+    h.event({ type: 'release', button, t: 100, held: 100 })
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith(action)
+    h.event({ type: 'press', button, t: 200 })
+    expect(h.overlays.clientOverlayInput).toHaveBeenCalledExactlyOnceWith('close')
+    expect(h.execute).toHaveBeenCalledOnce()
+  })
+
+  it('a screen reached from inside the Start menu still closes with Start, not with A', () => {
+    const h = harness()
+    h.execute.mockImplementation(() => { h.overlays.hasClientOverlay = true })
+    h.event({ type: 'press', button: 'START', t: 0 })
+    // A opens the settings page inside the menu: the opener is still Start
+    h.event({ type: 'press', button: 'A', t: 100 })
+    expect(h.overlays.clientOverlayInput).toHaveBeenLastCalledWith('select')
+    h.event({ type: 'press', button: 'START', t: 200 })
+    expect(h.overlays.clientOverlayInput).toHaveBeenLastCalledWith('close')
+  })
+
+  it('forgets the opener once the menu is gone, so the next press opens again', () => {
+    const h = harness()
+    h.execute.mockImplementation(() => { h.overlays.hasClientOverlay = true })
+    h.event({ type: 'press', button: 'START', t: 0 })
+    h.overlays.clientOverlayInput.mockImplementation(() => { h.overlays.hasClientOverlay = false })
+    h.event({ type: 'press', button: 'START', t: 100 })
+    h.execute.mockClear()
+    h.event({ type: 'press', button: 'START', t: 200 })
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'ui', op: 'system' })
+  })
+
   it('Start submits a client menu or keyboard; only B cancels it', () => {
     const h = harness()
     h.overlays.hasClientOverlay = true

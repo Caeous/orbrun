@@ -157,6 +157,14 @@ export class GameScreen {
   private pressTimes = new Map<string, number>()
   /** A tap-or-hold button down and short of HOLD_MS: its corner prompt fills its hold ring (hud.ts showHold). */
   private holding: { button: Button; fraction: number } | null = null
+  /**
+   * The pad button that opened the client overlay on screen. Every menu a
+   * button opens is a toggle: the same button puts it away, from whatever
+   * screen it was carried into (a nested settings page closes with the whole
+   * menu, as `close` already does for Select). Null when the overlay was
+   * opened by mouse or keyboard, which have Esc.
+   */
+  private overlayOpener: Button | null = null
   private lastCursor: SceneCursor | null = null
   private lastOptKey = ''
   private drag: { id: number; x: number; y: number; x0: number; y0: number; moved: boolean; button: number } | null = null
@@ -1141,14 +1149,18 @@ export class GameScreen {
     }
     if (this.overlays.hasClientOverlay) {
       if (ev.type === 'press') {
-        if (ev.button === 'A') this.overlays.clientOverlayInput('select')
+        // the button that opened this screen puts it away whole, before anything else it would do here
+        if (ev.button === this.overlayOpener) this.overlays.clientOverlayInput('close')
+        else if (ev.button === 'A') this.overlays.clientOverlayInput('select')
         else if (ev.button === 'START') this.overlays.clientOverlayInput('submit')
         else if (ev.button === 'B') this.overlays.clientOverlayInput('cancel')
-        // Select opened this screen (or Start did): pressing it again puts it away
+        // Select is the put-away button even for a screen it did not open
         else if (ev.button === 'SELECT') this.overlays.clientOverlayInput('close')
         else if (ev.button === 'X') this.overlays.clientOverlayInput('keyboard')
         else if (ev.button === 'LB') this.overlays.clientOverlayInput('bumperPrev')
         else if (ev.button === 'RB') this.overlays.clientOverlayInput('bumperNext')
+        // put away by any route (the opener, Select, B on the first screen): the next opener owns the next screen
+        if (!this.overlays.hasClientOverlay) this.overlayOpener = null
       } else if (ev.type === 'dir' || ev.type === 'dirRepeat') {
         if (ev.dir === 0) this.overlays.clientOverlayInput('prev')
         else if (ev.dir === 4) this.overlays.clientOverlayInput('next')
@@ -1183,7 +1195,10 @@ export class GameScreen {
       if (this.holdFired.delete(ev.button) || !armed) return
     }
     if (this.ctx.mode === 'spectating') {
-      if (ev.type === 'press' && (ev.button === 'B' || ev.button === 'START')) this.overlays.showSystem({ spectating: true, inGame: true })
+      if (ev.type === 'press' && (ev.button === 'B' || ev.button === 'START')) {
+        this.overlays.showSystem({ spectating: true, inGame: true })
+        this.overlayOpener = ev.button
+      }
       // a spectator's chat is one button away, as F12 is in the official client
       if (ev.type === 'press' && ev.button === 'X') this.chat.padFocus()
       if ((ev.type === 'dir' || ev.type === 'dirRepeat') && ev.dir !== null) this.hud.scrollLog(ev.dir === 0 ? -1 : ev.dir === 4 ? 1 : 0)
@@ -1192,7 +1207,14 @@ export class GameScreen {
     const a = resolve(ev, this.ctx, (source) => leftRightTurns(source, this.settings()))
     if (!a) return
     this.inputActed()
+    const overlayWasUp = this.overlays.hasClientOverlay
     this.executePadAction(a)
+    // whichever button just opened a client overlay owns closing it; a screen
+    // reached from inside one (A on a settings row) keeps the opener it came with
+    if (ev.type === 'press') {
+      if (!this.overlays.hasClientOverlay) this.overlayOpener = null
+      else if (!overlayWasUp) this.overlayOpener = ev.button
+    }
     this.needsRender = true
   }
 
