@@ -348,6 +348,16 @@ const SIDE_SHADE = 0.82
 const GHOST_DEPTH_SCALE = 0.5
 
 /**
+ * The layer of everything that never enters the ghosts' depth image: the
+ * ghosts themselves (a draw that reads the image it writes is a feedback
+ * loop), and whatever writes no depth anyway — the shadow discs, the
+ * translucent sprites and clouds, the blended decals. The frame's camera sees
+ * both layers; the depth pass sees layer 0 alone, and so skips every one of
+ * these meshes without a traversal to hide them and another to show them.
+ */
+const LAYER_NO_DEPTH = 1
+
+/**
  * The flash field: the colour the game washes a cell in — blue while
  * paralysed, grey while petrified, red while berserk, and while blind the
  * colour of whatever blinded you, thickening with the distance out to the
@@ -372,6 +382,26 @@ varying vec3 vWorldPos;`
 /** Set `vWorldPos` from the vertex three has already transformed (`transformed`). */
 const FLASH_VERT = /* glsl */ `
 vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
+/**
+ * A merged standing mesh (`bakeStanding`): every sprite's vertices are in the
+ * sprite's own frame, and `anchor` is where it stands. The vertex shader turns
+ * the sprite to the eye's yaw about its anchor and stands it there, so one
+ * mesh holds a whole crowd of billboards and still faces the camera as each
+ * holder did on its own.
+ */
+const STAND_VERT_PARS = /* glsl */ `
+#ifdef MERGED
+attribute vec3 anchor;
+uniform float standYaw;
+#endif`
+/** Rotate `transformed` about y by `standYaw` (three's `makeRotationY`) and put it on its anchor. */
+const STAND_VERT = /* glsl */ `
+#ifdef MERGED
+{
+  float c = cos(standYaw), s = sin(standYaw);
+  transformed = anchor + vec3(c * transformed.x + s * transformed.z, transformed.y, c * transformed.z - s * transformed.x);
+}
+#endif`
 /** Wash `c` in the flash standing over this fragment. */
 function flashApply(c: string): string {
   return /* glsl */ `
@@ -389,11 +419,14 @@ varying vec2 vUv;
 varying vec3 vColor;
 varying float vViewZ;
 ${FLASH_VERT_PARS}
+${STAND_VERT_PARS}
 void main() {
   vUv = uv;
   vColor = color;
-  vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vec3 transformed = vec3(position);
+  ${STAND_VERT}
+  vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+  vec4 mv = modelViewMatrix * vec4(transformed, 1.0);
   vViewZ = mv.z;
   gl_Position = projectionMatrix * mv;
 }`
@@ -449,6 +482,8 @@ interface AtlasEntry {
   /** The same for a cell in view: stronger, and over `GHOST_FADE_VISIBLE`, so what the server shows keeps its ghost however deep behind the wall it stands. */
   ghostVisibleMat: THREE.ShaderMaterial
   bbMat: THREE.MeshBasicMaterial
+  /** The merged (`MERGED`) twins of `featMat`, `bbMat`, `ghostMat` and `ghostVisibleMat`, for the baked crowd (`bakeStanding`). */
+  merged: THREE.Material[]
   /**
    * One byte per texel, 1 where the atlas is opaque, for the rim of a
    * standing sprite's block; undefined until first asked for, null where the
@@ -675,6 +710,15 @@ export class Render3d implements MapRenderer {
   /** One disc under every actor and item, shared. */
   private shadowGeo = new THREE.CircleGeometry(0.22, 16)
   private shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false })
+  /**
+   * Every material a standing sprite's mesh may wear, to its `MERGED` twin: the
+   * same shading with the yaw applied in the vertex shader, for the meshes
+   * `bakeStanding` merges a crowd of holders into. A mesh whose material has no
+   * twin here (a cloned translucent one) stays a holder of its own.
+   */
+  private mergedMats = new Map<THREE.Material, THREE.Material>()
+  /** The eye's yaw, read by every merged material to turn its sprites (`STAND_VERT`). */
+  private standUniforms = { standYaw: { value: 0 } }
   private bufferSize = new THREE.Vector2()
   /**
    * Shade map (II.9, Part IV): one texel per cell of the level's bounds, the
@@ -763,6 +807,11 @@ export class Render3d implements MapRenderer {
   constructor(opts: Render3dOptions = {}) {
     this.ghostInkMat = this.makeGhostMaterial(GHOST_ALPHA)
     this.ghostVisibleInkMat = this.makeGhostMaterial(GHOST_ALPHA_VISIBLE, undefined, { start: GHOST_FADE_VISIBLE_START, range: GHOST_FADE_VISIBLE })
+    this.twin(this.ghostInkMat, this.makeGhostMaterial(GHOST_ALPHA, undefined, undefined, true))
+    this.twin(this.ghostVisibleInkMat, this.makeGhostMaterial(GHOST_ALPHA_VISIBLE, undefined, { start: GHOST_FADE_VISIBLE_START, range: GHOST_FADE_VISIBLE }, true))
+    this.twin(this.hullMat, this.makeStandingMaterial(this.hullMat))
+    this.twin(this.hullSelMat, this.makeStandingMaterial(this.hullSelMat))
+    this.twin(this.shadowMat, this.makeStandingMaterial(this.shadowMat))
     this.opts = {
       view: opts.view ?? 'first',
       fov: opts.fov ?? 85,
@@ -778,6 +827,7 @@ export class Render3d implements MapRenderer {
     }
     this.cam.fov = this.opts.fov
     this.cam.rotation.order = 'YXZ'
+    this.cam.layers.enable(LAYER_NO_DEPTH)
     this.three.add(this.levelGroup, this.billboardGroup, this.overlayGroup)
     this.three.background = new THREE.Color(0x000000)
     const cur = new THREE.RingGeometry(0.34, 0.46, 4)
@@ -820,7 +870,7 @@ export class Render3d implements MapRenderer {
    * (statue, tree, plant) hides a monster exactly as masonry does, and the
    * ghost pass (II.4) is the one rule that shows it again.
    */
-  private makeLevelMaterial(tex: THREE.Texture, feature = false, blended = false): THREE.MeshBasicMaterial {
+  private makeLevelMaterial(tex: THREE.Texture, feature = false, blended = false, merged = false): THREE.MeshBasicMaterial {
     // Opaque both ways: every fragment is all-or-nothing under the alpha test,
     // so the level takes the opaque pass (front to back, no blending, the
     // depth test rejecting what a nearer wall hides before it is shaded) and
@@ -832,11 +882,14 @@ export class Render3d implements MapRenderer {
       ? new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.02, depthWrite: false, side: THREE.DoubleSide })
       : new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, alphaTest: feature ? 0.1 : 0.5, side: THREE.DoubleSide })
     if (feature) m.defines = { UPRIGHT_SPRITE: '' }
+    if (merged) m.defines = { ...m.defines, MERGED: '' }
     const fu = this.fieldUniforms
+    const su = this.standUniforms
     m.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, fu)
+      Object.assign(shader.uniforms, fu, su)
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\nattribute float cut;\nattribute vec2 cell;\nvarying float vCut;\nvarying vec2 vCell;${FLASH_VERT_PARS}`)
+        .replace('#include <common>', `#include <common>\nattribute float cut;\nattribute vec2 cell;\nvarying float vCut;\nvarying vec2 vCell;${FLASH_VERT_PARS}${STAND_VERT_PARS}`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>${STAND_VERT}`)
         .replace('#include <project_vertex>', `#include <project_vertex>\nvCut = cut;\nvCell = cell;${FLASH_VERT}`)
       shader.fragmentShader = shader.fragmentShader
         .replace(
@@ -873,13 +926,16 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * the only field they read is the flash — a monster standing in a
    * cell the game has washed blue is washed with it, as it is in the 2D view.
    */
-  private makeBillboardMaterial(tex: THREE.Texture): THREE.MeshBasicMaterial {
+  private makeBillboardMaterial(tex: THREE.Texture, merged = false): THREE.MeshBasicMaterial {
     const m = new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide, depthWrite: true })
+    if (merged) m.defines = { MERGED: '' }
     const fu = this.fieldUniforms
+    const su = this.standUniforms
     m.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, fu)
+      Object.assign(shader.uniforms, fu, su)
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>${FLASH_VERT_PARS}`)
+        .replace('#include <common>', `#include <common>${FLASH_VERT_PARS}${STAND_VERT_PARS}`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>${STAND_VERT}`)
         .replace('#include <project_vertex>', `#include <project_vertex>${FLASH_VERT}`)
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${FLASH_PARS}`)
@@ -954,19 +1010,45 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     return { inset: this.opts.wallInset }
   }
 
-  private makeGhostMaterial(opacity: number, map?: THREE.Texture, fade?: { start: number; range: number }): THREE.ShaderMaterial {
+  /** Register `merged` as the `MERGED` twin of `mat` (`mergedMats`), and hand it back. */
+  private twin<M extends THREE.Material>(mat: THREE.Material, merged: M): M {
+    this.mergedMats.set(mat, merged)
+    return merged
+  }
+
+  /**
+   * The `MERGED` twin of a plain material (the hull inks, the shadow disc): the
+   * same colour and faces, with the standing yaw applied in the vertex shader.
+   */
+  private makeStandingMaterial(of: THREE.MeshBasicMaterial): THREE.MeshBasicMaterial {
+    const m = of.clone()
+    m.defines = { MERGED: '' }
+    const su = this.standUniforms
+    m.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, su)
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>${STAND_VERT_PARS}`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>${STAND_VERT}`)
+    }
+    return m
+  }
+
+  private makeGhostMaterial(opacity: number, map?: THREE.Texture, fade?: { start: number; range: number }, merged = false): THREE.ShaderMaterial {
     // the shared uniforms are the same objects in every ghost material (one depth image, one camera);
     // a material with its own fade takes uniforms of its own for that alone
     // the ghost lays the flash over itself like every other material, and reads it from the shared field uniforms
-    const u: Record<string, THREE.IUniform> = { ...this.ghostUniforms, ...this.fieldUniforms, opacity: { value: opacity } }
+    const u: Record<string, THREE.IUniform> = { ...this.ghostUniforms, ...this.fieldUniforms, ...this.standUniforms, opacity: { value: opacity } }
     if (fade) {
       u.fadeStart = { value: fade.start }
       u.fadeRange = { value: fade.range }
     }
     if (map) u.map = { value: map }
+    const defines: Record<string, string> = {}
+    if (map) defines.GHOST_MAP = ''
+    if (merged) defines.MERGED = ''
     return new THREE.ShaderMaterial({
       uniforms: u,
-      defines: map ? { GHOST_MAP: '' } : {},
+      defines,
       vertexShader: GHOST_VERT,
       fragmentShader: GHOST_FRAG,
       vertexColors: true,
@@ -988,6 +1070,18 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * the image it is being drawn into is a framebuffer feedback loop, which
    * GL refuses (`GL_INVALID_OPERATION` on the draw call).
    */
+  /**
+   * Render the frame's occluders into the depth image the ghost shaders
+   * sample: the level, and the sprites that stand in it. A plant or a statue
+   * hides a monster as surely as a wall does, so it belongs in this image —
+   * that is what lets one rule (II.4) cover everything the geometry hides.
+   * The overlays (the cursor) are left out, and so is everything on
+   * `LAYER_NO_DEPTH`: the ghosts themselves, since a sprite that reads the
+   * image it is being drawn into is a framebuffer feedback loop, which GL
+   * refuses (`GL_INVALID_OPERATION` on the draw call), and the shadows,
+   * decals and translucent sprites, which write no depth and so would only
+   * cost their draw calls here.
+   */
   private renderOccluderDepth(r: THREE.WebGLRenderer) {
     const size = r.getDrawingBufferSize(this.bufferSize)
     const w = Math.max(1, Math.ceil(size.x * GHOST_DEPTH_SCALE))
@@ -1006,17 +1100,13 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const prevTarget = r.getRenderTarget()
     const overlaysWere = this.overlayGroup.visible
     this.overlayGroup.visible = false
-    const ghostsWere: THREE.Object3D[] = []
-    for (const h of this.billboardGroup.children) {
-      if (h.userData.kind !== 'ghost' || !h.visible) continue
-      h.visible = false
-      ghostsWere.push(h)
-    }
+    const layersWere = this.cam.layers.mask
+    this.cam.layers.set(0)
     r.setRenderTarget(rt)
     r.clear()
     r.render(this.three, this.cam)
     r.setRenderTarget(prevTarget)
-    for (const h of ghostsWere) h.visible = true
+    this.cam.layers.mask = layersWere
     this.overlayGroup.visible = overlaysWere
   }
 
@@ -1046,6 +1136,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       a.ghostMat.dispose()
       a.ghostVisibleMat.dispose()
       a.bbMat.dispose()
+      for (const m of a.merged) m.dispose()
+      for (const m of [a.featMat, a.bbMat, a.ghostMat, a.ghostVisibleMat]) this.mergedMats.delete(m)
     }
     this.atlases.clear()
     this.rims.clear()
@@ -1088,7 +1180,14 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       // depth gap. Fully visible sprites produce nothing.
       ghostMat: this.makeGhostMaterial(GHOST_ALPHA, tex),
       ghostVisibleMat: this.makeGhostMaterial(GHOST_ALPHA_VISIBLE, tex, { start: GHOST_FADE_VISIBLE_START, range: GHOST_FADE_VISIBLE }),
+      merged: [],
     }
+    a.merged = [
+      this.twin(a.featMat, this.makeLevelMaterial(tex, true, false, true)),
+      this.twin(a.bbMat, this.makeBillboardMaterial(tex, true)),
+      this.twin(a.ghostMat, this.makeGhostMaterial(GHOST_ALPHA, tex, undefined, true)),
+      this.twin(a.ghostVisibleMat, this.makeGhostMaterial(GHOST_ALPHA_VISIBLE, tex, { start: GHOST_FADE_VISIBLE_START, range: GHOST_FADE_VISIBLE }, true)),
+    ]
     this.atlases.set(name, a)
     return a
   }
@@ -1151,6 +1250,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.inkMat.dispose()
     this.ghostInkMat.dispose()
     this.ghostVisibleInkMat.dispose()
+    for (const m of this.mergedMats.values()) m.dispose()
+    this.mergedMats.clear()
     this.depthTarget?.dispose()
     this.depthTarget = null
     this.shadeTex?.dispose()
@@ -1278,8 +1379,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
   private rebuildLevel(scene: Scene) {
     for (const child of [...this.levelGroup.children]) {
       this.levelGroup.remove(child)
-      const m = child as THREE.Mesh
-      m.geometry?.dispose()
+      // a mesh of the level, a baked crowd of fixtures, or a holder of fixture meshes
+      child.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
     }
     this.pickMeshes = []
     const tiles = this.tiles
@@ -1632,6 +1733,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       if (!a) continue
       const mesh = new THREE.Mesh(geo, a.decalMat)
       mesh.renderOrder = 1
+      mesh.layers.set(LAYER_NO_DEPTH)
       this.levelGroup.add(mesh)
     }
     const vg = voids.build()
@@ -1702,6 +1804,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       mesh.position.set(cx, bottom + hq / 2, i * 0.002 - back)
       // ghosts draw before every sprite so a nearer billboard paints over them
       mesh.renderOrder = ghost === 'none' ? 1 + i : -1
+      if (ghost !== 'none') mesh.layers.set(LAYER_NO_DEPTH)
       // a ghost's ink is a flat ring in its plane (`RingTemplate`), added before the ghost so that, with the
       // same order and depth, the sort keeps it under the ghost and the ghost's body paints over nothing black
       const ring = ghost !== 'none' && !l.flat ? this.ringGeometry(l, hTex, wq, hq, scale / cell) : null
@@ -1709,6 +1812,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         const ink = new THREE.Mesh(ring, ghost === 'visible' ? this.ghostVisibleInkMat : this.ghostInkMat)
         ink.position.copy(mesh.position)
         ink.renderOrder = mesh.renderOrder
+        ink.layers.set(LAYER_NO_DEPTH)
         ink.userData.hull = true
         holder.add(ink)
       }
@@ -2064,6 +2168,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(wq, hq), mat)
       mesh.position.set(cx, bottom + hq / 2, i * 0.002)
       mesh.renderOrder = 1 + i
+      // the bars write no depth: nothing to give the ghosts' depth image
+      mesh.layers.set(LAYER_NO_DEPTH)
       holder.add(mesh)
       i++
     }
@@ -2110,6 +2216,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
             m.userData.ownMaterial = true
             ;(m.material as THREE.MeshBasicMaterial).opacity = 0.55
             ;(m.material as THREE.MeshBasicMaterial).depthWrite = false
+            m.layers.set(LAYER_NO_DEPTH)
           }
         })
         continue
@@ -2188,16 +2295,134 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
           m.userData.ownMaterial = true
           ;(m.material as THREE.MeshBasicMaterial).opacity = b.alpha as number
           ;(m.material as THREE.MeshBasicMaterial).depthWrite = false
+          m.layers.set(LAYER_NO_DEPTH)
         })
       }
       // ground shadow: one shared disc, scaled to the sprite
       const sh = new THREE.Mesh(this.shadowGeo, this.shadowMat)
       sh.userData.shared = true
+      sh.layers.set(LAYER_NO_DEPTH)
       const sr = Math.max(0.6, bh)
       sh.scale.set(sr, sr, 1)
       sh.rotation.x = -Math.PI / 2
       sh.position.set(0, 0.003, 0)
       holder.add(sh)
+    }
+  }
+
+  /**
+   * Merge the group's standing holders into one mesh per material and draw
+   * order (rendering-3d.md's "merge billboards" lever). A crowded level stands
+   * a few hundred sprites, each a holder of four or five meshes — body, hull,
+   * ghost, ring, shadow — and three.js pays for every one twice a frame (the
+   * depth pass and the frame): a matrix, a cull, a sort slot and a draw call.
+   * After the bake a crowd costs a dozen draw calls however large it is.
+   *
+   * Each mesh's vertices go in as they are, in the sprite's own frame (the
+   * holder's yaw left out), with the holder's place as an `anchor` attribute;
+   * the merged materials (`mergedMats`) turn every sprite to the eye about its
+   * anchor in the vertex shader (`STAND_VERT`), exactly as `render` turned the
+   * holders, so nothing in how a sprite is built, lit or inked changes and the
+   * holders stay what the builders and their tests see.
+   *
+   * Holders are taken back to front from the eye, so the blended sprites and
+   * ghosts within a mesh draw in the order three.js sorted them into as
+   * objects. Left as holders: the doll (it glides and lunges every frame), a
+   * sprite standing at a heading of its own (an open door), and anything
+   * wearing a material of its own (a translucent sprite, a cloud).
+   */
+  private bakeStanding(group: THREE.Group, eye: { x: number; y: number }) {
+    type Batch = { material: THREE.Material; renderOrder: number; layers: number; parts: { mesh: THREE.Mesh; anchor: THREE.Vector3 }[]; verts: number; indices: number }
+    const batches = new Map<string, Batch>()
+    const holders: THREE.Object3D[] = []
+    for (const h of group.children) {
+      if (!h.userData.billboard || h === this.doll || !h.children.length) continue
+      let own = false
+      for (const c of h.children) {
+        const m = c as THREE.Mesh
+        if (!m.geometry || m.userData.ownMaterial || !this.mergedMats.has(m.material as THREE.Material) || !m.geometry.index) own = true
+      }
+      if (!own) holders.push(h)
+    }
+    if (!holders.length) return
+    const far = (h: THREE.Object3D) => (h.position.x - eye.x - 0.5) ** 2 + (h.position.z - eye.y - 0.5) ** 2
+    holders.sort((a, b) => far(b) - far(a))
+    for (const h of holders) {
+      group.remove(h)
+      for (const c of h.children) {
+        const m = c as THREE.Mesh
+        const material = this.mergedMats.get(m.material as THREE.Material)!
+        const key = `${material.uuid}|${m.renderOrder}|${m.layers.mask}`
+        let b = batches.get(key)
+        if (!b) batches.set(key, (b = { material, renderOrder: m.renderOrder, layers: m.layers.mask, parts: [], verts: 0, indices: 0 }))
+        // the holder's yaw is the eye's, and the shader applies that; its place goes in as the anchor
+        b.parts.push({ mesh: m, anchor: h.position })
+        b.verts += m.geometry.getAttribute('position').count
+        b.indices += m.geometry.index!.count
+      }
+    }
+    // One pass per batch into arrays sized up front: a crowd is rebuilt with every
+    // scene revision, so the merge is written straight rather than through clones.
+    const v = new THREE.Vector3()
+    for (const b of batches.values()) {
+      const first = b.parts[0].mesh.geometry
+      // the shadow disc has normals; nothing else does, and no merged material reads them
+      const names = Object.keys(first.attributes).filter((n) => n !== 'normal')
+      const out: Record<string, { array: Float32Array; size: number }> = {}
+      for (const n of names) {
+        const a = first.getAttribute(n)
+        out[n] = { array: new Float32Array(b.verts * a.itemSize), size: a.itemSize }
+      }
+      const anchor = new Float32Array(b.verts * 3)
+      const index = b.verts > 65535 ? new Uint32Array(b.indices) : new Uint16Array(b.indices)
+      let vo = 0, io = 0
+      for (const { mesh, anchor: at } of b.parts) {
+        const g = mesh.geometry
+        const n = g.getAttribute('position').count
+        mesh.updateMatrix()
+        const plain = mesh.rotation.x === 0 && mesh.rotation.y === 0 && mesh.rotation.z === 0 && mesh.scale.x === 1 && mesh.scale.y === 1 && mesh.scale.z === 1
+        for (const name of names) {
+          const a = g.getAttribute(name) as THREE.BufferAttribute
+          const dst = out[name]
+          if (name === 'position') {
+            const src = a.array as Float32Array
+            const p = mesh.position
+            for (let i = 0; i < n; i++) {
+              if (plain) {
+                dst.array[(vo + i) * 3] = src[i * 3] + p.x
+                dst.array[(vo + i) * 3 + 1] = src[i * 3 + 1] + p.y
+                dst.array[(vo + i) * 3 + 2] = src[i * 3 + 2] + p.z
+              } else {
+                v.fromBufferAttribute(a, i).applyMatrix4(mesh.matrix)
+                dst.array[(vo + i) * 3] = v.x
+                dst.array[(vo + i) * 3 + 1] = v.y
+                dst.array[(vo + i) * 3 + 2] = v.z
+              }
+            }
+          } else dst.array.set(a.array as Float32Array, vo * dst.size)
+        }
+        for (let i = 0; i < n; i++) {
+          anchor[(vo + i) * 3] = at.x
+          anchor[(vo + i) * 3 + 1] = at.y
+          anchor[(vo + i) * 3 + 2] = at.z
+        }
+        const idx = g.index!.array
+        for (let i = 0; i < idx.length; i++) index[io + i] = idx[i] + vo
+        vo += n
+        io += idx.length
+        if (!mesh.userData.shared) g.dispose()
+      }
+      const geo = new THREE.BufferGeometry()
+      for (const n of names) geo.setAttribute(n, new THREE.BufferAttribute(out[n].array, out[n].size))
+      geo.setAttribute('anchor', new THREE.BufferAttribute(anchor, 3))
+      geo.setIndex(new THREE.BufferAttribute(index, 1))
+      const mesh = new THREE.Mesh(geo, b.material)
+      mesh.renderOrder = b.renderOrder
+      mesh.layers.mask = b.layers
+      // the vertices are in their sprites' own frames, so the geometry's bounds say nothing about where they stand
+      mesh.frustumCulled = false
+      mesh.userData.baked = true
+      group.add(mesh)
     }
   }
 
@@ -2249,10 +2474,15 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         this.builtTint = tintKey
         this.builtOccupied = occKey
         this.rebuildLevel(scene)
+        this.bakeStanding(this.levelGroup, { x: cam.eyeX, y: cam.eyeY })
       }
       this.updateFields(scene)
       this.rebuildBillboards(scene)
-    } else if (this.billboardsDirty) this.rebuildBillboards(scene)
+      this.bakeStanding(this.billboardGroup, { x: cam.eyeX, y: cam.eyeY })
+    } else if (this.billboardsDirty) {
+      this.rebuildBillboards(scene)
+      this.bakeStanding(this.billboardGroup, { x: cam.eyeX, y: cam.eyeY })
+    }
     // camera
     if (shot) this.placeThirdPerson(scene, cam)
     else {
@@ -2266,7 +2496,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     // degrees and a billboard squared to the facing stands visibly turned.
     // Squared to the view plane a sprite is never foreshortened, so its
     // texture is sampled head-on and stays as sharp as the art allows.
+    // The baked crowd (`bakeStanding`) turns in the shader; the holders left standing turn here.
     const camYaw = this.cam.rotation.y
+    this.standUniforms.standYaw.value = camYaw
     for (const h of this.billboardGroup.children) if (h.userData.billboard) h.rotation.y = camYaw
     for (const h of this.levelGroup.children) if (h.userData.billboard) h.rotation.y = camYaw
     this.placeCursor()

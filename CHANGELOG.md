@@ -2,6 +2,10 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.1.2 — 2026-09-16
+
+- Crowded levels draw far faster: a hall full of monsters and items costs a dozen draw calls a frame instead of one per sprite, so the frame rate holds up on weak graphics.
+
 ## 0.1.1 — 2026-09-16
 
 - Movement now glides between cells and comes to a clean stop, with consistent pacing on diagonals and across frame rates.

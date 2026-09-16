@@ -1,41 +1,76 @@
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import { Render3d } from '../src/index.js'
+import { emptyScene, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
+
+const RECT: TileRect = { atlas: 'main', sx: 0, sy: 0, w: 32, h: 32, ox: 0, oy: 0, cell: 32 }
+const tiles: TileSource = {
+  tile: () => RECT,
+  atlas: () => ({ width: 64, height: 64 }) as unknown as TexImageSource,
+  atlasNames: () => ['main'],
+}
+
+type Guts = {
+  cam: THREE.PerspectiveCamera
+  billboardGroup: THREE.Group
+  setTiles(t: TileSource): void
+  rebuildBillboards(s: Scene): void
+  renderOccluderDepth(r: unknown): void
+}
 
 /**
  * The depth pass renders the scene into the very texture the ghost shaders
  * sample, so the ghosts themselves must be out of it: a draw that reads the
- * image it writes is a framebuffer feedback loop, which GL refuses.
+ * image it writes is a framebuffer feedback loop, which GL refuses. They
+ * stand on a layer the depth pass's camera does not see, along with what
+ * writes no depth anyway (the shadow discs), so the pass costs no draw
+ * calls for them and no traversal to hide and show them.
  */
 describe('ghost depth pass', () => {
-  it('hides the ghost sprites while the depth image is drawn, and puts them back', () => {
-    const r = new Render3d() as unknown as {
-      billboardGroup: THREE.Group
-      renderOccluderDepth(r: unknown): void
-    }
-    const ghost = new THREE.Object3D()
-    ghost.userData.kind = 'ghost'
-    const sprite = new THREE.Object3D()
-    sprite.userData.kind = 'monster'
-    const hidden = new THREE.Object3D()
-    hidden.userData.kind = 'ghost'
-    hidden.visible = false
-    r.billboardGroup.add(ghost, sprite, hidden)
-
-    const seen: { ghost: boolean; sprite: boolean; hidden: boolean }[] = []
+  it('sees layer 0 alone while the depth image is drawn, and the frame sees both', () => {
+    const r = new Render3d() as unknown as Guts
+    const seen: number[] = []
     let target: unknown = 'frame'
     const fake = {
       getDrawingBufferSize: (v: THREE.Vector2) => v.set(64, 32),
       getRenderTarget: () => target,
       setRenderTarget: (t: unknown) => void (target = t),
       clear: () => {},
-      render: () => void seen.push({ ghost: ghost.visible, sprite: sprite.visible, hidden: hidden.visible }),
+      render: () => void seen.push(r.cam.layers.mask),
     }
+    const frameMask = r.cam.layers.mask
     r.renderOccluderDepth(fake)
-
-    expect(seen).toEqual([{ ghost: false, sprite: true, hidden: false }])
-    // and the frame's own pass finds them as it left them
-    expect([ghost.visible, sprite.visible, hidden.visible]).toEqual([true, true, false])
+    expect(seen).toEqual([1 << 0])
+    expect(r.cam.layers.mask).toBe(frameMask)
     expect(target).toBe('frame')
+    // the frame's camera sees the occluders and the no-depth layer alike
+    expect(frameMask & (1 << 0)).toBeTruthy()
+    expect(frameMask & (1 << 1)).toBeTruthy()
+  })
+
+  it('keeps the ghosts, their rings and the shadows off the depth image, and the sprites on it', () => {
+    const r = new Render3d() as unknown as Guts
+    r.setTiles(tiles)
+    const s = emptyScene()
+    s.playerOnLevel = true
+    s.player = { x: 0, y: 0 }
+    s.billboards = [{ x: 3, y: 3, tile: 1, kind: 'monster', height: 1, attitude: 'hostile' }]
+    r.rebuildBillboards(s)
+    const depthCam = new THREE.Layers()
+    depthCam.set(0)
+    const ghost = r.billboardGroup.children.find((h) => h.userData.kind === 'ghost')!
+    const sprite = r.billboardGroup.children.find((h) => h.userData.kind === 'monster')!
+    const meshes = (h: THREE.Object3D) => h.children.filter((c) => (c as THREE.Mesh).geometry)
+    expect(meshes(ghost).length).toBeGreaterThan(0)
+    for (const m of meshes(ghost)) expect(m.layers.test(depthCam)).toBe(false)
+    const body = meshes(sprite).filter((c) => !c.userData.shared && !c.userData.hull)
+    const hulls = meshes(sprite).filter((c) => c.userData.hull)
+    const shadows = meshes(sprite).filter((c) => c.userData.shared)
+    expect(body.length).toBe(1)
+    expect(shadows.length).toBe(1)
+    for (const m of [...body, ...hulls]) expect(m.layers.test(depthCam)).toBe(true)
+    for (const m of shadows) expect(m.layers.test(depthCam)).toBe(false)
+    // and the frame's camera draws every one of them
+    for (const m of [...meshes(ghost), ...meshes(sprite)]) expect(m.layers.test(r.cam.layers)).toBe(true)
   })
 })
