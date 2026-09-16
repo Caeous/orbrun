@@ -2219,7 +2219,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     if (shot) {
       const dist = Math.hypot(shot.x - scene.player.x, shot.y - scene.player.y)
       const back = Math.max(THIRD_MIN_BACK, Math.min(this.opts.camDistance, THIRD_MAX_BACK, dist))
-      this.approach = cameraApproach(scene, cam.yaw, back, THIRD_MIN_BACK)
+      // from the eased eye (a glide's doll), not the cell: the walls between them are the ones in the way now
+      this.approach = cameraApproach(scene, cam.yaw, back, THIRD_MIN_BACK, { x: cam.eyeX, y: cam.eyeY })
       if (aboveLid) this.approach.cut = []
     }
     const cutKey = shot ? `${shot.x},${shot.y}:${shot.cut.join(',')}|${this.approach.cut.join(',')}|${aboveLid ? 'over' : 'under'}` : ''
@@ -2255,7 +2256,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     // camera
     if (shot) this.placeThirdPerson(scene, cam)
     else {
-      this.cam.position.set(cam.x + 0.5, Math.max(EYE_MIN, Math.min(EYE_MAX, this.opts.eyeHeight)), cam.y + 0.5)
+      // the eased eye (camera.ts `walkTo`), not the cell: mid-glide it is between the two
+      this.cam.position.set(cam.eyeX + 0.5, Math.max(EYE_MIN, Math.min(EYE_MAX, this.opts.eyeHeight)), cam.eyeY + 0.5)
       this.cam.rotation.set(cam.pitch, -cam.yaw, 0)
     }
     // Billboards face the camera (yaw only), and it is the camera's own yaw
@@ -2288,7 +2290,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * the stick's pitch is a glance from that rest, clamped for the lid.
    */
   private placeThirdPerson(scene: Scene, cam: Camera) {
-    const px = scene.player.x + 0.5, pz = scene.player.y + 0.5
+    // the doll and the orbit stand on the eased eye, so a glide carries them both, not the camera alone
+    const px = cam.eyeX + 0.5, pz = cam.eyeY + 0.5
     const fx = Math.sin(cam.yaw), fz = -Math.cos(cam.yaw)
     const back = this.approach.back
     const ex = px - fx * back, ez = pz - fz * back

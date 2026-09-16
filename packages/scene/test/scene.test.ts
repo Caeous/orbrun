@@ -112,6 +112,17 @@ describe('third-person camera approach (rendering-3d.md II.11)', () => {
     const a = cameraApproach(s, dirToYaw(rotateDir(N, 2)), 0.5, 0.5)
     expect(a.cut).toEqual([cellKey(1, 1)])
   })
+  it('stands off the eased eye mid-glide, not the destination cell', () => {
+    // walking east along a corridor: the doll is halfway between (1,1) and (2,1); the camera, 1.5 back
+    // against east, stands in (0,1), the wall behind the cell it left, and cuts it; the home cell is the
+    // one under the doll, never cut
+    const s = sceneFrom(['####', '#.@#', '####'])
+    const a = cameraApproach(s, dirToYaw(rotateDir(N, 2)), 1.5, 0.5, { x: 1.5, y: 1 })
+    expect(a.back).toBe(1.5)
+    expect(a.cut).toContain(cellKey(0, 1))
+    expect(a.cut).not.toContain(cellKey(1, 1))
+    expect(a.cut).not.toContain(cellKey(2, 1))
+  })
   it('pulls in toward the player until the way is clear of never-seen void', () => {
     const s = sceneFrom(['@', '.', ' '])
     const a = cameraApproach(s, dirToYaw(N), 1.5, 0.5)

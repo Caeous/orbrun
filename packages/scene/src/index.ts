@@ -444,8 +444,17 @@ export interface TileSource {
 // Camera
 
 export interface Camera {
+  /** The cell the camera belongs to: the player's, once a step has been answered. This is the glide goal. */
   x: number
   y: number
+  /**
+   * Where the eye stands right now, in cells, continuous: eases toward x, y
+   * along the path the feet took (camera.ts `walkTo`), as yaw eases toward
+   * facing. WebTiles has no such thing; it recentres the map on the new
+   * cell every redraw.
+   */
+  eyeX: number
+  eyeY: number
   /** Radians, continuous, 0 = north, clockwise. */
   yaw: number
   /** Radians, small glance range. */
@@ -464,7 +473,7 @@ export interface Camera {
 export const REST_PITCH = -(Math.PI / 180) * 5
 
 export function makeCamera(x = 0, y = 0, facing: Dir8 = 0): Camera {
-  return { x, y, yaw: dirToYaw(facing), pitch: REST_PITCH, facing }
+  return { x, y, eyeX: x, eyeY: y, yaw: dirToYaw(facing), pitch: REST_PITCH, facing }
 }
 
 export interface SceneCursor {
@@ -667,12 +676,15 @@ const CAMERA_MARGIN = 0.35
  * in, so `back` shrinks toward `minBack` until the way is clear (and stays at
  * `minBack` if even that is void: the cell under the player is always known).
  */
-export function cameraApproach(scene: Scene, yaw: number, back: number, minBack: number): CameraApproach {
-  const px = scene.player.x + 0.5
-  const py = scene.player.y + 0.5
+export function cameraApproach(scene: Scene, yaw: number, back: number, minBack: number, at: { x: number; y: number } = scene.player): CameraApproach {
+  // `at`: the cell the doll stands in, continuous (the eased eye, camera.ts
+  // `walkTo`) so mid-glide the walls between the camera and the doll are the
+  // ones it really looks across, not the ones the destination cell would cut
+  const px = at.x + 0.5
+  const py = at.y + 0.5
   const fx = Math.sin(yaw)
   const fy = -Math.cos(yaw)
-  const home = cellKey(scene.player.x, scene.player.y)
+  const home = cellKey(Math.floor(px), Math.floor(py))
   for (let d = back; ; d = Math.max(minBack, d - 0.125)) {
     const ex = px - fx * d
     const ey = py - fy * d

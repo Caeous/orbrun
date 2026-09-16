@@ -22,8 +22,9 @@ export const HOLD_MS = 400
  * A held direction is a typewriter of single steps, never a run: a run
  * (Shift+dir) keeps going until the server decides to stop, so a stick held a
  * moment too long would carry the player across the level. Every repeat tick
- * offers one `held` step; the runner paces them (runner.ts `HELD_STEP_MS`),
- * sending the next only once the previous one has echoed back.
+ * offers one `held` step at the gamepad's repeat cadence. The runner sends
+ * it immediately, without waiting for an echo or a camera animation; only
+ * confirmed position updates move the displayed eye.
  */
 
 export type Action =

@@ -32,6 +32,8 @@ export interface LastStep {
   dir: Dir8
   /** the camera was aimed along it: a forward step or an attack, never a strafe */
   turned: boolean
+  /** Manual view input as of sending the step; later turns/looks supersede its auto-alignment. */
+  steeringRevision: number
   t: number
 }
 
@@ -81,6 +83,8 @@ export class Runner {
   private sequence: { steps: (() => Promise<boolean>)[]; abort: () => void } | null = null
   /** last step the runner initiated, so auto-facing knows it was ours */
   lastStep: LastStep | null = null
+  /** Recent intents, newest first: replies can arrive after another direction was sent. */
+  private recentSteps: LastStep[] = []
   /** a dangerous action awaiting its confirming second press */
   private armed: { what: string; t: number } | null = null
   /** look mode: `x` went out (`pending`), the server opened its targeting (`active`) */
@@ -129,6 +133,7 @@ export class Runner {
       // however recently we last stepped.
       if (isExplore(msg)) {
         this.lastStep = null
+        this.recentSteps = []
         this.cam.faceBlocker(this.session.scene)
       }
       // an aim's cursor is the server's: nothing is sent to place it, so it
@@ -251,6 +256,31 @@ export class Runner {
     })
     this.sequence = { steps: [], abort: finish }
     check()
+  }
+
+  private rememberStep(step: LastStep) {
+    if (this.lastStep) this.recentSteps.unshift(this.lastStep)
+    this.recentSteps = this.recentSteps.filter((s) => step.t - s.t < OWN_STEP_WINDOW_MS).slice(0, 63)
+    this.lastStep = step
+  }
+
+  /**
+   * Attribute every confirmed hop using the same short direction/time window
+   * as `stepIsOurs`, but retain older intents too. Otherwise forward, turn,
+   * forward makes the first reply look like travel and auto-facing undoes
+   * the turn. Returns the final hop's intent; only the latest intent may
+   * align the view. These are hints, not protocol acknowledgements: blocked
+   * steps have no position echo, and matching never gates sending input.
+   */
+  stepForMove(dx: number, dy: number, now: number, hops: readonly { dx: number; dy: number }[] = []): LastStep | null {
+    if (!this.lastStep) return null
+    const candidates = [this.lastStep, ...this.recentSteps]
+    let matched: LastStep | null = null
+    for (const h of hops.length ? hops : [{ dx, dy }]) {
+      matched = candidates.find((s) => stepIsOurs(s, h.dx, h.dy, now)) ?? null
+      if (!matched) return null
+    }
+    return matched
   }
 
   /** Absolute direction for a relative one under the current facing. */
@@ -411,7 +441,7 @@ export class Runner {
     const target = this.targetIsMonster(abs)
     const turned = forward || target || !!opts.attack
     if (turned && !forward) this.cam.setFacing(abs)
-    this.lastStep = { dir: abs, turned, t: this.hooks.now() }
+    this.rememberStep({ dir: abs, turned, steeringRevision: this.cam.steeringRevision, t: this.hooks.now() })
     // a step of the player's own: whatever autofight was closing on, this walk is theirs
     this.cam.stopClosing()
     if (target) this.hooks.swing()
@@ -439,7 +469,7 @@ export class Runner {
       const dir = dirFromDelta(Math.sign(dx), Math.sign(dy))
       if (dir !== null) {
         const adjacent = Math.abs(dx) <= 1 && Math.abs(dy) <= 1
-        this.lastStep = { dir, turned: false, t: this.hooks.now() }
+        this.rememberStep({ dir, turned: false, steeringRevision: this.cam.steeringRevision, t: this.hooks.now() })
         this.cam.stopClosing()
         if (adjacent && this.targetIsMonster(dir)) this.hooks.swing()
       }

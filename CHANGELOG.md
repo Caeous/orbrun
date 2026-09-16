@@ -2,6 +2,11 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.1.1 — 2026-09-16
+
+- Movement now glides between cells and comes to a clean stop, with consistent pacing on diagonals and across frame rates.
+- Turning or looking during movement is no longer undone by a delayed movement reply.
+
 ## 0.1.0 — 2026-09-10 — first public release
 
 Everything before this was pre-release development, so this entry is the whole

@@ -11,7 +11,7 @@ import { deriveContext, deriveMode, isFocusMode, type Context } from './context'
 import type { FocusOp } from './focus'
 import { HOLD_MS, LEVEL_MAP, barLabels, contextualLabel, armsTapOrHold, holdAction, resolve, type Action, type CommandCategory, type RelDir } from './bindings'
 import { MORPH, animate, containTransform, reducedMotion } from './mapmorph'
-import { Runner, stepIsOurs, type LastStep } from './runner'
+import { Runner, type LastStep } from './runner'
 import { Hud } from './hud'
 import { GridHost } from './grid/host'
 import { gameSplit, levelMapSplit, type GameLayout } from './grid/console'
@@ -1021,14 +1021,13 @@ export class GameScreen {
         this.owedTurn = null
         const dx = p.x - this.lastPos.x
         const dy = p.y - this.lastPos.y
-        // ours only if it went the way our last step was sent: a one-cell
-        // explore right after a keyed step is the explore's, not ours. Several
-        // echoes of a held stick in one frame are ours when every hop went that way.
-        const wasOurs = stepIsOurs(this.runner.lastStep, dx, dy, performance.now(), jumped ? [] : hops)
-        this.cam.snapTo(p.x, p.y)
+        // Attribute all hops, including replies to older commands still in
+        // flight after the player turned and sent a new direction.
+        const ownStep = this.runner.stepForMove(dx, dy, performance.now(), jumped ? [] : hops)
+        const wasOurs = ownStep !== null
         const sameLevel = !newLevel && !Number.isNaN(this.lastPos.x) && !(dx === 0 && dy === 0)
         const single = Math.abs(dx) <= 1 && Math.abs(dy) <= 1
-        if (sameLevel && wasOurs && this.padStep === this.runner.lastStep && !this.session.watching) {
+        if (sameLevel && ownStep && this.padStep === ownStep && !this.session.watching) {
           this.padHints.moved(Math.max(1, hops.length))
           this.padStep = null
         }
@@ -1038,16 +1037,24 @@ export class GameScreen {
         // cells (`travel_delay -1`, a blink, a teleport) has no hops: the
         // travel trail tells the last step, else the displacement stands in.
         const walk = sameLevel && hops.length > 0 && !jumped
+        // the eye glides after a walk, by the hops the server drew (the rc's
+        // `travel_delay`: a positive one sends every step, -1 sends the
+        // arrival alone, which is a jump here as it is a jump there)
+        if (walk || (sameLevel && single)) this.cam.walkTo(p.x, p.y, walk ? hops : [{ dx, dy }])
+        else this.cam.snapTo(p.x, p.y)
         if (!sameLevel) {
           // level change: never nose-to-wall
           if (!this.cam.steering) this.arrivalPending = !this.cam.faceAfterArrival(scene)
         } else if (this.cam.steering) {
           // the player is looking around: leave the view alone
         } else if (wasOurs) {
-          // our own step: only one that turned the view (forward, or an attack)
-          // snaps the camera onto the exact vector the feet took. A strafe --
-          // j, y, u, b, n -- keeps its heading.
-          if (this.runner.lastStep?.turned) this.cam.faceStep(dx, dy)
+          // Align our forward step only if no newer turn or look superseded
+          // it. The reply confirms the feet, not a heading the player has
+          // since changed (even if the drag/stick has already been released).
+          if (ownStep === this.runner.lastStep && ownStep.turned && ownStep.steeringRevision === this.cam.steeringRevision) {
+            const h = hops.at(-1) ?? { dx, dy }
+            this.cam.faceStep(h.dx, h.dy)
+          }
         } else if (walk || single) {
           // path-driven movement: face the way the last step went
           const h = walk ? hops[hops.length - 1] : { dx, dy }

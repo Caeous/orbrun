@@ -576,3 +576,277 @@ describe('an aim reads its keys against the grid in view', () => {
     expect(c.facing).toBe(5)
   })
 })
+
+describe('the eye glides after a step', () => {
+  const onPath = (c: CameraController, ax: number, ay: number, bx: number, by: number) => {
+    const { eyeX, eyeY } = c.camera
+    // on the segment a..b: collinear and between
+    const cross = (bx - ax) * (eyeY - ay) - (by - ay) * (eyeX - ax)
+    const dot = (eyeX - ax) * (bx - ax) + (eyeY - ay) * (by - ay)
+    return Math.abs(cross) < 1e-9 && dot >= -1e-9 && dot <= (bx - ax) ** 2 + (by - ay) ** 2 + 1e-9
+  }
+  it('eases a single step from the old cell to the new one, and rests there', () => {
+    const c = new CameraController()
+    c.snapTo(3, 3)
+    c.walkTo(4, 3, [{ dx: 1, dy: 0 }])
+    // the cell is the goal at once; the eye is still on the old cell
+    expect(c.camera.x).toBe(4)
+    expect(c.camera.eyeX).toBe(3)
+    expect(c.update(0.02)).toBe(true)
+    expect(c.camera.eyeX).toBeGreaterThan(3)
+    expect(c.camera.eyeX).toBeLessThan(4)
+    expect(c.camera.eyeY).toBe(3)
+    for (let i = 0; i < 100; i++) c.update(0.02)
+    expect(c.camera.eyeX).toBe(4)
+    expect(c.update(0.02)).toBe(false)
+  })
+  it('follows the hops round a corner rather than the straight line through it', () => {
+    const c = new CameraController()
+    c.snapTo(0, 0)
+    // east then north: the corner cell (1,0) is passed, the diagonal never taken
+    c.walkTo(1, -1, [{ dx: 1, dy: 0 }, { dx: 0, dy: -1 }])
+    let seenCorner = false
+    for (let i = 0; i < 100; i++) {
+      c.update(0.01)
+      const leg1 = onPath(c, 0, 0, 1, 0)
+      const leg2 = onPath(c, 1, 0, 1, -1)
+      expect(leg1 || leg2).toBe(true)
+      if (leg2 && c.camera.eyeY < 0) seenCorner = true
+    }
+    expect(seenCorner).toBe(true)
+    expect(c.camera.eyeX).toBe(1)
+    expect(c.camera.eyeY).toBe(-1)
+  })
+  it('bounds fast travel to two grid steps behind and lands within 180 ms of its final update', () => {
+    const c = new CameraController()
+    c.snapTo(0, 0)
+    // a cell every frame, as `travel_delay 20` sends them
+    for (let i = 1; i <= 20; i++) {
+      c.walkTo(i, 0, [{ dx: 1, dy: 0 }])
+      c.update(0.02)
+      expect(i - c.camera.eyeX).toBeLessThanOrEqual(2 + 1e-9)
+      expect(c.camera.eyeX).toBeLessThanOrEqual(i)
+    }
+    // two hops in one frame: the same catch-up ceiling, not two full animations
+    c.walkTo(22, 0, [{ dx: 1, dy: 0 }, { dx: 1, dy: 0 }])
+    c.update(0.02)
+    expect(22 - c.camera.eyeX).toBeLessThanOrEqual(2 + 1e-9)
+    for (let i = 0; i < 8; i++) c.update(0.02)
+    expect(c.camera.eyeX).toBe(22)
+    expect(c.update(0.02)).toBe(false)
+  })
+  it('snaps a jump: several cells with no hops, hops that do not add up, a level change, reduced motion', () => {
+    const c = new CameraController()
+    c.snapTo(0, 0)
+    c.walkTo(5, 0, [])
+    expect(c.camera.eyeX).toBe(5)
+    expect(c.update(0.02)).toBe(false)
+    // hops that do not reach the destination: a single cell falls back to the straight line
+    c.walkTo(6, 1, [{ dx: 0, dy: 1 }])
+    c.update(0.02)
+    expect(c.camera.eyeX).toBeGreaterThan(5)
+    expect(c.camera.eyeX).toBeLessThan(6)
+    for (let i = 0; i < 100; i++) c.update(0.02)
+    // ...and a longer one is a jump
+    c.walkTo(9, 1, [{ dx: 1, dy: 0 }])
+    expect(c.camera.eyeX).toBe(9)
+    // a snap mid-glide drops the rest of the path
+    c.walkTo(10, 1, [{ dx: 1, dy: 0 }])
+    c.snapTo(20, 20)
+    expect(c.update(0.02)).toBe(false)
+    expect(c.camera.eyeX).toBe(20)
+    const r = cam(0)
+    r.snapTo(0, 0)
+    r.walkTo(1, 0, [{ dx: 1, dy: 0 }])
+    expect(r.camera.eyeX).toBe(1)
+    expect(r.update(0.02)).toBe(false)
+  })
+})
+
+describe('movement timing', () => {
+  function walking(dx = 1, dy = 0) {
+    const c = new CameraController()
+    c.snapTo(0, 0)
+    c.walkTo(dx, dy, [{ dx, dy }])
+    return c
+  }
+
+  it.each([30, 60, 120, 144])('lands within one frame of 180 ms at %i Hz, without overshoot', (fps) => {
+    const c = walking()
+    let previous = 0
+    for (let i = 1; i <= Math.ceil(0.18 * fps); i++) {
+      c.update(1 / fps)
+      expect(c.camera.eyeX).toBeGreaterThanOrEqual(previous)
+      expect(c.camera.eyeX).toBeLessThanOrEqual(1)
+      if (i / fps < 0.18) expect(c.camera.eyeX).toBeLessThan(1)
+      previous = c.camera.eyeX
+    }
+    expect(c.camera.eyeX).toBe(1)
+    expect(c.update(1 / fps)).toBe(false)
+  })
+
+  it('keeps a prompt start but brakes to zero, without a long settling tail', () => {
+    const c = walking()
+    c.update(1 / 60)
+    expect(c.camera.eyeX).toBeGreaterThan(0.2)
+    expect(c.camera.eyeX).toBeLessThan(0.3)
+    c.update(0.12 - 1 / 60)
+    expect(c.camera.eyeX).toBeGreaterThan(0.95)
+    c.update(0.05)
+    const beforeLanding = c.camera.eyeX
+    c.update(0.01)
+    expect(1 - beforeLanding).toBeLessThan(0.001)
+    expect(c.camera.eyeX).toBe(1)
+  })
+
+  it('has the same trajectory at equal times, regardless of frame partitions', () => {
+    const reference = walking()
+    reference.update(0.1)
+    for (const frames of [[0.05, 0.05], Array(6).fill(1 / 60), Array(12).fill(1 / 120), [0.01, 0.03, 0.005, 0.055]]) {
+      const c = walking()
+      for (const dt of frames) c.update(dt)
+      expect(c.camera.eyeX).toBeCloseTo(reference.camera.eyeX, 12)
+    }
+  })
+
+  it.each([[1, 1], [1, -1], [-1, 1], [-1, -1]])('paces the diagonal (%i,%i) like one cardinal step', (dx, dy) => {
+    const cardinal = walking()
+    const diagonal = walking(dx, dy)
+    for (let i = 0; i < 12; i++) {
+      cardinal.update(1 / 60)
+      diagonal.update(1 / 60)
+      expect(diagonal.camera.eyeX / dx).toBeCloseTo(cardinal.camera.eyeX, 12)
+      expect(diagonal.camera.eyeY / dy).toBeCloseTo(cardinal.camera.eyeX, 12)
+    }
+  })
+
+  it('carries velocity through a new confirmed step, then lands on the new deadline', () => {
+    const c = walking()
+    const epsilon = 1e-6
+    c.update(0.1 - epsilon)
+    const before = c.camera.eyeX
+    c.update(epsilon)
+    const atReply = c.camera.eyeX
+    const speedBefore = (atReply - before) / epsilon
+    c.walkTo(2, 0, [{ dx: 1, dy: 0 }])
+    expect(c.camera.eyeX).toBe(atReply)
+    c.update(epsilon)
+    const speedAfter = (c.camera.eyeX - atReply) / epsilon
+    expect(speedAfter).toBeCloseTo(speedBefore, 2)
+    c.update(0.18 - epsilon)
+    expect(c.camera.eyeX).toBe(2)
+    expect(c.update(0.01)).toBe(false)
+  })
+
+  it('retargets consistently across frame rates without restarting on duplicate updates', () => {
+    function run(dt: number) {
+      const c = walking()
+      for (let i = 0; i < Math.round(0.1 / dt); i++) c.update(dt)
+      c.walkTo(2, 0, [{ dx: 1, dy: 0 }])
+      for (let i = 0; i < Math.round(0.1 / dt); i++) {
+        c.walkTo(2, 0, [])
+        c.update(dt)
+      }
+      return c
+    }
+    const a = run(1 / 30)
+    const b = run(1 / 120)
+    expect(a.camera.eyeX).toBeCloseTo(b.camera.eyeX, 12)
+    a.update(0.08)
+    b.update(0.08)
+    expect(a.camera.eyeX).toBe(2)
+    expect(b.camera.eyeX).toBe(2)
+  })
+
+  it('keeps a reversal on the confirmed out-and-back path, without overshooting it', () => {
+    const c = walking()
+    c.update(0.06)
+    c.walkTo(0, 0, [{ dx: -1, dy: 0 }])
+    const before = c.camera.eyeX
+    c.update(0.001)
+    expect(c.camera.eyeX).toBeGreaterThan(before) // finish the outward leg first
+    for (let i = 0; i < 18; i++) {
+      c.update(0.01)
+      expect(c.camera.eyeX).toBeGreaterThanOrEqual(0)
+      expect(c.camera.eyeX).toBeLessThanOrEqual(1)
+    }
+    expect(c.camera.eyeX).toBe(0)
+    expect(c.update(0.01)).toBe(false)
+  })
+
+  it('bounds delayed diagonal batches in grid steps and finishes the whole batch in 180 ms', () => {
+    const c = new CameraController()
+    c.walkTo(20, -20, Array.from({ length: 20 }, () => ({ dx: 1, dy: -1 })))
+    c.update(0.01)
+    expect(20 - c.camera.eyeX).toBeLessThanOrEqual(2 + 1e-9)
+    let previous = c.camera.eyeX
+    for (let i = 0; i < 17; i++) {
+      c.update(0.01)
+      expect(c.camera.eyeX).toBeGreaterThanOrEqual(previous)
+      expect(c.camera.eyeX).toBeLessThanOrEqual(20)
+      expect(c.camera.eyeY).toBeCloseTo(-c.camera.eyeX, 12)
+      previous = c.camera.eyeX
+    }
+    expect(c.camera.eyeX).toBe(20)
+    expect(c.update(0.01)).toBe(false)
+  })
+
+  it('does not move on a zero/invalid frame, and finishes after a long frame', () => {
+    const c = walking()
+    for (const dt of [0, -1, NaN, Infinity]) expect(c.update(dt)).toBe(false)
+    expect(c.camera.eyeX).toBe(0)
+    c.update(1)
+    expect(c.camera.eyeX).toBe(1)
+    expect(c.update(0.01)).toBe(false)
+  })
+
+  it('ignores zero hops, and honours reduced motion enabled during a glide', () => {
+    const c = walking()
+    c.update(0.05)
+    c.walkTo(1, 0, [{ dx: 0, dy: 0 }])
+    c.update(0.13)
+    expect(c.update(0.01)).toBe(false)
+    c.walkTo(2, 0, [{ dx: 1, dy: 0 }])
+    c.update(0.02)
+    c.reducedMotion = true
+    expect(c.update(0.01)).toBe(true)
+    expect(c.camera.eyeX).toBe(2)
+    expect(c.update(0.01)).toBe(false)
+  })
+
+  it('drops a malformed hop list rather than accepting a valid prefix', () => {
+    const c = walking()
+    c.walkTo(3, 0, [{ dx: 1, dy: 0 }, { dx: 1, dy: 0 }, { dx: NaN, dy: 0 }])
+    expect(c.camera.eyeX).toBe(3)
+    expect(c.update(0.01)).toBe(false)
+  })
+})
+
+describe('frame-independent turning', () => {
+  it('matches yaw and minimap rotation at equal elapsed times', () => {
+    const a = new CameraController()
+    const b = new CameraController()
+    a.turn(2)
+    b.turn(2)
+    a.update(0.1)
+    for (let i = 0; i < 12; i++) b.update(1 / 120)
+    expect(a.camera.yaw).toBeCloseTo(b.camera.yaw, 12)
+    expect(a.mapYaw).toBeCloseTo(b.mapYaw, 12)
+    expect(a.mapUprightYaw).toBeCloseTo(b.mapUprightYaw, 12)
+    expect(a.camera.yaw).toBeLessThan(Math.PI / 2) // a 100 ms hitch no longer snaps the turn
+  })
+
+  it('takes the short turn across north and retargets from the displayed yaw', () => {
+    const c = new CameraController()
+    c.restore({ yaw: 350 * Math.PI / 180, pitch: REST_PITCH })
+    c.setFacing(0)
+    c.update(0.02)
+    expect(c.camera.yaw).toBeGreaterThan(350 * Math.PI / 180)
+    const before = c.camera.yaw
+    c.setFacing(7)
+    expect(c.camera.yaw).toBe(before)
+    c.update(0.02)
+    expect(c.camera.yaw).toBeLessThan(before)
+    expect(c.camera.yaw).toBeGreaterThan(315 * Math.PI / 180)
+  })
+})

@@ -21,9 +21,10 @@ import {
 } from '@orbrun/scene'
 
 /**
- * Camera controller: yaw easing toward the facing goal, magnetic detents,
+ * Camera controller: yaw easing toward the facing goal,
  * free look with the right stick or a mouse or touch drag (yaw
- * unbounded, pitch free short of the poles, nothing snaps back), snaps to the player's cell.
+ * unbounded, pitch free short of the poles, nothing snaps back), and the eye's
+ * glide after a step along the path the feet took (`walkTo`); a jump snaps.
  */
 /** Yaw and pitch in radians; enough to put the camera back where it pointed. */
 export interface CameraView {
@@ -59,6 +60,11 @@ export class CameraController {
   private dragging = false
   private lookVel = 0
   private pitchVel = 0
+  private _steeringRevision = 0
+  /** Explicit turn/look input, not animation or auto-facing. An old move may not undo a newer look. */
+  get steeringRevision(): number {
+    return this._steeringRevision
+  }
   reducedMotion = false
   /**
    * Third person (rendering-3d.md II.11): the camera stands under the lid
@@ -75,6 +81,11 @@ export class CameraController {
    */
   restPitch = REST_PITCH
   private lastMoveTs = 0
+  /** cell centres the eye has still to pass, in order, ending at the camera's cell (`walkTo`); empty once it stands there */
+  private path: { x: number; y: number }[] = []
+  /** Distance and speed are in grid steps, so a diagonal has the same timing as a cardinal step. */
+  private walk: { length: number; travelled: number; elapsed: number; duration: number; startSpeed: number } | null = null
+  private walkSpeed = 0
 
   get facing(): Dir8 {
     return this.camera.facing
@@ -116,12 +127,68 @@ export class CameraController {
   }
 
   turn(by: number) {
+    this._steeringRevision++
     this.setFacing(rotateDir(this.camera.facing, by))
   }
 
+  /**
+   * The camera is at `x`, `y`, now: a level change, a blink, a teleport, or
+   * a travel the rc asked to skip the steps of (`travel_delay -1` arrives as
+   * one update several cells on). No glide: nothing was drawn between.
+   */
   snapTo(x: number, y: number) {
     this.camera.x = x
     this.camera.y = y
+    this.camera.eyeX = x
+    this.camera.eyeY = y
+    this.path = []
+    this.walk = null
+    this.walkSpeed = 0
+  }
+
+  /**
+   * The feet walked to `x`, `y` by `hops`, one cell each, from the camera's
+   * cell (the last goal). The eye glides after them along that path
+   * (`update`) rather than jumping the cell, and along the real path rather
+   * than the straight line, so two hops through a doorway do not cut the
+   * corner into the wall. Hops that do not add up to the destination (a
+   * missed message) are replaced by the straight line where it is a single
+   * cell, else the walk is a jump and the eye snaps.
+   */
+  walkTo(x: number, y: number, hops: readonly { dx: number; dy: number }[]) {
+    const c = this.camera
+    if (this.reducedMotion) {
+      this.snapTo(x, y)
+      return
+    }
+    let px = c.x
+    let py = c.y
+    const pts: { x: number; y: number }[] = []
+    let valid = true
+    for (const h of hops) {
+      if (!Number.isInteger(h.dx) || !Number.isInteger(h.dy) || Math.abs(h.dx) > 1 || Math.abs(h.dy) > 1) {
+        valid = false
+        break
+      }
+      if (h.dx === 0 && h.dy === 0) continue
+      px += h.dx
+      py += h.dy
+      pts.push({ x: px, y: py })
+    }
+    if (!valid || px !== x || py !== y) {
+      if (Math.abs(x - c.x) > 1 || Math.abs(y - c.y) > 1) {
+        this.snapTo(x, y)
+        return
+      }
+      pts.length = 0
+      if (x !== c.x || y !== c.y) pts.push({ x, y })
+    }
+    c.x = x
+    c.y = y
+    if (pts.length === 0) return
+    const moving = this.walk !== null
+    this.path.push(...pts)
+    this.planWalk(this.pathLength(), WALK_SECONDS, moving ? this.walkSpeed : undefined)
   }
 
   /** The view to keep between sessions: where the camera points right now. */
@@ -171,6 +238,7 @@ export class CameraController {
       this.pitchVel = 0
       return
     }
+    this._steeringRevision++
     this.freeLook = true
     this.lookVel = dx * 3.2 * sensitivity
     this.pitchVel = (invert ? dy : -dy) * 0.8 * sensitivity
@@ -181,6 +249,7 @@ export class CameraController {
    * applied at once. Call `endDrag` when the drag ends.
    */
   lookBy(dyaw: number, dpitch: number) {
+    if (dyaw !== 0 || dpitch !== 0) this._steeringRevision++
     const c = this.camera
     c.yaw = normalizeYaw(c.yaw + dyaw)
     c.pitch = this.clampPitch(c.pitch + dpitch)
@@ -436,6 +505,7 @@ export class CameraController {
 
   /** Advance easing. Returns true if the camera moved (a frame is needed). */
   update(dt: number): boolean {
+    if (!Number.isFinite(dt) || dt <= 0) return false
     const c = this.camera
     let moved = false
     if (this.freeLook) {
@@ -470,14 +540,81 @@ export class CameraController {
       this._uprightYaw = upright
       moved = true
     }
+    if (this.glide(dt)) moved = true
     return moved
+  }
+
+  /** Remaining path length in grid steps, not Euclidean cells. */
+  private pathLength(): number {
+    let total = 0
+    let { eyeX: x, eyeY: y } = this.camera
+    for (const p of this.path) {
+      total += Math.max(Math.abs(p.x - x), Math.abs(p.y - y))
+      x = p.x
+      y = p.y
+    }
+    return total
+  }
+
+  /**
+   * A finite landing, with zero speed at the end. An isolated step starts
+   * promptly (cubic ease-out); another confirmed step carries the current
+   * speed into a new Hermite curve instead of restarting from rest. Limiting
+   * its initial tangent to 3 keeps the curve monotone, even after catch-up.
+   * The duration covers the entire remaining path, never each queued cell.
+   */
+  private planWalk(length: number, duration: number, speed = 3 * length / duration) {
+    this.walk = { length, duration, elapsed: 0, travelled: 0, startSpeed: clamp(speed, 0, 3 * length / duration) }
+    this.walkSpeed = this.walk.startSpeed
+  }
+
+  private glide(dt: number): boolean {
+    const c = this.camera
+    const walk = this.walk
+    if (!walk) return false
+    if (this.reducedMotion) {
+      this.snapTo(c.x, c.y)
+      return true
+    }
+    walk.elapsed = Math.min(walk.duration, walk.elapsed + dt)
+    // Finish exactly, including accumulated floating-point time at the deadline.
+    if (walk.duration - walk.elapsed < 1e-9) {
+      this.snapTo(c.x, c.y)
+      return true
+    }
+    const t = walk.elapsed / walk.duration
+    const position = walk.length * t * t * (3 - 2 * t) + walk.startSpeed * walk.duration * t * (1 - t) ** 2
+    this.walkSpeed = Math.max(0, walk.length * 6 * t * (1 - t) / walk.duration + walk.startSpeed * (1 - t) * (1 - 3 * t))
+    const planned = Math.max(0, position - walk.travelled)
+    // Leave room for an ordinary next step without a position jump. Only a
+    // fast travel or burst of replies forces catch-up; it still follows the
+    // real path, and rebasing keeps the original landing deadline.
+    let step = Math.max(planned, this.pathLength() - WALK_LAG)
+    const caughtUp = step > planned
+    while (step > 0 && this.path.length > 0) {
+      const p = this.path[0]
+      const d = Math.max(Math.abs(p.x - c.eyeX), Math.abs(p.y - c.eyeY))
+      if (d <= step) {
+        c.eyeX = p.x
+        c.eyeY = p.y
+        step -= d
+        this.path.shift()
+      } else {
+        c.eyeX += ((p.x - c.eyeX) / d) * step
+        c.eyeY += ((p.y - c.eyeY) / d) * step
+        step = 0
+      }
+    }
+    if (caughtUp) this.planWalk(this.pathLength(), walk.duration - walk.elapsed, this.walkSpeed)
+    else walk.travelled = position
+    return true
   }
 
   /** One step of the turn easing from `from` toward `to` at `rate` per second; `to` itself once close enough. */
   private ease(from: number, to: number, dt: number, rate: number): number {
     const d = yawDelta(from, to)
     if (Math.abs(d) > 0.002) {
-      const k = this.reducedMotion ? 1 : Math.min(1, dt * rate)
+      const k = this.reducedMotion ? 1 : -Math.expm1(-dt * rate)
       return normalizeYaw(from + d * k)
     }
     return to
@@ -513,10 +650,13 @@ export function trailStep(scene: Scene): { dx: number; dy: number } | null {
   return null
 }
 
-/** the view's turn easing: the fraction of the remaining turn closed per second */
-const TURN_RATE = 14
-/** the minimap's turn easing under quarter turns: a touch quicker than the view, so the map settles first */
-const MAP_TURN_RATE = 18
+/** Exponential turn rates, calibrated to the old 60 Hz feel but independent of frame rate. */
+const TURN_RATE = 16
+const MAP_TURN_RATE = 21
+/** Seconds to land after the latest confirmed movement, however many hops it contains. */
+const WALK_SECONDS = 0.18
+/** Maximum remaining grid steps during catch-up. Two leaves room to blend ordinary repeats. */
+const WALK_LAG = 2
 /** how far ahead a heading must be open before it counts as not facing a wall */
 const OPEN_DEPTH = 2
 /** rotations from a preferred heading, nearest first, ending with a full about-turn */

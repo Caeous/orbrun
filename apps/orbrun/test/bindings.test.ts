@@ -224,7 +224,7 @@ describe('direct command controls', () => {
   it('a held direction is a typewriter of single steps, never a run', () => {
     const c = ctx({})
     expect(resolve({ type: 'dir', source: 'lstick', dir: 0 }, c)).toEqual({ kind: 'step', dir: 0, turns: true })
-    // every repeat tick offers one held step; the runner paces them (HELD_STEP_MS), never a Shift run
+    // every repeat tick offers one held step, never a Shift run
     const held = resolve({ type: 'dirRepeat', source: 'lstick', dir: 0, n: 1 }, c)
     expect(held).toEqual({ kind: 'step', dir: 0, turns: true, held: true })
     expect((held as { run?: boolean }).run).toBeUndefined()

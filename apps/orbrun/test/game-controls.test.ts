@@ -21,6 +21,8 @@ function harness() {
     session: { watching: false, state }, runner: { execute, send }, overlays, padHints: hints,
     chat: { capturing: false }, pressTimes: new Map(), holdFired: new Set(), tapArmed: new Set(),
     holding: null,
+    // This input-only harness bypasses the constructor and has no frame loop or renderer.
+    wake: vi.fn(),
     lastInput: 'pad', pointerLive: false,
   }) as { pad(ev: PadEvent): void; fireHolds(t: number): void; holding: { button: Button; fraction: number } | null; onKeyDown(ev: KeyboardEvent): void; uiOp(op: string): void }
   const event = (ev: PadEvent) => {

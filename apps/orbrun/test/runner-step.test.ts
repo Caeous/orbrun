@@ -4,7 +4,7 @@ import { OWN_STEP_WINDOW_MS, Runner, stepIsOurs, type LastStep, type RunnerHooks
 import type { Session } from '../src/session'
 import type { CameraController } from '../src/camera'
 
-const step = (over: Partial<LastStep> = {}): LastStep => ({ dir: 2, turned: true, t: 1000, ...over })
+const step = (over: Partial<LastStep> = {}): LastStep => ({ dir: 2, turned: true, steeringRevision: 0, t: 1000, ...over })
 
 describe('stepIsOurs', () => {
   it('claims a one-cell move in the direction the step was sent', () => {
