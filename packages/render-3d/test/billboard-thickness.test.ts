@@ -20,7 +20,8 @@ type Priv = {
   setTiles(t: TileSource): void
   setCursor(c: { x: number; y: number; mode?: string } | null): void
   billboardGroup: THREE.Group
-  rebuildBillboards(s: Scene): void
+  syncBillboards(s: Scene): void
+  syncSelection(): void
   atlas(name: string): { mask?: Uint8Array | null }
 }
 
@@ -55,7 +56,7 @@ function hulls(r: Priv, kind: string): THREE.Mesh[] {
 describe('billboard thickness', () => {
   it('extrudes the opaque texels into a block behind the front quad', () => {
     const r = maskedRenderer()
-    r.rebuildBillboards(scene())
+    r.syncBillboards(scene())
     const [m] = quads(r, 'monster')
     const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute
     // the front quad's four corners, then a rim of eight faces (four texel edges on each of two axes)
@@ -98,7 +99,7 @@ describe('billboard thickness', () => {
     const mask = r.atlas('main').mask!
     mask[9 * 16 + 5] = 2
     mask[9 * 16 + 6] = 2
-    r.rebuildBillboards(scene())
+    r.syncBillboards(scene())
     const [m] = quads(r, 'monster')
     const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute
     // the front quad, then a rim round the 2x1 body: two faces on the long sides, one at each end
@@ -119,7 +120,7 @@ describe('billboard thickness', () => {
    */
   it('draws the tile at the scale the block is built at', () => {
     const r = maskedRenderer()
-    r.rebuildBillboards(scene())
+    r.syncBillboards(scene())
     const [m] = quads(r, 'monster')
     const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute
     const uv = m.geometry.getAttribute('uv') as THREE.BufferAttribute
@@ -145,16 +146,17 @@ describe('billboard thickness', () => {
    */
   it('lines the block with a black hull a texel wider than the body', () => {
     const r = maskedRenderer()
-    r.rebuildBillboards(scene())
+    r.syncBillboards(scene())
     const [ink] = hulls(r, 'monster')
     expect(ink).toBeTruthy()
     const mat = ink.material as THREE.MeshBasicMaterial
     expect(mat.side).toBe(THREE.BackSide)
     expect(mat.color.getHex()).toBe(0x000000)
     const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
-    // the 2x2 body grown a texel on four sides is a 12-texel cross: a back face each, and one side per
-    // exposed edge — the cross's perimeter is 16 edges
-    expect(pos.count).toBe((12 + 16) * 4)
+    // the 2x2 body grown a texel on four sides is a 12-texel cross. Its back is one plane, built as three
+    // rectangles (the 2x4 column and the two side texel pairs), and its 16 exposed edges merge into 12 sides,
+    // a run each (mesh.ts): the same faces as one quad per texel, in fewer
+    expect(pos.count).toBe((3 + 12) * 4)
     const k = 1 / 32, hw = (4 / 32) / 2
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity
     for (let i = 0; i < pos.count; i++) {
@@ -189,12 +191,12 @@ describe('billboard thickness', () => {
    */
   it('lines a ghost with a flat ring in its plane', () => {
     const r = maskedRenderer()
-    r.rebuildBillboards(scene())
+    r.syncBillboards(scene())
     const [ink] = hulls(r, 'ghost')
     expect(ink).toBeTruthy()
     const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
-    // eight texels round the 2x2 body, one face each
-    expect(pos.count).toBe(8 * 4)
+    // eight texels round the 2x2 body: the row above, the row below, and the two columns beside it, a face each
+    expect(pos.count).toBe(4 * 4)
     for (let i = 0; i < pos.count; i++) expect(pos.getZ(i)).toBe(0)
     const col = ink.geometry.getAttribute('color') as THREE.BufferAttribute
     for (let i = 0; i < col.count; i++) expect([col.getX(i), col.getY(i), col.getZ(i)]).toEqual([0, 0, 0])
@@ -204,19 +206,21 @@ describe('billboard thickness', () => {
     const h = r.billboardGroup.children.find((c) => c.userData.kind === 'ghost')!
     const [ghost] = quads(r, 'ghost')
     expect(h.children.indexOf(ink)).toBeLessThan(h.children.indexOf(ghost))
-    expect(ink.renderOrder).toBe(ghost.renderOrder)
+    // and drawn before every ghost's body, not this one's alone: another ghost's ring never lies over it
+    expect(ink.renderOrder).toBeLessThan(ghost.renderOrder)
     expect(ink.position.toArray()).toEqual(ghost.position.toArray())
   })
 
   it('keeps the hull inside the tile', () => {
     // a body on the tile's top-left corner: the hull cannot grow past the tile's edge
     const r = maskedRenderer([[4, 8]])
-    r.rebuildBillboards(scene())
+    r.syncBillboards(scene())
     const [ink] = hulls(r, 'monster')
     const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
     const hw = (4 / 32) / 2
-    // three texels: the body, and one to its right and below; back faces plus eight exposed edges
-    expect(pos.count).toBe((3 + 8) * 4)
+    // three texels: the body, and one to its right and below; the back as two rectangles, and the eight
+    // exposed edges as six runs
+    expect(pos.count).toBe((2 + 6) * 4)
     let x0 = Infinity, y1 = -Infinity
     for (let i = 0; i < pos.count; i++) {
       x0 = Math.min(x0, pos.getX(i))
@@ -228,28 +232,33 @@ describe('billboard thickness', () => {
 
   it('leaves the damage bar and badges, the ghost, and a translucent sprite flat', () => {
     const r = maskedRenderer()
-    r.rebuildBillboards(scene())
+    r.syncBillboards(scene())
     expect((quads(r, 'monster')[1].geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
     expect((quads(r, 'ghost')[0].geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
     expect(hulls(r, 'monster')).toHaveLength(1)
-    r.rebuildBillboards(scene(0.5))
+    r.syncBillboards(scene(0.5))
     expect((quads(r, 'monster')[0].geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
     expect(hulls(r, 'monster')).toHaveLength(0)
   })
+  /** The shells the cursor put up: on holders of their own beside the crowd (`syncSelection`), one per selected sprite. */
+  function shells(r: Priv): THREE.Mesh[] {
+    return r.billboardGroup.children.filter((c) => c.userData.selection).flatMap((h) => h.children as THREE.Mesh[])
+  }
   it('puts a wider shell round the sprite under the cursor, outside the black hull', () => {
     const r = maskedRenderer()
-    const shells = () => hulls(r, 'monster').filter((m) => m.userData.shell)
     const width = (m: THREE.Mesh) => {
       const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute
       let x0 = Infinity, x1 = -Infinity
       for (let i = 0; i < pos.count; i++) { x0 = Math.min(x0, pos.getX(i)); x1 = Math.max(x1, pos.getX(i)) }
       return x1 - x0
     }
-    r.rebuildBillboards(scene())
-    expect(shells()).toHaveLength(0)
+    r.syncBillboards(scene())
+    r.syncSelection()
+    expect(shells(r)).toHaveLength(0)
     r.setCursor({ x: 3, y: 3 })
-    r.rebuildBillboards(scene())
-    const [shell] = shells()
+    r.syncSelection()
+    const [shell] = shells(r)
+    expect(shell).toBeTruthy()
     // the hull's black is untouched: the shell is a second mesh beside it, in the cursor's colour
     const ink = hulls(r, 'monster').find((m) => !m.userData.shell)!
     expect((ink.material as THREE.MeshBasicMaterial).color.getHex()).toBe(0x000000)
@@ -264,11 +273,17 @@ describe('billboard thickness', () => {
     for (let i = 0; i < sz.count; i++) smin = Math.min(smin, sz.getZ(i))
     for (let i = 0; i < iz.count; i++) imin = Math.min(imin, iz.getZ(i))
     expect(smin).toBeLessThan(imin)
+    // the shell stands where the sprite's own mesh does, in a holder on the sprite's cell, turned as the sprite is
+    const holder = shell.parent!
+    expect(holder.userData.billboard).toBe(true)
+    expect(holder.position.toArray()).toEqual([3.5, 0, 3.5])
+    expect(shell.position.toArray()).toEqual((hulls(r, 'monster')[0] as THREE.Mesh).position.toArray())
+    expect(shell.renderOrder).toBe(ink.renderOrder)
     // the ghost is never shelled, and a cursor on another cell leaves the sprite alone
     expect(hulls(r, 'ghost').some((m) => m.userData.shell)).toBe(false)
     r.setCursor({ x: 4, y: 3 })
-    r.rebuildBillboards(scene())
-    expect(shells()).toHaveLength(0)
+    r.syncSelection()
+    expect(shells(r)).toHaveLength(0)
   })
   it('keeps the shell above the floor where the sprite stands on it', () => {
     // a standing sprite's art runs to the bottom of its rect (oy + h is the cell), so its base is the
@@ -276,9 +291,9 @@ describe('billboard thickness', () => {
     const grounded: TileRect = { ...RECT, oy: 28 }
     const r = maskedRenderer(undefined, grounded)
     r.setCursor({ x: 3, y: 3 })
-    r.rebuildBillboards(scene())
-    const holder = r.billboardGroup.children.find((c) => c.userData.kind === 'monster')!
-    const shell = (holder.children as THREE.Mesh[]).find((m) => m.userData.shell)!
+    r.syncBillboards(scene())
+    r.syncSelection()
+    const [shell] = shells(r)
     const pos = shell.geometry.getAttribute('position') as THREE.BufferAttribute
     let y0 = Infinity
     for (let i = 0; i < pos.count; i++) y0 = Math.min(y0, pos.getY(i))
@@ -288,7 +303,7 @@ describe('billboard thickness', () => {
   it('stays flat where the atlas pixels cannot be read', () => {
     const r = new Render3d() as unknown as Priv
     r.setTiles(tiles)
-    r.rebuildBillboards(scene())
+    r.syncBillboards(scene())
     expect((quads(r, 'monster')[0].geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
   })
 })

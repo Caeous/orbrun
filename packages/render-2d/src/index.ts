@@ -13,6 +13,7 @@ import {
   type SceneCursor,
   type TileSource,
   type SceneCell,
+  type Billboard,
 } from '@orbrun/scene'
 
 /**
@@ -142,6 +143,28 @@ const DEFAULT_MINIMAP = {
   transporter: '#ff88ff',
 }
 
+/**
+ * The billboards standing on each cell of a scene, in the scene's own order,
+ * built once per scene: a cell's sprites are looked up rather than filtered
+ * out of the whole list for every cell drawn.
+ */
+const standingOn = new WeakMap<Scene, Map<CellKey, Billboard[]>>()
+function billboardsOn(scene: Scene): Map<CellKey, Billboard[]> {
+  let index = standingOn.get(scene)
+  if (!index) {
+    index = new Map()
+    for (const b of scene.billboards) {
+      const k = cellKey(b.x, b.y)
+      const list = index.get(k)
+      if (list) list.push(b)
+      else index.set(k, [b])
+    }
+    standingOn.set(scene, index)
+  }
+  return index
+}
+const NONE: Billboard[] = []
+
 export class Render2d implements MapRenderer {
   private canvas: HTMLCanvasElement | OffscreenCanvas | null = null
   private ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null
@@ -256,7 +279,7 @@ export class Render2d implements MapRenderer {
     } else if (glyphs) this.drawGlyphCell(ctx, cell, sx, sy, cs, bare ? 'none' : 'fill')
     else {
       if (!bare) this.drawTileCell(ctx, cell, sx, sy, cs)
-      const here = scene.billboards.filter((b) => b.x === x && b.y === y)
+      const here = billboardsOn(scene).get(cellKey(x, y)) ?? NONE
       for (const b of here) {
         if (hybrid && b.kind !== 'cloud' && b.kind !== 'projectile') continue
         const alpha = b.alpha ?? (b.kind === 'cloud' ? 0.75 : 1)
@@ -446,11 +469,12 @@ export class Render2d implements MapRenderer {
       }
       if (hybrid) {
         // hybrid: the glyph stands in for the sprite, so it goes under the badges
+        const on = billboardsOn(scene)
         for (const cell of scene.cells.values()) {
           const sx = (cell.x - ox) * cs
           const sy = (cell.y - oy) * cs
           if (!inView(sx, sy)) continue
-          if (scene.billboards.some((b) => b.x === cell.x && b.y === cell.y && b.kind !== 'cloud' && b.kind !== 'projectile')) upright(sx, sy, () => this.drawGlyphCell(ctx, cell, sx, sy, cs, 'shade'))
+          if (on.get(cellKey(cell.x, cell.y))?.some((b) => b.kind !== 'cloud' && b.kind !== 'projectile')) upright(sx, sy, () => this.drawGlyphCell(ctx, cell, sx, sy, cs, 'shade'))
         }
       }
       // status badges over the sprite (or over the glyph standing in for it)

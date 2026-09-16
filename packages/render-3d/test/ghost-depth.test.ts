@@ -14,7 +14,7 @@ type Guts = {
   cam: THREE.PerspectiveCamera
   billboardGroup: THREE.Group
   setTiles(t: TileSource): void
-  rebuildBillboards(s: Scene): void
+  syncBillboards(s: Scene): void
   renderOccluderDepth(r: unknown): void
 }
 
@@ -55,7 +55,7 @@ describe('ghost depth pass', () => {
     s.playerOnLevel = true
     s.player = { x: 0, y: 0 }
     s.billboards = [{ x: 3, y: 3, tile: 1, kind: 'monster', height: 1, attitude: 'hostile' }]
-    r.rebuildBillboards(s)
+    r.syncBillboards(s)
     const depthCam = new THREE.Layers()
     depthCam.set(0)
     const ghost = r.billboardGroup.children.find((h) => h.userData.kind === 'ghost')!

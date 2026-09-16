@@ -4,6 +4,7 @@ import { linesSince, namedInWarnings, namedMonster } from './warnings'
 import { Render3d } from '@orbrun/render-3d'
 import { viewmodelFor } from '@orbrun/scene-webtiles'
 import { Render2d } from '@orbrun/render-2d'
+import { RendererPark } from './park'
 import { escapeHtml, h } from './dom'
 import type { Session } from './session'
 import { CameraController } from './camera'
@@ -75,6 +76,8 @@ export class GameScreen {
   private is3d = true
   /** The level map (X) borrowed the 2D renderer while a 3D view is the setting. */
   private mapBorrowed2d = false
+  /** The 3D view kept aside while the level map is open, to come back with its level and crowd standing (park.ts). */
+  private park = new RendererPark()
   private lastMapView = false
   private session: Session
   private cam = new CameraController()
@@ -332,6 +335,7 @@ export class GameScreen {
     for (const u of this.unsub) u()
     this.grid.destroy()
     this.renderer.destroy()
+    this.park.clear()
     this.root.remove()
   }
 
@@ -422,6 +426,23 @@ export class GameScreen {
     return r
   }
 
+  /**
+   * The parked 3D view back on duty (park.ts): its level and crowd stand as
+   * they were; it is handed only what may have changed while the map was
+   * open — a new tileset, changed settings — and the scene to sync against.
+   */
+  private revive(kept: { renderer: Render3d; tiles: unknown; optionsKey: string }): MapRenderer {
+    const r = kept.renderer
+    const st = this.hooks.settings()
+    this.viewmodelRev = ''
+    if (this.session.gamedata && this.session.gamedata !== kept.tiles) r.setTiles(this.session.gamedata)
+    const opts = this.render3dOptions(st)
+    if (JSON.stringify(opts) !== kept.optionsKey) r.setOptions(opts)
+    r.setScene(this.session.scene)
+    r.setCamera(this.cam.camera)
+    return r
+  }
+
   applySettings() {
     this.settingsCache = null
     const st = this.settings()
@@ -430,6 +451,8 @@ export class GameScreen {
     document.documentElement.style.setProperty('--ui-scale', String(st.uiScale))
     this.grid.setTextSize(this.textPx())
     const want3d = st.renderer === '3d' && !this.mapBorrowed2d
+    // a 3D view parked for the map's close has no close to return to once the setting is 2D
+    if (st.renderer !== '3d') this.park.clear()
     if (want3d !== this.is3d) this.toggleRenderer()
     else if (this.is3d) (this.renderer as Render3d).setOptions(this.render3dOptions(st))
     // the minimap's size is the layout's to set
@@ -476,14 +499,18 @@ export class GameScreen {
   private toggleRenderer(keepGhost = false): Ghost | null {
     const old = { canvas: this.canvas, renderer: this.renderer }
     this.is3d = !this.is3d
-    // a fresh canvas: WebGL and 2D contexts cannot share one
-    const c = h('canvas', { class: 'view' })
+    // the 3D view parked while the map was open comes back with its own canvas (park.ts); otherwise a fresh
+    // canvas, since WebGL and 2D contexts cannot share one
+    const kept = this.is3d ? this.park.take() : null
+    const c = kept ? kept.canvas : h('canvas', { class: 'view' })
+    c.classList.remove('ghost')
     // the new view slides in underneath; the old one is never detached while
     // it lingers, since re-inserting a WebGL canvas drops its drawing buffer
+    // (a parked canvas is drawn again on its first frame back, so that is nothing lost)
     old.canvas.before(c)
     this.canvas = c
-    this.attachPointer(c)
-    this.renderer = this.makeRenderer()
+    if (!kept) this.attachPointer(c)
+    this.renderer = kept ? this.revive(kept) : this.makeRenderer()
     this.lastOptKey = ''
     this.relayout(true)
     this.needsRender = true
@@ -747,10 +774,18 @@ export class GameScreen {
     }
   }
 
-  /** The outgoing view has finished its morph: release its renderer and canvas. */
+  /**
+   * The outgoing view has finished its morph. A 3D view the level map put
+   * aside is parked, canvas and all, for the map's close (park.ts); any other
+   * — a 2D view, or a 3D one the map has already closed on — is released.
+   */
   private dropGhost(g: Ghost) {
-    g.renderer.destroy()
     g.canvas.remove()
+    if (g.renderer instanceof Render3d && this.mapBorrowed2d && !this.is3d) {
+      this.park.keep({ canvas: g.canvas, renderer: g.renderer, tiles: this.session.gamedata, optionsKey: JSON.stringify(this.render3dOptions(this.hooks.settings())) })
+      return
+    }
+    g.renderer.destroy()
   }
 
   /** First ⇄ third person (rendering-3d.md II.11): a setting, so it sticks across sessions. */

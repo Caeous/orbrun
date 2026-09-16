@@ -188,7 +188,8 @@ export class Session {
     const r = this.state.rev
     if (r.map === this.lastSceneRev.map && r.player === this.lastSceneRev.player) return false
     this.lastSceneRev = { map: r.map, player: r.player, ui: r.ui }
-    this.scene = buildScene(this.state, this.gamedata, { previous: this.scene })
+    // only the cells the messages touched are built again; the rest of the level stands as it was
+    this.scene = buildScene(this.state, this.gamedata, { previous: this.scene, dirty: { cells: this.state.dirtyCells, mapCleared: this.state.mapCleared } })
     this.state.dirtyCells.clear()
     this.state.mapCleared = false
     this.emit({ type: 'scene', scene: this.scene })

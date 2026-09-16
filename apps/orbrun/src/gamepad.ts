@@ -51,7 +51,17 @@ export interface GamepadOptions {
  */
 export type PadKind = 'xbox' | 'playstation' | 'nintendo' | 'generic'
 
+/** The kind each pad id was read as: the id is matched once, not every frame the pad is polled. */
+const kindOf = new Map<string, PadKind>()
 function detectKind(id: string): PadKind {
+  let kind = kindOf.get(id)
+  if (kind === undefined) {
+    if (kindOf.size > 32) kindOf.clear()
+    kindOf.set(id, (kind = matchKind(id)))
+  }
+  return kind
+}
+function matchKind(id: string): PadKind {
   const s = id.toLowerCase()
   if (/xbox|xinput|045e|valve|steam/.test(s)) return 'xbox'
   if (/playstation|dualshock|dualsense|054c|sony/.test(s)) return 'playstation'

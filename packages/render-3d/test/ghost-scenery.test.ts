@@ -24,10 +24,10 @@ function kinds(scene: Scene): string[] {
   const r = new Render3d() as unknown as {
     setTiles(t: TileSource): void
     billboardGroup: THREE.Group
-    rebuildBillboards(s: Scene): void
+    syncBillboards(s: Scene): void
   }
   r.setTiles(tiles)
-  r.rebuildBillboards(scene)
+  r.syncBillboards(scene)
   return r.billboardGroup.children.map((c) => c.userData.kind as string)
 }
 

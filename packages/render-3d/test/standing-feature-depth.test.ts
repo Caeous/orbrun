@@ -16,7 +16,7 @@ type Priv = {
   levelGroup: THREE.Group
   billboardGroup: THREE.Group
   rebuildLevel(s: Scene): void
-  rebuildBillboards(s: Scene): void
+  syncBillboards(s: Scene): void
 }
 
 /** A 3x3 room, the middle row floor, an upright staircase on (2, 1) with `on` standing on it. */
@@ -50,7 +50,7 @@ function build(scene: Scene): Priv {
   const r = new Render3d() as unknown as Priv
   r.setTiles(tiles)
   r.rebuildLevel(scene)
-  r.rebuildBillboards(scene)
+  r.syncBillboards(scene)
   return r
 }
 

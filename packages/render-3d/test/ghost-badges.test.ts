@@ -40,10 +40,10 @@ describe('ghost badges', () => {
     const r = new Render3d() as unknown as {
       setTiles(t: TileSource): void
       billboardGroup: THREE.Group
-      rebuildBillboards(s: Scene): void
+      syncBillboards(s: Scene): void
     }
     r.setTiles(tiles)
-    r.rebuildBillboards(sceneWithBadge())
+    r.syncBillboards(sceneWithBadge())
 
     const holders = r.billboardGroup.children
     const ghost = holders.find((h) => h.userData.kind === 'ghost')

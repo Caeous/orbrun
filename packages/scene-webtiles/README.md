@@ -7,8 +7,12 @@ lava; how a cell's flags become cursors, halos and status icons; which
 monsters the monster list shows, in what order, grouped how; what the player
 is holding.
 
-- `buildScene(state, gd, opts)`: the whole thing, incremental when given the
-  previous scene.
+- `buildScene(state, gd, opts)`: the whole thing. Given the previous scene
+  and the reducer's `dirty` cells, only the touched cells (and what depends
+  on them: the lids near a changed wall, the player's old and new cells) are
+  built again; every other cell and billboard is the previous scene's own
+  object. A map clear, a new state or gamedata, or a change of level builds
+  everything.
 - `classifyFeature`, `stanceFor`, `levelPresentation`, `itemTileName`,
   `isVegetation`, `isScenery`: the classification rules, exported so a
   renderer or HUD can ask the same questions.

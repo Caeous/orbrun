@@ -2,6 +2,7 @@ import { MapFeature, MenuFlag, MouseMode, UiState, mapKey, type CellTiles, type 
 import { verifyEnums, type Gamedata, type FlagWord } from '@orbrun/gamedata'
 import {
   cellKey,
+  cellLayoutEquals,
   type Billboard,
   type Dir8,
   type CellKey,
@@ -266,11 +267,41 @@ const THREAT = ['trivial', 'easy', 'tough', 'nasty', 'invisible'] as const
 export interface BuildOptions {
   /** Previous scene, reused for stability where possible. */
   previous?: Scene
+  /**
+   * What the reducer touched since `previous` was built: its `dirtyCells`
+   * and whether the map was cleared. With these, every cell and billboard the
+   * messages left alone is carried over from `previous` as it is, and only
+   * the touched cells (and whatever depends on them: the lids near a changed
+   * wall, the cell the player left and the one they stand on) are built
+   * again. Without them, or after a clear, the whole level is built.
+   */
+  dirty?: { cells: ReadonlySet<number>; mapCleared: boolean }
 }
 
 /**
+ * What a built scene was built from, kept beside it (`builtFrom`) so the next
+ * build can tell which of it still holds: the state and gamedata objects, the
+ * player's cell, and the per-cell records — the map cell each scene cell came
+ * from and the billboards it put on the scene.
+ */
+interface BuildRecord {
+  state: GameState
+  gd: Gamedata
+  player: { x: number; y: number }
+  playerOnLevel: boolean
+  place: string
+  demonTier: unknown
+  /** Per known map cell: the scene cell and billboards built from it, in the order they were pushed. */
+  cells: Map<CellKey, { mc: MapCell; cell: SceneCell; billboards: Billboard[] }>
+}
+
+const builtFrom = new WeakMap<Scene, BuildRecord>()
+
+/**
  * Build the renderable scene from the game state. Pure: reads state and
- * gamedata, never mutates them.
+ * gamedata, never mutates them. With `previous` and `dirty`, cells the
+ * reducer did not touch are the previous scene's own objects, so a consumer
+ * comparing by identity or content sees exactly what stood before.
  */
 export function buildScene(state: GameState, gd: Gamedata, opts: BuildOptions = {}): Scene {
   const scene = emptyScene()
@@ -278,39 +309,93 @@ export function buildScene(state: GameState, gd: Gamedata, opts: BuildOptions = 
   const map = state.map
   scene.player = { x: state.player.pos.x, y: state.player.pos.y }
   scene.playerOnLevel = map.playerOnLevel
-  const r = gd.ranges
-  const wallCounts = new Map<number, number>()
   const b = map.bounds
   scene.bounds = b ? { ...b } : { left: 0, top: 0, right: -1, bottom: -1 }
   const pres = levelPresentation(state.player.place || '')
   scene.level.sky = pres.sky
   scene.level.tint = pres.tint
-
-  const wallBase = new Map<CellKey, number>()
+  const record: BuildRecord = {
+    state,
+    gd,
+    player: scene.player,
+    playerOnLevel: scene.playerOnLevel,
+    place: state.player.place || '',
+    demonTier: state.options.tile_show_demon_tier,
+    cells: new Map(),
+  }
+  const prev = opts.previous
+  const was = prev && builtFrom.get(prev)
+  // the previous build stands for this state and gamedata, nothing global changed, and the reducer says what moved
+  const incremental =
+    !!prev && !!was && !!opts.dirty && !opts.dirty.mapCleared && was.state === state && was.gd === gd &&
+    was.playerOnLevel === scene.playerOnLevel && was.place === record.place && was.demonTier === record.demonTier
+  /** The cells to build afresh: the reducer's, and the player's old and new cells (`isPlayerCell` reads the position). */
+  const rebuild = incremental ? new Set<number>(opts.dirty!.cells) : null
+  if (rebuild && was) {
+    if (was.player.x !== scene.player.x || was.player.y !== scene.player.y) {
+      rebuild.add(mapKey(was.player.x, was.player.y))
+      rebuild.add(mapKey(scene.player.x, scene.player.y))
+    }
+  }
+  const prevWalls = prev && wallsOf.get(prev)
+  const wallBase = new Map<CellKey, number>(rebuild && prevWalls ? prevWalls : undefined)
+  /** Cells whose wall base changed this build: the lids within CEILING_REACH of them are voted on again. */
+  const wallsChanged: CellKey[] = []
+  /** Whether anything a level mesh is built from changed: the cells built afresh compared with what stood. */
+  let layoutChanged = !prev || !incremental
+  const wallOf = (key: CellKey, cell: SceneCell) => (cell.kind === 'wall' && cell.wallTile !== undefined ? safeBase(gd, cell.wallTile) : undefined)
   for (const mc of map.cells.values()) {
+    const key = cellKey(mc.x, mc.y)
+    const had = rebuild && was!.cells.get(key)
+    if (had && had.mc === mc && !rebuild!.has(mapKey(mc.x, mc.y))) {
+      // untouched since the last build: the same cell and billboards stand
+      scene.cells.set(key, had.cell)
+      for (const bb of had.billboards) scene.billboards.push(bb)
+      record.cells.set(key, had)
+      continue
+    }
     const cell = buildCell(mc, gd)
     if (!cell) continue
-    const key = cellKey(mc.x, mc.y)
     scene.cells.set(key, cell)
-    if (cell.kind === 'wall' && cell.wallTile !== undefined) {
-      const base = safeBase(gd, cell.wallTile)
-      wallBase.set(key, base)
-      wallCounts.set(base, (wallCounts.get(base) || 0) + 1)
-    }
+    const base = wallOf(key, cell)
+    if (rebuild) {
+      const before = wallBase.get(key)
+      if (before !== base) {
+        wallsChanged.push(key)
+        if (base === undefined) wallBase.delete(key)
+        else wallBase.set(key, base)
+      }
+      if (!layoutChanged && (!had || !cellLayoutEquals(had.cell, cell))) layoutChanged = true
+    } else if (base !== undefined) wallBase.set(key, base)
     // billboards
+    const from = scene.billboards.length
     addBillboards(scene, mc, cell, gd, state)
+    record.cells.set(key, { mc, cell, billboards: scene.billboards.slice(from) })
+  }
+  if (rebuild && was) {
+    // a cell the map no longer knows is a change of layout too
+    if (!layoutChanged) for (const key of was.cells.keys()) if (!record.cells.has(key)) { layoutChanged = true; break }
+    // walls gone with their cells
+    for (const key of was.cells.keys()) if (!record.cells.has(key) && wallBase.has(key)) { wallBase.delete(key); wallsChanged.push(key) }
   }
   // dominant wall tile as the ceiling
+  const wallCounts = new Map<number, number>()
+  for (const base of wallBase.values()) wallCounts.set(base, (wallCounts.get(base) || 0) + 1)
   let best = -1
   let bestN = 0
   for (const [t, n] of wallCounts) if (n > bestN) (best = t), (bestN = n)
   scene.level.ceilingTile = best >= 0 ? best : null
-  // the lids depend on the walls alone: the same walls as last build give every cell it had its lid again
-  const prevWalls = opts.previous && wallsOf.get(opts.previous)
-  const reuse = opts.previous && prevWalls && opts.previous.level.ceilingTile === scene.level.ceilingTile && sameWalls(prevWalls, wallBase) ? opts.previous : undefined
-  assignCeilings(scene, wallBase, reuse)
+  if (rebuild && prev) {
+    // the lids depend on the walls alone: cells carried over keep theirs unless a wall within reach changed,
+    // and a new dominant wall type is a new lid for every cell out of reach of any wall
+    if (prev.level.ceilingTile !== scene.level.ceilingTile) assignCeilings(scene, wallBase)
+    else assignCeilings(scene, wallBase, prev, near(wallsChanged, CEILING_REACH), rebuild, record)
+  } else {
+    const reuse = prev && prevWalls && prev.level.ceilingTile === scene.level.ceilingTile && sameWalls(prevWalls, wallBase) ? prev : undefined
+    assignCeilings(scene, wallBase, reuse)
+  }
   wallsOf.set(scene, wallBase)
-  void r
+  builtFrom.set(scene, record)
   // keep monster ordering: threat then distance
   scene.billboards.sort((a, b2) => {
     if (a.kind !== b2.kind) return 0
@@ -323,9 +408,25 @@ export function buildScene(state: GameState, gd: Gamedata, opts: BuildOptions = 
     return 0
   })
   // the level's geometry stands across builds that only moved monsters, light or cursors
-  const prev = opts.previous
-  scene.layoutRevision = prev && sceneLayoutEquals(prev, scene) ? prev.layoutRevision : scene.revision
+  if (rebuild && prev) {
+    const pb = prev.bounds, nb = scene.bounds
+    if (pb.left !== nb.left || pb.top !== nb.top || pb.right !== nb.right || pb.bottom !== nb.bottom) layoutChanged = true
+    if (prev.level.ceilingTile !== scene.level.ceilingTile || prev.level.sky !== scene.level.sky) layoutChanged = true
+    if (prev.playerOnLevel !== scene.playerOnLevel || prev.player.x !== scene.player.x || prev.player.y !== scene.player.y) layoutChanged = true
+    if (prev.cells.size !== scene.cells.size) layoutChanged = true
+    scene.layoutRevision = layoutChanged ? scene.revision : prev.layoutRevision
+  } else scene.layoutRevision = prev && sceneLayoutEquals(prev, scene) ? prev.layoutRevision : scene.revision
   return scene
+}
+
+/** The cells within `reach` (Chebyshev) of any of `keys`, as a set. */
+function near(keys: CellKey[], reach: number): Set<CellKey> {
+  const out = new Set<CellKey>()
+  for (const k of keys) {
+    const x = (k & 1023) - 512, y = (k >> 10) - 512
+    for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) out.add(cellKey(x + dx, y + dy))
+  }
+  return out
 }
 
 /**
@@ -354,16 +455,28 @@ function sameWalls(a: Map<CellKey, number>, b: Map<CellKey, number>): boolean {
  * cell it has keeps the lid it had there, and only cells new since then are
  * voted on. The votes are most of a build's cost and the walls seldom change.
  */
-function assignCeilings(scene: Scene, wallBase: Map<CellKey, number>, reuse?: Scene): void {
+function assignCeilings(
+  scene: Scene,
+  wallBase: Map<CellKey, number>,
+  reuse?: Scene,
+  /** With `reuse`: the cells to vote on again although `reuse` has them (a wall within reach changed). */
+  revote?: Set<CellKey>,
+  /** With `reuse`: the cells built afresh this build (their objects are this scene's own to write). */
+  fresh?: Set<number>,
+  /** With `reuse`: the build's records, so a carried cell given a new lid is replaced there too. */
+  record?: BuildRecord,
+): void {
   const level = scene.level.ceilingTile
   if (level === null) return
   const R = CEILING_REACH
   for (const cell of scene.cells.values()) {
     if (cell.kind === 'unknown' || cell.occluder) continue
-    if (reuse) {
-      const had = reuse.cells.get(cellKey(cell.x, cell.y))
+    const key = cellKey(cell.x, cell.y)
+    const carried = !!reuse && !!fresh && !fresh.has(mapKey(cell.x, cell.y))
+    if (reuse && !(revote && revote.has(key))) {
+      const had = reuse.cells.get(key)
       if (had && !had.occluder && had.kind !== 'unknown') {
-        if (had.ceilingTile !== undefined) cell.ceilingTile = had.ceilingTile
+        if (had.ceilingTile !== undefined && !carried) cell.ceilingTile = had.ceilingTile
         continue
       }
     }
@@ -377,11 +490,20 @@ function assignCeilings(scene: Scene, wallBase: Map<CellKey, number>, reuse?: Sc
         votes.set(base, (votes.get(base) || 0) + w)
       }
     }
-    if (!votes.size) continue
     let pick: number = level
     let pickN = votes.get(level) || 0
     for (const [t, n] of votes) if (n > pickN) (pick = t), (pickN = n)
-    if (pick !== level) cell.ceilingTile = pick
+    const lid = votes.size && pick !== level ? pick : undefined
+    if (carried) {
+      // a carried cell is the previous scene's object: a new lid goes on a copy of it
+      if (cell.ceilingTile === lid) continue
+      const copy: SceneCell = { ...cell }
+      if (lid === undefined) delete copy.ceilingTile
+      else copy.ceilingTile = lid
+      scene.cells.set(key, copy)
+      const rec = record?.cells.get(key)
+      if (rec) record!.cells.set(key, { ...rec, cell: copy })
+    } else if (lid !== undefined) cell.ceilingTile = lid
   }
 }
 

@@ -2,6 +2,10 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.1.3 — 2026-09-16
+
+- Crowded levels no longer stutter: sprite updates cost 93–98 % less CPU and draw 46 % fewer triangles.
+
 ## 0.1.2 — 2026-09-16
 
 - Crowded levels draw far faster: a hall full of monsters and items costs a dozen draw calls a frame instead of one per sprite, so the frame rate holds up on weak graphics.

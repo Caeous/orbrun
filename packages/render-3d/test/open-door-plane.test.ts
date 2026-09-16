@@ -134,8 +134,8 @@ describe('an open door', () => {
     expect(mat.side).toBe(THREE.DoubleSide)
     expect(mat.color.getHex()).toBe(0)
     const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
-    // the eight texels round the body, one flat face each, all in the board's plane
-    expect(pos.count).toBe(8 * 4)
+    // the eight texels round the body as four flat faces (the row above, the row below, the two columns beside), all in the board's plane
+    expect(pos.count).toBe(4 * 4)
     for (let i = 0; i < pos.count; i++) expect(pos.getZ(i)).toBe(0)
   })
 
