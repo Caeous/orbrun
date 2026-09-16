@@ -145,7 +145,7 @@ describe('direct game input', () => {
         h.event({ type: 'press', button: 'B', t: 0 })
         const expected: Action = mode === 'menu' ? { kind: 'menu', op: 'cancel' }
           : mode === 'targeting' || mode === 'levelmap' ? { kind: 'keys', seq: [{ key: 27 }], label: 'Cancel' }
-          : mode === 'more' ? { kind: 'keys', seq: [{ key: 32 }], label: '--more--' }
+          : mode === 'more' ? { kind: 'keys', seq: [{ key: 27 }], label: 'Skip' }
           : { kind: 'focus', op: 'cancel' }
         expect(h.execute).toHaveBeenCalledExactlyOnceWith(expected)
         h.ctx.mode = 'command'

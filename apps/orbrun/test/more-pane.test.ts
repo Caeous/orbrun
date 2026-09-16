@@ -1,16 +1,18 @@
 // @vitest-environment happy-dom
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect } from 'vitest'
 import { initialState, reduce, type GameState } from '@orbrun/webtiles'
 import { paneRows } from '../src/grid/messages'
 import { paintRow } from '../src/grid/paint'
+import { Hud } from '../src/hud'
+import { GridHost } from '../src/grid/host'
+import { gameSplit } from '../src/grid/console'
 import fixture from './fixtures/explore-more.json'
 
 /**
  * A pending `--more--` on the message pane: the pane keeps its cells along
  * the bottom (no card in the middle of the view), carries the whole log as
- * it always does, and ends on the server's more row, which is what the ring
- * (styles.css `.messages.more`) is drawn around until the player
- * acknowledges it. Pinned to a recorded --more-- (explore-more.json: a walk
+ * it always does, and ends on the server's more row, WebTiles' bare `#more`
+ * line, until the player acknowledges it. Pinned to a recorded --more-- (explore-more.json: a walk
  * stopped by "You encounter Josephine", with "You encounter a wraith."
  * already read at the prompt before it).
  */
@@ -49,5 +51,54 @@ describe('--more-- on the message pane', () => {
     expect(st.messages.more).toBe(false)
     expect(paneRows(st.messages, 20, 80).more).toEqual([])
     expect(st.messages.lines[st.messages.readTo].text).toContain('Josephine shouts!')
+  })
+})
+
+/**
+ * On the HUD the pane stays as WebTiles prints it: the bare more row, no
+ * button on it and nothing framed. A ring around the pane read as a focused
+ * panel, the thing A would open. What says "stopped" is the scrim over the
+ * world under the pane.
+ */
+describe('the more row on the HUD', () => {
+  const grids: GridHost[] = []
+  afterEach(() => {
+    for (const grid of grids.splice(0)) grid.destroy()
+    document.body.replaceChildren()
+  })
+  function render(spectating = false, st = stoppedState()) {
+    const host = document.createElement('div')
+    Object.defineProperties(host, { clientWidth: { value: 1280 }, clientHeight: { value: 800 } })
+    document.body.append(host)
+    const hud = new Hud(host, { onSelectMonster() {}, onBarAction() {}, onMinimapClick() {}, onPanelItem() {}, onPanelShow() {} } as never)
+    const grid = new GridHost(host, 16)
+    grids.push(grid)
+    const cells = gameSplit(grid.grid, 7)
+    hud.layout(grid, cells, cells.clear, { stats: false, sidebar: false, messages: false })
+    const inner = hud as unknown as { renderMessages(st: GameState, spectating: boolean): void; messages: HTMLElement; scrim: HTMLElement }
+    inner.renderMessages(st, spectating)
+    return inner
+  }
+
+  it('prints the bare more row and puts the pause vignette under the pane', () => {
+    for (const { messages, scrim } of [render(), render(true)]) {
+      expect(messages.classList.contains('more')).toBe(true)
+      const row = messages.querySelector('.line.more')!
+      expect(row.textContent).toBe('--more--')
+      expect(row.querySelector('svg, kbd, .chip')).toBeNull()
+      expect(scrim.classList.contains('on')).toBe(true)
+      expect(scrim.nextElementSibling).toBe(messages)
+    }
+    expect(render().messages.classList.contains('dismissable')).toBe(true)
+    expect(render(true).messages.classList.contains('dismissable')).toBe(false)
+  })
+
+  it('lifts the scrim and empties the row once the more is gone', () => {
+    const st = initialState()
+    for (const f of fixture.frames.slice(0, 4)) for (const m of f.msgs) reduce(st, m as never)
+    const { messages, scrim } = render(false, st)
+    expect(messages.classList.contains('more')).toBe(false)
+    expect(messages.querySelector('.line.more')?.childElementCount).toBe(0)
+    expect(scrim.classList.contains('on')).toBe(false)
   })
 })

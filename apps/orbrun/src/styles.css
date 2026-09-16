@@ -20,22 +20,23 @@
   /* the safe margin: the console's title-safe area, and a notch if there is one */
   --safe-x: max(6vw, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
   --safe-y: max(7vh, env(safe-area-inset-top, 0px), env(safe-area-inset-bottom, 0px));
+  /* the 16 terminal colours as game_data/static/style.css sets them (the rc's custom_text_colours replaces them, game.ts) */
   --color-0: #000000;
-  --color-1: #3b5bdb;
-  --color-2: #2bb34a;
-  --color-3: #21a1a1;
-  --color-4: #d33a3a;
-  --color-5: #b03cb0;
-  --color-6: #b9781f;
-  --color-7: #bfbfbf;
-  --color-8: #6e6e6e;
-  --color-9: #7f8fff;
-  --color-10: #7cff7c;
-  --color-11: #7cffff;
-  --color-12: #ff7c7c;
-  --color-13: #ff7cff;
-  --color-14: #ffff7c;
-  --color-15: #ffffff;
+  --color-1: #005afa;
+  --color-2: #4e9a06;
+  --color-3: #06989a;
+  --color-4: #b30009;
+  --color-5: #cd21cb;
+  --color-6: #8f5902;
+  --color-7: #babdb6;
+  --color-8: #555753;
+  --color-9: #5e78ff;
+  --color-10: #8ae234;
+  --color-11: #34e2e2;
+  --color-12: #ef2929;
+  --color-13: #fd59fa;
+  --color-14: #fce94f;
+  --color-15: #eeeeec;
   /* the stats bars' track (grid/stats.ts): style.css's darkgray over the black page WebTiles stands it on,
      so the empty end of a bar stays dark on Orbrun's bare pane instead of glowing over the dungeon */
   --stats-bar-track: color-mix(in srgb, var(--color-8) 45%, #000);
@@ -1844,33 +1845,43 @@ canvas.minimap.hidden {
   color: #aaa;
 }
 
-/* the message pane (game.html #message_pane) on its rows along the bottom: the messages, then the --more-- row (grid/messages.ts); no backing, shadowed text */
+/* the message pane (game.html #message_pane) on its rows along the bottom: the messages,
+   then the --more-- row (grid/messages.ts). Its text is the page's white (webserver
+   static/style.css body), which is what an untagged line and the bare #more line show
+   there; every colour in it comes from the server's tags (.fgN). The one delta: WebTiles
+   stands the pane on the black page, here it lies bare over the view with its text
+   shadowed instead. A pending --more-- changes nothing on the pane, as in WebTiles: no
+   ring, no tag, no colour of its own (a ring read as a focused panel, a tag as a
+   control); the world under the pane says "stopped" instead, a lighter pause vignette (.more-scrim). */
 .messages {
   overflow: hidden;
   background: transparent;
+  color: #fff;
   text-shadow:
     0 0 3px #000,
     0 1px 2px #000;
-}
-/* a pending --more-- is a hard stop, and the pane says so where it stands: it keeps
-   its shadowed text over the scene under a faint teal wash and takes a teal ring
-   around its cells, a darker shade of the --more-- line's own colour so the ring
-   frames the text rather than competing with it, until the player acknowledges it.
-   The ring is an outline, not a border, so the pane keeps its cells and nothing
-   rewraps, and it sits flush on them: square, still, no gap, as the console it
-   stands for. */
-.messages.more {
-  background: rgba(33, 161, 161, 0.08);
-  outline: 2px solid #157272;
-  outline-offset: 0;
 }
 /* the player can dismiss it: a click on the pane sends space (hud.ts). A spectator cannot, so its pane takes none */
 .messages.more.dismissable {
   pointer-events: auto;
   cursor: pointer;
 }
-.messages .line.more {
-  color: var(--color-3);
+/* the world stops while the more is pending: everything under the message pane
+   and the bar (the map, the stats, the sidebar) goes behind a lighter cousin of the
+   pause menu's vignette (the rule beside .popup.sysmenu, below): the same shape and
+   tint, still in colour, but no blur and half the depth, and it eases in and out
+   rather than snapping, because a --more-- comes every few turns of a fight where
+   a pause comes once. The pane stays as it was. Takes no pointer, so the panes
+   under it still do. */
+.hud > .more-scrim {
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(3, 2, 6, 0.25), rgba(3, 2, 6, 0.55));
+  opacity: 0;
+  transition: opacity 400ms ease-out;
+}
+.hud > .more-scrim.on {
+  opacity: 1;
 }
 
 .messages input.text {
@@ -2326,7 +2337,7 @@ canvas.minimap.hidden {
 
 /* prompt card: yes/no and multi-choice prompts in the middle of the view, the lead-up
    lines above the question, one chip per answer wearing the button that fires it
-   (a --more-- has no card: the message pane rings itself where it stands, .messages.more) */
+   (a --more-- has no card: the pane prints its bare more row and the world goes behind the pause vignette, .more-scrim) */
 .prompt-card {
   position: absolute;
   inset: 0;
@@ -3039,7 +3050,7 @@ canvas.minimap.hidden {
   font-size: 0.82rem;
 }
 
-/* the pause menu takes the screen: the world dims and blurs behind it */
+/* the pause menu takes the screen: the world dims and blurs behind it (a pending --more-- has a lighter cousin, .more-scrim) */
 .overlay-stack:has(> .popup.sysmenu),
 .overlay-stack.dim {
   background: radial-gradient(ellipse at center, rgba(3, 2, 6, 0.5), rgba(3, 2, 6, 0.86));

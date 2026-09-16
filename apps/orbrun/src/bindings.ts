@@ -302,14 +302,17 @@ const NEWGAME_EXTRA: Partial<Record<Button, Action>> = {
   Y: k('+', 'Recommended'),
 }
 
+/**
+ * Only the keys `readkey_more` (message.cc) takes: space, Enter and Escape;
+ * every other key it reads and drops. The pad keeps to that set, so the
+ * buttons that autoexplore, autofight, wait and open the pack in command
+ * mode do nothing here, as `o`, Tab, `.` and `i` do nothing there. A wears
+ * the prompt on the bar (the more is the situation); B is crawl's Escape,
+ * which also skips the rest of the turn's mores (`set_more_autoclear`).
+ */
 const MORE: Partial<Record<Button, Action>> = {
-  // A wears the prompt on the bar (the more is the situation); the rest continue too, unlabelled
   A: situational(SPACE),
-  B: SPACE,
-  X: SPACE,
-  Y: SPACE,
-  LT: SPACE,
-  RT: SPACE,
+  B: kc(Keys.ESC, 'Skip'),
   START: ENTER,
 }
 

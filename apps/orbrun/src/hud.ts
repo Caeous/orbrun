@@ -269,6 +269,8 @@ export class Hud {
   private holdShown = false
   /** the message pane (game.html `#message_pane`) as rows on the grid (grid/messages.ts), the `--more--` row last */
   private messages = h('div', { class: 'messages' })
+  /** the scrim over the world while a `--more--` is pending (renderMessages): under the message pane and the bar, over everything else */
+  private scrim = h('div', { class: 'more-scrim' })
   private actionbar = h('div', { class: 'actionbar' })
   private statusEl = h('div', { class: 'status-line', style: { display: 'none' } })
   private hooks: HudHooks
@@ -312,7 +314,7 @@ export class Hud {
     this.statusR2d.mount(this.statusCanvas)
     this.trapped.append(this.trappedCanvas)
     this.trappedR2d.mount(this.trappedCanvas)
-    this.root.append(this.pips, this.trapped, this.stats, this.sidebar, this.statuses, this.actionPanel, this.messages, this.actionbar)
+    this.root.append(this.pips, this.trapped, this.stats, this.sidebar, this.statuses, this.actionPanel, this.scrim, this.messages, this.actionbar)
     host.append(this.root, this.statusEl, this.panelTooltip)
     this.minimap.mount(this.minimapCanvas)
     this.portrait.mount(this.portraitCanvas)
@@ -360,6 +362,7 @@ export class Hud {
       this.portraitPre = undefined
     }
     this.messages.hidden = hidden.messages
+    this.scrim.hidden = hidden.messages
     const at = host.px(free)
     this.freePx = { left: at.left, top: at.top, width: at.width, height: at.height }
     // the pips ride the view's own right and bottom edges: the column under the minimap and the rows under the message pane are
@@ -1274,13 +1277,19 @@ export class Hud {
    * markers in front as messages.js prints them, the text cursor on the last
    * line while the game reads there, and the `--more--` row under them.
    *
-   * A `--more--` is a hard stop, and the pane says so where it stands: it
-   * keeps its cells along the bottom and takes a black backing and a ring
-   * until the more is acknowledged (styles.css `.messages.more`), as
-   * `#message_pane` goes black in WebTiles. Nothing moves to the middle of
-   * the view, so the player's eye stays on the log it was already reading.
-   * The way out is on the action bar (`--more--` on A, or Space), and for the
-   * player a click on the pane sends space (`.dismissable`). A spectator
+   * A `--more--` changes nothing on the pane, as in WebTiles: `#more` there
+   * is a bare line under the messages in the page's white, and so is the
+   * more row here (styles.css `.messages`). A ring around the pane read as a
+   * focused panel, the thing A would open, and a tag on the row read as a
+   * control; both said the wrong thing. What says "stopped" is the world
+   * under the pane: it goes behind a lighter cousin of the pause menu's
+   * vignette (`.more-scrim`), eased in and out, until the player answers,
+   * and the pane stays as it was.
+   * Nothing moves to the middle of the view, so the player's eye stays on
+   * the log it was already reading.
+   *
+   * The way out is on the action bar (`--more--` on A, or Space), and for
+   * the player a click on the pane sends space (`.dismissable`). A spectator
    * cannot dismiss it, so its pane takes no click.
    */
   private renderMessages(state: GameState, spectating: boolean) {
@@ -1292,6 +1301,7 @@ export class Hud {
     this.messages.classList.toggle('attention', state.messages.more || state.messages.textCursor)
     this.messages.classList.toggle('more', state.messages.more)
     this.messages.classList.toggle('dismissable', state.messages.more && !spectating)
+    this.scrim.classList.toggle('on', state.messages.more)
   }
 
   /** The bar's prompt chips by button, so a hold can light one without a rebuild (showHold). */

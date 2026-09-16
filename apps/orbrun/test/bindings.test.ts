@@ -134,10 +134,14 @@ describe('focus modes share one binding set', () => {
     expect(parsed.A).toEqual({ kind: 'focus', op: 'select' })
     expect(parsed.B).toEqual({ kind: 'focus', op: 'cancel' })
   })
-  it('--more-- is not a focus mode: every face button still continues', () => {
+  it('--more-- takes only the keys readkey_more takes: space, Escape, Enter', () => {
+    // message.cc `readkey_more` drops every other key, so autoexplore (LT, `o`),
+    // autofight (RT, Tab), wait (X) and the pack (Y) never dismiss a --more--
     const t = bindingTable(ctx({ mode: 'more' }))
     expect(t.A).toMatchObject({ kind: 'keys', seq: [{ key: Keys.SPACE }] })
-    expect(t.B).toMatchObject({ kind: 'keys', seq: [{ key: Keys.SPACE }] })
+    expect(t.B).toMatchObject({ kind: 'keys', seq: [{ key: Keys.ESC }] })
+    expect(t.START).toMatchObject({ kind: 'keys', seq: [{ key: Keys.ENTER }] })
+    for (const b of ['X', 'Y', 'LT', 'RT', 'LB', 'RB', 'L3', 'R3', 'SELECT'] as const) expect(t[b]).toBeUndefined()
   })
 })
 

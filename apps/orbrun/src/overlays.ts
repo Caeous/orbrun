@@ -1868,9 +1868,10 @@ export class Overlays {
    * line: the chips are the question, headed by its verb, so the card never
    * says the same thing twice. The cursor walks the chips too. Called every
    * frame; it rebuilds only when the prompt or the device changes. `--more--`
-   * has no card at all: the message pane rings itself where it stands (hud.ts
-   * renderMessages), the bar carries the Continue chip, and every face button
-   * continues (bindings.ts MORE).
+   * has no card at all: the message pane prints its bare more row and the
+   * world goes behind the pause vignette (hud.ts renderMessages), the bar carries the `--more--` chip,
+   * and only crawl's own keys continue: A (space), B (Escape), Start (Enter)
+   * (bindings.ts MORE).
    */
   updatePrompt(mode: Mode, prompt: ParsedPrompt | undefined, device: InputDevice = 'pad') {
     let key = ''
