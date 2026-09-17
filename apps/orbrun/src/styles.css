@@ -604,12 +604,15 @@ img.room-poster.up {
 .frame.home-list .brand .head {
   margin: auto 0;
 }
-/* the wordmark's own face, latin range only, self-hosted (public/fonts, from Google Fonts, OFL): Grenze Gotisch Bold */
+/* the wordmark's own face, latin range only, self-hosted (public/fonts, from Google Fonts, OFL): Grenze Gotisch Bold.
+   Preloaded from index.html so it is usually in hand before the title is laid out; when it is not, `block` keeps the
+   title blank for the moment rather than drawing it in the mono fallback and reshaping it (wider, taller, the lede
+   pushed down) when the face lands. The title fades in with the room anyway, so a blank beat reads as the fade. */
 @font-face {
   font-family: 'Grenze Gotisch';
   font-style: normal;
   font-weight: 700;
-  font-display: swap;
+  font-display: block;
   src: url('/fonts/grenze-gotisch-700-latin.woff2') format('woff2');
 }
 .frame.home-list .brand .head .place {
