@@ -482,14 +482,14 @@ describe('the front end: the home screen', () => {
     expect(focused(screen)).toBe('play:dcss-web-0.34')
   })
 
-  it('reads About and What’s new here, and keeps only the source and the game’s site as links out', () => {
+  it('reads About and What’s new here, and keeps only the source, the game’s site and PocketZot as links out', () => {
     const { screen, connect } = make()
     pick(screen, 'About & credits')
     expect(screen.view).toBe('about')
     expect(labels(screen)).toEqual(['Back', 'About Orbrun', 'What’s new'])
     expect(screen.root.querySelector('.about-copy')?.textContent).toContain('Not affiliated with the DCSS team.')
     const links = Array.from(screen.root.querySelectorAll<HTMLAnchorElement>('.about-links a'))
-    expect(links.map((el) => el.href)).toEqual(['https://github.com/Caeous/orbrun', 'https://crawl.develz.org/'])
+    expect(links.map((el) => el.href)).toEqual(['https://github.com/Caeous/orbrun', 'https://crawl.develz.org/', 'https://pocketzot.app/'])
     for (const link of links) {
       expect(link.target).toBe('_blank')
       expect(link.rel).toBe('noopener noreferrer')

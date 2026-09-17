@@ -139,6 +139,9 @@ Most of the code was written with Claude Code. The design, product decisions,
 testing, and review were mine. The contract every change is held to:
 match WebTiles, work with a controller, and never break the keyboard.
 
+Thanks to [PocketZot](https://pocketzot.app), the DCSS client for phones,
+for inspiring parts of Orbrun and for feedback.
+
 The source is at <https://github.com/Caeous/orbrun>, licensed under
 [AGPL-3.0-or-later](LICENSE). See [ATTRIBUTION.md](ATTRIBUTION.md) for its
 relationship to DCSS.

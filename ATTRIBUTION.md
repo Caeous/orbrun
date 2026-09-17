@@ -110,6 +110,14 @@ settings, the front room and the `.des` subset compiler it is written in
 (`packages/vault`, an independent parser of a documented format), the build
 tools, and the Steam Deck installer.
 
+## PocketZot
+
+[PocketZot](https://pocketzot.app) ([source](https://github.com/pocketzot/pocketzot))
+is an unofficial DCSS client for phones, also AGPL-3.0-or-later. These
+documents are based on PocketZot's, and parts of Orbrun's design took
+inspiration from it. Thanks to its developer for building it in the open and
+for feedback on Orbrun.
+
 ## Third-party assets and dependencies
 
 - [three.js](https://threejs.org) (MIT): the 3D renderer, the one runtime

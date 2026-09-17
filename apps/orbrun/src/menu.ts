@@ -980,7 +980,7 @@ export class FrontEnd {
 
   /**
    * About and what's new, read here, one step away from the title screen;
-   * the source and the game's own site are the two exits, in a new tab.
+   * the source, the game's own site and PocketZot are the exits, in a new tab.
    */
   private showAbout() {
     this.setView('about', 'about')
@@ -994,6 +994,7 @@ export class FrontEnd {
     const destinations = [
       ['Source on GitHub', 'https://github.com/Caeous/orbrun'],
       ['Dungeon Crawl Stone Soup', 'https://crawl.develz.org/'],
+      ['PocketZot', 'https://pocketzot.app/'],
     ]
     destinations.forEach(([label, href], i) => {
       const el = h('a', { class: 'item', href, target: '_blank', rel: 'noopener noreferrer', dataset: { focus: 'link:' + i } }, h('span', { class: 'marker', 'aria-hidden': 'true' }), h('span', { class: 'label' }, label), h('span', { class: 'sub', 'aria-hidden': 'true' }, '↗'))
