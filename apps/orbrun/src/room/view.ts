@@ -93,7 +93,8 @@ export class RoomView {
   constructor(host: HTMLElement) {
     this.host = host
     this.el = h('canvas', { class: 'room', 'aria-hidden': 'true' })
-    this.poster = h('img', { class: 'room-poster', src: POSTER_URL, alt: '', 'aria-hidden': 'true', draggable: 'false' })
+    // no `src` yet: the picture is fetched when it is first shown (showPoster), not on every visit the live room beats it to
+    this.poster = h('img', { class: 'room-poster', alt: '', 'aria-hidden': 'true', draggable: 'false' })
     host.prepend(this.el)
     host.prepend(this.poster)
     this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
@@ -215,9 +216,11 @@ export class RoomView {
     }
   }
 
-  /** The picture of the room at rest, for as long as there is no live room to stand on. */
+  /** The picture of the room at rest, for as long as there is no live room to stand on; fetched now if never before. */
   private showPoster() {
-    if (!this.destroyed) this.poster.classList.add('up')
+    if (this.destroyed) return
+    if (!this.poster.src) this.poster.src = POSTER_URL
+    this.poster.classList.add('up')
   }
 
   /** The player looked: the idle turn lets go and waits; the eye is theirs until they leave it. */

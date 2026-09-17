@@ -43,3 +43,15 @@ describe('loadGamedata failures', () => {
     expect((err as Error).message).toContain('boom')
   })
 })
+
+describe('gamedataUrls', () => {
+  it('lists what loadGamedata fetches, scripts before atlases, under the proxied version directory', async () => {
+    const { gamedataUrls, ATLASES } = await import('../src/index')
+    const urls = gamedataUrls('/gamedata-proxy/crawl.dcss.io/', SHA)
+    const root = `/gamedata-proxy/crawl.dcss.io/gamedata/${SHA}/`
+    expect(urls.every((u) => u.startsWith(root))).toBe(true)
+    expect(urls[0]).toBe(root + 'enums.js')
+    expect(urls.slice(-ATLASES.length)).toEqual(ATLASES.map((a) => `${root}${a}.png`))
+    expect(urls).toContain(root + 'status-icon-sizes.js')
+  })
+})

@@ -5,6 +5,10 @@
 /deck/*
   Cache-Control: no-cache
 
+# vite names every bundle by its content hash (dist/assets), so a path never changes meaning
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
 # the wordmark's face is named by a fixed path (styles.css @font-face) and changes only with a deploy that
 # renames it, so a return visit never asks for it again
 /fonts/*

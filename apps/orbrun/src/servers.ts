@@ -196,6 +196,13 @@ export interface LastPlayed {
   serverId: string
   gameId?: string
   username?: string
+  /**
+   * The gamedata version (a sha1) the last game on this server ran on, from its `game_client`: what the
+   * next visit warms the cache with before Play is pressed (main.ts `warmGamedata`). Only ever learned
+   * in play, so a version can lag behind a server upgrade by one game; the warm-up then fetches a set
+   * that is still served, and the new one loads as it always has.
+   */
+  gamedataVersion?: string
 }
 
 /**

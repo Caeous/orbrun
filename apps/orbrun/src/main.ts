@@ -5,7 +5,8 @@ import { Session } from './session'
 import { FrontEnd, type Intent } from './menu'
 import type { GameScreen, InputDevice } from './game'
 import { GamepadInput, installPadKeys, isPadActivity } from './gamepad'
-import { findServer, gameTitle, getChosenAccount, getLast, getSettings, getToken, parseRoute, setGames, setLast, setMorgueDir, setRoute, setToken, type Account, type Route, type ServerInfo } from './servers'
+import { findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getSettings, getToken, parseRoute, setGames, setLast, setMorgueDir, setRoute, setToken, type Account, type Route, type ServerInfo } from './servers'
+import { gamedataUrls } from '@orbrun/gamedata'
 import { morgueDirOf } from './whereis'
 import { settingsPanel } from './settings-panel'
 
@@ -176,6 +177,11 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
       }
       if (m === 'game_started' || m === 'watching_started') setRoute(routeFor(s))
       if ((m === 'game_client' || m === 'watching_started' || m === 'game_started') && !game) startGame()
+      if (m === 'game_client' && typeof e.msg.version === 'string') {
+        // the version this server's games run on, so the next visit can fetch its tiles before Play
+        const last = getLast()
+        if (last?.serverId === server.id && last.gamedataVersion !== e.msg.version) setLast({ ...last, gamedataVersion: e.msg.version })
+      }
       if (m === 'player') updateTitle(s)
       if (m === 'game_ended') {
         // the dump handed back names the morgue directory this server keeps for the account ("/crawl/morgue/caeo/"),
@@ -499,5 +505,34 @@ applyRoute(parseRoute())
 // last, so the beacon never delays the first screen (see analytics.ts)
 installAnalytics()
 
-// the game's chunk, fetched while the player is still on the front end, so it is cached by the time they press Play
-;(window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 1500)))(() => void gameModule().catch(() => {}))
+// the game's chunk, fetched while the player is still on the front end, so it is cached by the time they press Play;
+// then the tiles of the version they played last, which are the bulk of what Play would otherwise wait on
+;(window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 1500)))(() => void gameModule().catch(() => {}).then(warmGamedata))
+
+/**
+ * Warm the HTTP cache with the gamedata of the version played last on this
+ * device (some 5 MB of tile atlases behind an immutable, one-year
+ * `Cache-Control` from the proxy), so a press on Play finds it on disk
+ * instead of starting the download the "Loading game data" veil then stands
+ * on. Only what a previous game already fetched once: a first visit has no
+ * version to warm and pays at Play as before. Low priority, one file at a
+ * time in the loader's own order (scripts, then atlases), and not at all
+ * under the browser's data saver or once a game is under way.
+ */
+async function warmGamedata() {
+  const last = getLast()
+  const server = last?.gamedataVersion ? findServer(last.serverId) : null
+  if (!server || !last?.gamedataVersion) return
+  if ((navigator as { connection?: { saveData?: boolean } }).connection?.saveData) return
+  for (const url of gamedataUrls(gamedataBaseFor(server), last.gamedataVersion)) {
+    if (game || boot || starting) return
+    try {
+      // the body is read to the end so the cache keeps it; `priority` is Chrome's fetch hint, ignored elsewhere
+      const r = await fetch(url, { priority: 'low' } as RequestInit)
+      if (!r.ok) return
+      await r.arrayBuffer()
+    } catch {
+      return
+    }
+  }
+}

@@ -404,11 +404,30 @@ export interface LoadGamedataOptions {
   onDiagnostic?: (text: string, detail?: unknown) => void
 }
 
+/** The directory one version's gamedata is published under. */
+function gamedataRoot(base: string, version: string): string {
+  return `${base.replace(/\/$/, '')}/gamedata/${version}`
+}
+
+/** The scripts `loadGamedata` reads, in the order it evaluates them; the optional status-icon-sizes.js is not among them. */
+const SCRIPTS = ['enums.js', ...TILEINFO_ORDER.map((n) => `tileinfo-${n}.js`)]
+
+/**
+ * Every URL `loadGamedata` will fetch for one version, the atlases last
+ * (they are nearly all of the bytes: some 5 MB of PNG against 100 KB of
+ * script). For warming the HTTP cache ahead of a game, which is why the
+ * scripts come first: a warm-up cut short has still saved the round trips.
+ */
+export function gamedataUrls(base: string, version: string): string[] {
+  const root = gamedataRoot(base, version)
+  return [...SCRIPTS, 'status-icon-sizes.js', ...ATLASES.map((a) => `${a}.png`)].map((f) => `${root}/${f}`)
+}
+
 /** Load enums, tileinfo modules and atlases for one server version. */
 export async function loadGamedata(opts: LoadGamedataOptions): Promise<Gamedata> {
   const { base, version, io } = opts
-  const root = `${base.replace(/\/$/, '')}/gamedata/${version}`
-  const files = ['enums.js', ...TILEINFO_ORDER.map((n) => `tileinfo-${n}.js`)]
+  const root = gamedataRoot(base, version)
+  const files = SCRIPTS
   const total = files.length + 1 + (opts.skipImages ? 0 : ATLASES.length)
   let done = 0
   const texts = await Promise.all(
