@@ -511,6 +511,10 @@ export class GameScreen {
     this.canvas = c
     if (!kept) this.attachPointer(c)
     this.renderer = kept ? this.revive(kept) : this.makeRenderer()
+    // the cursor the frame just placed went to the outgoing renderer: a level map opened by X or from the
+    // ctrl-f results lands its `ui_state` and its map cursor (tileweb.cc `load_dungeon`) in one frame, so the
+    // map view made here never saw the cursor; and a 3D view back from the park still wore the map's
+    this.renderer.setCursor(this.lastCursor)
     this.lastOptKey = ''
     this.relayout(true)
     this.needsRender = true

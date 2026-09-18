@@ -1131,7 +1131,8 @@ export class Overlays {
    */
   menuKey(state: GameState, ev: NavKeyLike): boolean {
     const menu = topMenu(state)
-    if (!menu || menu.type === 'crt' || menu !== this.menuTop) return false
+    // a menu a `ui_cutoff` hid takes no keys (menu.js menu_keydown_handler: the top popup `:hidden` returns)
+    if (!menu || menu.hidden || menu.type === 'crt' || menu !== this.menuTop) return false
     // left and right walk the more line's switches while the cursor is on them (they are the server's on the rows)
     if (this.menuFooterIndex >= 0 && !ev.ctrlKey && !ev.altKey && !ev.shiftKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
       this.menuFooterStep(menu, ev.key === 'ArrowRight')

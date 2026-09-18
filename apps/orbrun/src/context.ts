@@ -158,9 +158,11 @@ export function deriveMode(state: GameState): Mode {
   // the default). That is a menu like any other: the cursor walks it and A
   // picks. Only a yes/no asked in the message pane is `yesno`.
   if (state.inputMode === MouseMode.YESNO) return topMenu(state)?.tag === 'prompt' ? 'menu' : 'yesno'
+  // an overlay a `ui_cutoff` hid is not up: the ctrl-f results stay on crawl's stack while the level map
+  // they open shows (stash.cc `on_single_selection` → `show_map`), and menu.js ignores keys for a hidden menu
   const popup = topPopup(state)
-  if (popup) return popup.type === 'newgame-choice' ? 'newgame' : 'popup'
-  if (state.menus.length) return 'menu'
+  if (popup && !popup.hidden) return popup.type === 'newgame-choice' ? 'newgame' : 'popup'
+  if (state.menus.some((m) => !m.hidden)) return 'menu'
   if (state.uiState === UiState.CRT) return 'crt'
   if (state.uiState === UiState.VIEW_MAP) return 'levelmap'
   if (state.inputMode === MouseMode.PROMPT) return 'prompt'
