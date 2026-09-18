@@ -35,12 +35,6 @@ export interface FootprintFace {
   b: Pt
   nx: number
   nz: number
-  /**
-   * A boundary segment the neighbour's body covers. Not part of the surface;
-   * reported so a renderer can still draw it from a lower neighbour's height
-   * (a wall standing on a plinth's edge).
-   */
-  covered?: boolean
 }
 
 /** A solid cell's body rectangle before corner cuts, its inset, and which corners (nw, ne, sw, se) a diagonal floor cell cuts. */
@@ -136,10 +130,9 @@ export function insetFootprint(at: ClassAt, x: number, z: number, o: FootprintOp
   if (cut[2]) poly.push([t, z1], [t, 1 - t], [x0, 1 - t]); else poly.push([x0, z1])
 
   // Exposed part of every edge. An edge on the cell boundary is hidden where
-  // the neighbour's body covers it; every other edge faces grown floor.
-  type Seg = { a: Pt; b: Pt; nx: number; nz: number }
-  const coveredSegs: Seg[] = []
-  const segs: Seg[][] = poly.map((p, i) => {
+  // the neighbour's body covers it (every wall is the same height, so nothing
+  // shows there); every other edge faces grown floor.
+  const segs: FootprintFace[][] = poly.map((p, i) => {
     const q = poly[(i + 1) % poly.length]
     const dx = q[0] - p[0], dz = q[1] - p[1]
     const len = Math.hypot(dx, dz)
@@ -153,25 +146,18 @@ export function insetFootprint(at: ClassAt, x: number, z: number, o: FootprintOp
     else if (!horizontal && p[0] < EPS) holes = coverage(at, x - 1, z, 'e', o)
     else if (!horizontal && p[0] > 1 - EPS) holes = coverage(at, x + 1, z, 'w', o)
     const fwd = horizontal ? dx > 0 : dz > 0
-    const seg = ([s, e]: [number, number]): Seg => {
+    const seg = ([s, e]: [number, number]): FootprintFace => {
       const [u, v] = fwd ? [s, e] : [e, s]
       const a: Pt = horizontal ? [u, p[1]] : [p[0], u]
       const bb: Pt = horizontal ? [v, p[1]] : [p[0], v]
       return { a, b: bb, nx, nz }
-    }
-    for (const [ha, hb] of holes) {
-      const s = Math.max(lo, ha), e = Math.min(hi, hb)
-      if (e - s > EPS) coveredSegs.push(seg([s, e]))
     }
     const parts = subtract(lo, hi, holes)
     if (!fwd) parts.reverse()
     return parts.map(seg)
   })
 
-  const faces: FootprintFace[] = []
-  for (const list of segs) for (const s of list) faces.push(s)
-  for (const s of coveredSegs) faces.push({ ...s, covered: true })
-  return { poly, faces }
+  return { poly, faces: segs.flat() }
 }
 
 /** Classify a Scene's cells for the footprint rule: never-seen space is void, occluders are walls, the rest is floor. */

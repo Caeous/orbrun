@@ -1627,8 +1627,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
           let t0 = horizontal ? Math.min(f.a[0], f.b[0]) : Math.min(f.a[1], f.b[1])
           let t1 = horizontal ? Math.max(f.a[0], f.b[0]) : Math.max(f.a[1], f.b[1])
           const depth = d === 'n' ? f.a[1] : d === 's' ? 1 - f.a[1] : d === 'w' ? f.a[0] : 1 - f.a[0]
-          // a boundary the neighbour's body covers shows nothing: every wall is the same height
-          if (f.covered) continue
           const y0 = 0
           // a notched corner at either end of the face shortens it
           for (let i = 0; i < 4; i++) {

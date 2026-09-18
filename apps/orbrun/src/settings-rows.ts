@@ -7,11 +7,10 @@ import { getSettings, saveSettings, VIEW_OPTIONS, type LeftRight, type Settings 
  * end's map (lobby.ts) and the settings menu in a game (main.ts), so the two
  * never disagree.
  *
- * A row may depend on the other settings: its key can be chosen by them (the
- * Camera height row sets the eye in first person and the shot in third), and
- * it can be off under them (Camera distance means nothing in first person).
- * `rowKey`, `rowHint` and `rowOff` resolve those; consumers redraw every row
- * after any change, since one row's change can move another's.
+ * A row may depend on the other settings: its hint can read differently
+ * under them and it can be off under them (Nearby means nothing in 2D).
+ * `rowHint` and `rowOff` resolve those; consumers redraw every row after any
+ * change, since one row's change can move another's.
  */
 /**
  * The groups the settings screen is laid out in, in order (the plan's "one
@@ -29,8 +28,8 @@ export type SettingGroup = (typeof SETTING_GROUPS)[number][0]
 export interface SettingRow<K extends keyof Settings = keyof Settings> {
   label: string
   group: SettingGroup
-  /** the key this row sets, or which key under the current settings */
-  key: K | ((s: Settings) => K)
+  /** the key this row sets */
+  key: K
   values: readonly Settings[K][]
   fmt(v: Settings[K]): string
   /** what the scroll says when the player stands on it (the front end's message line), or what it says under the current settings */
@@ -48,11 +47,6 @@ function row<K extends keyof Settings>(group: SettingGroup, label: string, key: 
   return { group, label, key, values, fmt, hint, off }
 }
 
-/** The key `r` sets under `s`. */
-export function rowKey(r: SettingRow, s: Settings = getSettings()): keyof Settings {
-  return typeof r.key === 'function' ? r.key(s) : r.key
-}
-
 /** What the scroll says on `r` under `s`. */
 export function rowHint(r: SettingRow, s: Settings = getSettings()): string {
   return typeof r.hint === 'function' ? r.hint(s) : r.hint
@@ -64,13 +58,13 @@ export function rowOff(r: SettingRow, s: Settings = getSettings()): boolean {
 }
 
 /**
- * Camera height, in cells, lowest first (rendering-3d.md II.11): 0 is the
+ * Eye height, in cells, lowest first (rendering-3d.md II.11): 0 is the
  * floor and 1 the lid, and the stops keep clear of both. It is the eye, 0.65
  * by default; the low end is a kobold's view of the corridor and the high end
  * brushes the lid. The stops are a twentieth of a cell apart: the height sets
  * the pitch of the whole view, so it is worth aiming finely.
  */
-export const CAM_HEIGHTS = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9] as const
+export const EYE_HEIGHTS = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9] as const
 
 /**
  * Camera angle (rendering-3d.md II.11), in degrees off the horizon, most
@@ -135,7 +129,7 @@ const leftRightRows: SettingRow[] = ([
 export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   // Camera
   row('Camera', 'View', 'renderer', ['3d', '2d'], 'In the dungeon in 3D, or from above as the console shows it.', (v) => (v === '3d' ? '3D' : 'Top down (2D)')),
-  row('Camera', 'Camera height', 'eyeHeight', CAM_HEIGHTS, 'How high your eyes stand, from the floor to the ceiling.', (v) => (v as number).toFixed(2) + ' cells'),
+  row('Camera', 'Camera height', 'eyeHeight', EYE_HEIGHTS, 'How high your eyes stand, from the floor to the ceiling.', (v) => (v as number).toFixed(2) + ' cells'),
   row('Camera', 'Camera angle', 'restPitch', CAM_ANGLES, 'Where the view points at rest: level with the horizon, or tipped down toward the floor ahead.', (v) => ((v as number) === 0 ? 'Level' : Math.abs(v as number) + '° ' + ((v as number) < 0 ? 'down' : 'up'))),
   row('Camera', 'Field of view', 'fov', [60, 70, 75, 85, 95], 'How wide the first-person view opens.', (v) => v + '°'),
   row('Camera', 'Hands', 'viewmodel', [true, false], 'The wielded weapon and off-hand item, drawn in view.', (v) => (v ? 'Weapon and shield shown' : 'Hidden')),
@@ -168,7 +162,7 @@ export const SETTING_ROWS: readonly SettingRow[] = VIEW_OPTIONS ? ALL_SETTING_RO
 
 /** How `r` reads right now. */
 export function settingValue(r: SettingRow, s: Settings = getSettings()): string {
-  return (r.fmt as (v: unknown) => string)(s[rowKey(r, s)])
+  return (r.fmt as (v: unknown) => string)(s[r.key])
 }
 
 /**
@@ -182,7 +176,7 @@ export function settingValue(r: SettingRow, s: Settings = getSettings()): string
 export function adjustSetting(r: SettingRow, d: number, onchange?: () => void): string {
   const s = getSettings()
   if (rowOff(r, s)) return settingValue(r, s)
-  const key = rowKey(r, s)
+  const key = r.key
   const values = r.values as readonly unknown[]
   const cur = s[key]
   const i = values.indexOf(cur)

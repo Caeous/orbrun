@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { CHAMFER, defaultSettings, getSettings, leftRightTurns, saveSettings, VIEW_OPTIONS, WALL_INSET, type DirSource } from '../src/servers'
 import { REST_PITCH } from '@orbrun/scene'
-import { adjustSetting, ALL_SETTING_ROWS, settingGroups, CAM_ANGLES, CAM_HEIGHTS, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowKey, rowOff, SETTING_ROWS, settingValue } from '../src/settings-rows'
+import { adjustSetting, ALL_SETTING_ROWS, settingGroups, CAM_ANGLES, EYE_HEIGHTS, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowOff, SETTING_ROWS, settingValue } from '../src/settings-rows'
 
 // happy-dom's localStorage has no working methods; give servers.ts a plain one
 const store = new Map<string, string>()
@@ -53,14 +53,14 @@ describe('camera rows', () => {
 
   it('Camera height sets the eye', () => {
     const height = row('Camera height')
-    expect(rowKey(height)).toBe('eyeHeight')
+    expect(height.key).toBe('eyeHeight')
     expect(settingValue(height)).toBe('0.65 cells')
     expect(rowHint(height)).toMatch(/eyes/)
   })
 
   it('the default eye is a stop and steps a twentieth either way', () => {
     const height = row('Camera height')
-    expect(CAM_HEIGHTS).toContain(defaultSettings.eyeHeight)
+    expect(EYE_HEIGHTS).toContain(defaultSettings.eyeHeight)
     adjustSetting(height, -1)
     expect(getSettings().eyeHeight).toBe(0.6)
     saveSettings({ ...defaultSettings })
@@ -125,7 +125,7 @@ describe('removed settings', () => {
     expect(WALL_INSET).toBe(12 / 32)
     expect('wallInset' in defaultSettings).toBe(false)
     saveSettings({ ...defaultSettings, wallInset: 0 } as never)
-    expect(ALL_SETTING_ROWS.some((r) => rowKey(r, getSettings()) === 'wallInset')).toBe(false)
+    expect(ALL_SETTING_ROWS.some((r) => r.key === 'wallInset')).toBe(false)
   })
 })
 

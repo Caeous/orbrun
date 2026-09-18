@@ -138,19 +138,15 @@ describe('inset footprint', () => {
     const at = asciiClassAt(['###', '#.#', '###'])
     const fp = insetFootprint(at, 1, 0, { inset: 0 })
     expect(fp.poly).toEqual([[0, 0], [1, 0], [1, 1], [0, 1]])
-    const open = fp.faces.filter((f) => !f.covered)
-    expect(open).toHaveLength(1)
-    expect(open[0]).toMatchObject({ a: [1, 1], b: [0, 1], nx: 0, nz: 1 })
+    expect(fp.faces).toHaveLength(1)
+    expect(fp.faces[0]).toMatchObject({ a: [1, 1], b: [0, 1], nx: 0, nz: 1 })
   })
 
-  it('reports the boundary segments a neighbour covers, for faces over a plinth', () => {
+  it('leaves out the boundary segments a neighbour covers: void to the west and north, the other wall to the east', () => {
     const at = asciiClassAt(['##', '..'])
     const fp = insetFootprint(at, 0, 0, { inset: 0.4 })
-    // the west and north edges are covered by void, the east edge by the other wall up to its inset
-    const covered = fp.faces.filter((f) => f.covered)
-    expect(covered).toHaveLength(3)
-    expect(covered.find((f) => f.nx === 1)).toMatchObject({ a: [1, 0], b: [1, 0.6] })
-    expect(fp.faces.filter((f) => !f.covered)).toHaveLength(1)
+    expect(fp.faces).toHaveLength(1)
+    expect(fp.faces[0]).toMatchObject({ nx: 0, nz: 1 })
   })
 
   it('keeps a core of 1 - 2·inset in a one-thick wall and vanishes at 0.5', () => {
@@ -169,8 +165,8 @@ describe('inset footprint', () => {
     const a = insetFootprint(at, 0, 0, { inset: t })
     const b = insetFootprint(at, 1, 1, { inset: t })
     // the north wall's south face, the corner cut's faces and the east wall's west face lie on two planes
-    const planesZ = new Set([...a.faces, ...c.faces].filter((f) => !f.covered && f.nz === 1).map((f) => f.a[1]))
-    const planesX = new Set([...b.faces, ...c.faces].filter((f) => !f.covered && f.nx === -1).map((f) => f.a[0]))
+    const planesZ = new Set([...a.faces, ...c.faces].filter((f) => f.nz === 1).map((f) => f.a[1]))
+    const planesX = new Set([...b.faces, ...c.faces].filter((f) => f.nx === -1).map((f) => f.a[0]))
     expect(planesZ).toEqual(new Set([1 - t]))
     expect(planesX).toEqual(new Set([t]))
   })
