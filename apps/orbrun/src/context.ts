@@ -168,8 +168,27 @@ export function deriveMode(state: GameState): Mode {
   if (state.inputMode === MouseMode.PROMPT) return 'prompt'
   if (state.inputMode === MouseMode.TARGET || state.inputMode === MouseMode.TARGET_DIR || state.inputMode === MouseMode.TARGET_PATH) return 'targeting'
   if (state.inputMode === MouseMode.MACRO) return 'macro'
+  if (state.inputMode === MouseMode.NORMAL && rawKeyPrompt(state)) return 'prompt'
   // COMMAND while the server waits for a command, NORMAL while it processes one (both appear every turn in play)
   return 'command'
+}
+
+/**
+ * A prompt read with a bare `getch_ck`, outside any `mouse_control`: the
+ * faded altar (god-prayer.cc `_prompt_ecu_worship`, "This altar belongs to
+ * (a) Trog, (b) Okawaru or (c) ..."). The server never leaves NORMAL for it,
+ * the mode every command runs in, unlike `getchm` / `get_ch` prompts, which
+ * are `MOUSE_MODE_PROMPT` (macro.cc). What tells it apart from a command
+ * still running: its prompt-channel line is the last thing printed, and
+ * nothing else has changed the mode since. The letters must reach it raw
+ * (the official client sends every key raw; Orbrun's facing-relative
+ * rewrite of `b` would hand it another compass letter, `n` cancelling and
+ * `y` converting), so it is a prompt, not command mode.
+ */
+function rawKeyPrompt(state: GameState): boolean {
+  const lines = state.messages.lines
+  const last = lines[lines.length - 1]
+  return last !== undefined && last.channel === CH_PROMPT
 }
 
 /**
@@ -248,6 +267,8 @@ const DIGITS_RE = /\((\d)-(\d)[,)]/
  * to? (Tab/Enter - D:3, ? - help) ", and reads one key).
  */
 const LISTED_RE = /\(([A-Za-z0-9])\) (\S+)/g
+/** god-prayer.cc `_prompt_ecu_worship`: the faded altar's prompt, whose gods are listed on its own line */
+const ECU_ALTAR_RE = /^This altar belongs to /
 
 /**
  * A prompt whose choices are not on its line as `(k)ey` words: they are
@@ -270,7 +291,7 @@ function listedPrompt(lines: { text: string; channel?: number }[]): ParsedPrompt
   const add = (hotkey: string, label: string) => {
     hotkey = NAMED_KEYS[hotkey] ?? hotkey
     if (options.some((o) => o.hotkey === hotkey)) return
-    label = label.trim().replace(/\.$/, '')
+    label = label.trim().replace(/[.,]+$/, '')
     options.push({ hotkey, label: label ? label[0].toUpperCase() + label.slice(1) : hotkey })
   }
   const keyed = (t: string) => {
@@ -292,6 +313,10 @@ function listedPrompt(lines: { text: string; channel?: number }[]): ParsedPrompt
   let first = at
   while (first > 0 && lines[first - 1].channel === CH_PROMPT && LISTED_RE.test(formattedStringToText(lines[first - 1].text))) first--
   for (let i = first; i < at; i++) listed(formattedStringToText(lines[i].text))
+  // or on the prompt line itself: the faded altar's "(a) Trog, (b) Okawaru or (c) Yredelemnul"
+  listed(text)
+  // god-prayer.cc `_prompt_ecu_worship`: "press enter to convert or escape to cancel"; the letters describe
+  if (ECU_ALTAR_RE.test(text)) add('Enter', 'Convert')
   const d = DIGITS_RE.exec(text)
   if (d) for (let n = Number(d[1]); n <= Number(d[2]); n++) add(String(n), String(n))
   keyed(text)
@@ -375,7 +400,7 @@ export function promptLead(text: string): string | null {
  */
 function parsePrompt(state: GameState): ParsedPrompt | undefined {
   const yesnoMode = state.inputMode === MouseMode.YESNO
-  const promptMode = state.inputMode === MouseMode.PROMPT
+  const promptMode = state.inputMode === MouseMode.PROMPT || (state.inputMode === MouseMode.NORMAL && rawKeyPrompt(state))
   if (!yesnoMode && !promptMode) return undefined
   const lines = state.messages.lines
   for (let i = lines.length - 1; i >= 0 && i >= lines.length - 3; i--) {

@@ -12,13 +12,14 @@ function harness() {
   const held = new Set<Button>()
   const execute = vi.fn<(a: Action) => void>()
   const send = vi.fn()
+  const step = vi.fn()
   const ctx: Context = { mode: 'command', layer: 'micro', ahead: { kind: 'none', label: '' }, under: { kind: 'none', label: '' }, hostilesInView: 0 }
   const overlays = { hasClientOverlay: false, clientOverlayInput: vi.fn(), showCommands: vi.fn(), showPalette: vi.fn(), menuKey: () => false, focusInfo: () => null }
   const state = initialState()
   const hints = new GamepadHints()
   const screen = Object.assign(Object.create(GameScreen.prototype), {
     ctx, hooks: { settings: () => ({}), gamepad: { isHeld: (b: Button) => held.has(b) } },
-    session: { watching: false, state }, runner: { execute, send }, overlays, padHints: hints,
+    session: { watching: false, state }, runner: { execute, send, step }, overlays, padHints: hints,
     chat: { capturing: false }, pressTimes: new Map(), holdFired: new Set(), tapArmed: new Set(),
     holding: null,
     // This input-only harness bypasses the constructor and has no frame loop or renderer.
@@ -30,7 +31,7 @@ function harness() {
     if (ev.type === 'release') held.delete(ev.button)
     screen.pad(ev)
   }
-  return { screen, ctx, execute, send, overlays, event, state, hints }
+  return { screen, ctx, execute, send, step, overlays, event, state, hints }
 }
 
 beforeEach(() => {
@@ -311,6 +312,19 @@ describe('direct game input', () => {
     expect(h.send).not.toHaveBeenCalled()
     for (const key of ['q', 'r', 'z', 'm', 'g', 'G', '>', '<']) h.screen.onKeyDown(new KeyboardEvent('keydown', { key, cancelable: true }))
     expect(h.send.mock.calls.map(([m]) => m.text ?? m.keycode)).toEqual(['q', 'r', 'z', 'm', 'g', 'G', '>', '<'])
+  })
+
+  it('a direction letter reaches a prompt raw, and is a facing-relative step only in command mode', () => {
+    // the faded altar reads `b` as "learn about the second god" (god-prayer.cc `_prompt_ecu_worship`)
+    const h = harness()
+    h.ctx.mode = 'prompt'
+    h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'b', cancelable: true }))
+    expect(h.send).toHaveBeenCalledExactlyOnceWith(cm.input('b'))
+    expect(h.step).not.toHaveBeenCalled()
+    h.ctx.mode = 'command'
+    h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'b', cancelable: true }))
+    expect(h.send).toHaveBeenCalledOnce()
+    expect(h.step).toHaveBeenCalledOnce()
   })
 
   it('F1 is left to Crawl, which binds it to the game menu', () => {

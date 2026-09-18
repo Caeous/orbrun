@@ -483,6 +483,38 @@ describe('prompt card', () => {
     ctx = frame('keyboard')
     expect(Array.from(host.querySelectorAll('.prompt-card .chip kbd')).map((c) => c.textContent)).toEqual(['D', 'T', 'L', 'O', 'S', 'Tab', '?'])
   })
+  it('the faded altar: its gods and Enter are the chips, off a prompt the server never left NORMAL for', () => {
+    const { st, frame, host, ov, sent } = setup()
+    reduce(st, { msg: 'input_mode', mode: MouseMode.COMMAND })
+    // the `p` went in: the mode every command runs in, then the prompt (god-prayer.cc `_prompt_ecu_worship`, read with `getch_ck`)
+    reduce(st, { msg: 'input_mode', mode: MouseMode.NORMAL })
+    reduce(st, {
+      msg: 'msgs',
+      messages: [{ text: "This altar belongs to (a) Trog, (b) Okawaru or (c) Yredelemnul, but you can't tell which.\nPress the corresponding letter to learn more about a god, or press enter to convert or escape to cancel.", channel: 2, turn: 40 }],
+    })
+    let ctx = frame()
+    expect(ctx.mode).toBe('prompt')
+    expect(ctx.prompt).toMatchObject({
+      cancel: true,
+      options: [
+        { hotkey: 'a', label: 'Trog' },
+        { hotkey: 'b', label: 'Okawaru' },
+        { hotkey: 'c', label: 'Yredelemnul' },
+        { hotkey: '\r', label: 'Convert' },
+      ],
+    })
+    // a letter goes as text, Enter as the key; the cursor starts on the first god
+    ov.focusOp(st, ctx, 'next')
+    ov.focusOp(st, ctx, 'select')
+    expect(sent).toEqual([{ msg: 'input', text: 'b' }])
+    ctx = frame('keyboard')
+    expect(Array.from(host.querySelectorAll('.prompt-card .chip kbd')).map((c) => c.textContent)).toEqual(['a', 'b', 'c', 'Enter'])
+    // the describe popup a letter opens is a popup; closed, the prompt is still waiting
+    reduce(st, { msg: 'ui-push', type: 'describe-god', title: 'Okawaru', body: 'Okawaru is a god of battle.' })
+    expect(frame().mode).toBe('popup')
+    reduce(st, { msg: 'ui-pop' })
+    expect(frame().mode).toBe('prompt')
+  })
   it('the stat-gain prompt: only the prompt line on the card, the cursor picks, no Cancel', () => {
     const { st, frame, host } = setup()
     // an earlier command's messages end at the return to command mode

@@ -31,6 +31,23 @@ describe('modes come from the server, never from message text', () => {
     // macro capture reads raw keys: not command mode, so no facing-relative rewrite
     expect_(MouseMode.MACRO, 'macro')
   })
+  it('a prompt read with a bare getch_ck, which leaves the server in NORMAL, is a prompt while its line is the last printed', () => {
+    // god-prayer.cc `_prompt_ecu_worship`: the faded altar sets no mouse mode, so a rewritten `b` would reach it as another compass letter
+    const st = initialState()
+    st.phase = 'playing' as typeof st.phase
+    st.inputMode = MouseMode.NORMAL
+    st.messages.lines.push({ text: 'You kill the rat!', turn: 40, channel: 0 })
+    expect(deriveMode(st)).toBe('command')
+    st.messages.lines.push({ text: "This altar belongs to (a) Trog, (b) Okawaru or (c) Yredelemnul, but you can't tell which.\nPress the corresponding letter to learn more about a god, or press enter to convert or escape to cancel.", turn: 40, channel: 2 })
+    expect(deriveMode(st)).toBe('prompt')
+    // once the command is over the server waits for a command again, whatever was printed last
+    st.inputMode = MouseMode.COMMAND
+    expect(deriveMode(st)).toBe('command')
+    // a line printed after the prompt means the command moved on without reading a key of ours
+    st.inputMode = MouseMode.NORMAL
+    st.messages.lines.push({ text: 'Okay, then.', turn: 40, channel: 0 })
+    expect(deriveMode(st)).toBe('command')
+  })
   it('a yes/no the server asks as its own popup menu is a menu, not a prompt card', () => {
     // prompt.cc `yesno` with `use_popup` (inside a layout, or `prompt_menu`): fixture menu-prompt-1
     const st = initialState()
