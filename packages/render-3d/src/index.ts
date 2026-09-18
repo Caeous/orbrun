@@ -735,7 +735,7 @@ export function gridWalk(ax: number, az: number, bx: number, bz: number, visit: 
  * A closed door is a solid cell and is built as one; only the open ones are
  * here, as their cell is floor with the door tile standing on it.
  */
-export function framedDoors(scene: Scene): Map<CellKey, number> {
+function framedDoors(scene: Scene): Map<CellKey, number> {
   const solid = (x: number, y: number) => {
     const c = scene.cells.get(cellKey(x, y))
     return !c || c.kind === 'unknown' || c.occluder
@@ -3021,7 +3021,5 @@ function nowSeconds(): number {
   return (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000
 }
 
-export { keyToXY }
 export type { Billboard, Viewmodel }
 export * from './footprint.js'
-export { handsFootprint, type HandRect, type HandsHeld } from './hands.js'

@@ -41,13 +41,13 @@ describe('the repository’s documents, drawn in the front end', () => {
   })
 
   it('marks code, bold and links inline, sends links out in a new tab, and leaves anchors as words', () => {
-    const doc = renderMarkdown('See [ABOUT.md](ABOUT.md), [the site](https://orbrun.app), [below](#steam-deck), <https://crawl.develz.org/> and <caeous@gmail.com>: **bold** `code` *em*.')
+    const doc = renderMarkdown('See [ABOUT.md](ABOUT.md), [the site](https://orbrun.app), [below](#steam-deck), <https://crawl.develz.org/> and <someone@example.com>: **bold** `code` *em*.')
     const links = Array.from(doc.querySelectorAll('a'))
     expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
       ['ABOUT.md', 'https://github.com/Caeous/orbrun/blob/main/ABOUT.md'],
       ['the site', 'https://orbrun.app'],
       ['https://crawl.develz.org/', 'https://crawl.develz.org/'],
-      ['caeous@gmail.com', 'mailto:caeous@gmail.com'],
+      ['someone@example.com', 'mailto:someone@example.com'],
     ])
     for (const a of links.slice(0, 3)) expect(a.getAttribute('target')).toBe('_blank')
     expect(doc.textContent).toContain('below')

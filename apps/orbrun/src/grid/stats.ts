@@ -142,12 +142,12 @@ export const PORTRAIT_ROWS = 4
 const COMPACT_WIDTH = 36
 
 /** the pane at `width` cells prints the short captions */
-export function compactStats(width: number): boolean {
+function compactStats(width: number): boolean {
   return width < COMPACT_WIDTH
 }
 
 /** the rows the portrait stands over at `width` cells: the square, or two rows when compact */
-export const COMPACT_PORTRAIT_ROWS = 2
+const COMPACT_PORTRAIT_ROWS = 2
 export function portraitRows(width: number): number {
   return compactStats(width) ? COMPACT_PORTRAIT_ROWS : PORTRAIT_ROWS
 }

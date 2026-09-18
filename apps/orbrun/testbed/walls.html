@@ -12,7 +12,6 @@
       #side { display: flex; flex-direction: column; gap: 10px; padding: 10px; border-left: 1px solid #333; overflow: auto; }
       #map { width: 340px; height: 340px; background: #000; image-rendering: pixelated; border: 1px solid #333; }
       label { display: flex; align-items: center; gap: 8px; }
-      label span.v { min-width: 4.5em; text-align: right; font-variant-numeric: tabular-nums; color: #9cf; }
       input[type=range] { flex: 1; }
       textarea { width: 100%; height: 130px; background: #000; color: #ddd; font: 12px/1.2 ui-monospace, monospace; border: 1px solid #333; }
       .hint { color: #888; }
@@ -30,7 +29,7 @@
           <button id="modeOrbit" class="on">Orbit</button>
           <button id="modeWalk">Walk</button>
         </div>
-        <label>Inset <input id="inset" type="range" min="0" max="15" step="1" value="12" /><span class="v" id="insetV"></span></label>
+        <label>Inset <input id="inset" type="range" min="0" max="15" step="1" value="12" /></label>
         <label><input id="oracle" type="checkbox" checked /> Overlay definition (red where the local rule disagrees)</label>
         <canvas id="map" width="340" height="340"></canvas>
         <textarea id="ascii" spellcheck="false"></textarea>

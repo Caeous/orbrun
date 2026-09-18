@@ -450,22 +450,6 @@ img.room-poster.up {
 
 /* ---- text fields: prompts, answered in place as the game's are */
 
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 1.1rem;
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  flex: 1 1 auto;
-}
-.field .caption {
-  font-family: var(--mono);
-  font-size: 0.9rem;
-  color: var(--color-7);
-}
 .frame input[type='text'],
 .frame input[type='password'],
 .frame input[type='email'],
@@ -493,24 +477,6 @@ img.room-poster.up {
 .frame input.focused {
   border-bottom-color: var(--color-7);
 }
-.field-row {
-  display: flex;
-  gap: 1rem;
-  align-items: flex-end;
-  margin-top: 1rem;
-}
-.field-row .item {
-  width: auto;
-}
-.form .menu {
-  margin-top: 0.6rem;
-}
-
-.muted {
-  color: var(--ink-dim);
-  font-size: 0.9em;
-}
-
 .error {
   font-family: var(--mono);
   color: var(--color-12);
@@ -1524,13 +1490,10 @@ img.room-poster.up {
 /* ------------------------------------------------------------------ lobby */
 
 @media (prefers-reduced-motion: reduce) {
-  .frame,
-  .backdrop .level,
-  .menu.reveal .item,
-  .dungeon .you {
+  .frame {
     animation: none;
   }
-  .dungeon-msg.said {
+  .menu-msg.said {
     animation: none;
     opacity: 1;
   }
@@ -1660,9 +1623,6 @@ img.room-poster.up {
   top: 0;
   display: block;
   image-rendering: pixelated;
-}
-.stats_caption {
-  color: var(--color-6); /* brown */
 }
 .degenerated_stat {
   color: var(--color-14); /* yellow */
@@ -1914,37 +1874,9 @@ canvas.minimap.hidden {
   /* the stats pane's backing, so the chips and the pane read as one surface */
   --chip-bg: rgba(0, 0, 0, 0.55);
   --chip-line: rgba(255, 255, 255, 0.12);
-  --layer-tint: var(--accent);
 }
 .actionbar[hidden] {
   display: none;
-}
-
-/* a held trigger recolours the strip: the change of layer is felt before it is read */
-.actionbar.layer-macro {
-  --layer-tint: #7fb3ff;
-}
-.actionbar.layer-info {
-  --layer-tint: #8ee6b0;
-}
-
-/* the held trigger and the name of its layer */
-.actionbar .layer {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35em;
-  color: var(--layer-tint);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  font-size: 0.85em;
-  padding: 0.15em 0.55em;
-  border: 1px solid color-mix(in srgb, var(--layer-tint) 55%, transparent);
-  border-radius: 3px;
-  background: var(--chip-bg);
-}
-.actionbar .layer svg {
-  font-size: 1.15em;
-  color: var(--layer-tint);
 }
 
 /* one cluster of the controller: face, shoulders, sticks, system */
@@ -2483,10 +2415,6 @@ canvas.minimap.hidden {
   font-style: italic;
 }
 
-.popup .describe-canvas {
-  image-rendering: pixelated;
-}
-
 /*
  * Describe popups keep the official client's measure and spell list: the text
  * is written for 80 columns (style.css `.describe-monster { width: 80ch }`),
@@ -2757,12 +2685,6 @@ canvas.minimap.hidden {
   display: inline-flex;
   vertical-align: middle;
   font-size: 1.25em;
-}
-.bindings-sheet th.layer-macro {
-  color: #7fb3ff;
-}
-.bindings-sheet th.layer-info {
-  color: #8ee6b0;
 }
 .bindings-sheet td {
   padding: 0.3em 0.6em;
@@ -3546,7 +3468,4 @@ canvas.minimap.hidden {
   font: inherit;
   white-space: pre;
   overflow-x: auto;
-}
-.exit-report .exit-links a {
-  text-decoration: none;
 }

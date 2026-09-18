@@ -16,6 +16,7 @@
     "testbed",
     "src/room/*.des",
     "testbed/*.json",
+    "test/fixtures/skills-crt.json",
     "data/*.json",
     "vite.config.ts",
     "gamedata-proxy.ts",

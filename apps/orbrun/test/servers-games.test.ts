@@ -103,8 +103,8 @@ describe('characterOf', () => {
 
 describe('describeCharacter', () => {
   it('reads name, title, species and XL; the place is a line of its own', () => {
-    const c = { name: 'KorlenTP', title: 'the Severer', species: 'Mountain Dwarf', xl: 12, place: 'Snake Pit', depth: 2 }
-    expect(describeCharacter(c)).toBe('KorlenTP the Severer, Mountain Dwarf XL12')
+    const c = { name: 'Dwarfsong', title: 'the Severer', species: 'Mountain Dwarf', xl: 12, place: 'Snake Pit', depth: 2 }
+    expect(describeCharacter(c)).toBe('Dwarfsong the Severer, Mountain Dwarf XL12')
     expect(describePlace(c)).toBe('Snake Pit:2')
   })
 

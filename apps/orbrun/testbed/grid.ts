@@ -16,7 +16,7 @@
 import { GamepadInput, type Button, type PadEvent } from '../src/gamepad'
 import { glyph } from '../src/glyphs'
 import { crtPlainText, scrapeSkills } from '../src/crt-scrape'
-import fixture from './skills-crt.json'
+import fixture from '../test/fixtures/skills-crt.json'
 
 // ------------------------------------------------------------------ the grid
 

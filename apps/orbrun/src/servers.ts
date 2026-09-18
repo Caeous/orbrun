@@ -233,7 +233,7 @@ export function characterOf(e: { username: string; char?: string; xl?: string; p
 }
 
 /**
- * "KorlenTP the Severer, Mountain Dwarf XL12": the character in a line, as
+ * "Dwarfsong the Severer, Mountain Dwarf XL12": the character in a line, as
  * the lobby roster speaks one. Where they stand is a line of its own
  * (describePlace): the two together run past a handheld's width.
  */
@@ -360,7 +360,7 @@ export type LeftRight = 'turn' | 'strafe'
 export type DirSource = 'arrows' | 'vim' | 'numpad' | 'dpad' | 'lstick'
 
 /** The setting each source reads: one answer for the keyboard, one for the pad. */
-export const LEFT_RIGHT_KEYS: Record<DirSource, keyof Settings> = {
+const LEFT_RIGHT_KEYS: Record<DirSource, keyof Settings> = {
   arrows: 'leftRightKeys',
   vim: 'leftRightKeys',
   numpad: 'leftRightKeys',

@@ -699,7 +699,7 @@ export const MAP_TURNS_DIAGONAL = true
  * north-east reads as north. An aim's keys are read against it (runner
  * `absoluteAim`), and under quarter turns the minimap stands on it too.
  */
-export function gridFacingOf(f: Dir8): Dir8 {
+function gridFacingOf(f: Dir8): Dir8 {
   return f % 2 === 0 ? f : rotateDir(f, -1)
 }
 

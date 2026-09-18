@@ -26,27 +26,7 @@ export const COLOUR_NAMES: Record<string, number> = {
   w: 15,
 }
 
-/** Default terminal palette, same as the official stylesheet. */
-export const TERM_COLOURS = [
-  '#000000',
-  '#0000cc',
-  '#00aa00',
-  '#00aaaa',
-  '#cc0000',
-  '#aa00aa',
-  '#aa5500',
-  '#aaaaaa',
-  '#555555',
-  '#5555ff',
-  '#55ff55',
-  '#55ffff',
-  '#ff5555',
-  '#ff55ff',
-  '#ffff55',
-  '#ffffff',
-]
-
-export function escapeHtml(str: string): string {
+function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 

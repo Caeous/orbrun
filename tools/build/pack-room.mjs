@@ -26,8 +26,8 @@ import zlib from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 
 /** The version the room is built from: DCSS 0.34 on crawl.dcss.io, the version the fixtures pin. */
-export const ROOM_GAMEDATA_VERSION = 'acd3d60e20f899c1c8a546953d6ffa0f6c7fe0c8'
-export const ROOM_GAMEDATA_HOST = 'crawl.dcss.io'
+const ROOM_GAMEDATA_VERSION = 'acd3d60e20f899c1c8a546953d6ffa0f6c7fe0c8'
+const ROOM_GAMEDATA_HOST = 'crawl.dcss.io'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..', '..')
