@@ -263,6 +263,8 @@ export class Hud {
   private panelHorizontal = true
   private panelTooltip = h('div', { class: 'tooltip', style: { display: 'none' } })
   private panelTooltipTimer = 0
+  /** hides the status line; one at a time, so a second status keeps its own three seconds */
+  private statusTimer = 0
   private panelKey = ''
   private panelPre: unknown[] | undefined
   /** a chip wears the hold ring, so the next frame without a hold clears it */
@@ -439,7 +441,14 @@ export class Hud {
     this.statusEl.style.animation = 'none'
     void this.statusEl.offsetHeight
     this.statusEl.style.animation = ''
-    setTimeout(() => (this.statusEl.style.display = 'none'), 3000)
+    clearTimeout(this.statusTimer)
+    this.statusTimer = window.setTimeout(() => (this.statusEl.style.display = 'none'), 3000)
+  }
+
+  /** Stop the timers still pending, so nothing of a screen that is gone fires into the next. */
+  destroy() {
+    clearTimeout(this.statusTimer)
+    clearTimeout(this.panelTooltipTimer)
   }
 
   /** Read back through the log in the pane's own rows: the Info layer's stick, a spectator's d-pad. */

@@ -62,4 +62,16 @@ describe('a drag whose release the page never saw', () => {
     expect(h.endDrag).not.toHaveBeenCalled()
     expect(h.onPointer).not.toHaveBeenCalled()
   })
+
+  it('a second canvas (a renderer swap) shares the one blur listener, so leaving the game leaves none behind', () => {
+    const add = vi.spyOn(window, 'addEventListener')
+    const h = harness()
+    const again = document.createElement('canvas')
+    Object.assign(again, { setPointerCapture: vi.fn(), releasePointerCapture: vi.fn(), hasPointerCapture: () => true })
+    h.screen.attachPointer(again)
+    const blurs = add.mock.calls.filter(([type]) => type === 'blur').map(([, fn]) => fn)
+    expect(blurs.length).toBe(2)
+    expect(new Set(blurs).size).toBe(1)
+    add.mockRestore()
+  })
 })

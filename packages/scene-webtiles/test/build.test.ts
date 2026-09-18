@@ -327,10 +327,12 @@ describe('buildScene on a recorded level', () => {
     st.map.cells.set(cellKey(floor.x, floor.y), { ...floor, g: '\u2663', t: { ...floor.t, bg: tree } })
     const grown = buildScene(st, gd, { previous: moved })
     expect(grown.layoutRevision).toBe(grown.revision)
-    // the player stepping is a new layout too: the light and the lowered walls follow them
+    // the player stepping moves nothing in the level either: the light, the lowered walls and the feature
+    // underfoot are the renderer's to follow, not the layout's
     st.player.pos = { x: st.player.pos.x + 1, y: st.player.pos.y }
     const stepped = buildScene(st, gd, { previous: grown })
-    expect(stepped.layoutRevision).toBe(stepped.revision)
+    expect(stepped.revision).toBe(grown.revision + 1)
+    expect(stepped.layoutRevision).toBe(grown.layoutRevision)
   })
 
   it('carries what the official client paints on a cell', () => {

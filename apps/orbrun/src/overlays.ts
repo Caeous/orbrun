@@ -2177,6 +2177,14 @@ export class Overlays {
     return true
   }
 
+  /** Stop the timers still pending: a screen that is gone reports no scroll and scrolls nothing. */
+  destroy() {
+    if (this.scrollTimer) clearTimeout(this.scrollTimer)
+    this.scrollTimer = null
+    if (this.scrollerTimer) clearTimeout(this.scrollerTimer)
+    this.scrollerTimer = null
+  }
+
   /** ui-layouts.js update_server_scroll: a formatted scroller's top line, so the server keeps our place. */
   private reportScrollerScroll() {
     if (this.scrollerTimer) {

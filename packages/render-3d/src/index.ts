@@ -315,6 +315,26 @@ const STAND_VERT = /* glsl */ `
   transformed = anchor + vec3(c * transformed.x + s * transformed.z, transformed.y, c * transformed.z - s * transformed.x);
 }
 #endif`
+/**
+ * The `cell` attribute a shade-map shader reads its light through (`makeLevelMaterial`),
+ * declared where a sprite carries one: a merged sprite does not, its cell is under its
+ * anchor (`CELL_VERT`), so a crowd's buffers hold no cell per vertex.
+ */
+const CELL_VERT_PARS = /* glsl */ `
+#ifndef MERGED
+attribute vec2 cell;
+#endif
+varying vec2 vCell;`
+/**
+ * Set `vCell`: a merged sprite's anchor stands half a cell into its cell (`addStanding`),
+ * so its floor is the cell exactly, as the attribute held it; anything else carries the attribute.
+ */
+const CELL_VERT = /* glsl */ `
+#ifdef MERGED
+vCell = floor(anchor.xz);
+#else
+vCell = cell;
+#endif`
 /** Wash `c` in the flash standing over this fragment. */
 function flashApply(c: string): string {
   return /* glsl */ `
@@ -332,8 +352,7 @@ varying vec2 vUv;
 varying vec3 vColor;
 varying float vViewZ;
 #ifdef GHOST_SHADE
-attribute vec2 cell;
-varying vec2 vCell;
+${CELL_VERT_PARS}
 #endif
 ${FLASH_VERT_PARS}
 ${STAND_VERT_PARS}
@@ -341,7 +360,7 @@ void main() {
   vUv = uv;
   vColor = color;
 #ifdef GHOST_SHADE
-  vCell = cell;
+${CELL_VERT}
 #endif
   vec3 transformed = vec3(position);
   ${STAND_VERT}
@@ -546,14 +565,61 @@ function quadUVs(uv: { u0: number; v0: number; u1: number; v1: number }, uvOrder
   return (uvOrder || [0, 1, 2, 3]).map((i) => uvl[i])
 }
 
+/** A typed array that grows as it is pushed to: the level's vertex streams, written once per rebuild. */
+class Stream<T extends Float32Array | Uint32Array> {
+  length = 0
+  constructor(public array: T) {}
+  private room(n: number): T {
+    let a = this.array
+    if (this.length + n > a.length) {
+      let size = a.length * 2
+      while (size < this.length + n) size *= 2
+      const next = new (a.constructor as new (n: number) => T)(size)
+      next.set(a)
+      this.array = a = next
+    }
+    return a
+  }
+  push2(x: number, y: number): void {
+    const a = this.room(2)
+    const i = this.length
+    a[i] = x
+    a[i + 1] = y
+    this.length = i + 2
+  }
+  push3(x: number, y: number, z: number): void {
+    const a = this.room(3)
+    const i = this.length
+    a[i] = x
+    a[i + 1] = y
+    a[i + 2] = z
+    this.length = i + 3
+  }
+  push1(x: number): void {
+    const a = this.room(1)
+    a[this.length++] = x
+  }
+  /** The written part, as an array of its own. */
+  take(): T {
+    return this.array.slice(0, this.length) as T
+  }
+}
+
+/**
+ * Gathers a level mesh's vertices. The streams are typed arrays written in
+ * place: a rebuild of an explored level pushes hundreds of thousands of
+ * values, and a number array grown by `push` and copied into a typed array at
+ * the end cost more than the geometry it built. A value written to a
+ * Float32Array rounds exactly as the copy did, so the buffers are the same.
+ */
 class GeoBuilder {
-  positions: number[] = []
-  uvs: number[] = []
-  colors: number[] = []
-  cut: number[] = []
+  private positions = new Stream(new Float32Array(3 * 256))
+  private uvs = new Stream(new Float32Array(2 * 256))
+  private colors = new Stream(new Float32Array(3 * 256))
+  private cut = new Stream(new Float32Array(256))
   /** Per vertex, the cell whose light it takes: the level shader reads its shade from the shade map (II.9). */
-  cells: number[] = []
-  indices: number[] = []
+  private cells = new Stream(new Float32Array(2 * 256))
+  private indices = new Stream(new Uint32Array(6 * 128))
   private cx = 0
   private cz = 0
   /** The cell the next faces are lit as. */
@@ -583,23 +649,34 @@ class GeoBuilder {
   ) {
     const base = this.positions.length / 3
     const n = p.length
-    for (const [x, y, z] of p) this.positions.push(x, y, z)
-    for (let i = 0; i < n; i++) this.cut.push(cut ? 1 : 0)
-    for (let i = 0; i < n; i++) this.cells.push(this.cx, this.cz)
-    for (const [u, v] of uv) this.uvs.push(u, v)
-    for (let i = 0; i < n; i++) this.colors.push(shade * tint.r, shade * tint.g, shade * tint.b)
-    if (n === 4) this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
-    else for (const [a, b, c] of triangulateXZ(p)) this.indices.push(base + a, base + b, base + c)
+    const c = cut ? 1 : 0
+    const r = shade * tint.r, g = shade * tint.g, b = shade * tint.b
+    for (let i = 0; i < n; i++) {
+      const q = p[i]
+      this.positions.push3(q[0], q[1], q[2])
+      this.cut.push1(c)
+      this.cells.push2(this.cx, this.cz)
+      this.uvs.push2(uv[i][0], uv[i][1])
+      this.colors.push3(r, g, b)
+    }
+    if (n === 4) {
+      this.indices.push3(base, base + 1, base + 2)
+      this.indices.push3(base, base + 2, base + 3)
+    } else for (const [a, b, c] of triangulateXZ(p)) this.indices.push3(base + a, base + b, base + c)
   }
   build(): THREE.BufferGeometry | null {
     if (this.indices.length === 0) return null
     const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.positions, 3))
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uvs, 2))
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.colors, 3))
-    g.setAttribute('cut', new THREE.Float32BufferAttribute(this.cut, 1))
-    g.setAttribute('cell', new THREE.Float32BufferAttribute(this.cells, 2))
-    g.setIndex(this.indices)
+    g.setAttribute('position', new THREE.BufferAttribute(this.positions.take(), 3))
+    g.setAttribute('uv', new THREE.BufferAttribute(this.uvs.take(), 2))
+    g.setAttribute('color', new THREE.BufferAttribute(this.colors.take(), 3))
+    g.setAttribute('cut', new THREE.BufferAttribute(this.cut.take(), 1))
+    g.setAttribute('cell', new THREE.BufferAttribute(this.cells.take(), 2))
+    // 16-bit indices while every one fits, as `setIndex` picks for a number array
+    const idx = this.indices.take()
+    let wide = false
+    for (let i = idx.length - 1; i >= 0; --i) if (idx[i] >= 65535) { wide = true; break }
+    g.setIndex(new THREE.BufferAttribute(wide ? idx : new Uint16Array(idx), 1))
     return g
   }
 }
@@ -737,10 +814,16 @@ export class Render3d implements MapRenderer {
   /** The baked crowds: the scene's billboards, and the level's upright features (`bakeStanding`). */
   private billboardCrowd: Crowd
   private levelCrowd: Crowd
+  /**
+   * The standing fixtures by what they are built from (`fixtureKey`). A layout rebuild
+   * replaces the level's meshes, but a fixture whose key still holds stands as it was:
+   * its holder stays in the crowd, and the chunk's bake finds its slots in place.
+   */
+  private fixtures = new Map<string, THREE.Object3D>()
   /** The holders wearing the selected shells (`syncSelection`), and the cell they stand on. */
   private selected: THREE.Object3D[] = []
   private selectionDirty = false
-  readonly stats: RenderStats = { levelBuilds: 0, crowdSyncs: 0, spriteBuilds: 0, spriteDrops: 0, selectionBuilds: 0, fieldUpdates: 0, chunkBakes: 0, chunkAllocs: 0, bakedVertices: 0 }
+  readonly stats: RenderStats = { levelBuilds: 0, crowdSyncs: 0, spriteBuilds: 0, spriteDrops: 0, selectionBuilds: 0, fieldUpdates: 0, chunkBakes: 0, chunkAllocs: 0, bakedVertices: 0, keptVertices: 0 }
   private raycaster = new THREE.Raycaster()
   private pickMeshes: THREE.Mesh[] = []
   private voidMat: THREE.MeshBasicMaterial
@@ -775,6 +858,17 @@ export class Render3d implements MapRenderer {
   private rims = new Map<string, RimTemplate | null>()
   private hulls = new Map<string, HullTemplate | null>()
   private rings = new Map<string, RingTemplate | null>()
+  /**
+   * The vertex arrays of the standing sprites, shared by every sprite built
+   * from the same inputs (`sharedAttr`): a crowd of fifty of one tile at one
+   * height stands on one set of positions, uvs, colours and indices, where
+   * each once carried a copy of its own (its cell is under its anchor, or
+   * given to a holder that stands alone: `giveCells`). The arrays are never written after they are built, so a geometry that
+   * holds one can be disposed as before: the renderer's buffers are the
+   * geometry's, and the array stays for the next sprite. Keyed by everything
+   * the array is computed from, and cleared with the templates it derives from.
+   */
+  private spriteAttrs = new Map<string, THREE.BufferAttribute>()
   /** The ink round a ghost (`RingTemplate`): the ghost material with no map, coloured by the ring's black vertices. */
   private ghostInkMat!: THREE.ShaderMaterial
   private ghostVisibleInkMat!: THREE.ShaderMaterial
@@ -791,6 +885,8 @@ export class Render3d implements MapRenderer {
   private inkMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
   /** Attack lift start, in seconds on the render clock; NaN when at rest. */
   private vmLift = NaN
+  /** This frame's attack lift, 0..1 (`liftEnvelope`), or NaN with none running: read once per frame in `render`, so the doll and the hands agree on it. */
+  private lift = NaN
   constructor(opts: Render3dOptions = {}) {
     this.ghostInkMat = this.makeGhostMaterial(GHOST_ALPHA)
     this.ghostVisibleInkMat = this.makeGhostMaterial(GHOST_ALPHA_VISIBLE, undefined, { start: GHOST_FADE_VISIBLE_START, range: GHOST_FADE_VISIBLE })
@@ -873,9 +969,9 @@ export class Render3d implements MapRenderer {
     m.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, fu, su)
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\nattribute float cut;\nattribute vec2 cell;\nvarying float vCut;\nvarying vec2 vCell;${FLASH_VERT_PARS}${STAND_VERT_PARS}`)
+        .replace('#include <common>', `#include <common>\nattribute float cut;\nvarying float vCut;${CELL_VERT_PARS}${FLASH_VERT_PARS}${STAND_VERT_PARS}`)
         .replace('#include <begin_vertex>', `#include <begin_vertex>${STAND_VERT}`)
-        .replace('#include <project_vertex>', `#include <project_vertex>\nvCut = cut;\nvCell = cell;${FLASH_VERT}`)
+        .replace('#include <project_vertex>', `#include <project_vertex>\nvCut = cut;${CELL_VERT}${FLASH_VERT}`)
       shader.fragmentShader = shader.fragmentShader
         .replace(
           '#include <common>',
@@ -908,7 +1004,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
 
   /**
    * Billboard material: a sprite takes its light from its cell's entry in the
-   * shade map, as the level does (`cell` attribute), so a move that relights
+   * shade map, as the level does (`CELL_VERT`), so a move that relights
    * the crowd repaints that small image and leaves every sprite's geometry
    * standing; its vertex colour carries the tint and the face's own shade.
    * The flash field washes it as it does everything in the cell — a monster
@@ -924,9 +1020,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     m.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, fu, su)
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\nattribute vec2 cell;\nvarying vec2 vCell;${FLASH_VERT_PARS}${STAND_VERT_PARS}`)
+        .replace('#include <common>', `#include <common>${CELL_VERT_PARS}${FLASH_VERT_PARS}${STAND_VERT_PARS}`)
         .replace('#include <begin_vertex>', `#include <begin_vertex>${STAND_VERT}`)
-        .replace('#include <project_vertex>', `#include <project_vertex>\nvCell = cell;${FLASH_VERT}`)
+        .replace('#include <project_vertex>', `#include <project_vertex>${CELL_VERT}${FLASH_VERT}`)
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\nuniform sampler2D shadeMap;\nvarying vec2 vCell;\n${FLASH_PARS}`)
         .replace(
@@ -984,16 +1080,26 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       hue = { r: cell.flash.r, g: cell.flash.g, b: cell.flash.b }
       break
     }
-    for (let z = 0; z < h; z++) {
-      for (let x = 0; x < w; x++) {
-        const i = z * w + x
-        const cell = scene.cells.get(cellKey(ox + x, oz + z))
-        sd[i] = Math.round(shadeOf(cell, scene) * 255)
-        const f = cell?.flash
-        fd[i * 4] = f?.a ? f.r : hue.r
-        fd[i * 4 + 1] = f?.a ? f.g : hue.g
-        fd[i * 4 + 2] = f?.a ? f.b : hue.b
-        fd[i * 4 + 3] = Math.min(255, f?.a ?? 0)
+    // every texel starts as a cell the map does not know (full bright, the hue unflashed), and the
+    // cells it does know write over theirs: a walk over the cells, not over the field's every texel
+    sd.fill(255)
+    for (let i = 0; i < w * h; i++) {
+      fd[i * 4] = hue.r
+      fd[i * 4 + 1] = hue.g
+      fd[i * 4 + 2] = hue.b
+      fd[i * 4 + 3] = 0
+    }
+    for (const cell of scene.cells.values()) {
+      const x = cell.x - ox, z = cell.y - oz
+      if (x < 0 || x >= w || z < 0 || z >= h) continue
+      const i = z * w + x
+      sd[i] = Math.round(shadeOf(cell, scene) * 255)
+      const f = cell.flash
+      if (f?.a) {
+        fd[i * 4] = f.r
+        fd[i * 4 + 1] = f.g
+        fd[i * 4 + 2] = f.b
+        fd[i * 4 + 3] = Math.min(255, f.a)
       }
     }
     shade.needsUpdate = true
@@ -1132,6 +1238,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.rims.clear()
     this.hulls.clear()
     this.rings.clear()
+    this.spriteAttrs.clear()
     for (const g of this.vmGeos.values()) {
       g?.block.dispose()
       g?.hull?.dispose()
@@ -1145,8 +1252,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     }
     this.cursorTileMats.clear()
     this.cursorTileId = -1
-    // every sprite standing was built from the old atlases
+    // every sprite standing, and every fixture, was built from the old atlases
     this.dropRecords()
+    this.dropFixtures()
     this.builtRevision = -1
     this.builtLayout = -1
   }
@@ -1257,6 +1365,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.clearSelection()
     this.billboardCrowd.clear()
     this.levelCrowd.clear()
+    this.fixtures.clear()
     for (const child of [...this.levelGroup.children]) {
       this.levelGroup.remove(child)
       child.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
@@ -1273,6 +1382,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.rims.clear()
     this.hulls.clear()
     this.rings.clear()
+    this.spriteAttrs.clear()
     for (const a of this.atlases.values()) {
       a.texture.dispose()
       for (const m of [a.wallMat, a.featMat, a.decalMat, a.ghostMat, a.ghostVisibleMat, a.bbMat, ...a.merged]) m.dispose()
@@ -1389,7 +1499,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         const tex = mat.map!
         tex.offset.set(uv.u0, uv.v0)
         tex.repeat.set(uv.u1 - uv.u0, uv.v1 - uv.v0)
-        tex.needsUpdate = true
         this.cursorTileMesh.material = mat
       }
       this.cursorTileMesh.visible = true
@@ -1412,30 +1521,44 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * underfoot — and what the player sees is 2D's own order, the feature under
    * the actor. Clouds and things in flight pass over a cell rather than stand
    * on it, and leave its feature standing.
+   *
+   * In first person the cell underfoot counts too, whether or not the doll is
+   * among the billboards: the camera sits in the middle of that sprite. A step
+   * onto or off such a cell is the only way a move changes the level's
+   * geometry, so this set is what a move rebuilds on, not the layout revision.
    */
   private occupiedFeatures(scene: Scene): Set<CellKey> {
     const out = new Set<CellKey>()
+    const upright = (k: CellKey) => {
+      const c = scene.cells.get(k)
+      return c?.stance === 'upright' && c.featureTile !== undefined
+    }
     for (const b of scene.billboards) {
       if (b.kind === 'cloud' || b.kind === 'projectile') continue
       const k = cellKey(b.x, b.y)
-      const c = scene.cells.get(k)
-      if (c?.stance === 'upright' && c.featureTile !== undefined) out.add(k)
+      if (upright(k)) out.add(k)
+    }
+    if (scene.playerOnLevel) {
+      const k = cellKey(scene.player.x, scene.player.y)
+      if (upright(k)) out.add(k)
     }
     return out
   }
 
   private rebuildLevel(scene: Scene) {
     this.stats.levelBuilds++
-    // the baked fixtures first: their meshes are the crowd's to release, the holders below are this group's
-    this.levelCrowd.clear()
+    // the level's own meshes go; the fixtures (`fixtures`) and the crowd's baked meshes stand until the loop below says otherwise
     for (const child of [...this.levelGroup.children]) {
+      if (!child.userData.level) continue
       this.levelGroup.remove(child)
-      // a mesh of the level, or a holder of fixture meshes
-      child.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
+      ;(child as THREE.Mesh).geometry.dispose()
     }
     this.pickMeshes = []
     const tiles = this.tiles
-    if (!tiles) return
+    if (!tiles) {
+      this.dropFixtures()
+      return
+    }
     const fo = this.fo()
     const framed = framedDoors(scene)
     // A framed door's cell counts as wall for the footprint rule: the wall run
@@ -1463,12 +1586,16 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       if (!b) decalBuilders.set(name, (b = new GeoBuilder()))
       return b
     }
+    // a tile's rect and uvs are looked up once per rebuild: every floor cell asks for its tile, and a level has far more cells than tiles
+    const tileCache = new Map<number, { r: TileRect; a: AtlasEntry; uv: ReturnType<Render3d['uvFor']> } | null>()
     const tileOf = (id: number) => {
+      let t = tileCache.get(id)
+      if (t !== undefined) return t
       const r = tiles.tile(id)
-      if (!r) return null
-      const a = this.atlas(r.atlas)
-      if (!a) return null
-      return { r, a, uv: this.uvFor(r, a) }
+      const a = r ? this.atlas(r.atlas) : null
+      t = r && a ? { r, a, uv: this.uvFor(r, a) } : null
+      tileCache.set(id, t)
+      return t
     }
     const levelCeiling = scene.level.ceilingTile !== null ? tileOf(scene.level.ceilingTile) : null
     const ceilingCache = new Map<number, ReturnType<typeof tileOf>>()
@@ -1487,9 +1614,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
      * there the tile lies back down on the floor, so a staircase you or a
      * centaur are standing on still reads as one.
      */
-    const onPlayer = (c: SceneCell) => scene.playerOnLevel && c.x === scene.player.x && c.y === scene.player.y
     const occupied = this.occupiedFeatures(scene)
-    const stands = (c: SceneCell) => c.stance === 'upright' && !onPlayer(c) && !occupied.has(cellKey(c.x, c.y))
+    const stands = (c: SceneCell) => c.stance === 'upright' && !occupied.has(cellKey(c.x, c.y))
     const heightOfFeature = (c: SceneCell) => (c.feature?.type === 'stairs' ? STAIR_H : FIXTURE_H)
     const isSolid = (c: SceneCell | undefined) => !c || c.kind === 'unknown' || c.occluder
     const isVoidCell = (c: SceneCell | undefined) => !c || c.kind === 'unknown'
@@ -1714,6 +1840,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const a = this.atlas(name)
       if (!a) continue
       const mesh = new THREE.Mesh(geo, a.wallMat)
+      mesh.userData.level = true
       this.levelGroup.add(mesh)
       this.pickMeshes.push(mesh)
     }
@@ -1724,18 +1851,31 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const a = this.atlas(name)
       if (!a) continue
       const mesh = new THREE.Mesh(geo, a.decalMat)
+      mesh.userData.level = true
       mesh.renderOrder = 1
       mesh.layers.set(LAYER_NO_DEPTH)
       this.levelGroup.add(mesh)
     }
     const vg = voids.build()
-    if (vg) this.levelGroup.add(new THREE.Mesh(vg, this.voidMat))
-    // upright features stand as billboards built with the level
+    if (vg) {
+      const mesh = new THREE.Mesh(vg, this.voidMat)
+      mesh.userData.level = true
+      this.levelGroup.add(mesh)
+    }
+    // Upright features stand as billboards built with the level. One whose key still holds
+    // (the same tile on the same cell, at the same height, heading and tint) is left standing;
+    // the rest are built, and whatever stood that the level no longer asks for comes down.
+    const tintKey = `${tint.r},${tint.g},${tint.b}`
+    const wanted = new Set<string>()
     for (const cell of scene.cells.values()) {
       if (cell.kind === 'unknown' || cell.occluder) continue
       if (cell.featureTile === undefined || !stands(cell)) continue
       const ft = tileOf(cell.featureTile)
       if (!ft) continue
+      const doorYaw = framed.get(cellKey(cell.x, cell.y))
+      const key = `${cell.x},${cell.y}|${cell.featureTile}|${doorYaw ?? ''}|${doorYaw !== undefined ? 1 : heightOfFeature(cell)}|${tintKey}`
+      wanted.add(key)
+      if (this.fixtures.has(key)) continue
       // An open door hangs in its doorway, not on the eye: its cell is a hole
       // in a wall run, and a board that turns with the camera pulls the leaves
       // and their arch off the two walls they are set into — from any angle but
@@ -1743,16 +1883,42 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       // fills the gap, full height like the closed door's block, and needs no
       // FIXTURE_BACK: it is in the wall plane, not in the way of what walks
       // through it.
-      const yaw = framed.get(cellKey(cell.x, cell.y))
+      const yaw = doorYaw
       if (yaw !== undefined) {
-        this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], 1, 1, tint, true, 'none', true, 0, yaw)
+        const door = this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], 1, 1, tint, true, 'none', true, 0, yaw)
+        this.giveCells(door, cell.x, cell.y)
+        this.fixtures.set(key, door)
         continue
       }
       // a fixture takes its light from the shade map (featMat), so its vertex colour is the tint alone;
       // it stands FIXTURE_BACK back, so whatever stands on the cell reads in front of it rather than through it
       const h = this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], heightOfFeature(cell), 1, tint, true, 'none', true, FIXTURE_BACK)
+      this.fixtures.set(key, h)
       if (this.levelCrowd.mergeable(h)) this.levelCrowd.add(h, cell.x, cell.y)
+      else this.giveCells(h, cell.x, cell.y)
     }
+    for (const [key, h] of this.fixtures) {
+      if (wanted.has(key)) continue
+      this.fixtures.delete(key)
+      this.dropFixture(h)
+    }
+    // every chunk is baked again, its holders taken back to front from where the eye stands at this
+    // rebuild, as they always were; a holder whose slot is unchanged costs the bake nothing (crowd.ts `write`)
+    this.levelCrowd.invalidate()
+  }
+
+  /** Take a fixture down: out of the crowd or the group, its geometry released. */
+  private dropFixture(h: THREE.Object3D) {
+    this.levelCrowd.remove(h)
+    if (h.parent === this.levelGroup) this.levelGroup.remove(h)
+    h.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
+  }
+
+  /** Every fixture down and the crowd's meshes with them: the next rebuild builds them afresh. */
+  private dropFixtures() {
+    for (const h of this.fixtures.values()) this.dropFixture(h)
+    this.fixtures.clear()
+    this.levelCrowd.clear()
   }
 
   private addStanding(
@@ -1792,7 +1958,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const bottom = ((cell - (l.r.oy + (l.oy || 0) + hTex)) / cell) * scale
       const lt = l.tint || tint
       const solid = thick && !l.flat
-      const geo = this.standingGeometry(l, hTex, v1, wq, hq, scale / cell, { r: shade * lt.r, g: shade * lt.g, b: shade * lt.b }, x, y, solid, yaw !== undefined)
+      const geo = this.standingGeometry(l, hTex, v1, wq, hq, scale / cell, { r: shade * lt.r, g: shade * lt.g, b: shade * lt.b }, solid, yaw !== undefined)
       const mesh = new THREE.Mesh(geo, ghost === 'visible' ? l.a.ghostVisibleMat : ghost === 'remembered' ? l.a.ghostMat : fixed ? l.a.featMat : l.a.bbMat)
       mesh.position.set(cx, bottom + hq / 2, i * 0.002 - back)
       // ghosts draw before every sprite so a nearer billboard paints over them
@@ -1851,8 +2017,10 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * PlaneGeometry's order, with the tile's uvs), and behind it, where the
    * atlas's pixels can be read, the rim of a block `BB_DEPTH` texels deep.
    * The vertex colour carries the sprite's light and tint times the face's
-   * shade; `cell` is the cell the sprite stands in, for the level shader's
-   * shade map (fixtures). `k` is the world size of a texel.
+   * shade. The cell the sprite stands in, which the shade-map shaders light it
+   * by, is not here: a baked sprite's is under its anchor (`CELL_VERT`), and a
+   * holder that stands on its own is given one (`giveCells`). `k` is the world
+   * size of a texel.
    */
   private standingGeometry(
     l: SpriteLayer,
@@ -1862,8 +2030,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     hq: number,
     k: number,
     c: { r: number; g: number; b: number },
-    x: number,
-    y: number,
     thick: boolean,
     /** Leave out the rim faces on the tile's own boundary (a board set into a wall run, see `rimTemplate`). */
     offEdges = false,
@@ -1871,10 +2037,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const rim = thick ? this.rimTemplate(l, hTex, offEdges) : null
     const nRim = rim ? rim.pos.length / 3 : 0
     const n = 4 + nRim
-    const pos = new Float32Array(n * 3)
-    const uv = new Float32Array(n * 2)
-    const col = new Float32Array(n * 3)
-    const cells = new Float32Array(n * 2)
     const hw = wq / 2, hh = hq / 2
     // The uvs are inset a quarter texel (`uvFor`), so the quad they are mapped across is inset by the same:
     // stretched over the whole tile instead, the art is drawn a shade larger than the tile it came from and
@@ -1882,33 +2044,88 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     // sprite two texels wide — a tail, a chain — that drift is a quarter of its width and it comes off its block.
     const e = UV_INSET * k
     const qw = hw - e, qh = hh - e
-    pos.set([-qw, qh, 0, qw, qh, 0, -qw, -qh, 0, qw, -qh, 0])
-    uv.set([l.uv.u0, l.uv.v0, l.uv.u1, l.uv.v0, l.uv.u0, v1, l.uv.u1, v1])
-    const index = [0, 2, 1, 2, 3, 1]
-    if (rim) {
-      for (let i = 0; i < nRim; i++) {
-        pos[(4 + i) * 3] = -hw + rim.pos[i * 3] * k
-        pos[(4 + i) * 3 + 1] = hh + rim.pos[i * 3 + 1] * k
-        pos[(4 + i) * 3 + 2] = rim.pos[i * 3 + 2] * k
+    // what the arrays are computed from: the block's shape (the rim's key, or a flat quad), and per array its own inputs
+    const shape = rim ? this.rimKey(l, hTex, offEdges) : 'flat'
+    const pos = this.sharedAttr(`sp|${shape}|${wq},${hq},${k}`, 3, () => {
+      const pos = new Float32Array(n * 3)
+      pos.set([-qw, qh, 0, qw, qh, 0, -qw, -qh, 0, qw, -qh, 0])
+      if (rim) {
+        for (let i = 0; i < nRim; i++) {
+          pos[(4 + i) * 3] = -hw + rim.pos[i * 3] * k
+          pos[(4 + i) * 3 + 1] = hh + rim.pos[i * 3 + 1] * k
+          pos[(4 + i) * 3 + 2] = rim.pos[i * 3 + 2] * k
+        }
       }
-      uv.set(rim.uv, 8)
-      for (const i of rim.index) index.push(4 + i)
-    }
-    for (let j = 0; j < n; j++) {
-      const f = j < 4 ? BLOCK_SHADE.front : rim!.shade[j - 4]
-      col[j * 3] = c.r * f
-      col[j * 3 + 1] = c.g * f
-      col[j * 3 + 2] = c.b * f
-      cells[j * 2] = x
-      cells[j * 2 + 1] = y
-    }
+      return pos
+    })
+    const uv = this.sharedAttr(`su|${shape}|${l.uv.u0},${l.uv.v0},${l.uv.u1},${v1}`, 2, () => {
+      const uv = new Float32Array(n * 2)
+      uv.set([l.uv.u0, l.uv.v0, l.uv.u1, l.uv.v0, l.uv.u0, v1, l.uv.u1, v1])
+      if (rim) uv.set(rim.uv, 8)
+      return uv
+    })
+    const col = this.sharedAttr(`sc|${shape}|${c.r},${c.g},${c.b}`, 3, () => {
+      const col = new Float32Array(n * 3)
+      for (let j = 0; j < n; j++) {
+        const f = j < 4 ? BLOCK_SHADE.front : rim!.shade[j - 4]
+        col[j * 3] = c.r * f
+        col[j * 3 + 1] = c.g * f
+        col[j * 3 + 2] = c.b * f
+      }
+      return col
+    })
+    const index = this.sharedIndex(`si|${shape}`, () => {
+      const index = [0, 2, 1, 2, 3, 1]
+      if (rim) for (const i of rim.index) index.push(4 + i)
+      return index
+    })
     const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
-    geo.setAttribute('cell', new THREE.BufferAttribute(cells, 2))
+    geo.setAttribute('position', pos)
+    geo.setAttribute('uv', uv)
+    geo.setAttribute('color', col)
     geo.setIndex(index)
     return geo
+  }
+
+  /**
+   * Give a holder that stands on its own — the doll, an open door in its wall
+   * run, a sprite wearing a material of its own — the `cell` attribute its
+   * shade-map shaders read (`CELL_VERT`): every vertex of each of its layers
+   * is on cell (x, y). A baked holder needs none, its cell is under its
+   * anchor, and the crowd's buffers carry none. The layers are the meshes with
+   * uvs; the inks and the shared shadow disc have no cell to read.
+   */
+  private giveCells(h: THREE.Object3D, x: number, y: number): void {
+    for (const c of h.children) {
+      const m = c as THREE.Mesh
+      if (m.userData.shared || !m.geometry || !m.geometry.getAttribute('uv')) continue
+      const n = m.geometry.getAttribute('position').count
+      const cells = new Float32Array(n * 2)
+      for (let j = 0; j < n; j++) {
+        cells[j * 2] = x
+        cells[j * 2 + 1] = y
+      }
+      m.geometry.setAttribute('cell', new THREE.BufferAttribute(cells, 2))
+    }
+  }
+
+  /** The shared vertex array under `key` (`spriteAttrs`), built by `make` the first time it is asked for. */
+  private sharedAttr(key: string, itemSize: number, make: () => Float32Array): THREE.BufferAttribute {
+    let a = this.spriteAttrs.get(key)
+    if (!a) this.spriteAttrs.set(key, (a = new THREE.BufferAttribute(make(), itemSize)))
+    return a
+  }
+
+  /** The shared index under `key`: 16-bit while every index fits, as `setIndex` picks for a number array. */
+  private sharedIndex(key: string, make: () => number[]): THREE.BufferAttribute {
+    let a = this.spriteAttrs.get(key)
+    if (!a) {
+      const index = make()
+      let wide = false
+      for (let i = 0; i < index.length; i++) if (index[i] >= 65535) { wide = true; break }
+      this.spriteAttrs.set(key, (a = new THREE.BufferAttribute(wide ? new Uint32Array(index) : new Uint16Array(index), 1)))
+    }
+    return a
   }
 
   /**
@@ -1919,17 +2136,21 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
   private hullGeometry(l: SpriteLayer, hTex: number, wq: number, hq: number, k: number, grow = 1, down = grow - 1): THREE.BufferGeometry | null {
     const t = this.hullTemplate(l, hTex, grow, down)
     if (!t) return null
-    const n = t.pos.length / 3
-    const pos = new Float32Array(n * 3)
-    const hw = wq / 2, hh = hq / 2
-    for (let i = 0; i < n; i++) {
-      pos[i * 3] = -hw + t.pos[i * 3] * k
-      pos[i * 3 + 1] = hh + t.pos[i * 3 + 1] * k
-      pos[i * 3 + 2] = (t.pos[i * 3 + 2] - (grow > 1 ? SEL_BACK : 0)) * k
-    }
+    const shape = this.hullKey(l, hTex, grow, down)
+    const pos = this.sharedAttr(`hp|${shape}|${wq},${hq},${k}`, 3, () => {
+      const n = t.pos.length / 3
+      const pos = new Float32Array(n * 3)
+      const hw = wq / 2, hh = hq / 2
+      for (let i = 0; i < n; i++) {
+        pos[i * 3] = -hw + t.pos[i * 3] * k
+        pos[i * 3 + 1] = hh + t.pos[i * 3 + 1] * k
+        pos[i * 3 + 2] = (t.pos[i * 3 + 2] - (grow > 1 ? SEL_BACK : 0)) * k
+      }
+      return pos
+    })
     const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-    geo.setIndex(t.index)
+    geo.setAttribute('position', pos)
+    geo.setIndex(this.sharedIndex(`hi|${shape}`, () => t.index))
     return geo
   }
 
@@ -1938,19 +2159,33 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const t = this.ringTemplate(l, hTex, offEdges)
     if (!t) return null
     const n = t.pos.length / 3
-    const pos = new Float32Array(n * 3)
-    const hw = wq / 2, hh = hq / 2
-    for (let i = 0; i < n; i++) {
-      pos[i * 3] = -hw + t.pos[i * 3] * k
-      pos[i * 3 + 1] = hh + t.pos[i * 3 + 1] * k
-      pos[i * 3 + 2] = 0
-    }
+    const shape = this.rimKey(l, hTex, offEdges)
+    const pos = this.sharedAttr(`rp|${shape}|${wq},${hq},${k}`, 3, () => {
+      const pos = new Float32Array(n * 3)
+      const hw = wq / 2, hh = hq / 2
+      for (let i = 0; i < n; i++) {
+        pos[i * 3] = -hw + t.pos[i * 3] * k
+        pos[i * 3 + 1] = hh + t.pos[i * 3 + 1] * k
+        pos[i * 3 + 2] = 0
+      }
+      return pos
+    })
     const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geo.setAttribute('position', pos)
     // the ghost shader reads its colour from the vertices: the ink is black
-    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3))
-    geo.setIndex(t.index)
+    geo.setAttribute('color', this.sharedAttr(`rc|${n}`, 3, () => new Float32Array(n * 3)))
+    geo.setIndex(this.sharedIndex(`ri|${shape}`, () => t.index))
     return geo
+  }
+
+  /** What a rim and a ring are built from: the tile's rect in its atlas, the clip height, and whether the edge faces are left out. */
+  private rimKey(l: SpriteLayer, hTex: number, offEdges: boolean): string {
+    return `${l.r.atlas}:${l.r.sx},${l.r.sy},${l.r.w},${hTex}${offEdges ? ':off' : ''}`
+  }
+
+  /** What a hull is built from: the rim's inputs, and how far out and down it grows. */
+  private hullKey(l: SpriteLayer, hTex: number, grow: number, down: number): string {
+    return `${l.r.atlas}:${l.r.sx},${l.r.sy},${l.r.w},${hTex},${grow},${down}`
   }
 
   /**
@@ -1962,7 +2197,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const mask = this.atlasMask(l.a)
     if (!mask) return null
     const { sx, sy, w } = l.r
-    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex}${offEdges ? ':off' : ''}`
+    const key = this.rimKey(l, hTex, offEdges)
     let t = this.rings.get(key)
     if (t !== undefined) return t
     const aw = l.a.width
@@ -2001,7 +2236,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const mask = this.atlasMask(l.a)
     if (!mask) return null
     const { sx, sy, w } = l.r
-    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex},${grow},${down}`
+    const key = this.hullKey(l, hTex, grow, down)
     let t = this.hulls.get(key)
     if (t !== undefined) return t
     const aw = l.a.width
@@ -2041,7 +2276,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const mask = this.atlasMask(l.a)
     if (!mask) return null
     const { sx, sy, w } = l.r
-    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex}${offEdges ? ':off' : ''}`
+    const key = this.rimKey(l, hTex, offEdges)
     let t = this.rims.get(key)
     if (t !== undefined) return t
     const aw = l.a.width, ah = l.a.height
@@ -2245,6 +2480,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     /** A holder into the crowd where it can be baked; a holder of its own (its own material) stays in the group. */
     const stand = (h: THREE.Object3D, bake: boolean) => {
       if (bake && this.billboardCrowd.mergeable(h)) this.billboardCrowd.add(h, b.x, b.y)
+      else this.giveCells(h, b.x, b.y)
     }
     if (b.kind === 'cloud') {
       const t = tileOf(b.tile)
@@ -2418,6 +2654,10 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const scene = this.scene
     const cam = this.camera
     if (!r || !scene || !cam) return
+    // the attack lift runs on the clock, not on what shows it: it is over when its time is, whether the hands
+    // are drawn or not (no viewmodel, empty hands), so `animating` cannot stick and keep the host rendering
+    this.lift = Number.isNaN(this.vmLift) ? NaN : this.liftEnvelope(nowSeconds() - this.vmLift)
+    if (Number.isNaN(this.lift)) this.vmLift = NaN
     if (scene.revision !== this.builtRevision) {
       this.builtRevision = scene.revision
       const bg = scene.level.sky === 'open' ? 0x0b1220 : scene.level.sky === 'dark' ? 0x120818 : 0x000000
@@ -2427,9 +2667,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       // billboards, which is cheap, and leave the level's meshes alone
       const t = scene.level.tint
       const tintKey = `${t.r},${t.g},${t.b}`
-      // a step onto or off a staircase changes which features stand and which lie flat (`occupiedFeatures`),
-      // which is part of the geometry; it is as rare as a layout change, and the rest of a monster's walk still
-      // leaves the level's meshes alone
+      // a step onto or off a staircase, the player's or a monster's, changes which features stand and which
+      // lie flat (`occupiedFeatures`), which is part of the geometry; it is as rare as a layout change, and the
+      // rest of a walk still leaves the level's meshes alone
       const occKey = [...this.occupiedFeatures(scene)].sort().join('|')
       if (scene.layoutRevision !== this.builtLayout || tintKey !== this.builtTint || occKey !== this.builtOccupied) {
         this.builtLayout = scene.layoutRevision
@@ -2648,8 +2888,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       this.buildHand(this.vmHands.offhand, vm.offhand)
     }
     const asp = this.vmCam.aspect
-    const lift = this.liftEnvelope(nowSeconds() - this.vmLift)
-    if (Number.isNaN(lift)) this.vmLift = NaN
+    const lift = this.lift
     // `push` slides the hand from its rest toward the centre of the view, by that fraction of the distance
     const pose = (g: THREE.Group, p: HandPose, push = 0) => {
       const len = Math.hypot(p.x * asp, p.y) || 1

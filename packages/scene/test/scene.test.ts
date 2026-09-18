@@ -122,12 +122,18 @@ describe('layout revision (rendering-3d.md Part IV)', () => {
       expect(sceneLayoutEquals(a, b)).toBe(false)
     }
   })
-  it('the player moving, the bounds growing or the lid changing is a new layout', () => {
+  it('the player moving is a new light, not a new layout; leaving the level is', () => {
     const a = base()
     let b = base()
     b.player = { x: 3, y: 1 }
-    expect(sceneLayoutEquals(a, b)).toBe(false)
+    expect(sceneLayoutEquals(a, b)).toBe(true)
     b = base()
+    b.playerOnLevel = !a.playerOnLevel
+    expect(sceneLayoutEquals(a, b)).toBe(false)
+  })
+  it('the bounds growing or the lid changing is a new layout', () => {
+    const a = base()
+    let b = base()
     b.bounds.right = 5
     expect(sceneLayoutEquals(a, b)).toBe(false)
     b = base()

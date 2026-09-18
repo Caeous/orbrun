@@ -412,7 +412,9 @@ export function buildScene(state: GameState, gd: Gamedata, opts: BuildOptions = 
     const pb = prev.bounds, nb = scene.bounds
     if (pb.left !== nb.left || pb.top !== nb.top || pb.right !== nb.right || pb.bottom !== nb.bottom) layoutChanged = true
     if (prev.level.ceilingTile !== scene.level.ceilingTile || prev.level.sky !== scene.level.sky) layoutChanged = true
-    if (prev.playerOnLevel !== scene.playerOnLevel || prev.player.x !== scene.player.x || prev.player.y !== scene.player.y) layoutChanged = true
+    // a step is not a layout change: the light follows the player through the shade map, the lowered walls
+    // through the renderer's own cut key, and the feature underfoot through its occupied-feature key
+    if (prev.playerOnLevel !== scene.playerOnLevel) layoutChanged = true
     if (prev.cells.size !== scene.cells.size) layoutChanged = true
     scene.layoutRevision = layoutChanged ? scene.revision : prev.layoutRevision
   } else scene.layoutRevision = prev && sceneLayoutEquals(prev, scene) ? prev.layoutRevision : scene.revision

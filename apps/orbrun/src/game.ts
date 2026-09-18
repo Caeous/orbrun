@@ -169,7 +169,12 @@ export class GameScreen {
   private drag: { id: number; x: number; y: number; x0: number; y0: number; moved: boolean; button: number } | null = null
   /** Lets go of a drag with no click behind it: the window lost focus, or the button was released out of sight. */
   private cancelDrag: () => void = () => {}
-  private onWindowBlur: () => void = () => {}
+  /** One per screen, however many canvases it goes through: a renderer swap must not leave the old canvas's listener behind. */
+  private onWindowBlur?: () => void
+  /** Wheel scrolled since the last camera step, in css pixels; a trackpad arrives in crumbs. */
+  private wheel = 0
+  /** Shift was down for the wheel crumbs counted so far: distance and height do not pool each other's scroll. */
+  private wheelShift = false
   /** where the pointer is aiming, in canvas css pixels: the hovering mouse, or the finger on a touch screen */
   private hover: { x: number; y: number } | null = null
   /** dungeon_renderer.js tooltip_timeout: the cell tooltip waits half a second under a still pointer */
@@ -321,9 +326,15 @@ export class GameScreen {
     window.removeEventListener('keydown', this.onKeyDown, true)
     window.removeEventListener('resize', this.onResize)
     document.removeEventListener('pointerdown', this.onDocPointer, true)
-    window.removeEventListener('blur', this.onWindowBlur)
+    if (this.onWindowBlur) window.removeEventListener('blur', this.onWindowBlur)
     document.removeEventListener('contextmenu', this.onDocContextMenu, true)
     for (const u of this.unsub) u()
+    // a key sequence waiting on the server's prompt keeps its own session listener and timer past
+    // these subscriptions: ended here, so a screen that is gone sends no follow-up key into the game
+    this.runner.abortSequence()
+    clearTimeout(this.tooltipTimer)
+    this.hud.destroy()
+    this.overlays.destroy()
     this.grid.destroy()
     this.renderer.destroy()
     this.park.clear()
@@ -775,7 +786,8 @@ export class GameScreen {
    */
   private dropGhost(g: Ghost) {
     g.canvas.remove()
-    if (g.renderer instanceof Render3d && this.mapBorrowed2d && !this.is3d) {
+    // a morph still running when the screen was destroyed: the park was cleared with it, so nothing may be kept
+    if (!this.destroyed && g.renderer instanceof Render3d && this.mapBorrowed2d && !this.is3d) {
       this.park.keep({ canvas: g.canvas, renderer: g.renderer, tiles: this.session.gamedata, optionsKey: JSON.stringify(this.render3dOptions(this.hooks.settings())) })
       return
     }
@@ -1426,7 +1438,8 @@ export class GameScreen {
     }
     // a drag does not survive leaving the page: the button released out there
     // sends no pointerup, and coming back should not still be a press
-    this.onWindowBlur = () => this.cancelDrag()
+    // (the one listener reads `cancelDrag` when it fires, so it always lets go of the canvas in play; adding it again is a no-op)
+    this.onWindowBlur ??= () => this.cancelDrag()
     window.addEventListener('blur', this.onWindowBlur)
     this.cancelDrag = () => {
       const d = this.drag

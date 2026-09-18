@@ -13,6 +13,9 @@ dist-types/
 __pycache__/
 .wrangler/
 
+# Renderer frames captured by tools/build/render-compare.mjs (11 MB a run; capture, do not commit)
+tools/build/render-baseline/
+
 # Local-only docs
 docs/
 AGENTS.md

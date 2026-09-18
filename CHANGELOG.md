@@ -2,6 +2,11 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.1.4 — 2026-09-18
+
+- Exploring no longer hitches: a step relights the level instead of rebuilding it, a newly seen cell rebuilds only what changed, and a crowd of sprites uploads only the sprites that moved. Nothing in the picture changed.
+- A screen you leave stops everything it started: its timers, its fetches and a tile download the server left hanging.
+
 ## 0.1.3 — 2026-09-16
 
 - Crowded levels no longer stutter: sprite updates cost 93–98 % less CPU and draw 46 % fewer triangles.

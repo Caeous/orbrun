@@ -51,6 +51,9 @@ export class RemoteConnection implements Connection {
   private decoder = typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8') : null
   private opts: RemoteConnectionOptions
   open = false
+  /** The socket has closed for good: this class never reconnects, so nothing sent from now on can go out. */
+  closed = false
+  /** What was sent before the socket opened, to go out in order once it has. Only while connecting: a closed socket keeps nothing. */
   private queue: string[] = []
 
   constructor(opts: RemoteConnectionOptions) {
@@ -82,6 +85,9 @@ export class RemoteConnection implements Connection {
     }
     ws.onclose = (ev) => {
       this.open = false
+      this.closed = true
+      // whatever was waiting for the socket to open never will now
+      this.queue = []
       for (const h of this.closeHandlers) h({ code: ev.code, reason: ev.reason, clean: ev.wasClean })
     }
     ws.onerror = (ev) => {
@@ -122,6 +128,7 @@ export class RemoteConnection implements Connection {
   send(msg: ClientMessage): void {
     const s = JSON.stringify(msg)
     if (this.ws && this.open && this.ws.readyState === 1) this.ws.send(s)
+    else if (this.closed) this.opts.onDiagnostic?.('message dropped: the connection is closed', msg.msg)
     else this.queue.push(s)
   }
 

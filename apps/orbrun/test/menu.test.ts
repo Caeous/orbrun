@@ -417,7 +417,7 @@ describe('the front end: the home screen', () => {
     // drawn before the file lands, and redrawn when it does
     expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk'])
     await vi.waitFor(() => expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk']))
-    expect(fetched).toHaveBeenCalledWith('/morgue-proxy/crawl.dcss.io/crawl/morgue/caeo/caeo.where')
+    expect(fetched).toHaveBeenCalledWith('/morgue-proxy/crawl.dcss.io/crawl/morgue/caeo/caeo.where', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(sub(screen, 'Continue DCSS trunk')).toBe('caeo the Covered, Minotaur Fighter XL3')
     expect(sub(screen, 'Play DCSS 0.34')).toBeNull()
     press(screen, 'ArrowDown')
@@ -427,6 +427,36 @@ describe('the front end: the home screen', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(where.replace('status=saved', 'status=dead'), { status: 200 })))
     screen.refresh()
     await vi.waitFor(() => expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk']))
+  })
+
+  it('lets a `.where` that lands after destroy go: no redraw, and no session followed on behalf of a screen that is gone', async () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
+    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
+    const where = 'v=0.35-a0:vlong=0.35-a0-1015-gbe08bfc2e8:tiles=1:name=caeo:race=Minotaur:cls=Fighter:char=MiFi:xl=3:title=Covered:place=D::2:br=D:lvl=2:hp=30:mhp=33:turn=1084:status=saved\n'
+    let land: (() => void) | null = null
+    const fetched = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+      land = () => resolve(new Response(where, { status: 200 }))
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('gone', 'AbortError')))
+    }))
+    vi.stubGlobal('fetch', fetched)
+    const s = fakeSession(cdi, 'caeo', { username: 'caeo', complete: true, games: [{ id: 'dcss-git', label: 'DCSS trunk' }] })
+    const sessions = vi.fn(() => s)
+    const { screen } = make(sessions)
+    await vi.waitFor(() => expect(fetched).toHaveBeenCalled())
+    const signal = (fetched.mock.calls[0] as unknown as [string, RequestInit])[1].signal!
+    expect(labels(screen)[0]).toBe('Play DCSS trunk')
+    screen.destroy()
+    expect(screen.root.isConnected).toBe(false)
+    // the fetch in flight is called off with the screen
+    expect(signal.aborted).toBe(true)
+    const asked = sessions.mock.calls.length
+    const left = screen.root.innerHTML
+    // and one that resolves regardless (the bytes were already in) changes nothing: the row would have read Continue
+    land!()
+    await new Promise((r) => setTimeout(r, 0))
+    screen.refresh()
+    expect(sessions.mock.calls.length).toBe(asked)
+    expect(screen.root.innerHTML).toBe(left)
   })
 
   it('never speaks a save this device only remembers: the same account plays from any browser', () => {
