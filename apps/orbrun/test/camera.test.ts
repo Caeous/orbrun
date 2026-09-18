@@ -208,13 +208,14 @@ describe('camera facing while travelling', () => {
 })
 
 describe('camera view between sessions', () => {
-  it('restores yaw and pitch exactly, with facing on the nearest heading', () => {
+  it('restores the yaw exactly, with facing on the nearest heading; the pitch starts at rest', () => {
     const a = cam()
     a.lookBy(1.9, 0.4)
+    expect(a.view).toEqual({ yaw: expect.closeTo(1.9) })
     const b = cam()
     b.restore(a.view)
     expect(b.camera.yaw).toBeCloseTo(1.9)
-    expect(b.camera.pitch).toBeCloseTo(REST_PITCH + 0.4)
+    expect(b.camera.pitch).toBeCloseTo(REST_PITCH)
     expect(b.facing).toBe(a.facing)
     // nothing is easing: the camera stays put
     expect(b.update(0.1)).toBe(false)
@@ -226,12 +227,10 @@ describe('camera view between sessions', () => {
     expect(b.camera.yaw).toBeCloseTo(1.9)
   })
 
-  it('keeps a restored view inside the pitch limit and the yaw range', () => {
+  it('keeps a restored view inside the yaw range', () => {
     const c = cam()
-    c.restore({ yaw: -1, pitch: 9 })
+    c.restore({ yaw: -1 })
     expect(c.camera.yaw).toBeCloseTo(Math.PI * 2 - 1)
-    expect(c.camera.pitch).toBeLessThan(Math.PI / 2)
-    expect(c.camera.pitch).toBeGreaterThan(0)
   })
 })
 
@@ -422,7 +421,7 @@ describe('the minimap heading', () => {
     // a restored view starts the map on its heading with no easing: the
     // view's own yaw where the ground turns with it, its quarter otherwise
     const b = new CameraController()
-    b.restore({ yaw: 1.9, pitch: 0 })
+    b.restore({ yaw: 1.9 })
     expect(b.mapYaw).toBeCloseTo(MAP_TURNS_DIAGONAL ? 1.9 : Math.PI / 2)
     expect(b.update(0.1)).toBe(false)
   })
@@ -808,7 +807,7 @@ describe('frame-independent turning', () => {
 
   it('takes the short turn across north and retargets from the displayed yaw', () => {
     const c = new CameraController()
-    c.restore({ yaw: 350 * Math.PI / 180, pitch: REST_PITCH })
+    c.restore({ yaw: 350 * Math.PI / 180 })
     c.setFacing(0)
     c.update(0.02)
     expect(c.camera.yaw).toBeGreaterThan(350 * Math.PI / 180)

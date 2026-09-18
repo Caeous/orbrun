@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach } from 'vitest'
-import { CHAMFER, defaultSettings, getSettings, leftRightTurns, saveSettings, VIEW_OPTIONS, WALL_INSET, type DirSource } from '../src/servers'
+import { CHAMFER, defaultSettings, getSavedView, getSettings, leftRightTurns, saveSettings, saveView, VIEW_OPTIONS, WALL_INSET, type DirSource } from '../src/servers'
 import { REST_PITCH } from '@orbrun/scene'
 import { adjustSetting, ALL_SETTING_ROWS, settingGroups, CAM_ANGLES, EYE_HEIGHTS, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowOff, SETTING_ROWS, settingValue } from '../src/settings-rows'
 
@@ -38,6 +38,15 @@ describe('what is written down', () => {
     expect(s.hints).toBe('contextual')
     saveSettings(s)
     expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({ hints: 'contextual' })
+  })
+
+  it('keeps only the yaw of the view: a look up or down does not carry over', () => {
+    saveView({ yaw: 1.5, pitch: 0.4 } as never)
+    expect(JSON.parse(store.get('orbrun.view')!)).toEqual({ yaw: 1.5 })
+    expect(getSavedView()).toEqual({ yaw: 1.5 })
+    // an older session that wrote a pitch too: the yaw is still read, the pitch ignored
+    store.set('orbrun.view', JSON.stringify({ yaw: 2, pitch: 0.3 }))
+    expect(getSavedView()).toEqual({ yaw: 2 })
   })
 
   it('keeps a view the build has taken away rather than erasing it on the next save', () => {

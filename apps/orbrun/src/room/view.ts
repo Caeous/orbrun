@@ -167,7 +167,7 @@ export class RoomView {
     // is the shot the room must open on, or the fade would cut from one heading to another
     clearTimeout(this.posterTimer)
     this.cam.camera = { ...this.room.camera }
-    if (!this.poster.classList.contains('up')) this.cam.restore({ yaw: Math.random() * Math.PI * 2, pitch: this.room.camera.pitch })
+    if (!this.poster.classList.contains('up')) this.cam.restore({ yaw: Math.random() * Math.PI * 2 })
     // the eye opens at the angle the player set, as the game's would
     this.cam.setRestPitch(radians(getSettings().restPitch))
     this.cam.camera.pitch = clampPitch(this.cam.camera.pitch)
@@ -245,7 +245,7 @@ export class RoomView {
     this.driftEnv = Math.min(1, this.driftEnv + dt / DRIFT_RAMP)
     const env = this.driftEnv * this.driftEnv * (3 - 2 * this.driftEnv)
     const c = this.cam.camera
-    this.cam.restore({ yaw: c.yaw + env * DRIFT_RATE * dt, pitch: c.pitch })
+    this.cam.restore({ yaw: c.yaw + env * DRIFT_RATE * dt })
     return true
   }
 

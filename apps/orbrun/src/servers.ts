@@ -500,22 +500,25 @@ export function saveSettings(s: Settings) {
   save(SETTINGS_KEY, out)
 }
 
-/** Where the camera pointed when the game was last left: yaw and pitch in radians. */
+/**
+ * Where the camera pointed when the game was last left: the yaw in radians.
+ * The pitch is not kept: every session starts at the rest angle (the Camera
+ * angle setting), so a look up or down does not carry over.
+ */
 export interface SavedView {
   yaw: number
-  pitch: number
 }
 
 const VIEW_KEY = 'orbrun.view'
 
 export function getSavedView(): SavedView | null {
   const v = load<Partial<SavedView> | null>(VIEW_KEY, null)
-  if (!v || typeof v.yaw !== 'number' || typeof v.pitch !== 'number' || !isFinite(v.yaw) || !isFinite(v.pitch)) return null
-  return { yaw: v.yaw, pitch: v.pitch }
+  if (!v || typeof v.yaw !== 'number' || !isFinite(v.yaw)) return null
+  return { yaw: v.yaw }
 }
 
 export function saveView(v: SavedView) {
-  save(VIEW_KEY, v)
+  save(VIEW_KEY, { yaw: v.yaw })
 }
 
 // ------------------------------------------------------------------- servers

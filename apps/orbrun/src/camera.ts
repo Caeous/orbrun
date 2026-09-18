@@ -26,10 +26,9 @@ import {
  * unbounded, pitch free short of the poles, nothing snaps back), and the eye's
  * glide after a step along the path the feet took (`walkTo`); a jump snaps.
  */
-/** Yaw and pitch in radians; enough to put the camera back where it pointed. */
+/** The yaw in radians; enough to put the camera back facing where it faced (the pitch is not kept). */
 export interface CameraView {
   yaw: number
-  pitch: number
 }
 
 export class CameraController {
@@ -184,19 +183,19 @@ export class CameraController {
     this.planWalk(this.pathLength(), WALK_SECONDS, moving ? this.walkSpeed : undefined)
   }
 
-  /** The view to keep between sessions: where the camera points right now. */
+  /** The view to keep between sessions: the way the camera faces right now. */
   get view(): CameraView {
-    return { yaw: this.camera.yaw, pitch: this.camera.pitch }
+    return { yaw: this.camera.yaw }
   }
 
   /**
-   * Point the camera where a previous session left it, at once and without
-   * easing. Facing follows the yaw so turns and auto-facing start from here.
+   * Face the camera the way a previous session left it, at once and without
+   * easing; the pitch stays at its rest angle. Facing follows the yaw so
+   * turns and auto-facing start from here.
    */
   restore(view: CameraView) {
     const c = this.camera
     c.yaw = normalizeYaw(view.yaw)
-    c.pitch = this.clampPitch(view.pitch)
     c.facing = yawToDir(c.yaw)
     this.goalYaw = c.yaw
     this._mapYaw = this.mapGoal
@@ -205,9 +204,7 @@ export class CameraController {
 
   /**
    * The player chose another rest angle: the view tilts with it, so the
-   * change shows at once in the settings menu. Set this before restoring a
-   * saved view (the saved pitch is already where the player left it, angle
-   * and all).
+   * change shows at once in the settings menu.
    */
   setRestPitch(p: number) {
     const d = p - this.restPitch

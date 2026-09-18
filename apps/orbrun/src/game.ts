@@ -218,9 +218,8 @@ export class GameScreen {
     this.grid.onfit = () => this.relayout(true)
     this.renderer = this.makeRenderer()
     this.cam.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-    // the rest angle first: a saved view is already where the player left it
     this.cam.setRestPitch(radians(st.restPitch))
-    // point the camera where the last session left it
+    // face the camera the way the last session left it (the pitch starts at rest)
     const view = getSavedView()
     if (view) this.cam.restore(view)
     window.addEventListener('pagehide', this.saveView)
@@ -393,7 +392,7 @@ export class GameScreen {
     return left
   }
 
-  /** Remember where the camera points so the next session starts facing the same way. */
+  /** Remember the way the camera faces so the next session starts facing the same way (yaw only). */
   private saveView = () => saveView(this.cam.view)
 
   /**
@@ -540,7 +539,7 @@ export class GameScreen {
     const dt = Math.min(0.1, (now - this.lastFrame) / 1000)
     this.lastFrame = now
     if (this.session.flushScene()) this.needsRender = true
-    const beforeLook = this.cam.view
+    const beforeLook = { yaw: this.cam.camera.yaw, pitch: this.cam.camera.pitch }
     if (this.cam.update(dt)) this.needsRender = true
     if (!this.awake(now)) {
       // nothing to do and nothing moving: no frames until something happens (`wake`) or the safety tick
@@ -558,7 +557,7 @@ export class GameScreen {
       this.needsRender = true
     }
     if (this.padLooking && this.lastInput === 'pad' && this.ctx.mode === 'command' && !this.overlays.hasClientOverlay && !this.session.watching) {
-      const after = this.cam.view
+      const after = this.cam.camera
       const yaw = Math.atan2(Math.sin(after.yaw - beforeLook.yaw), Math.cos(after.yaw - beforeLook.yaw))
       this.padHints.lookedBy(Math.hypot(yaw, after.pitch - beforeLook.pitch))
     }
