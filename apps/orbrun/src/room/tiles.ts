@@ -23,17 +23,24 @@ export interface RoomAtlasJson {
 const ROOM_ATLAS_URL = '/room/atlas.json'
 const ROOM_IMAGE_URL = '/room/atlas.png'
 const ATLAS = 'room'
+/** the game's atlases whose tiles stand in the world: features, items and monsters; not floor and wall */
+const SPRITE_ATLASES = new Set(['feat', 'main', 'player'])
 
 export class RoomTiles implements TileSource, TileNames {
   private rects = new Map<TileId, TileRect>()
   private counts = new Map<TileId, number>()
   private ids = new Map<string, TileId>()
+  /** the rects of the tiles crawl keeps in its sprite atlases (`spriteRects`) */
+  private sprites: { sx: number; sy: number; w: number; h: number }[] = []
 
   constructor(
     readonly json: RoomAtlasJson,
     private image: TexImageSource | undefined,
   ) {
-    for (const [id, t] of Object.entries(json.tiles)) this.rects.set(Number(id), { atlas: ATLAS, sx: t.sx, sy: t.sy, w: t.w, h: t.h, ox: t.ox, oy: t.oy, cell: json.cell })
+    for (const [id, t] of Object.entries(json.tiles)) {
+      this.rects.set(Number(id), { atlas: ATLAS, sx: t.sx, sy: t.sy, w: t.w, h: t.h, ox: t.ox, oy: t.oy, cell: json.cell })
+      if (SPRITE_ATLASES.has(t.from)) this.sprites.push({ sx: t.sx, sy: t.sy, w: t.w, h: t.h })
+    }
     for (const [name, n] of Object.entries(json.names)) {
       this.ids.set(name, n.id)
       this.counts.set(n.id, n.count)
@@ -48,6 +55,15 @@ export class RoomTiles implements TileSource, TileNames {
   }
   atlasNames(): string[] {
     return [ATLAS]
+  }
+  /**
+   * The one atlas here packs every kind together, where the game keeps floors
+   * and walls in atlases of their own that the renderer never peels the ink
+   * off. So the sprite art is the tiles that came from the atlases the game
+   * does peel, and a floor's dark edge stays as it stays in the game.
+   */
+  spriteRects(name: string): ReadonlyArray<{ sx: number; sy: number; w: number; h: number }> | undefined {
+    return name === ATLAS ? this.sprites : undefined
   }
   id(name: string): number | undefined {
     return this.ids.get(name)

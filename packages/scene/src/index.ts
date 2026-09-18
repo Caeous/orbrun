@@ -438,6 +438,15 @@ export interface TileSource {
   tile(id: TileId, layer?: string): TileRect | undefined
   atlas(name: string): TexImageSource | undefined
   atlasNames(): string[]
+  /**
+   * Where the sprite art is in an atlas: the tiles of things that stand
+   * (monsters, items, features), as opposed to floors and walls. Crawl's
+   * atlases each hold one kind, so a source that serves them says nothing
+   * and the whole image is sprite art or none of it. A source that packs
+   * kinds together (the front room) says which rects are, so a renderer
+   * treating sprite texels (peeling their outline) leaves the floors alone.
+   */
+  spriteRects?(atlas: string): ReadonlyArray<{ sx: number; sy: number; w: number; h: number }> | undefined
 }
 
 // ---------------------------------------------------------------------------
