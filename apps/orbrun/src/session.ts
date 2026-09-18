@@ -82,7 +82,12 @@ export class Session {
     this.conn.onMessage((m) => this.handle(m))
     this.conn.onOpen(() => {
       const token = username ? getToken(server.id, username) : null
-      if (token) this.send(cm.tokenLogin(token))
+      if (token) {
+        this.send(cm.tokenLogin(token))
+        // the server forgets a token as it is used (ws_handler.py `token_login`), so it is forgotten here too, as
+        // client.js `start_login` does; `login_cookie` brings the next one
+        setToken(server.id, username!, null)
+      }
       this.emit({ type: 'open' })
     })
     this.conn.onClose((r) => {
@@ -130,11 +135,17 @@ export class Session {
     if (m.msg === 'login_cookie') {
       // filed under the name the server answered `login_success` with (the account's, as the server spells it)
       const who = this.state.lobby.username || this.username
-      if (who) setToken(this.server.id, who, m.cookie as string)
+      if (who) setToken(this.server.id, who, m.cookie as string, m.expires as number)
     }
     if (m.msg === 'login_fail' && this.username) {
       // a stale token: drop it
       setToken(this.server.id, this.username, null)
+    }
+    if (m.msg === 'logout') {
+      // the server ended the login (an account disabled mid-session, ws_handler.py `send_message("logout")`):
+      // its token is no good now, as client.js `handle_logout` treats its cookie
+      const who = this.state.lobby.username || this.username
+      if (who) setToken(this.server.id, who, null)
     }
     if (m.msg === 'game_client') {
       reduce(this.state, m)

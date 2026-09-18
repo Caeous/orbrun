@@ -59,6 +59,16 @@ export function addServer(url: string): ServerInfo {
  * is kept for each is the server's login token (never the password), as
  * the official client keeps its login cookie, so the token login goes out
  * on the next connection (session.ts).
+ *
+ * The token's life follows the official client's (client.js `start_login`,
+ * `set_login_cookie`): the server burns a token the moment it is used
+ * (ws_handler.py `token_login` calls `forget_login_cookie` first), so it is
+ * dropped here as it goes out and the fresh one `login_cookie` answers with
+ * takes its place. The server also forgets tokens older than its
+ * `login_token_lifetime` (7 days by default), which `login_cookie` reports
+ * in `expires`; a token past that is dropped here without being tried.
+ * Unlike the official client, which holds one server's token, this device
+ * holds one per account, so nothing is kept a moment longer than it works.
  */
 export interface Account {
   serverId: string
@@ -86,7 +96,7 @@ export function sameAccount(a: Account | null | undefined, b: Account | null | u
  */
 function migrateAccounts() {
   if (localStorageHas(ACCOUNTS_KEY)) return
-  const tokens = load<Record<string, string>>(TOKEN_KEY, {})
+  const tokens = readTokens()
   const last = load<LastPlayed | null>(LAST_KEY, null)
   const accounts: Account[] = []
   for (const [serverId, token] of Object.entries(tokens)) {
@@ -146,15 +156,48 @@ export function setChosenAccount(a: Account | null) {
   save(ACCOUNT_KEY, a ? { serverId: a.serverId, username: a.username } : null)
 }
 
-export function getToken(serverId: string, username: string): string | null {
-  return load<Record<string, string>>(TOKEN_KEY, {})[tokenKey(serverId, username)] ?? null
+/**
+ * A stored token: the cookie string and when the server will have forgotten
+ * it (ms since the epoch), or a bare string from a build that kept no expiry
+ * (2026-09-18), read as a token that has not expired.
+ */
+type StoredToken = string | { token: string; until?: number }
+
+function readTokens(): Record<string, StoredToken> {
+  const t = load<unknown>(TOKEN_KEY, {})
+  return t && typeof t === 'object' && !Array.isArray(t) ? (t as Record<string, StoredToken>) : {}
 }
 
-export function setToken(serverId: string, username: string, token: string | null) {
-  const t = load<Record<string, string>>(TOKEN_KEY, {})
-  if (token) t[tokenKey(serverId, username)] = token
-  else delete t[tokenKey(serverId, username)]
-  save(TOKEN_KEY, t)
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** The account's token, or null when there is none or the server will have forgotten it (it is dropped then). */
+export function getToken(serverId: string, username: string, now = Date.now()): string | null {
+  const all = readTokens()
+  const key = tokenKey(serverId, username)
+  const v = all[key]
+  if (typeof v === 'string') return v || null
+  if (!v || typeof v !== 'object' || typeof v.token !== 'string' || !v.token) return null
+  if (typeof v.until === 'number' && now >= v.until) {
+    delete all[key]
+    save(TOKEN_KEY, all)
+    return null
+  }
+  return v.token
+}
+
+/**
+ * File `token` under the account, or forget it (`null`). `expiresDays` is the
+ * `login_cookie` message's `expires`: how many days the server keeps the token
+ * (ws_handler.py `set_login_cookie` sends `login_token_lifetime`).
+ */
+export function setToken(serverId: string, username: string, token: string | null, expiresDays?: number, now = Date.now()) {
+  const all = readTokens()
+  const key = tokenKey(serverId, username)
+  if (token) {
+    const until = typeof expiresDays === 'number' && isFinite(expiresDays) && expiresDays > 0 ? now + expiresDays * DAY_MS : undefined
+    all[key] = until === undefined ? { token } : { token, until }
+  } else delete all[key]
+  save(TOKEN_KEY, all)
 }
 
 /**
