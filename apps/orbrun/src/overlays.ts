@@ -1921,7 +1921,9 @@ export class Overlays {
       const b = binding === 'B' ? undefined : binding
       // after the pad a choice chip wears nothing: the cursor marks it and A sends it
       const keyName = c.hotkey === '\t' ? 'Tab' : c.hotkey === '\r' ? 'Enter' : c.hotkey
-      const cap = pad ? (b ? glyph(b, padKind) : null) : h('kbd', null, keyName)
+      // a label that already spells its key ("(S)trength") needs no cap beside it: the key would read twice
+      const spelled = c.label.includes('(' + c.hotkey + ')')
+      const cap = pad ? (b ? glyph(b, padKind) : null) : spelled ? null : h('kbd', null, keyName)
       const title = pad ? (b ? glyphName(b, padKind) : c.label) : 'Press ' + keyName
       const chip = h('span', { class: 'chip' + (b ? ' ' + b : ''), title }, cap, h('span', { class: 'label' }, c.label))
       chip.addEventListener('click', c.send)

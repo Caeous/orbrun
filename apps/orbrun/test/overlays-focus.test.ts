@@ -525,10 +525,10 @@ describe('prompt card', () => {
     expect(host.querySelector('.prompt-card .text')).toBeNull()
     expect(host.querySelector('.prompt-card .lead')?.textContent).toBe('Increase')
     expect(host.querySelector('.prompt-card kbd')).toBeNull()
-    // the keyboard spoke last: the chips wear their letters as key caps, the case the game demands
+    // the keyboard spoke last: the labels already spell their letters ("(S)trength"), so no key cap repeats them
     frame('keyboard')
     expect(host.querySelector('.prompt-card.kbd')).not.toBeNull()
-    expect(Array.from(host.querySelectorAll('.prompt-card .chip kbd')).map((c) => c.textContent)).toEqual(['S', 'I', 'D'])
+    expect(host.querySelector('.prompt-card .chip kbd')).toBeNull()
     expect(Array.from(host.querySelectorAll('.prompt-card .chip .label')).map((c) => c.textContent)).toEqual(['(S)trength', '(I)ntelligence', '(D)exterity'])
     expect(host.querySelector('.prompt-card .chip svg')).toBeNull()
     // back on the pad, the chips are bare again
@@ -543,7 +543,8 @@ describe('prompt card', () => {
     frame('keyboard')
     expect(host.querySelector('.prompt-card .text')?.textContent).toBe('Really drop the (h)ammer or (s)word you are wielding?')
     expect(host.querySelector('.prompt-card .lead')).toBeNull()
-    expect(Array.from(host.querySelectorAll('.prompt-card .chip kbd')).map((c) => c.textContent)).toEqual(['h', 's'])
+    // "(h)ammer" and "(s)word" spell their keys: no caps
+    expect(host.querySelector('.prompt-card .chip kbd')).toBeNull()
   })
   it('the card goes away with the prompt', () => {
     const { st, frame, host } = setup()
