@@ -1,0 +1,25 @@
+{
+  "name": "@orbrun/gl",
+  "version": "0.1.0",
+  "description": "A small scene graph and WebGL2 backend for Orbrun's renderers",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Caeous/orbrun.git",
+    "directory": "packages/gl"
+  },
+  "homepage": "https://github.com/Caeous/orbrun/tree/main/packages/gl",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src"
+  ]
+}

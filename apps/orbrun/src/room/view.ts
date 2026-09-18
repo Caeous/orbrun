@@ -14,7 +14,7 @@ import type { Room3d } from './room-3d'
  * publishing the cell size the console-face menus are laid out on (`--cw`,
  * `--ch`, `--fs`, `--fit` on the host) and `onfit` when it changes.
  *
- * The renderer, three.js with it, is a lazy chunk: the menus draw and work
+ * The renderer (@orbrun/render-3d on @orbrun/gl) is a lazy chunk: the menus draw and work
  * before it lands, on the dark. Usually the live room is up within a moment
  * and fades in from the dark facing a random way at the resting pitch, so
  * each visit opens on a different wall; nothing is remembered between
@@ -263,13 +263,16 @@ export class RoomView {
     } else if (this.drift(dt)) {
       this.needsRender = true
     }
-    if (this.needsRender && this.room && !this.lost) {
+    const live = !!this.room && !this.lost
+    if (this.needsRender && live) {
       this.needsRender = false
-      this.room.render(this.cam.camera)
+      this.room!.render(this.cam.camera)
       this.el.classList.add('in')
     }
-    const turning = !this.reducedMotion && !!this.room && !this.lost && this.el.classList.contains('in')
-    if (this.cam.steering || this.needsRender || eased) this.raf = requestAnimationFrame(this.tick)
+    const turning = !this.reducedMotion && live && this.el.classList.contains('in')
+    // with no room to draw (none yet, none at all, or a context lost) a pending render waits without frames: the
+    // room's arrival and the context's return each invalidate, and that wakes the loop
+    if (this.cam.steering || (this.needsRender && live) || eased) this.raf = requestAnimationFrame(this.tick)
     // left alone, only the idle turn wants frames, and it wants few of them
     else if (turning) this.driftTimer = window.setTimeout(this.driftFrame, DRIFT_FRAME_MS)
   }

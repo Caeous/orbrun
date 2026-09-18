@@ -89,8 +89,9 @@ export interface NameIndex {
 }
 
 export interface GamedataFetch {
-  fetchText(url: string): Promise<string>
-  loadImage(url: string): Promise<TexImageSource>
+  /** `signal`, where given, is the load's: an aborted one has the fetch stop and reject. */
+  fetchText(url: string, signal?: AbortSignal): Promise<string>
+  loadImage(url: string, signal?: AbortSignal): Promise<TexImageSource>
 }
 
 export const ATLASES = ['floor', 'wall', 'feat', 'main', 'player', 'gui', 'icons'] as const
@@ -370,6 +371,17 @@ export class Gamedata implements TileSource {
     this.images.set(name, img)
   }
 
+  /**
+   * Let the atlases' pixels go. An `ImageBitmap` holds its decoded pixels
+   * until it is closed or collected; a gamedata nobody will draw with (a
+   * load a newer one superseded) gives them back at once instead of waiting
+   * on the collector. Not for a gamedata a renderer has been handed.
+   */
+  dispose() {
+    for (const img of this.images.values()) if (typeof (img as ImageBitmap).close === 'function') (img as ImageBitmap).close()
+    this.images.clear()
+  }
+
   setStatusIconSizes(fn: StatusIconSize | null) {
     this.iconSizes = fn
   }
@@ -402,6 +414,12 @@ export interface LoadGamedataOptions {
   skipImages?: boolean
   /** Non-fatal problems (an optional file missing, a constant differing). */
   onDiagnostic?: (text: string, detail?: unknown) => void
+  /**
+   * Aborting it ends the load: the fetches in flight are cut short, the
+   * atlases already decoded are closed, and the promise rejects with the
+   * signal's reason. For a load nobody will use the result of.
+   */
+  signal?: AbortSignal
 }
 
 /** The directory one version's gamedata is published under. */
@@ -425,18 +443,23 @@ export function gamedataUrls(base: string, version: string): string[] {
 
 /** Load enums, tileinfo modules and atlases for one server version. */
 export async function loadGamedata(opts: LoadGamedataOptions): Promise<Gamedata> {
-  const { base, version, io } = opts
+  const { base, version, io, signal } = opts
   const root = gamedataRoot(base, version)
   const files = SCRIPTS
   const total = files.length + 1 + (opts.skipImages ? 0 : ATLASES.length)
   let done = 0
+  const checkAborted = () => {
+    if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error('gamedata load aborted')
+  }
+  checkAborted()
   const texts = await Promise.all(
     files.map(async (f) => {
-      const t = await io.fetchText(`${root}/${f}`)
+      const t = await io.fetchText(`${root}/${f}`, signal)
       opts.onProgress?.(++done, total, f)
       return t
     }),
   )
+  checkAborted()
   const enums = evalGamedata(`${root}/${files[0]}`, texts[0], () => undefined) as Enums
   const modules = {} as Record<AtlasName, TileModule>
   let prev: Record<string, unknown> | undefined
@@ -470,7 +493,7 @@ export async function loadGamedata(opts: LoadGamedataOptions): Promise<Gamedata>
   const gd = new Gamedata(version, enums, modules, await fnv1a(fp))
   // status-icon-sizes.js is generated with the tiles; a server may predate it
   try {
-    const src = await io.fetchText(`${root}/status-icon-sizes.js`)
+    const src = await io.fetchText(`${root}/status-icon-sizes.js`, signal)
     const mod = evalGamedata(`${root}/status-icon-sizes.js`, src, () => modules.icons.exports) as
       | { status_icon_size?: StatusIconSize }
       | undefined
@@ -480,14 +503,23 @@ export async function loadGamedata(opts: LoadGamedataOptions): Promise<Gamedata>
     opts.onDiagnostic?.('status-icon-sizes.js not available; status icons shift by their own width', e)
   }
   opts.onProgress?.(++done, total, 'status-icon-sizes.js')
+  checkAborted()
   if (!opts.skipImages) {
-    await Promise.all(
+    // every atlas settles before the load does, so an atlas decoded after
+    // another failed (or the abort came) is closed here and not left to leak
+    const settled = await Promise.allSettled(
       ATLASES.map(async (a) => {
-        const img = await io.loadImage(`${root}/${a}.png`)
+        const img = await io.loadImage(`${root}/${a}.png`, signal)
         gd.setAtlas(a, img)
         opts.onProgress?.(++done, total, `${a}.png`)
       }),
     )
+    const failed = settled.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (failed || signal?.aborted) {
+      gd.dispose()
+      if (failed) throw failed.reason
+      checkAborted()
+    }
   }
   return gd
 }
@@ -495,13 +527,13 @@ export async function loadGamedata(opts: LoadGamedataOptions): Promise<Gamedata>
 /** Default browser IO: fetch text and CORS images. */
 export function browserIo(): GamedataFetch {
   return {
-    async fetchText(url) {
-      const r = await fetch(url)
+    async fetchText(url, signal) {
+      const r = await fetch(url, { signal })
       if (!r.ok) throw new Error(`gamedata ${url}: HTTP ${r.status}`)
       return r.text()
     },
-    async loadImage(url) {
-      const r = await fetch(url)
+    async loadImage(url, signal) {
+      const r = await fetch(url, { signal })
       if (!r.ok) throw new Error(`gamedata ${url}: HTTP ${r.status}`)
       const blob = await r.blob()
       // same trap as the modules: a missing proxy answers with an app shell,

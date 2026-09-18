@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
+import * as GL from '@orbrun/gl'
 import { Render3d } from '../src/index.js'
 import { cellKey, emptyScene, type Scene, type Billboard, type TileRect, type TileSource } from '@orbrun/scene'
 
@@ -23,7 +23,7 @@ function sceneWith(b: Partial<Billboard>): Scene {
 function kinds(scene: Scene): string[] {
   const r = new Render3d() as unknown as {
     setTiles(t: TileSource): void
-    billboardGroup: THREE.Group
+    billboardGroup: GL.Group
     syncBillboards(s: Scene): void
   }
   r.setTiles(tiles)

@@ -1,7 +1,7 @@
 {
   "name": "@orbrun/render-3d",
   "version": "0.1.0",
-  "description": "First-person three.js renderer of an @orbrun/scene Scene",
+  "description": "First-person renderer of an @orbrun/scene Scene, on @orbrun/gl",
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
@@ -23,9 +23,7 @@
     "src"
   ],
   "dependencies": {
+    "@orbrun/gl": "*",
     "@orbrun/scene": "*"
-  },
-  "peerDependencies": {
-    "three": ">=0.160"
   }
 }

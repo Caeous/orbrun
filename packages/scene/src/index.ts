@@ -338,7 +338,9 @@ export function cellLayoutEquals(a: SceneCell, b: SceneCell): boolean {
 
 /**
  * Whether `next` has the same layout as `prev`: the same bounds, lid, sky,
- * player cell and cell set, every cell `cellLayoutEquals` its counterpart.
+ * whether the player is on the level, and cell set, every cell
+ * `cellLayoutEquals` its counterpart. The player's cell is not layout: a step
+ * relights the level and moves nothing in it.
  * The tint and the flash are not layout: they are colours the renderer
  * applies. A builder uses this to carry `layoutRevision` over.
  */
@@ -346,7 +348,8 @@ export function sceneLayoutEquals(prev: Scene, next: Scene): boolean {
   const pb = prev.bounds, nb = next.bounds
   if (pb.left !== nb.left || pb.top !== nb.top || pb.right !== nb.right || pb.bottom !== nb.bottom) return false
   if (prev.level.ceilingTile !== next.level.ceilingTile || prev.level.sky !== next.level.sky) return false
-  if (prev.playerOnLevel !== next.playerOnLevel || prev.player.x !== next.player.x || prev.player.y !== next.player.y) return false
+  // the player's cell is not part of the layout: a step relights the level (shadeOf) and moves nothing in it
+  if (prev.playerOnLevel !== next.playerOnLevel) return false
   if (prev.cells.size !== next.cells.size) return false
   for (const [k, c] of next.cells) {
     const p = prev.cells.get(k)

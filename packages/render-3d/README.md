@@ -1,7 +1,8 @@
 # @orbrun/render-3d
 
-A first-person [three.js](https://threejs.org) renderer of
-a `@orbrun/scene` `Scene`: walls as inset masonry, floors and ceilings,
+A first-person renderer of a `@orbrun/scene` `Scene`,
+drawn through `@orbrun/gl` (Orbrun's own scene graph and WebGL2 backend):
+walls as inset masonry, floors and ceilings,
 standing features, doors, water and lava, monsters and items as billboards
 that face the camera (each a shallow block with a shaded rim, like the hands),
 memory dimming, a viewmodel for what is held, ghost
@@ -35,5 +36,5 @@ relights the crowd repaints a small texture and no geometry. The cursor's
 selected shell is a holder of its own beside the crowd, so moving the cursor
 touches nothing else. `destroy()` releases everything the renderer made.
 
-Depends on `@orbrun/scene`; `three` is a peer dependency. Part of
+Depends on `@orbrun/scene` and `@orbrun/gl`. Part of
 [Orbrun](https://github.com/Caeous/orbrun). AGPL-3.0-or-later.

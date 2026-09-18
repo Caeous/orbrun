@@ -2,6 +2,11 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.1.4 — 2026-09-17
+
+- The dungeon's renderer is now Orbrun's own: the first visit downloads about 106 KB less, frames cost well under half the CPU they did, and nothing in the picture changed.
+- Orbrun uses far less memory: a long-explored level with hundreds of sprites holds about a third less, and the sprite atlases no longer keep a second copy of their pixels (some 30 MB on a real server), so weak phones and handhelds have more room to breathe. Nothing in the picture changed.
+
 ## 0.1.3 — 2026-09-16
 
 - Crowded levels no longer stutter: sprite updates cost 93–98 % less CPU and draw 46 % fewer triangles.

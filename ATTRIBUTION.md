@@ -98,13 +98,25 @@ official client's.
 | `apps/orbrun/src/warnings.ts` | `tileweb.cc` — `_send_monster` (`monster_info::full_name`) | Monster naming for threat messages |
 | `packages/gamedata/src/index.ts` | `tileweb.h`; the server's `enums.js`, `tileinfo-*.js` and `status-icon-sizes.js` | UI-state values; the runtime loader for the server's own gamedata |
 
+## Third-party code in @orbrun/gl
+
+`packages/gl` (`@orbrun/gl`) is Orbrun's own scene graph and WebGL2 backend,
+the renderer's only drawing layer since 2026-09-17. Parts of it (the maths,
+the plane, circle and ring generators, the material, texture and scene-graph
+semantics, the GLSL chunks and the basic material's shaders, and the
+renderer's draw order and GL state rules) are ported from three.js r185
+(MIT, Copyright © 2010–2026 three.js authors), and it vendors mapbox's
+earcut (ISC) unchanged. Both notices are in
+`packages/gl/LICENSE-THIRD-PARTY.md`, which says which file carries what.
+
 ## Independently implemented
 
 The rest of the codebase is an independent implementation written against the
 observed wire protocol and the behaviour of the official client: the WebSocket
 connection layer, the tolerant reducer's own structure, the scene model
 (`packages/scene`), the first-person renderer (`packages/render-3d`) and every
-rendering decision in it, the HUD layout, the gamepad system and action bar,
+rendering decision in it (what it draws through, `packages/gl`, is the port
+described above), the HUD layout, the gamepad system and action bar,
 the on-screen keyboard, the command menus, the server picker and lobby,
 settings, the front room and the `.des` subset compiler it is written in
 (`packages/vault`, an independent parser of a documented format), the build
@@ -120,8 +132,8 @@ for feedback on Orbrun.
 
 ## Third-party assets and dependencies
 
-- [three.js](https://threejs.org) (MIT): the 3D renderer, the one runtime
-  dependency.
+- No runtime dependencies: the 3D renderer draws through `packages/gl`,
+  whose third-party notices are described above.
 - Grenze Gotisch by Omnibus-Type (SIL Open Font License 1.1,
   `assets/fonts/OFL.txt`): the title face, as described above.
 - Tile art and atlases for gameplay are **not** distributed here. They are

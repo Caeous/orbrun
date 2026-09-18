@@ -6,7 +6,7 @@ import type { PadKind } from './gamepad'
 /**
  * The on-screen keyboard, on its own so the front end (lobby.ts) can load
  * it without the game's overlays: the home screen and the lobby are in the
- * first chunk the page loads, the game (and three.js with it) in a second
+ * first chunk the page loads, the game (and the renderer with it) in a second
  * that is fetched once the first screen is up (main.ts).
  */
 

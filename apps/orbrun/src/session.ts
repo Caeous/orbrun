@@ -61,6 +61,17 @@ export class Session {
   private listeners = new Set<(e: SessionEvent) => void>()
   private queue: ServerMessage[] = []
   private loadingVersion: string | null = null
+  /** Counts gamedata loads started; a load that is no longer the latest, or whose session closed, publishes nothing. */
+  private loadGeneration = 0
+  /** Ends the gamedata load in flight: pulled when a newer version supersedes it or the session closes, so it stops fetching and decoding too. */
+  private loadAbort: AbortController | null = null
+  /**
+   * A load that makes no progress for this long is given up as stalled. The messages the load holds back
+   * (`queue`) are every one the game sends meanwhile, and none can be dropped (a map delta left out is a
+   * level drawn wrong), so the queue is bounded in time instead: a fetch the browser would let hang for
+   * minutes ends here, the error reaches the screen, and the queue drains.
+   */
+  static readonly LOAD_STALL_MS = 30_000
   /** A gamedata fetch is in flight; a `gamedata` event with `ready` or `error` ends it. */
   get loading(): boolean {
     return this.loadingVersion !== null
@@ -92,6 +103,11 @@ export class Session {
     })
     this.conn.onClose((r) => {
       this.closed = true
+      // a load for a connection that is gone: stop it, and let the messages it was holding go with it
+      this.loadAbort?.abort()
+      this.loadAbort = null
+      this.loadingVersion = null
+      this.queue = []
       this.emit({ type: 'closed', reason: r.reason || closeWord(r.code) })
     })
   }
@@ -151,7 +167,8 @@ export class Session {
       reduce(this.state, m)
       this.emit({ type: 'state', msg: m })
       const version = m.version as string
-      if (!this.gamedata || this.gamedata.version !== version) this.startLoad(version)
+      // a new game on the version already loaded, or already loading, needs no fetch
+      if ((!this.gamedata || this.gamedata.version !== version) && this.loadingVersion !== version) this.startLoad(version)
       return
     }
     if (this.loadingVersion) {
@@ -168,26 +185,51 @@ export class Session {
   }
 
   private async startLoad(version: string) {
+    const gen = ++this.loadGeneration
+    // a load this one supersedes is stopped where it is: the queue it was holding is this one's now
+    this.loadAbort?.abort()
+    const abort = (this.loadAbort = new AbortController())
+    let stall: ReturnType<typeof setTimeout> | undefined
+    const watch = () => {
+      clearTimeout(stall)
+      stall = setTimeout(() => abort.abort(new Error(`no progress in ${Session.LOAD_STALL_MS / 1000}s`)), Session.LOAD_STALL_MS)
+    }
+    watch()
     this.loadingVersion = version
     this.emit({ type: 'gamedata', status: 'loading', done: 0, total: 1 })
+    const current = () => gen === this.loadGeneration && !this.closed
     try {
       const gd = await loadGamedata({
         base: this.conn.gamedataBase,
         version,
         io: browserIo(),
-        onProgress: (done, total, what) => this.emit({ type: 'gamedata', status: 'loading', detail: what, done, total }),
+        signal: abort.signal,
+        onProgress: (done, total, what) => {
+          watch()
+          if (current()) this.emit({ type: 'gamedata', status: 'loading', detail: what, done, total })
+        },
       })
+      if (!current()) {
+        // landed anyway (the abort came after the last byte): nobody will draw with it
+        gd.dispose()
+        return
+      }
       this.gamedata = gd
       this.emit({ type: 'gamedata', status: 'ready' })
     } catch (e) {
+      if (!current()) return
       this.diag('gamedata load failed: ' + safeString(e))
       this.emit({ type: 'gamedata', status: 'error', detail: safeString(e) })
     } finally {
-      this.loadingVersion = null
-      const q = this.queue
-      this.queue = []
-      for (const m of q) this.apply(m)
-      this.flushScene()
+      clearTimeout(stall)
+      if (current()) {
+        this.loadAbort = null
+        this.loadingVersion = null
+        const q = this.queue
+        this.queue = []
+        for (const m of q) this.apply(m)
+        this.flushScene()
+      }
     }
   }
 

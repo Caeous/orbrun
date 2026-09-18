@@ -1,5 +1,5 @@
 import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, handsFootprint, type HandPose, type HandRect } from './hands.js'
-import * as THREE from 'three'
+import * as GL from '@orbrun/gl'
 import {
   cellKey,
   dirToYaw,
@@ -26,8 +26,9 @@ import { extrudeFaces, runs } from './mesh.js'
 /**
  * @orbrun/render-3d
  *
- * First-person three.js renderer of a Scene. Depends only on @orbrun/scene
- * and three. Every classification it needs arrives on the Scene.
+ * First-person renderer of a Scene, drawn through @orbrun/gl (Orbrun's
+ * scene graph and WebGL2 backend; see packages/gl/README.md). Depends only on @orbrun/scene and @orbrun/gl.
+ * Every classification it needs arrives on the Scene.
  *
  * World mapping: cell (x, y) -> world (x, 0, y). North (-y) is -z. Wall
  * height is 1. The camera stands at eye height 0.65 by default (the
@@ -112,6 +113,15 @@ const BB_DEPTH = 1
 const UV_INSET = 0.25
 /** Texel alpha at or above which a texel is opaque, bbMat's alpha test (0.1) in 8 bits. */
 const OPAQUE_ALPHA = 26
+/**
+ * Bits of an atlas mask's body texel (`AtlasEntry.mask`): the texel holds the
+ * very same colour as the next along its row, and as the next down its
+ * column. All `rimTemplate` asks of the atlas's colours, kept here so the
+ * peeled pixels need not be: two rim faces whose texels hold the same colour
+ * sample the same thing and are built as one.
+ */
+export const SAME_RIGHT = 4
+export const SAME_DOWN = 8
 /**
  * The art's ink: an opaque texel this dark in every channel is the black line
  * crawl draws round a sprite and the shadow it paints at its feet, not the
@@ -199,7 +209,7 @@ const CURSOR_ORDER = 0.5
  * over them, ink then body. Within a kind a ring is never over a body; a
  * remembered hint (its ring included) lies over a visible ghost where the
  * two overlap behind a wall. The crowd is baked in chunks (crowd.ts), and
- * three.js orders their meshes by draw order first, so these hold across
+ * the renderer orders their meshes by draw order first, so these hold across
  * chunks exactly as they held when the crowd was one mesh per material
  * drawn in this order.
  */
@@ -292,7 +302,7 @@ uniform vec2 fieldSize;
 varying vec3 vWorldPos;`
 const FLASH_VERT_PARS = /* glsl */ `
 varying vec3 vWorldPos;`
-/** Set `vWorldPos` from the vertex three has already transformed (`transformed`). */
+/** Set `vWorldPos` from the vertex the material's shader has already transformed (`transformed`). */
 const FLASH_VERT = /* glsl */ `
 vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
 /**
@@ -307,13 +317,33 @@ const STAND_VERT_PARS = /* glsl */ `
 attribute vec3 anchor;
 uniform float standYaw;
 #endif`
-/** Rotate `transformed` about y by `standYaw` (three's `makeRotationY`) and put it on its anchor. */
+/** Rotate `transformed` about y by `standYaw` (a rotation about y, as `Matrix4.makeRotationY`) and put it on its anchor. */
 const STAND_VERT = /* glsl */ `
 #ifdef MERGED
 {
   float c = cos(standYaw), s = sin(standYaw);
   transformed = anchor + vec3(c * transformed.x + s * transformed.z, transformed.y, c * transformed.z - s * transformed.x);
 }
+#endif`
+/**
+ * The `cell` attribute a shade-map shader reads its light through (`makeLevelMaterial`),
+ * declared where a sprite carries one: a merged sprite does not, its cell is under its
+ * anchor (`CELL_VERT`), so a crowd's buffers hold no cell per vertex.
+ */
+const CELL_VERT_PARS = /* glsl */ `
+#ifndef MERGED
+attribute vec2 cell;
+#endif
+varying vec2 vCell;`
+/**
+ * Set `vCell`: a merged sprite's anchor stands half a cell into its cell (`addStanding`),
+ * so its floor is the cell exactly, as the attribute held it; anything else carries the attribute.
+ */
+const CELL_VERT = /* glsl */ `
+#ifdef MERGED
+vCell = floor(anchor.xz);
+#else
+vCell = cell;
 #endif`
 /** Wash `c` in the flash standing over this fragment. */
 function flashApply(c: string): string {
@@ -332,8 +362,7 @@ varying vec2 vUv;
 varying vec3 vColor;
 varying float vViewZ;
 #ifdef GHOST_SHADE
-attribute vec2 cell;
-varying vec2 vCell;
+${CELL_VERT_PARS}
 #endif
 ${FLASH_VERT_PARS}
 ${STAND_VERT_PARS}
@@ -341,7 +370,7 @@ void main() {
   vUv = uv;
   vColor = color;
 #ifdef GHOST_SHADE
-  vCell = cell;
+${CELL_VERT}
 #endif
   vec3 transformed = vec3(position);
   ${STAND_VERT}
@@ -395,38 +424,35 @@ ${flashApply('gl_FragColor')}
 interface AtlasEntry {
   /** the tile source's name for it */
   name: string
-  texture: THREE.Texture
+  texture: GL.Texture
   width: number
   height: number
-  wallMat: THREE.MeshBasicMaterial
+  wallMat: GL.MeshBasicMaterial
   /** Upright features (statues, trees, altars): the level material without the wall's back-face cull. */
-  featMat: THREE.MeshBasicMaterial
+  featMat: GL.MeshBasicMaterial
   /**
    * Translucent decals (the travel-exclusion X): the level material blended
    * instead of alpha-tested, drawn after the level over the floor or wall face
    * it marks, without writing depth.
    */
-  decalMat: THREE.MeshBasicMaterial
+  decalMat: GL.MeshBasicMaterial
   /** Ghost pass, remembered knowledge: sprite fragments the level hides, faded by depth gap. */
-  ghostMat: THREE.ShaderMaterial
+  ghostMat: GL.ShaderMaterial
   /** The same for a cell in view: stronger, and over `GHOST_FADE_VISIBLE`, so what the server shows keeps its ghost however deep behind the wall it stands. */
-  ghostVisibleMat: THREE.ShaderMaterial
-  bbMat: THREE.MeshBasicMaterial
+  ghostVisibleMat: GL.ShaderMaterial
+  bbMat: GL.MeshBasicMaterial
   /** The merged (`MERGED`) twins of `featMat`, `bbMat`, `ghostMat` and `ghostVisibleMat`, for the baked crowd (`bakeStanding`). */
-  merged: THREE.Material[]
+  merged: GL.Material[]
+  /** The atlas as the tiles hand it over: what `atlasMask` peels, and peels again after a lost context. */
+  image: TexImageSource
   /**
-   * One byte per texel, 1 where the atlas is opaque, for the rim of a
-   * standing sprite's block; undefined until first asked for, null where the
-   * atlas's pixels cannot be read (no 2D canvas, an atlas that is not an image).
+   * One byte per texel, bit 0 set where the atlas is opaque, for the rim of a
+   * standing sprite's block, and on those texels SAME_RIGHT and SAME_DOWN
+   * where the neighbour holds the same colour; undefined until first asked
+   * for, null where the atlas's pixels cannot be read (no 2D canvas, an atlas
+   * that is not an image).
    */
   mask?: Uint8Array | null
-  /**
-   * The colour of a texel of the peeled atlas, packed rgba, read from the
-   * canvas `atlasMask` drew it into; undefined where the pixels cannot be
-   * read. Two rim faces whose texels hold the same colour sample the same
-   * thing, so `rimTemplate` builds them as one.
-   */
-  texel?: (x: number, y: number) => number
 }
 
 /**
@@ -484,7 +510,7 @@ interface ShellSource {
   hq: number
   k: number
   room: number
-  position: THREE.Vector3
+  position: GL.Vector3
   renderOrder: number
 }
 
@@ -499,10 +525,10 @@ interface SpriteRecord {
   key: string
   x: number
   y: number
-  holders: THREE.Object3D[]
+  holders: GL.Object3D[]
   shells: ShellSource[]
   /** Where the sprite's holder stands (a projectile is lifted). */
-  position: THREE.Vector3
+  position: GL.Vector3
   ghost: boolean
 }
 
@@ -546,14 +572,61 @@ function quadUVs(uv: { u0: number; v0: number; u1: number; v1: number }, uvOrder
   return (uvOrder || [0, 1, 2, 3]).map((i) => uvl[i])
 }
 
+/** A typed array that grows as it is pushed to: the level's vertex streams, written once per rebuild. */
+class Stream<T extends Float32Array | Uint32Array> {
+  length = 0
+  constructor(public array: T) {}
+  private room(n: number): T {
+    let a = this.array
+    if (this.length + n > a.length) {
+      let size = a.length * 2
+      while (size < this.length + n) size *= 2
+      const next = new (a.constructor as new (n: number) => T)(size)
+      next.set(a)
+      this.array = a = next
+    }
+    return a
+  }
+  push2(x: number, y: number): void {
+    const a = this.room(2)
+    const i = this.length
+    a[i] = x
+    a[i + 1] = y
+    this.length = i + 2
+  }
+  push3(x: number, y: number, z: number): void {
+    const a = this.room(3)
+    const i = this.length
+    a[i] = x
+    a[i + 1] = y
+    a[i + 2] = z
+    this.length = i + 3
+  }
+  push1(x: number): void {
+    const a = this.room(1)
+    a[this.length++] = x
+  }
+  /** The written part, as an array of its own. */
+  take(): T {
+    return this.array.slice(0, this.length) as T
+  }
+}
+
+/**
+ * Gathers a level mesh's vertices. The streams are typed arrays written in
+ * place: a rebuild of an explored level pushes hundreds of thousands of
+ * values, and a number array grown by `push` and copied into a typed array at
+ * the end cost more than the geometry it built. A value written to a
+ * Float32Array rounds exactly as the copy did, so the buffers are the same.
+ */
 class GeoBuilder {
-  positions: number[] = []
-  uvs: number[] = []
-  colors: number[] = []
-  cut: number[] = []
+  private positions = new Stream(new Float32Array(3 * 256))
+  private uvs = new Stream(new Float32Array(2 * 256))
+  private colors = new Stream(new Float32Array(3 * 256))
+  private cut = new Stream(new Float32Array(256))
   /** Per vertex, the cell whose light it takes: the level shader reads its shade from the shade map (II.9). */
-  cells: number[] = []
-  indices: number[] = []
+  private cells = new Stream(new Float32Array(2 * 256))
+  private indices = new Stream(new Uint32Array(6 * 128))
   private cx = 0
   private cz = 0
   /** The cell the next faces are lit as. */
@@ -583,23 +656,34 @@ class GeoBuilder {
   ) {
     const base = this.positions.length / 3
     const n = p.length
-    for (const [x, y, z] of p) this.positions.push(x, y, z)
-    for (let i = 0; i < n; i++) this.cut.push(cut ? 1 : 0)
-    for (let i = 0; i < n; i++) this.cells.push(this.cx, this.cz)
-    for (const [u, v] of uv) this.uvs.push(u, v)
-    for (let i = 0; i < n; i++) this.colors.push(shade * tint.r, shade * tint.g, shade * tint.b)
-    if (n === 4) this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
-    else for (const [a, b, c] of triangulateXZ(p)) this.indices.push(base + a, base + b, base + c)
+    const c = cut ? 1 : 0
+    const r = shade * tint.r, g = shade * tint.g, b = shade * tint.b
+    for (let i = 0; i < n; i++) {
+      const q = p[i]
+      this.positions.push3(q[0], q[1], q[2])
+      this.cut.push1(c)
+      this.cells.push2(this.cx, this.cz)
+      this.uvs.push2(uv[i][0], uv[i][1])
+      this.colors.push3(r, g, b)
+    }
+    if (n === 4) {
+      this.indices.push3(base, base + 1, base + 2)
+      this.indices.push3(base, base + 2, base + 3)
+    } else for (const [a, b, c] of triangulateXZ(p)) this.indices.push3(base + a, base + b, base + c)
   }
-  build(): THREE.BufferGeometry | null {
+  build(): GL.BufferGeometry | null {
     if (this.indices.length === 0) return null
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.positions, 3))
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uvs, 2))
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.colors, 3))
-    g.setAttribute('cut', new THREE.Float32BufferAttribute(this.cut, 1))
-    g.setAttribute('cell', new THREE.Float32BufferAttribute(this.cells, 2))
-    g.setIndex(this.indices)
+    const g = new GL.BufferGeometry()
+    g.setAttribute('position', new GL.BufferAttribute(this.positions.take(), 3))
+    g.setAttribute('uv', new GL.BufferAttribute(this.uvs.take(), 2))
+    g.setAttribute('color', new GL.BufferAttribute(this.colors.take(), 3))
+    g.setAttribute('cut', new GL.BufferAttribute(this.cut.take(), 1))
+    g.setAttribute('cell', new GL.BufferAttribute(this.cells.take(), 2))
+    // 16-bit indices while every one fits, as `setIndex` picks for a number array
+    const idx = this.indices.take()
+    let wide = false
+    for (let i = idx.length - 1; i >= 0; --i) if (idx[i] >= 65535) { wide = true; break }
+    g.setIndex(new GL.BufferAttribute(wide ? idx : new Uint16Array(idx), 1))
     return g
   }
 }
@@ -655,10 +739,10 @@ function framedDoors(scene: Scene): Map<CellKey, number> {
 
 /** Triangulate a horizontal polygon given as world points, keeping the polygon's own winding. */
 function triangulateXZ(p: [number, number, number][]): number[][] {
-  const pts = p.map(([px, , pz]) => new THREE.Vector2(px, pz))
+  const pts = p.map(([px, , pz]) => new GL.Vector2(px, pz))
   let area = 0
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) area += (pts[j].x - pts[i].x) * (pts[j].y + pts[i].y)
-  const tris = THREE.ShapeUtils.triangulateShape(pts, [])
+  const tris = GL.ShapeUtils.triangulateShape(pts, [])
   for (const t of tris) {
     const [a, b, c] = t.map((i) => pts[i])
     const ta = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
@@ -668,22 +752,24 @@ function triangulateXZ(p: [number, number, number][]): number[][] {
 }
 
 export class Render3d implements MapRenderer {
-  private renderer: THREE.WebGLRenderer | null = null
-  private three = new THREE.Scene()
-  private cam = new THREE.PerspectiveCamera(75, 1, 0.05, 200)
+  private renderer: GL.WebGLRenderer | null = null
+  /** The canvas `mount` was given, for the context-restored listener. */
+  private canvas: HTMLCanvasElement | OffscreenCanvas | null = null
+  private stage = new GL.Scene()
+  private cam = new GL.PerspectiveCamera(75, 1, 0.05, 200)
   private tiles: TileSource | null = null
   private scene: Scene | null = null
   private camera: Camera | null = null
   private cursor: SceneCursor | null = null
   private atlases = new Map<string, AtlasEntry>()
-  private levelGroup = new THREE.Group()
-  private billboardGroup = new THREE.Group()
-  private overlayGroup = new THREE.Group()
-  private cursorMesh: THREE.Mesh
-  private cursorRingMat: THREE.MeshBasicMaterial
-  private cursorTileMesh: THREE.Mesh
+  private levelGroup = new GL.Group()
+  private billboardGroup = new GL.Group()
+  private overlayGroup = new GL.Group()
+  private cursorMesh: GL.Mesh
+  private cursorRingMat: GL.MeshBasicMaterial
+  private cursorTileMesh: GL.Mesh
   private cursorTileId = -1
-  private cursorTileMats = new Map<string, THREE.MeshBasicMaterial>()
+  private cursorTileMats = new Map<string, GL.MeshBasicMaterial>()
   private width = 1
   private height = 1
   private opts: Required<Render3dOptions>
@@ -696,37 +782,37 @@ export class Render3d implements MapRenderer {
   /** How many ghost sprites the billboards hold: none means no depth pass. */
   private ghostCount = 0
   /** One disc under every actor and item, shared. */
-  private shadowGeo = new THREE.CircleGeometry(0.22, 16)
-  private shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false })
+  private shadowGeo = new GL.CircleGeometry(0.22, 16)
+  private shadowMat = new GL.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false })
   /**
    * Every material a standing sprite's mesh may wear, to its `MERGED` twin: the
    * same shading with the yaw applied in the vertex shader, for the meshes
    * `bakeStanding` merges a crowd of holders into. A mesh whose material has no
    * twin here (a cloned translucent one) stays a holder of its own.
    */
-  private mergedMats = new Map<THREE.Material, THREE.Material>()
+  private mergedMats = new Map<GL.Material, GL.Material>()
   /** The eye's yaw, read by every merged material to turn its sprites (`STAND_VERT`). */
   private standUniforms = { standYaw: { value: 0 } }
-  private bufferSize = new THREE.Vector2()
+  private bufferSize = new GL.Vector2()
   /**
    * Shade map (II.9, Part IV): one texel per cell of the level's bounds, the
    * brightness `shadeOf` gives it. The level shader multiplies by it, so a
    * move or a change of sight repaints this small image and leaves the
    * geometry standing.
    */
-  private shadeTex: THREE.DataTexture | null = null
+  private shadeTex: GL.DataTexture | null = null
   /**
    * Flash field: the same grid again, rgba per cell, the wash the game
    * lays over everything in the cell. Filtered, not stepped, so the thickening
    * of a blind view reads as haze rather than as squares.
    */
-  private flashTex: THREE.DataTexture | null = null
+  private flashTex: GL.DataTexture | null = null
   /** The two cell fields and the grid they share: origin and size in cells. */
   private fieldUniforms = {
-    shadeMap: { value: null as THREE.Texture | null },
-    flashMap: { value: null as THREE.Texture | null },
-    fieldOrigin: { value: new THREE.Vector2(0, 0) },
-    fieldSize: { value: new THREE.Vector2(1, 1) },
+    shadeMap: { value: null as GL.Texture | null },
+    flashMap: { value: null as GL.Texture | null },
+    fieldOrigin: { value: new GL.Vector2(0, 0) },
+    fieldSize: { value: new GL.Vector2(1, 1) },
   }
   /** The billboards need syncing for a reason other than a new scene revision (the player's bars changed). */
   private crowdDirty = false
@@ -737,18 +823,24 @@ export class Render3d implements MapRenderer {
   /** The baked crowds: the scene's billboards, and the level's upright features (`bakeStanding`). */
   private billboardCrowd: Crowd
   private levelCrowd: Crowd
+  /**
+   * The standing fixtures by what they are built from (`fixtureKey`). A layout rebuild
+   * replaces the level's meshes, but a fixture whose key still holds stands as it was:
+   * its holder stays in the crowd, and the chunk's bake finds its slots in place.
+   */
+  private fixtures = new Map<string, GL.Object3D>()
   /** The holders wearing the selected shells (`syncSelection`), and the cell they stand on. */
-  private selected: THREE.Object3D[] = []
+  private selected: GL.Object3D[] = []
   private selectionDirty = false
-  readonly stats: RenderStats = { levelBuilds: 0, crowdSyncs: 0, spriteBuilds: 0, spriteDrops: 0, selectionBuilds: 0, fieldUpdates: 0, chunkBakes: 0, chunkAllocs: 0, bakedVertices: 0 }
-  private raycaster = new THREE.Raycaster()
-  private pickMeshes: THREE.Mesh[] = []
-  private voidMat: THREE.MeshBasicMaterial
+  readonly stats: RenderStats = { levelBuilds: 0, crowdSyncs: 0, spriteBuilds: 0, spriteDrops: 0, selectionBuilds: 0, fieldUpdates: 0, chunkBakes: 0, chunkAllocs: 0, bakedVertices: 0, keptVertices: 0 }
+  private raycaster = new GL.Raycaster()
+  private pickMeshes: GL.Mesh[] = []
+  private voidMat: GL.MeshBasicMaterial
   /** Depth image of the level geometry, rendered before each frame for the ghost shaders. */
-  private depthTarget: THREE.WebGLRenderTarget | null = null
+  private depthTarget: GL.WebGLRenderTarget | null = null
   private ghostUniforms = {
-    sceneDepth: { value: null as THREE.Texture | null },
-    resolution: { value: new THREE.Vector2(1, 1) },
+    sceneDepth: { value: null as GL.Texture | null },
+    resolution: { value: new GL.Vector2(1, 1) },
     cameraNear: { value: 0.05 },
     cameraFar: { value: 200 },
     fadeStart: { value: GHOST_FADE_START },
@@ -758,39 +850,52 @@ export class Render3d implements MapRenderer {
   private viewmodel: Viewmodel | null = null
   private vmKey = ''
   private vmBuilt = false
-  private vmScene = new THREE.Scene()
-  private vmCam = new THREE.PerspectiveCamera(VM_FOV, 1, 0.1, 20)
-  private vmHands = { weapon: new THREE.Group(), offhand: new THREE.Group() }
-  private vmMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })
+  private vmScene = new GL.Scene()
+  private vmCam = new GL.PerspectiveCamera(VM_FOV, 1, 0.1, 20)
+  private vmHands = { weapon: new GL.Group(), offhand: new GL.Group() }
+  private vmMat = new GL.MeshBasicMaterial({ vertexColors: true, side: GL.DoubleSide })
   /**
    * The flash over the cell the player stands in, rgba. The hands are
    * drawn in a frame of their own, with no world to read the field at, so they
    * take the one cell that is always under them.
    */
-  private vmFlash = { value: new THREE.Vector4(0, 0, 0, 0) }
+  private vmFlash = { value: new GL.Vector4(0, 0, 0, 0) }
   /** Extruded icon geometry per item, keyed by its layers. */
   /** A hand's block and the ink round it (`HullTemplate`), per distinct item; null where the icon paints nothing. */
-  private vmGeos = new Map<string, { block: THREE.BufferGeometry; hull: THREE.BufferGeometry | null } | null>()
+  private vmGeos = new Map<string, { block: GL.BufferGeometry; hull: GL.BufferGeometry | null } | null>()
   /** Rim templates of the standing sprites' blocks, by tile and clip height (`rimTemplate`). */
   private rims = new Map<string, RimTemplate | null>()
   private hulls = new Map<string, HullTemplate | null>()
   private rings = new Map<string, RingTemplate | null>()
+  /**
+   * The vertex arrays of the standing sprites, shared by every sprite built
+   * from the same inputs (`sharedAttr`): a crowd of fifty of one tile at one
+   * height stands on one set of positions, uvs, colours and indices, where
+   * each once carried a copy of its own (its cell is under its anchor, or
+   * given to a holder that stands alone: `giveCells`). The arrays are never written after they are built, so a geometry that
+   * holds one can be disposed as before: the renderer's buffers are the
+   * geometry's, and the array stays for the next sprite. Keyed by everything
+   * the array is computed from, and cleared with the templates it derives from.
+   */
+  private spriteAttrs = new Map<string, GL.BufferAttribute>()
   /** The ink round a ghost (`RingTemplate`): the ghost material with no map, coloured by the ring's black vertices. */
-  private ghostInkMat!: THREE.ShaderMaterial
-  private ghostVisibleInkMat!: THREE.ShaderMaterial
+  private ghostInkMat!: GL.ShaderMaterial
+  private ghostVisibleInkMat!: GL.ShaderMaterial
   /** The ink round every standing sprite (`HullTemplate`): black, back faces only. */
-  private hullMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide })
+  private hullMat = new GL.MeshBasicMaterial({ color: 0x000000, side: GL.BackSide })
   /**
    * The ink round the sprite standing on the cursor's cell. WebTiles picks a
    * cell out with its cursor alone; here the ring under a monster's feet is
    * covered by the monster, so what is examined or targeted says so in its own
    * line instead — the hull's black swapped for HULL_SEL_COLOUR.
    */
-  private hullSelMat = new THREE.MeshBasicMaterial({ color: HULL_SEL_COLOUR, side: THREE.BackSide })
+  private hullSelMat = new GL.MeshBasicMaterial({ color: HULL_SEL_COLOUR, side: GL.BackSide })
   /** The ink on a sprite that does not turn to the eye (an open door): a flat ring (`RingTemplate`) in its plane. */
-  private inkMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
+  private inkMat = new GL.MeshBasicMaterial({ color: 0x000000, side: GL.DoubleSide })
   /** Attack lift start, in seconds on the render clock; NaN when at rest. */
   private vmLift = NaN
+  /** This frame's attack lift, 0..1 (`liftEnvelope`), or NaN with none running: read once per frame in `render`, so the doll and the hands agree on it. */
+  private lift = NaN
   constructor(opts: Render3dOptions = {}) {
     this.ghostInkMat = this.makeGhostMaterial(GHOST_ALPHA)
     this.ghostVisibleInkMat = this.makeGhostMaterial(GHOST_ALPHA_VISIBLE, undefined, { start: GHOST_FADE_VISIBLE_START, range: GHOST_FADE_VISIBLE })
@@ -810,27 +915,27 @@ export class Render3d implements MapRenderer {
     this.cam.fov = this.opts.fov
     this.cam.rotation.order = 'YXZ'
     this.cam.layers.enable(LAYER_NO_DEPTH)
-    const twin = (m: THREE.Material) => this.mergedMats.get(m)
+    const twin = (m: GL.Material) => this.mergedMats.get(m)
     this.billboardCrowd = new Crowd(this.billboardGroup, twin, this.stats)
     this.levelCrowd = new Crowd(this.levelGroup, twin, this.stats)
-    this.three.add(this.levelGroup, this.billboardGroup, this.overlayGroup)
-    this.three.background = new THREE.Color(0x000000)
-    const cur = new THREE.RingGeometry(0.34, 0.46, 4)
+    this.stage.add(this.levelGroup, this.billboardGroup, this.overlayGroup)
+    this.stage.background = new GL.Color(0x000000)
+    const cur = new GL.RingGeometry(0.34, 0.46, 4)
     cur.rotateX(-Math.PI / 2)
-    this.cursorRingMat = new THREE.MeshBasicMaterial({ color: CURSOR_COLOUR, transparent: true, opacity: 0.95, depthTest: false })
-    this.cursorMesh = new THREE.Mesh(cur, this.cursorRingMat)
+    this.cursorRingMat = new GL.MeshBasicMaterial({ color: CURSOR_COLOUR, transparent: true, opacity: 0.95, depthTest: false })
+    this.cursorMesh = new GL.Mesh(cur, this.cursorRingMat)
     this.cursorMesh.renderOrder = CURSOR_ORDER
     this.cursorMesh.visible = false
     this.overlayGroup.add(this.cursorMesh)
     // the WebTiles cursor icon laid flat on the cell; swapped in for the ring when the gamedata has it
-    const cq = new THREE.PlaneGeometry(1, 1)
+    const cq = new GL.PlaneGeometry(1, 1)
     // +90 about X puts v=1 (the image bottom, flipY off) at the south edge, as the floor decals are
     cq.rotateX(Math.PI / 2)
-    this.cursorTileMesh = new THREE.Mesh(cq, this.cursorRingMat)
+    this.cursorTileMesh = new GL.Mesh(cq, this.cursorRingMat)
     this.cursorTileMesh.renderOrder = CURSOR_ORDER
     this.cursorTileMesh.visible = false
     this.overlayGroup.add(this.cursorTileMesh)
-    this.voidMat = new THREE.MeshBasicMaterial({ color: 0x000000 })
+    this.voidMat = new GL.MeshBasicMaterial({ color: 0x000000 })
     this.vmMat.onBeforeCompile = (shader) => {
       shader.uniforms.flash = this.vmFlash
       shader.fragmentShader = shader.fragmentShader
@@ -843,8 +948,21 @@ export class Render3d implements MapRenderer {
   }
 
   mount(target: HTMLCanvasElement | OffscreenCanvas): void {
-    this.renderer = new THREE.WebGLRenderer({ canvas: target as HTMLCanvasElement, antialias: false, alpha: false })
+    this.renderer = new GL.WebGLRenderer({ canvas: target as HTMLCanvasElement, antialias: false, alpha: false })
     this.renderer.setClearColor(0x000000, 1)
+    // after the renderer's own listener, which has already reset its caches: a peeled atlas let its pixels go
+    // once uploaded (`atlasMask`), and the new context needs them again
+    this.canvas = target
+    target.addEventListener('webglcontextrestored', this.onContextRestored)
+  }
+
+  /** Peel every peeled atlas again for a restored context (`atlasMask`); its mask comes out the same. */
+  private readonly onContextRestored = () => {
+    for (const a of this.atlases.values()) {
+      if (!a.mask) continue
+      a.mask = undefined
+      this.atlasMask(a)
+    }
   }
 
   /**
@@ -855,7 +973,7 @@ export class Render3d implements MapRenderer {
    * (statue, tree, plant) hides a monster exactly as masonry does, and the
    * ghost pass (II.4) is the one rule that shows it again.
    */
-  private makeLevelMaterial(tex: THREE.Texture, feature = false, blended = false, merged = false): THREE.MeshBasicMaterial {
+  private makeLevelMaterial(tex: GL.Texture, feature = false, blended = false, merged = false): GL.MeshBasicMaterial {
     // Opaque both ways: every fragment is all-or-nothing under the alpha test,
     // so the level takes the opaque pass (front to back, no blending, the
     // depth test rejecting what a nearer wall hides before it is shaded) and
@@ -864,8 +982,8 @@ export class Render3d implements MapRenderer {
     // A blended decal keeps its texels' alpha instead: it is see-through art
     // laid on geometry already drawn, so it neither needs nor writes depth of its own.
     const m = blended
-      ? new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.02, depthWrite: false, side: THREE.DoubleSide })
-      : new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, alphaTest: feature ? 0.1 : 0.5, side: THREE.DoubleSide })
+      ? new GL.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.02, depthWrite: false, side: GL.DoubleSide })
+      : new GL.MeshBasicMaterial({ map: tex, vertexColors: true, alphaTest: feature ? 0.1 : 0.5, side: GL.DoubleSide })
     if (feature) m.defines = { UPRIGHT_SPRITE: '' }
     if (merged) m.defines = { ...m.defines, MERGED: '' }
     const fu = this.fieldUniforms
@@ -873,9 +991,9 @@ export class Render3d implements MapRenderer {
     m.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, fu, su)
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\nattribute float cut;\nattribute vec2 cell;\nvarying float vCut;\nvarying vec2 vCell;${FLASH_VERT_PARS}${STAND_VERT_PARS}`)
+        .replace('#include <common>', `#include <common>\nattribute float cut;\nvarying float vCut;${CELL_VERT_PARS}${FLASH_VERT_PARS}${STAND_VERT_PARS}`)
         .replace('#include <begin_vertex>', `#include <begin_vertex>${STAND_VERT}`)
-        .replace('#include <project_vertex>', `#include <project_vertex>\nvCut = cut;\nvCell = cell;${FLASH_VERT}`)
+        .replace('#include <project_vertex>', `#include <project_vertex>\nvCut = cut;${CELL_VERT}${FLASH_VERT}`)
       shader.fragmentShader = shader.fragmentShader
         .replace(
           '#include <common>',
@@ -908,7 +1026,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
 
   /**
    * Billboard material: a sprite takes its light from its cell's entry in the
-   * shade map, as the level does (`cell` attribute), so a move that relights
+   * shade map, as the level does (`CELL_VERT`), so a move that relights
    * the crowd repaints that small image and leaves every sprite's geometry
    * standing; its vertex colour carries the tint and the face's own shade.
    * The flash field washes it as it does everything in the cell — a monster
@@ -916,17 +1034,17 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * in the 2D view. (A cloned copy — a cloud, a translucent sprite — keeps
    * none of this shader: it is lit by its vertex colour alone.)
    */
-  private makeBillboardMaterial(tex: THREE.Texture, merged = false): THREE.MeshBasicMaterial {
-    const m = new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide, depthWrite: true })
+  private makeBillboardMaterial(tex: GL.Texture, merged = false): GL.MeshBasicMaterial {
+    const m = new GL.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.1, side: GL.DoubleSide, depthWrite: true })
     if (merged) m.defines = { MERGED: '' }
     const fu = this.fieldUniforms
     const su = this.standUniforms
     m.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, fu, su)
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\nattribute vec2 cell;\nvarying vec2 vCell;${FLASH_VERT_PARS}${STAND_VERT_PARS}`)
+        .replace('#include <common>', `#include <common>${CELL_VERT_PARS}${FLASH_VERT_PARS}${STAND_VERT_PARS}`)
         .replace('#include <begin_vertex>', `#include <begin_vertex>${STAND_VERT}`)
-        .replace('#include <project_vertex>', `#include <project_vertex>\nvCell = cell;${FLASH_VERT}`)
+        .replace('#include <project_vertex>', `#include <project_vertex>${CELL_VERT}${FLASH_VERT}`)
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\nuniform sampler2D shadeMap;\nvarying vec2 vCell;\n${FLASH_PARS}`)
         .replace(
@@ -959,15 +1077,15 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     if (!shade || !flash || shade.image.width !== w || shade.image.height !== h) {
       shade?.dispose()
       flash?.dispose()
-      shade = this.shadeTex = new THREE.DataTexture(new Uint8Array(w * h), w, h, THREE.RedFormat, THREE.UnsignedByteType)
-      shade.magFilter = THREE.NearestFilter
-      shade.minFilter = THREE.NearestFilter
+      shade = this.shadeTex = new GL.DataTexture(new Uint8Array(w * h), w, h, GL.RedFormat, GL.UnsignedByteType)
+      shade.magFilter = GL.NearestFilter
+      shade.minFilter = GL.NearestFilter
       shade.generateMipmaps = false
       // one byte per texel: rows are not padded to four
       shade.unpackAlignment = 1
-      flash = this.flashTex = new THREE.DataTexture(new Uint8Array(w * h * 4), w, h, THREE.RGBAFormat, THREE.UnsignedByteType)
-      flash.magFilter = THREE.LinearFilter
-      flash.minFilter = THREE.LinearFilter
+      flash = this.flashTex = new GL.DataTexture(new Uint8Array(w * h * 4), w, h, GL.RGBAFormat, GL.UnsignedByteType)
+      flash.magFilter = GL.LinearFilter
+      flash.minFilter = GL.LinearFilter
       flash.generateMipmaps = false
       this.fieldUniforms.shadeMap.value = shade
       this.fieldUniforms.flashMap.value = flash
@@ -984,16 +1102,26 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       hue = { r: cell.flash.r, g: cell.flash.g, b: cell.flash.b }
       break
     }
-    for (let z = 0; z < h; z++) {
-      for (let x = 0; x < w; x++) {
-        const i = z * w + x
-        const cell = scene.cells.get(cellKey(ox + x, oz + z))
-        sd[i] = Math.round(shadeOf(cell, scene) * 255)
-        const f = cell?.flash
-        fd[i * 4] = f?.a ? f.r : hue.r
-        fd[i * 4 + 1] = f?.a ? f.g : hue.g
-        fd[i * 4 + 2] = f?.a ? f.b : hue.b
-        fd[i * 4 + 3] = Math.min(255, f?.a ?? 0)
+    // every texel starts as a cell the map does not know (full bright, the hue unflashed), and the
+    // cells it does know write over theirs: a walk over the cells, not over the field's every texel
+    sd.fill(255)
+    for (let i = 0; i < w * h; i++) {
+      fd[i * 4] = hue.r
+      fd[i * 4 + 1] = hue.g
+      fd[i * 4 + 2] = hue.b
+      fd[i * 4 + 3] = 0
+    }
+    for (const cell of scene.cells.values()) {
+      const x = cell.x - ox, z = cell.y - oz
+      if (x < 0 || x >= w || z < 0 || z >= h) continue
+      const i = z * w + x
+      sd[i] = Math.round(shadeOf(cell, scene) * 255)
+      const f = cell.flash
+      if (f?.a) {
+        fd[i * 4] = f.r
+        fd[i * 4 + 1] = f.g
+        fd[i * 4 + 2] = f.b
+        fd[i * 4 + 3] = Math.min(255, f.a)
       }
     }
     shade.needsUpdate = true
@@ -1006,7 +1134,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
   }
 
   /** Register `merged` as the `MERGED` twin of `mat` (`mergedMats`), and hand it back. */
-  private twin<M extends THREE.Material>(mat: THREE.Material, merged: M): M {
+  private twin<M extends GL.Material>(mat: GL.Material, merged: M): M {
     this.mergedMats.set(mat, merged)
     return merged
   }
@@ -1015,7 +1143,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * The `MERGED` twin of a plain material (the hull inks, the shadow disc): the
    * same colour and faces, with the standing yaw applied in the vertex shader.
    */
-  private makeStandingMaterial(of: THREE.MeshBasicMaterial): THREE.MeshBasicMaterial {
+  private makeStandingMaterial(of: GL.MeshBasicMaterial): GL.MeshBasicMaterial {
     const m = of.clone()
     m.defines = { MERGED: '' }
     const su = this.standUniforms
@@ -1028,11 +1156,11 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     return m
   }
 
-  private makeGhostMaterial(opacity: number, map?: THREE.Texture, fade?: { start: number; range: number }, merged = false, shade = false): THREE.ShaderMaterial {
+  private makeGhostMaterial(opacity: number, map?: GL.Texture, fade?: { start: number; range: number }, merged = false, shade = false): GL.ShaderMaterial {
     // the shared uniforms are the same objects in every ghost material (one depth image, one camera);
     // a material with its own fade takes uniforms of its own for that alone
     // the ghost lays the flash over itself like every other material, and reads it from the shared field uniforms
-    const u: Record<string, THREE.IUniform> = { ...this.ghostUniforms, ...this.fieldUniforms, ...this.standUniforms, opacity: { value: opacity } }
+    const u: Record<string, GL.IUniform> = { ...this.ghostUniforms, ...this.fieldUniforms, ...this.standUniforms, opacity: { value: opacity } }
     if (fade) {
       u.fadeStart = { value: fade.start }
       u.fadeRange = { value: fade.range }
@@ -1043,14 +1171,14 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     if (merged) defines.MERGED = ''
     // a ghost of what is in view is lit as the sprite is, from the shade map; remembered knowledge keeps its own tint unlit
     if (shade) defines.GHOST_SHADE = ''
-    return new THREE.ShaderMaterial({
+    return new GL.ShaderMaterial({
       uniforms: u,
       defines,
       vertexShader: GHOST_VERT,
       fragmentShader: GHOST_FRAG,
       vertexColors: true,
       transparent: true,
-      side: THREE.DoubleSide,
+      side: GL.DoubleSide,
       // the shader is the depth test; it compares against the level's depth image
       depthTest: false,
       depthWrite: false,
@@ -1079,15 +1207,16 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * decals and translucent sprites, which write no depth and so would only
    * cost their draw calls here.
    */
-  private renderOccluderDepth(r: THREE.WebGLRenderer) {
+  private renderOccluderDepth(r: GL.WebGLRenderer) {
     const size = r.getDrawingBufferSize(this.bufferSize)
     const w = Math.max(1, Math.ceil(size.x * GHOST_DEPTH_SCALE))
     const h = Math.max(1, Math.ceil(size.y * GHOST_DEPTH_SCALE))
     let rt = this.depthTarget
     if (!rt || rt.width !== w || rt.height !== h) {
       rt?.dispose()
-      const depthTexture = new THREE.DepthTexture(w, h, THREE.UnsignedIntType)
-      rt = this.depthTarget = new THREE.WebGLRenderTarget(w, h, { depthTexture, depthBuffer: true, stencilBuffer: false })
+      const depthTexture = new GL.DepthTexture(w, h, GL.UnsignedIntType)
+      // depth alone: the ghosts read the depth texture, and a colour image the size of the frame would only take its memory
+      rt = this.depthTarget = new GL.WebGLRenderTarget(w, h, { depthTexture, depthBuffer: true, stencilBuffer: false, colorBuffer: false })
       this.ghostUniforms.sceneDepth.value = depthTexture
     }
     // the ghost shader maps its own fragment coordinate, in frame pixels, onto the image
@@ -1100,8 +1229,11 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const layersWere = this.cam.layers.mask
     this.cam.layers.set(0)
     r.setRenderTarget(rt)
-    r.clear()
-    r.render(this.three, this.cam)
+    // the ghosts read this image's depth alone: the pass runs the materials' vertex shaders
+    // and alpha tests (a sprite's transparent border must not occlude) and nothing past them
+    r.depthOnly = true
+    r.render(this.stage, this.cam)
+    r.depthOnly = false
     r.setRenderTarget(prevTarget)
     this.cam.layers.mask = layersWere
     this.overlayGroup.visible = overlaysWere
@@ -1132,6 +1264,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.rims.clear()
     this.hulls.clear()
     this.rings.clear()
+    this.spriteAttrs.clear()
     for (const g of this.vmGeos.values()) {
       g?.block.dispose()
       g?.hull?.dispose()
@@ -1145,8 +1278,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     }
     this.cursorTileMats.clear()
     this.cursorTileId = -1
-    // every sprite standing was built from the old atlases
+    // every sprite standing, and every fixture, was built from the old atlases
     this.dropRecords()
+    this.dropFixtures()
     this.builtRevision = -1
     this.builtLayout = -1
   }
@@ -1167,11 +1301,11 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     if (a) return a
     const img = this.tiles?.atlas(name)
     if (!img) return null
-    const tex = new THREE.Texture(img as HTMLImageElement)
-    tex.magFilter = THREE.NearestFilter
-    tex.minFilter = THREE.NearestFilter
+    const tex = new GL.Texture(img as HTMLImageElement)
+    tex.magFilter = GL.NearestFilter
+    tex.minFilter = GL.NearestFilter
     tex.generateMipmaps = false
-    tex.colorSpace = THREE.SRGBColorSpace
+    tex.colorSpace = GL.SRGBColorSpace
     tex.flipY = false
     tex.needsUpdate = true
     const w = (img as { width: number }).width
@@ -1179,6 +1313,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     a = {
       name,
       texture: tex,
+      image: img,
       width: w,
       height: h,
       wallMat: this.makeLevelMaterial(tex),
@@ -1257,9 +1392,10 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.clearSelection()
     this.billboardCrowd.clear()
     this.levelCrowd.clear()
+    this.fixtures.clear()
     for (const child of [...this.levelGroup.children]) {
       this.levelGroup.remove(child)
-      child.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
+      child.traverse((o) => (o as GL.Mesh).geometry?.dispose())
     }
     for (const child of [...this.billboardGroup.children]) this.billboardGroup.remove(child)
     this.pickMeshes = []
@@ -1273,6 +1409,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.rims.clear()
     this.hulls.clear()
     this.rings.clear()
+    this.spriteAttrs.clear()
     for (const a of this.atlases.values()) {
       a.texture.dispose()
       for (const m of [a.wallMat, a.featMat, a.decalMat, a.ghostMat, a.ghostVisibleMat, a.bbMat, ...a.merged]) m.dispose()
@@ -1307,6 +1444,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.fieldUniforms.flashMap.value = null
     this.shadowGeo.dispose()
     this.shadowMat.dispose()
+    this.canvas?.removeEventListener('webglcontextrestored', this.onContextRestored)
+    this.canvas = null
     this.renderer?.dispose()
     this.renderer = null
     this.builtRevision = -1
@@ -1324,7 +1463,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const cam = this.cam
     cam.updateMatrixWorld()
     const inv = cam.matrixWorld.clone().invert()
-    const v = new THREE.Vector3()
+    const v = new GL.Vector3()
     return {
       tanHalfY: Math.tan((cam.fov * Math.PI) / 360),
       aspect: cam.aspect,
@@ -1338,7 +1477,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
 
   pick(px: number, py: number): CellKey | null {
     if (!this.renderer || !this.scene) return null
-    const ndc = new THREE.Vector2((px / this.width) * 2 - 1, -(py / this.height) * 2 + 1)
+    const ndc = new GL.Vector2((px / this.width) * 2 - 1, -(py / this.height) * 2 + 1)
     this.raycaster.setFromCamera(ndc, this.cam)
     const hits = this.raycaster.intersectObjects(this.pickMeshes, false)
     if (!hits.length) return null
@@ -1381,7 +1520,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         this.cursorTileId = cur.tile!
         let mat = this.cursorTileMats.get(rect.atlas)
         if (!mat) {
-          mat = new THREE.MeshBasicMaterial({ map: a.texture.clone(), transparent: true, alphaTest: 0.1, depthTest: false, side: THREE.DoubleSide })
+          mat = new GL.MeshBasicMaterial({ map: a.texture.clone(), transparent: true, alphaTest: 0.1, depthTest: false, side: GL.DoubleSide })
           this.cursorTileMats.set(rect.atlas, mat)
         }
         // the icon's rect in the atlas, as a repeat/offset on a copy of the texture
@@ -1389,7 +1528,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         const tex = mat.map!
         tex.offset.set(uv.u0, uv.v0)
         tex.repeat.set(uv.u1 - uv.u0, uv.v1 - uv.v0)
-        tex.needsUpdate = true
         this.cursorTileMesh.material = mat
       }
       this.cursorTileMesh.visible = true
@@ -1412,30 +1550,44 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * underfoot — and what the player sees is 2D's own order, the feature under
    * the actor. Clouds and things in flight pass over a cell rather than stand
    * on it, and leave its feature standing.
+   *
+   * In first person the cell underfoot counts too, whether or not the doll is
+   * among the billboards: the camera sits in the middle of that sprite. A step
+   * onto or off such a cell is the only way a move changes the level's
+   * geometry, so this set is what a move rebuilds on, not the layout revision.
    */
   private occupiedFeatures(scene: Scene): Set<CellKey> {
     const out = new Set<CellKey>()
+    const upright = (k: CellKey) => {
+      const c = scene.cells.get(k)
+      return c?.stance === 'upright' && c.featureTile !== undefined
+    }
     for (const b of scene.billboards) {
       if (b.kind === 'cloud' || b.kind === 'projectile') continue
       const k = cellKey(b.x, b.y)
-      const c = scene.cells.get(k)
-      if (c?.stance === 'upright' && c.featureTile !== undefined) out.add(k)
+      if (upright(k)) out.add(k)
+    }
+    if (scene.playerOnLevel) {
+      const k = cellKey(scene.player.x, scene.player.y)
+      if (upright(k)) out.add(k)
     }
     return out
   }
 
   private rebuildLevel(scene: Scene) {
     this.stats.levelBuilds++
-    // the baked fixtures first: their meshes are the crowd's to release, the holders below are this group's
-    this.levelCrowd.clear()
+    // the level's own meshes go; the fixtures (`fixtures`) and the crowd's baked meshes stand until the loop below says otherwise
     for (const child of [...this.levelGroup.children]) {
+      if (!child.userData.level) continue
       this.levelGroup.remove(child)
-      // a mesh of the level, or a holder of fixture meshes
-      child.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
+      ;(child as GL.Mesh).geometry.dispose()
     }
     this.pickMeshes = []
     const tiles = this.tiles
-    if (!tiles) return
+    if (!tiles) {
+      this.dropFixtures()
+      return
+    }
     const fo = this.fo()
     const framed = framedDoors(scene)
     // A framed door's cell counts as wall for the footprint rule: the wall run
@@ -1463,12 +1615,16 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       if (!b) decalBuilders.set(name, (b = new GeoBuilder()))
       return b
     }
+    // a tile's rect and uvs are looked up once per rebuild: every floor cell asks for its tile, and a level has far more cells than tiles
+    const tileCache = new Map<number, { r: TileRect; a: AtlasEntry; uv: ReturnType<Render3d['uvFor']> } | null>()
     const tileOf = (id: number) => {
+      let t = tileCache.get(id)
+      if (t !== undefined) return t
       const r = tiles.tile(id)
-      if (!r) return null
-      const a = this.atlas(r.atlas)
-      if (!a) return null
-      return { r, a, uv: this.uvFor(r, a) }
+      const a = r ? this.atlas(r.atlas) : null
+      t = r && a ? { r, a, uv: this.uvFor(r, a) } : null
+      tileCache.set(id, t)
+      return t
     }
     const levelCeiling = scene.level.ceilingTile !== null ? tileOf(scene.level.ceilingTile) : null
     const ceilingCache = new Map<number, ReturnType<typeof tileOf>>()
@@ -1487,9 +1643,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
      * there the tile lies back down on the floor, so a staircase you or a
      * centaur are standing on still reads as one.
      */
-    const onPlayer = (c: SceneCell) => scene.playerOnLevel && c.x === scene.player.x && c.y === scene.player.y
     const occupied = this.occupiedFeatures(scene)
-    const stands = (c: SceneCell) => c.stance === 'upright' && !onPlayer(c) && !occupied.has(cellKey(c.x, c.y))
+    const stands = (c: SceneCell) => c.stance === 'upright' && !occupied.has(cellKey(c.x, c.y))
     const heightOfFeature = (c: SceneCell) => (c.feature?.type === 'stairs' ? STAIR_H : FIXTURE_H)
     const isSolid = (c: SceneCell | undefined) => !c || c.kind === 'unknown' || c.occluder
     const isVoidCell = (c: SceneCell | undefined) => !c || c.kind === 'unknown'
@@ -1713,7 +1868,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       if (!geo) continue
       const a = this.atlas(name)
       if (!a) continue
-      const mesh = new THREE.Mesh(geo, a.wallMat)
+      const mesh = new GL.Mesh(geo, a.wallMat)
+      mesh.userData.level = true
       this.levelGroup.add(mesh)
       this.pickMeshes.push(mesh)
     }
@@ -1723,19 +1879,32 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       if (!geo) continue
       const a = this.atlas(name)
       if (!a) continue
-      const mesh = new THREE.Mesh(geo, a.decalMat)
+      const mesh = new GL.Mesh(geo, a.decalMat)
+      mesh.userData.level = true
       mesh.renderOrder = 1
       mesh.layers.set(LAYER_NO_DEPTH)
       this.levelGroup.add(mesh)
     }
     const vg = voids.build()
-    if (vg) this.levelGroup.add(new THREE.Mesh(vg, this.voidMat))
-    // upright features stand as billboards built with the level
+    if (vg) {
+      const mesh = new GL.Mesh(vg, this.voidMat)
+      mesh.userData.level = true
+      this.levelGroup.add(mesh)
+    }
+    // Upright features stand as billboards built with the level. One whose key still holds
+    // (the same tile on the same cell, at the same height, heading and tint) is left standing;
+    // the rest are built, and whatever stood that the level no longer asks for comes down.
+    const tintKey = `${tint.r},${tint.g},${tint.b}`
+    const wanted = new Set<string>()
     for (const cell of scene.cells.values()) {
       if (cell.kind === 'unknown' || cell.occluder) continue
       if (cell.featureTile === undefined || !stands(cell)) continue
       const ft = tileOf(cell.featureTile)
       if (!ft) continue
+      const doorYaw = framed.get(cellKey(cell.x, cell.y))
+      const key = `${cell.x},${cell.y}|${cell.featureTile}|${doorYaw ?? ''}|${doorYaw !== undefined ? 1 : heightOfFeature(cell)}|${tintKey}`
+      wanted.add(key)
+      if (this.fixtures.has(key)) continue
       // An open door hangs in its doorway, not on the eye: its cell is a hole
       // in a wall run, and a board that turns with the camera pulls the leaves
       // and their arch off the two walls they are set into — from any angle but
@@ -1743,20 +1912,46 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       // fills the gap, full height like the closed door's block, and needs no
       // FIXTURE_BACK: it is in the wall plane, not in the way of what walks
       // through it.
-      const yaw = framed.get(cellKey(cell.x, cell.y))
+      const yaw = doorYaw
       if (yaw !== undefined) {
-        this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], 1, 1, tint, true, 'none', true, 0, yaw)
+        const door = this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], 1, 1, tint, true, 'none', true, 0, yaw)
+        this.giveCells(door, cell.x, cell.y)
+        this.fixtures.set(key, door)
         continue
       }
       // a fixture takes its light from the shade map (featMat), so its vertex colour is the tint alone;
       // it stands FIXTURE_BACK back, so whatever stands on the cell reads in front of it rather than through it
       const h = this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], heightOfFeature(cell), 1, tint, true, 'none', true, FIXTURE_BACK)
+      this.fixtures.set(key, h)
       if (this.levelCrowd.mergeable(h)) this.levelCrowd.add(h, cell.x, cell.y)
+      else this.giveCells(h, cell.x, cell.y)
     }
+    for (const [key, h] of this.fixtures) {
+      if (wanted.has(key)) continue
+      this.fixtures.delete(key)
+      this.dropFixture(h)
+    }
+    // every chunk is baked again, its holders taken back to front from where the eye stands at this
+    // rebuild, as they always were; a holder whose slot is unchanged costs the bake nothing (crowd.ts `write`)
+    this.levelCrowd.invalidate()
+  }
+
+  /** Take a fixture down: out of the crowd or the group, its geometry released. */
+  private dropFixture(h: GL.Object3D) {
+    this.levelCrowd.remove(h)
+    if (h.parent === this.levelGroup) this.levelGroup.remove(h)
+    h.traverse((o) => (o as GL.Mesh).geometry?.dispose())
+  }
+
+  /** Every fixture down and the crowd's meshes with them: the next rebuild builds them afresh. */
+  private dropFixtures() {
+    for (const h of this.fixtures.values()) this.dropFixture(h)
+    this.fixtures.clear()
+    this.levelCrowd.clear()
   }
 
   private addStanding(
-    group: THREE.Group,
+    group: GL.Group,
     x: number,
     y: number,
     layers: SpriteLayer[],
@@ -1772,8 +1967,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     yaw?: number,
     /** Filled with what each layer's selected shell (`SEL_GROW`) is built from, for when the cursor lands on the sprite. */
     shells?: ShellSource[],
-  ): THREE.Object3D {
-    const holder = new THREE.Group()
+  ): GL.Object3D {
+    const holder = new GL.Group()
     holder.position.set(x + 0.5, 0, y + 0.5)
     const scale = height
     let i = 0
@@ -1792,8 +1987,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const bottom = ((cell - (l.r.oy + (l.oy || 0) + hTex)) / cell) * scale
       const lt = l.tint || tint
       const solid = thick && !l.flat
-      const geo = this.standingGeometry(l, hTex, v1, wq, hq, scale / cell, { r: shade * lt.r, g: shade * lt.g, b: shade * lt.b }, x, y, solid, yaw !== undefined)
-      const mesh = new THREE.Mesh(geo, ghost === 'visible' ? l.a.ghostVisibleMat : ghost === 'remembered' ? l.a.ghostMat : fixed ? l.a.featMat : l.a.bbMat)
+      const geo = this.standingGeometry(l, hTex, v1, wq, hq, scale / cell, { r: shade * lt.r, g: shade * lt.g, b: shade * lt.b }, solid, yaw !== undefined)
+      const mesh = new GL.Mesh(geo, ghost === 'visible' ? l.a.ghostVisibleMat : ghost === 'remembered' ? l.a.ghostMat : fixed ? l.a.featMat : l.a.bbMat)
       mesh.position.set(cx, bottom + hq / 2, i * 0.002 - back)
       // ghosts draw before every sprite so a nearer billboard paints over them
       mesh.renderOrder = ghost === 'none' ? 1 + i : GHOST_ORDER[ghost].body
@@ -1802,7 +1997,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       // so that no ring of that kind lies over a body of it, whatever chunk (crowd.ts) either stands in
       const ring = ghost !== 'none' && !l.flat ? this.ringGeometry(l, hTex, wq, hq, scale / cell) : null
       if (ring) {
-        const ink = new THREE.Mesh(ring, ghost === 'visible' ? this.ghostVisibleInkMat : this.ghostInkMat)
+        const ink = new GL.Mesh(ring, ghost === 'visible' ? this.ghostVisibleInkMat : this.ghostInkMat)
         ink.position.copy(mesh.position)
         ink.renderOrder = GHOST_ORDER[ghost as Exclude<GhostKind, 'none'>].ink
         ink.layers.set(LAYER_NO_DEPTH)
@@ -1821,7 +2016,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       // the wall. The door's ring keeps off those columns.
       const hull = !solid ? null : yaw === undefined ? this.hullGeometry(l, hTex, wq, hq, scale / cell) : this.ringGeometry(l, hTex, wq, hq, scale / cell, true)
       if (hull) {
-        const ink = new THREE.Mesh(hull, yaw === undefined ? this.hullMat : this.inkMat)
+        const ink = new GL.Mesh(hull, yaw === undefined ? this.hullMat : this.inkMat)
         ink.position.copy(mesh.position)
         ink.renderOrder = mesh.renderOrder
         ink.userData.hull = true
@@ -1851,8 +2046,10 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * PlaneGeometry's order, with the tile's uvs), and behind it, where the
    * atlas's pixels can be read, the rim of a block `BB_DEPTH` texels deep.
    * The vertex colour carries the sprite's light and tint times the face's
-   * shade; `cell` is the cell the sprite stands in, for the level shader's
-   * shade map (fixtures). `k` is the world size of a texel.
+   * shade. The cell the sprite stands in, which the shade-map shaders light it
+   * by, is not here: a baked sprite's is under its anchor (`CELL_VERT`), and a
+   * holder that stands on its own is given one (`giveCells`). `k` is the world
+   * size of a texel.
    */
   private standingGeometry(
     l: SpriteLayer,
@@ -1862,19 +2059,13 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     hq: number,
     k: number,
     c: { r: number; g: number; b: number },
-    x: number,
-    y: number,
     thick: boolean,
     /** Leave out the rim faces on the tile's own boundary (a board set into a wall run, see `rimTemplate`). */
     offEdges = false,
-  ): THREE.BufferGeometry {
+  ): GL.BufferGeometry {
     const rim = thick ? this.rimTemplate(l, hTex, offEdges) : null
     const nRim = rim ? rim.pos.length / 3 : 0
     const n = 4 + nRim
-    const pos = new Float32Array(n * 3)
-    const uv = new Float32Array(n * 2)
-    const col = new Float32Array(n * 3)
-    const cells = new Float32Array(n * 2)
     const hw = wq / 2, hh = hq / 2
     // The uvs are inset a quarter texel (`uvFor`), so the quad they are mapped across is inset by the same:
     // stretched over the whole tile instead, the art is drawn a shade larger than the tile it came from and
@@ -1882,33 +2073,88 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     // sprite two texels wide — a tail, a chain — that drift is a quarter of its width and it comes off its block.
     const e = UV_INSET * k
     const qw = hw - e, qh = hh - e
-    pos.set([-qw, qh, 0, qw, qh, 0, -qw, -qh, 0, qw, -qh, 0])
-    uv.set([l.uv.u0, l.uv.v0, l.uv.u1, l.uv.v0, l.uv.u0, v1, l.uv.u1, v1])
-    const index = [0, 2, 1, 2, 3, 1]
-    if (rim) {
-      for (let i = 0; i < nRim; i++) {
-        pos[(4 + i) * 3] = -hw + rim.pos[i * 3] * k
-        pos[(4 + i) * 3 + 1] = hh + rim.pos[i * 3 + 1] * k
-        pos[(4 + i) * 3 + 2] = rim.pos[i * 3 + 2] * k
+    // what the arrays are computed from: the block's shape (the rim's key, or a flat quad), and per array its own inputs
+    const shape = rim ? this.rimKey(l, hTex, offEdges) : 'flat'
+    const pos = this.sharedAttr(`sp|${shape}|${wq},${hq},${k}`, 3, () => {
+      const pos = new Float32Array(n * 3)
+      pos.set([-qw, qh, 0, qw, qh, 0, -qw, -qh, 0, qw, -qh, 0])
+      if (rim) {
+        for (let i = 0; i < nRim; i++) {
+          pos[(4 + i) * 3] = -hw + rim.pos[i * 3] * k
+          pos[(4 + i) * 3 + 1] = hh + rim.pos[i * 3 + 1] * k
+          pos[(4 + i) * 3 + 2] = rim.pos[i * 3 + 2] * k
+        }
       }
-      uv.set(rim.uv, 8)
-      for (const i of rim.index) index.push(4 + i)
-    }
-    for (let j = 0; j < n; j++) {
-      const f = j < 4 ? BLOCK_SHADE.front : rim!.shade[j - 4]
-      col[j * 3] = c.r * f
-      col[j * 3 + 1] = c.g * f
-      col[j * 3 + 2] = c.b * f
-      cells[j * 2] = x
-      cells[j * 2 + 1] = y
-    }
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
-    geo.setAttribute('cell', new THREE.BufferAttribute(cells, 2))
+      return pos
+    })
+    const uv = this.sharedAttr(`su|${shape}|${l.uv.u0},${l.uv.v0},${l.uv.u1},${v1}`, 2, () => {
+      const uv = new Float32Array(n * 2)
+      uv.set([l.uv.u0, l.uv.v0, l.uv.u1, l.uv.v0, l.uv.u0, v1, l.uv.u1, v1])
+      if (rim) uv.set(rim.uv, 8)
+      return uv
+    })
+    const col = this.sharedAttr(`sc|${shape}|${c.r},${c.g},${c.b}`, 3, () => {
+      const col = new Float32Array(n * 3)
+      for (let j = 0; j < n; j++) {
+        const f = j < 4 ? BLOCK_SHADE.front : rim!.shade[j - 4]
+        col[j * 3] = c.r * f
+        col[j * 3 + 1] = c.g * f
+        col[j * 3 + 2] = c.b * f
+      }
+      return col
+    })
+    const index = this.sharedIndex(`si|${shape}`, () => {
+      const index = [0, 2, 1, 2, 3, 1]
+      if (rim) for (const i of rim.index) index.push(4 + i)
+      return index
+    })
+    const geo = new GL.BufferGeometry()
+    geo.setAttribute('position', pos)
+    geo.setAttribute('uv', uv)
+    geo.setAttribute('color', col)
     geo.setIndex(index)
     return geo
+  }
+
+  /**
+   * Give a holder that stands on its own — the doll, an open door in its wall
+   * run, a sprite wearing a material of its own — the `cell` attribute its
+   * shade-map shaders read (`CELL_VERT`): every vertex of each of its layers
+   * is on cell (x, y). A baked holder needs none, its cell is under its
+   * anchor, and the crowd's buffers carry none. The layers are the meshes with
+   * uvs; the inks and the shared shadow disc have no cell to read.
+   */
+  private giveCells(h: GL.Object3D, x: number, y: number): void {
+    for (const c of h.children) {
+      const m = c as GL.Mesh
+      if (m.userData.shared || !m.geometry || !m.geometry.getAttribute('uv')) continue
+      const n = m.geometry.getAttribute('position').count
+      const cells = new Float32Array(n * 2)
+      for (let j = 0; j < n; j++) {
+        cells[j * 2] = x
+        cells[j * 2 + 1] = y
+      }
+      m.geometry.setAttribute('cell', new GL.BufferAttribute(cells, 2))
+    }
+  }
+
+  /** The shared vertex array under `key` (`spriteAttrs`), built by `make` the first time it is asked for. */
+  private sharedAttr(key: string, itemSize: number, make: () => Float32Array): GL.BufferAttribute {
+    let a = this.spriteAttrs.get(key)
+    if (!a) this.spriteAttrs.set(key, (a = new GL.BufferAttribute(make(), itemSize)))
+    return a
+  }
+
+  /** The shared index under `key`: 16-bit while every index fits, as `setIndex` picks for a number array. */
+  private sharedIndex(key: string, make: () => number[]): GL.BufferAttribute {
+    let a = this.spriteAttrs.get(key)
+    if (!a) {
+      const index = make()
+      let wide = false
+      for (let i = 0; i < index.length; i++) if (index[i] >= 65535) { wide = true; break }
+      this.spriteAttrs.set(key, (a = new GL.BufferAttribute(wide ? new Uint32Array(index) : new Uint16Array(index), 1)))
+    }
+    return a
   }
 
   /**
@@ -1916,41 +2162,59 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * there is no rim to line. `grow` wider than a texel is the selected sprite's shell, which
    * also sits SEL_BACK deeper so the hull inside it paints over the part they share.
    */
-  private hullGeometry(l: SpriteLayer, hTex: number, wq: number, hq: number, k: number, grow = 1, down = grow - 1): THREE.BufferGeometry | null {
+  private hullGeometry(l: SpriteLayer, hTex: number, wq: number, hq: number, k: number, grow = 1, down = grow - 1): GL.BufferGeometry | null {
     const t = this.hullTemplate(l, hTex, grow, down)
     if (!t) return null
-    const n = t.pos.length / 3
-    const pos = new Float32Array(n * 3)
-    const hw = wq / 2, hh = hq / 2
-    for (let i = 0; i < n; i++) {
-      pos[i * 3] = -hw + t.pos[i * 3] * k
-      pos[i * 3 + 1] = hh + t.pos[i * 3 + 1] * k
-      pos[i * 3 + 2] = (t.pos[i * 3 + 2] - (grow > 1 ? SEL_BACK : 0)) * k
-    }
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-    geo.setIndex(t.index)
+    const shape = this.hullKey(l, hTex, grow, down)
+    const pos = this.sharedAttr(`hp|${shape}|${wq},${hq},${k}`, 3, () => {
+      const n = t.pos.length / 3
+      const pos = new Float32Array(n * 3)
+      const hw = wq / 2, hh = hq / 2
+      for (let i = 0; i < n; i++) {
+        pos[i * 3] = -hw + t.pos[i * 3] * k
+        pos[i * 3 + 1] = hh + t.pos[i * 3 + 1] * k
+        pos[i * 3 + 2] = (t.pos[i * 3 + 2] - (grow > 1 ? SEL_BACK : 0)) * k
+      }
+      return pos
+    })
+    const geo = new GL.BufferGeometry()
+    geo.setAttribute('position', pos)
+    geo.setIndex(this.sharedIndex(`hi|${shape}`, () => t.index))
     return geo
   }
 
   /** The ring's geometry placed on the same quad the ghost is; null where the atlas's pixels cannot be read. */
-  private ringGeometry(l: SpriteLayer, hTex: number, wq: number, hq: number, k: number, offEdges = false): THREE.BufferGeometry | null {
+  private ringGeometry(l: SpriteLayer, hTex: number, wq: number, hq: number, k: number, offEdges = false): GL.BufferGeometry | null {
     const t = this.ringTemplate(l, hTex, offEdges)
     if (!t) return null
     const n = t.pos.length / 3
-    const pos = new Float32Array(n * 3)
-    const hw = wq / 2, hh = hq / 2
-    for (let i = 0; i < n; i++) {
-      pos[i * 3] = -hw + t.pos[i * 3] * k
-      pos[i * 3 + 1] = hh + t.pos[i * 3 + 1] * k
-      pos[i * 3 + 2] = 0
-    }
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    const shape = this.rimKey(l, hTex, offEdges)
+    const pos = this.sharedAttr(`rp|${shape}|${wq},${hq},${k}`, 3, () => {
+      const pos = new Float32Array(n * 3)
+      const hw = wq / 2, hh = hq / 2
+      for (let i = 0; i < n; i++) {
+        pos[i * 3] = -hw + t.pos[i * 3] * k
+        pos[i * 3 + 1] = hh + t.pos[i * 3 + 1] * k
+        pos[i * 3 + 2] = 0
+      }
+      return pos
+    })
+    const geo = new GL.BufferGeometry()
+    geo.setAttribute('position', pos)
     // the ghost shader reads its colour from the vertices: the ink is black
-    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3))
-    geo.setIndex(t.index)
+    geo.setAttribute('color', this.sharedAttr(`rc|${n}`, 3, () => new Float32Array(n * 3)))
+    geo.setIndex(this.sharedIndex(`ri|${shape}`, () => t.index))
     return geo
+  }
+
+  /** What a rim and a ring are built from: the tile's rect in its atlas, the clip height, and whether the edge faces are left out. */
+  private rimKey(l: SpriteLayer, hTex: number, offEdges: boolean): string {
+    return `${l.r.atlas}:${l.r.sx},${l.r.sy},${l.r.w},${hTex}${offEdges ? ':off' : ''}`
+  }
+
+  /** What a hull is built from: the rim's inputs, and how far out and down it grows. */
+  private hullKey(l: SpriteLayer, hTex: number, grow: number, down: number): string {
+    return `${l.r.atlas}:${l.r.sx},${l.r.sy},${l.r.w},${hTex},${grow},${down}`
   }
 
   /**
@@ -1962,11 +2226,11 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const mask = this.atlasMask(l.a)
     if (!mask) return null
     const { sx, sy, w } = l.r
-    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex}${offEdges ? ':off' : ''}`
+    const key = this.rimKey(l, hTex, offEdges)
     let t = this.rings.get(key)
     if (t !== undefined) return t
     const aw = l.a.width
-    const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && mask[(sy + ty) * aw + sx + tx] === 1
+    const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && (mask[(sy + ty) * aw + sx + tx] & 1) === 1
     const tx0 = offEdges ? 1 : 0, tx1 = offEdges ? w - 1 : w
     const ring = (tx: number, ty: number) => !body(tx, ty) && (body(tx - 1, ty) || body(tx + 1, ty) || body(tx, ty - 1) || body(tx, ty + 1))
     // one flat face per run of ring texels rather than one per texel (mesh.ts): the same black, the same coverage
@@ -2001,11 +2265,11 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const mask = this.atlasMask(l.a)
     if (!mask) return null
     const { sx, sy, w } = l.r
-    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex},${grow},${down}`
+    const key = this.hullKey(l, hTex, grow, down)
     let t = this.hulls.get(key)
     if (t !== undefined) return t
     const aw = l.a.width
-    const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && mask[(sy + ty) * aw + sx + tx] === 1
+    const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && (mask[(sy + ty) * aw + sx + tx] & 1) === 1
     // a texel of the hull is one within `grow` steps of the body, counted along the axes as the ink is
     const near = (tx: number, ty: number, d: number): boolean =>
       body(tx, ty) || (d > 0 && (near(tx - 1, ty, d - 1) || near(tx + 1, ty, d - 1) || near(tx, ty - 1, d - 1) || near(tx, ty + 1, d - 1)))
@@ -2041,12 +2305,12 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const mask = this.atlasMask(l.a)
     if (!mask) return null
     const { sx, sy, w } = l.r
-    const key = `${l.r.atlas}:${sx},${sy},${w},${hTex}${offEdges ? ':off' : ''}`
+    const key = this.rimKey(l, hTex, offEdges)
     let t = this.rims.get(key)
     if (t !== undefined) return t
     const aw = l.a.width, ah = l.a.height
     /** The block is exactly what the sprite draws: `atlasMask` has already peeled the art's outline off both. */
-    const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && mask[(sy + ty) * aw + sx + tx] === 1
+    const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && (mask[(sy + ty) * aw + sx + tx] & 1) === 1
     const pos: number[] = []
     const uv: number[] = []
     const shade: number[] = []
@@ -2063,19 +2327,21 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const z0 = -BB_DEPTH, z1 = 0
     // every face wears its own texel: the block is body all through, so there is no line to step off.
     // Neighbouring faces along an edge whose texels hold the very same colour sample the very same thing,
-    // so they are built as one face wearing the first's texel (mesh.ts `runs`); where the colours cannot
-    // be read, every texel keeps its own face
-    const colour = l.a.texel
-    const same = (ax: number, ay: number, bx: number, by: number) => !!colour && colour(sx + ax, sy + ay) === colour(sx + bx, sy + by)
+    // so they are built as one face wearing the first's texel (mesh.ts `runs`); a mask without the colour
+    // bits (SAME_RIGHT, SAME_DOWN) gives every texel its own face
     const edge = (on: boolean) => offEdges && on
     const uvAt = (tx: number, ty: number): [number, number] => [(sx + tx + 0.5) / aw, (sy + ty + 0.5) / ah]
-    /** The runs along `a0..a1` of texels `on` (a face here) that share their colour with the run's first. */
-    const sameRuns = (on: (t: number) => boolean, at: (t: number) => [number, number], a0: number, a1: number): [number, number][] => {
+    /**
+     * The runs along `a0..a1` of texels `on` (a face here) that share their colour with the run's first:
+     * `link(t)` says texel t holds the colour of texel t - 1, and a run of texels each the colour of the
+     * one before is a run all of one colour.
+     */
+    const sameRuns = (on: (t: number) => boolean, link: (t: number) => boolean, a0: number, a1: number): [number, number][] => {
       const out: [number, number][] = []
       for (const [r0, r1] of runs(on, a0, a1)) {
         let start = r0
         for (let t = r0 + 1; t <= r1; t++) {
-          if (t < r1 && same(...at(start), ...at(t))) continue
+          if (t < r1 && link(t)) continue
           out.push([start, t])
           start = t
         }
@@ -2084,13 +2350,13 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     }
     for (let ty = 0; ty < hTex; ty++) {
       const y1 = -ty, y0 = y1 - 1
-      const row = (tx: number): [number, number] => [tx, ty]
+      const row = (tx: number) => (mask[(sy + ty) * aw + sx + tx - 1] & SAME_RIGHT) !== 0
       if (!edge(ty === 0)) for (const [a, b] of sameRuns((tx) => body(tx, ty) && !body(tx, ty - 1), row, 0, w)) face([a, y1, z1, b, y1, z1, b, y1, z0, a, y1, z0], ...uvAt(a, ty), BLOCK_SHADE.top)
       if (!edge(ty === hTex - 1)) for (const [a, b] of sameRuns((tx) => body(tx, ty) && !body(tx, ty + 1), row, 0, w)) face([a, y0, z0, b, y0, z0, b, y0, z1, a, y0, z1], ...uvAt(a, ty), BLOCK_SHADE.bottom)
     }
     for (let tx = 0; tx < w; tx++) {
       const x0 = tx, x1 = tx + 1
-      const col = (ty: number): [number, number] => [tx, ty]
+      const col = (ty: number) => (mask[(sy + ty - 1) * aw + sx + tx] & SAME_DOWN) !== 0
       if (!edge(tx === 0)) for (const [a, b] of sameRuns((ty) => body(tx, ty) && !body(tx - 1, ty), col, 0, hTex)) face([x0, -b, z0, x0, -b, z1, x0, -a, z1, x0, -a, z0], ...uvAt(tx, a), BLOCK_SHADE.side)
       if (!edge(tx === w - 1)) for (const [a, b] of sameRuns((ty) => body(tx, ty) && !body(tx + 1, ty), col, 0, hTex)) face([x1, -b, z1, x1, -b, z0, x1, -a, z0, x1, -a, z1], ...uvAt(tx, a), BLOCK_SHADE.side)
     }
@@ -2105,13 +2371,16 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * off: the ink reachable from outside a sprite is cleared (`INK_PEEL`), the
    * cleaned image becomes what the atlas draws, and the mask is the opacity of
    * what is left — so the sprite, its block and its silhouette are all the one
-   * shape.
+   * shape. The cleaned pixels are held only until the renderer has uploaded
+   * them (`Source.onUpload`): what the rims need of them is in the mask's
+   * SAME_RIGHT and SAME_DOWN bits, and a full copy of every sprite atlas is
+   * some 30 MB in a real game. After a lost context they are peeled again
+   * (`mount`).
    */
   private atlasMask(a: AtlasEntry): Uint8Array | null {
     if (a.mask !== undefined) return a.mask
     a.mask = null
-    const img = a.texture.image as TexImageSource | undefined
-    if (!img) return null
+    const img = a.image
     try {
       let canvas: HTMLCanvasElement | OffscreenCanvas
       if (typeof OffscreenCanvas !== 'undefined') canvas = new OffscreenCanvas(a.width, a.height)
@@ -2123,22 +2392,26 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null
       if (!ctx) return null
       ctx.drawImage(img as CanvasImageSource, 0, 0)
-      const image = ctx.getImageData(0, 0, a.width, a.height)
-      const mask = peelInk(image.data, a.width, a.height, OPAQUE_ALPHA, this.tiles?.spriteRects?.(a.name))
-      ctx.putImageData(image, 0, 0)
-      a.texture.image = canvas as unknown as TexImageSource
+      const w = a.width, h = a.height
+      const image = ctx.getImageData(0, 0, w, h)
+      const d = image.data
+      const mask = peelInk(d, w, h, OPAQUE_ALPHA, this.tiles?.spriteRects?.(a.name))
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = y * w + x
+          if (mask[i] !== 1) continue
+          const p = i * 4, q = p + 4, r = p + w * 4
+          if (x + 1 < w && d[p] === d[q] && d[p + 1] === d[q + 1] && d[p + 2] === d[q + 2] && d[p + 3] === d[q + 3]) mask[i] |= SAME_RIGHT
+          if (y + 1 < h && d[p] === d[r] && d[p + 1] === d[r + 1] && d[p + 2] === d[r + 2] && d[p + 3] === d[r + 3]) mask[i] |= SAME_DOWN
+        }
+      }
+      a.texture.image = { data: d, width: w, height: h }
+      a.texture.source.onUpload = (source) => {
+        source.data = { data: null, width: w, height: h }
+        source.onUpload = null
+      }
       a.texture.needsUpdate = true
       a.mask = mask
-      // a tile's colours are read back from the canvas as its rim is built, not kept for the whole atlas
-      const rows = new Map<number, Uint8ClampedArray>()
-      a.texel = (x, y) => {
-        let row = rows.get(y)
-        if (!row) {
-          if (rows.size > 64) rows.clear()
-          rows.set(y, (row = ctx.getImageData(0, y, a.width, 1).data))
-        }
-        return ((row[x * 4] << 24) | (row[x * 4 + 1] << 16) | (row[x * 4 + 2] << 8) | row[x * 4 + 3]) >>> 0
-      }
     } catch {
       a.mask = null
     }
@@ -2221,10 +2494,10 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       this.billboardCrowd.remove(h)
       if (h.parent) h.parent.remove(h)
       h.traverse((o) => {
-        const m = o as THREE.Mesh
+        const m = o as GL.Mesh
         if (m.userData.shared) return
         if (m.geometry) m.geometry.dispose()
-        if (m.userData.ownMaterial) (m.material as THREE.Material).dispose()
+        if (m.userData.ownMaterial) (m.material as GL.Material).dispose()
       })
     }
     if (rec.ghost) this.ghostCount--
@@ -2243,8 +2516,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     }
     const group = this.billboardGroup
     /** A holder into the crowd where it can be baked; a holder of its own (its own material) stays in the group. */
-    const stand = (h: THREE.Object3D, bake: boolean) => {
+    const stand = (h: GL.Object3D, bake: boolean) => {
       if (bake && this.billboardCrowd.mergeable(h)) this.billboardCrowd.add(h, b.x, b.y)
+      else this.giveCells(h, b.x, b.y)
     }
     if (b.kind === 'cloud') {
       const t = tileOf(b.tile)
@@ -2252,12 +2526,12 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       // a cloud wears a material of its own, so its light is in its vertex colour
       const h = this.addStanding(group, b.x, b.y, [{ ...t, ox: 0, oy: 0 }], b.height, shade, tint, false, 'none', false)
       h.traverse((o) => {
-        const m = o as THREE.Mesh
+        const m = o as GL.Mesh
         if (m.material) {
-          m.material = (m.material as THREE.Material).clone()
+          m.material = (m.material as GL.Material).clone()
           m.userData.ownMaterial = true
-          ;(m.material as THREE.MeshBasicMaterial).opacity = 0.55
-          ;(m.material as THREE.MeshBasicMaterial).depthWrite = false
+          ;(m.material as GL.MeshBasicMaterial).opacity = 0.55
+          ;(m.material as GL.MeshBasicMaterial).depthWrite = false
           m.layers.set(LAYER_NO_DEPTH)
         }
       })
@@ -2332,18 +2606,18 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     if (translucent) {
       let k = 0
       holder.traverse((o) => {
-        const m = o as THREE.Mesh
+        const m = o as GL.Mesh
         if (!m.material || !m.geometry) return
         if (k++ >= nSprite) return
-        m.material = (m.material as THREE.Material).clone()
+        m.material = (m.material as GL.Material).clone()
         m.userData.ownMaterial = true
-        ;(m.material as THREE.MeshBasicMaterial).opacity = b.alpha as number
-        ;(m.material as THREE.MeshBasicMaterial).depthWrite = false
+        ;(m.material as GL.MeshBasicMaterial).opacity = b.alpha as number
+        ;(m.material as GL.MeshBasicMaterial).depthWrite = false
         m.layers.set(LAYER_NO_DEPTH)
       })
     }
     // ground shadow: one shared disc, scaled to the sprite
-    const sh = new THREE.Mesh(this.shadowGeo, this.shadowMat)
+    const sh = new GL.Mesh(this.shadowGeo, this.shadowMat)
     sh.userData.shared = true
     sh.layers.set(LAYER_NO_DEPTH)
     const sr = Math.max(0.6, bh)
@@ -2371,7 +2645,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     if (!cur) return
     for (const rec of this.records.values()) {
       if (rec.x !== cur.x || rec.y !== cur.y || !rec.shells.length) continue
-      const holder = new THREE.Group()
+      const holder = new GL.Group()
       holder.position.copy(rec.position)
       holder.userData.billboard = true
       holder.userData.selection = true
@@ -2379,7 +2653,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       for (const s of rec.shells) {
         const shell = this.hullGeometry(s.l, s.hTex, s.wq, s.hq, s.k, SEL_GROW, s.room)
         if (!shell) continue
-        const sel = new THREE.Mesh(shell, this.hullSelMat)
+        const sel = new GL.Mesh(shell, this.hullSelMat)
         sel.position.copy(s.position)
         sel.renderOrder = s.renderOrder
         sel.userData.hull = true
@@ -2396,7 +2670,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
   private clearSelection() {
     for (const h of this.selected) {
       this.billboardGroup.remove(h)
-      for (const c of h.children) (c as THREE.Mesh).geometry.dispose()
+      for (const c of h.children) (c as GL.Mesh).geometry.dispose()
     }
     this.selected = []
   }
@@ -2409,7 +2683,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * own (an open door), the selected shells, and anything wearing a material
    * of its own (a translucent sprite, a cloud).
    */
-  private bakeStanding(group: THREE.Group, eye: { x: number; y: number }) {
+  private bakeStanding(group: GL.Group, eye: { x: number; y: number }) {
     const crowd = group === this.levelGroup ? this.levelCrowd : this.billboardCrowd
     crowd.bake(eye)
   }
@@ -2418,18 +2692,22 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const scene = this.scene
     const cam = this.camera
     if (!r || !scene || !cam) return
+    // the attack lift runs on the clock, not on what shows it: it is over when its time is, whether the hands
+    // are drawn or not (no viewmodel, empty hands), so `animating` cannot stick and keep the host rendering
+    this.lift = Number.isNaN(this.vmLift) ? NaN : this.liftEnvelope(nowSeconds() - this.vmLift)
+    if (Number.isNaN(this.lift)) this.vmLift = NaN
     if (scene.revision !== this.builtRevision) {
       this.builtRevision = scene.revision
       const bg = scene.level.sky === 'open' ? 0x0b1220 : scene.level.sky === 'dark' ? 0x120818 : 0x000000
-      ;(this.three.background as THREE.Color).set(bg)
+      ;(this.stage.background as GL.Color).set(bg)
       // the geometry stands until the layout changes (Part IV); a move, a
       // change of sight or a monster's step repaint the shade map and the
       // billboards, which is cheap, and leave the level's meshes alone
       const t = scene.level.tint
       const tintKey = `${t.r},${t.g},${t.b}`
-      // a step onto or off a staircase changes which features stand and which lie flat (`occupiedFeatures`),
-      // which is part of the geometry; it is as rare as a layout change, and the rest of a monster's walk still
-      // leaves the level's meshes alone
+      // a step onto or off a staircase, the player's or a monster's, changes which features stand and which
+      // lie flat (`occupiedFeatures`), which is part of the geometry; it is as rare as a layout change, and the
+      // rest of a walk still leaves the level's meshes alone
       const occKey = [...this.occupiedFeatures(scene)].sort().join('|')
       if (scene.layoutRevision !== this.builtLayout || tintKey !== this.builtTint || occKey !== this.builtOccupied) {
         this.builtLayout = scene.layoutRevision
@@ -2465,7 +2743,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.placeCursor()
     // the ghost pass needs the depth image only when there is a ghost to test against it
     if (this.ghostCount > 0) this.renderOccluderDepth(r)
-    r.render(this.three, this.cam)
+    r.render(this.stage, this.cam)
     this.renderViewmodel(r, scene)
   }
 
@@ -2543,7 +2821,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * (`hullTemplate`) at the hand's own scale: the block grown a texel each
    * way and closed, for the black material to draw back faces only.
    */
-  private extrudeIcon(item: HandItem): { block: THREE.BufferGeometry; hull: THREE.BufferGeometry | null } | null {
+  private extrudeIcon(item: HandItem): { block: GL.BufferGeometry; hull: GL.BufferGeometry | null } | null {
     const px = this.paintIcon(item)
     if (!px) return null
     const { w, h, data } = px
@@ -2580,7 +2858,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         if (!opaque(x, y)) continue
         const o = (y * w + x) * 4
         // texel colours are sRGB; the material's vertex colours are read as linear
-        const c = new THREE.Color(data[o] / 255, data[o + 1] / 255, data[o + 2] / 255).convertSRGBToLinear()
+        const c = new GL.Color(data[o] / 255, data[o + 1] / 255, data[o + 2] / 255).convertSRGBToLinear()
         const x0 = (x - cx) * s, x1 = x0 + s
         const y1 = (bottom - y) * s, y0 = y1 - s
         const z0 = -depth, z1 = 0
@@ -2593,9 +2871,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       }
     }
     if (!idx.length) return null
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+    const g = new GL.BufferGeometry()
+    g.setAttribute('position', new GL.Float32BufferAttribute(pos, 3))
+    g.setAttribute('color', new GL.Float32BufferAttribute(col, 3))
     g.setIndex(idx)
     // the ink: the hull round the block, kept inside the icon's canvas as the art's own line was. Closed on both
     // sides, unlike a standing sprite's: a hand is posed with its back to the eye as often as its front (the
@@ -2611,17 +2889,17 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       for (let i = 0; i < 12; i += 3) hpos.push((f[i] - cx) * s, (f[i + 1] + bottom) * s, f[i + 2])
       hidx.push(base, base + 1, base + 2, base, base + 2, base + 3)
     }
-    let hull: THREE.BufferGeometry | null = null
+    let hull: GL.BufferGeometry | null = null
     if (hidx.length) {
-      hull = new THREE.BufferGeometry()
-      hull.setAttribute('position', new THREE.Float32BufferAttribute(hpos, 3))
+      hull = new GL.BufferGeometry()
+      hull.setAttribute('position', new GL.Float32BufferAttribute(hpos, 3))
       hull.setIndex(hidx)
     }
     return { block: g, hull }
   }
 
   /** One hand: the extruded icon and the ink round it, built once per distinct item. */
-  private buildHand(group: THREE.Group, item: HandItem | null) {
+  private buildHand(group: GL.Group, item: HandItem | null) {
     group.clear()
     if (!item) return
     const key = JSON.stringify(item.layers)
@@ -2631,15 +2909,15 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       this.vmGeos.set(key, geo)
     }
     if (!geo) return
-    group.add(new THREE.Mesh(geo.block, this.vmMat))
+    group.add(new GL.Mesh(geo.block, this.vmMat))
     if (geo.hull) {
-      const ink = new THREE.Mesh(geo.hull, this.hullMat)
+      const ink = new GL.Mesh(geo.hull, this.hullMat)
       ink.userData.hull = true
       group.add(ink)
     }
   }
 
-  private renderViewmodel(r: THREE.WebGLRenderer, scene: Scene) {
+  private renderViewmodel(r: GL.WebGLRenderer, scene: Scene) {
     if (!this.vmVisible) return
     const vm = this.viewmodel!
     if (!this.vmBuilt && this.tiles) {
@@ -2648,10 +2926,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       this.buildHand(this.vmHands.offhand, vm.offhand)
     }
     const asp = this.vmCam.aspect
-    const lift = this.liftEnvelope(nowSeconds() - this.vmLift)
-    if (Number.isNaN(lift)) this.vmLift = NaN
+    const lift = this.lift
     // `push` slides the hand from its rest toward the centre of the view, by that fraction of the distance
-    const pose = (g: THREE.Group, p: HandPose, push = 0) => {
+    const pose = (g: GL.Group, p: HandPose, push = 0) => {
       const len = Math.hypot(p.x * asp, p.y) || 1
       g.position.set(p.x * asp * (1 - push / len), p.y * (1 - push / len), 0)
       // roll first, then pitch, then yaw: Euler 'YXZ' applies Z, then X, then Y

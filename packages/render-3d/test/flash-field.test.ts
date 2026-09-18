@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
+import * as GL from '@orbrun/gl'
 import { Render3d } from '../src/index.js'
 import { cellKey, emptyScene, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
@@ -38,12 +38,12 @@ function room(flash?: { r: number; g: number; b: number; a: number }): Scene {
 
 type Inner = {
   setTiles(t: TileSource): void
-  levelGroup: THREE.Group
+  levelGroup: GL.Group
   rebuildLevel(s: Scene): void
   updateFields(s: Scene): void
-  flashTex: THREE.DataTexture | null
-  fieldUniforms: { flashMap: { value: THREE.Texture | null }; fieldOrigin: { value: THREE.Vector2 }; fieldSize: { value: THREE.Vector2 } }
-  atlases: Map<string, { ghostMat: THREE.ShaderMaterial; ghostVisibleMat: THREE.ShaderMaterial }>
+  flashTex: GL.DataTexture | null
+  fieldUniforms: { flashMap: { value: GL.Texture | null }; fieldOrigin: { value: GL.Vector2 }; fieldSize: { value: GL.Vector2 } }
+  atlases: Map<string, { ghostMat: GL.ShaderMaterial; ghostVisibleMat: GL.ShaderMaterial }>
 }
 
 function build(scene: Scene): Inner {
@@ -76,7 +76,7 @@ describe('the flash field', () => {
     const flashed = build(room(PARALYSED))
     const count = (r: Inner) => r.levelGroup.children.length
     const tris = (r: Inner) =>
-      r.levelGroup.children.reduce((n, c) => n + (((c as THREE.Mesh).geometry?.getIndex()?.count ?? 0) as number), 0)
+      r.levelGroup.children.reduce((n, c) => n + (((c as GL.Mesh).geometry?.getIndex()?.count ?? 0) as number), 0)
     expect(count(flashed)).toBe(count(plain))
     expect(tris(flashed)).toBe(tris(plain))
   })

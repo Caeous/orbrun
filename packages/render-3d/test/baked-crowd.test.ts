@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
+import * as GL from '@orbrun/gl'
 import { Render3d } from '../src/index.js'
 import { CHUNK } from '../src/crowd.js'
 import { emptyScene, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
@@ -12,11 +12,11 @@ const tiles: TileSource = {
 }
 
 type Guts = {
-  cam: THREE.PerspectiveCamera
-  billboardGroup: THREE.Group
+  cam: GL.PerspectiveCamera
+  billboardGroup: GL.Group
   setTiles(t: TileSource): void
   syncBillboards(s: Scene): void
-  bakeStanding(g: THREE.Group, eye: { x: number; y: number }): void
+  bakeStanding(g: GL.Group, eye: { x: number; y: number }): void
 }
 
 function crowd(): Scene {
@@ -33,7 +33,7 @@ function crowd(): Scene {
   return s
 }
 
-const meshes = (g: THREE.Object3D) => g.children.filter((c) => (c as THREE.Mesh).geometry) as THREE.Mesh[]
+const meshes = (g: GL.Object3D) => g.children.filter((c) => (c as GL.Mesh).geometry) as GL.Mesh[]
 
 /**
  * A crowd of standing holders is baked into one mesh per material and draw
@@ -53,7 +53,7 @@ describe('baked crowd', () => {
     r.bakeStanding(r.billboardGroup, { x: 0, y: 0 })
 
     const baked = meshes(r.billboardGroup).filter((m) => m.userData.baked)
-    const holders = r.billboardGroup.children.filter((c) => !(c as THREE.Mesh).geometry)
+    const holders = r.billboardGroup.children.filter((c) => !(c as GL.Mesh).geometry)
     // body, hull, badge, ghost, ghost badge, ring, shadow: one mesh each, whatever the crowd
     expect(baked.length).toBeGreaterThan(3)
     expect(baked.length).toBeLessThan(meshesBefore)
@@ -67,7 +67,7 @@ describe('baked crowd', () => {
       expect(m.frustumCulled).toBe(true)
       const sphere = m.geometry.boundingSphere!
       expect(sphere).toBeTruthy()
-      const anchor = m.geometry.getAttribute('anchor') as THREE.BufferAttribute
+      const anchor = m.geometry.getAttribute('anchor') as GL.BufferAttribute
       const index = m.geometry.getIndex()!
       for (let i = 0; i < m.geometry.drawRange.count; i++) {
         const v = index.getX(i)
@@ -77,10 +77,10 @@ describe('baked crowd', () => {
       expect(sphere.radius).toBeLessThan(CHUNK * 2)
       expect(m.geometry.getAttribute('anchor')).toBeTruthy()
       expect(m.geometry.getAttribute('anchor').count).toBe(m.geometry.getAttribute('position').count)
-      expect((m.material as THREE.Material).defines?.MERGED).toBe('')
+      expect((m.material as GL.Material).defines?.MERGED).toBe('')
     }
     // the ghost meshes keep their layer, so the depth pass still leaves them out
-    const depthCam = new THREE.Layers()
+    const depthCam = new GL.Layers()
     depthCam.set(0)
     const offDepth = baked.filter((m) => !m.layers.test(depthCam))
     expect(offDepth.length).toBeGreaterThan(0)
@@ -95,11 +95,11 @@ describe('baked crowd', () => {
     r.syncBillboards(s)
     const body = r.billboardGroup.children.find((h) => h.userData.kind === 'monster')!
     const quad = meshes(body).find((m) => !m.userData.shared && !m.userData.hull)!
-    const local = (quad.geometry.getAttribute('position') as THREE.BufferAttribute).getY(0) + quad.position.y
+    const local = (quad.geometry.getAttribute('position') as GL.BufferAttribute).getY(0) + quad.position.y
     r.bakeStanding(r.billboardGroup, { x: 0, y: 0 })
     const merged = meshes(r.billboardGroup).find((m) => m.userData.baked && m.geometry.hasAttribute('uv') && m.renderOrder === 1)!
-    const anchor = merged.geometry.getAttribute('anchor') as THREE.BufferAttribute
-    const pos = merged.geometry.getAttribute('position') as THREE.BufferAttribute
+    const anchor = merged.geometry.getAttribute('anchor') as GL.BufferAttribute
+    const pos = merged.geometry.getAttribute('position') as GL.BufferAttribute
     // anchors are the holder's place itself, and the chunk mesh stands at the origin: every vertex is summed exactly as
     // one merged mesh summed it (the buffers carry headroom past the last vertex drawn, so only what the draw range
     // indexes is looked at)

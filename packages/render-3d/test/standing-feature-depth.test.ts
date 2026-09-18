@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
+import * as GL from '@orbrun/gl'
 import { Render3d } from '../src/index.js'
 import { cellKey, emptyScene, type Billboard, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
@@ -13,8 +13,8 @@ const tiles: TileSource = {
 
 type Priv = {
   setTiles(t: TileSource): void
-  levelGroup: THREE.Group
-  billboardGroup: THREE.Group
+  levelGroup: GL.Group
+  billboardGroup: GL.Group
   rebuildLevel(s: Scene): void
   syncBillboards(s: Scene): void
 }
@@ -54,13 +54,13 @@ function build(scene: Scene): Priv {
   return r
 }
 
-function holders(g: THREE.Group): THREE.Object3D[] {
+function holders(g: GL.Group): GL.Object3D[] {
   return g.children.filter((c) => c.userData.billboard)
 }
 
 /** The nearest face of a holder's first quad, in its own frame: the eye looks down -z of it. */
-function front(h: THREE.Object3D): number {
-  return (h.children[0] as THREE.Mesh).position.z
+function front(h: GL.Object3D): number {
+  return (h.children[0] as GL.Mesh).position.z
 }
 
 const monster: Billboard = { x: 2, y: 1, tile: 9, kind: 'monster', height: 1, attitude: 'hostile' }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
+import * as GL from '@orbrun/gl'
 import { Render3d } from '../src/index.js'
 import { emptyScene, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
@@ -11,8 +11,8 @@ const tiles: TileSource = {
 }
 
 type Guts = {
-  cam: THREE.PerspectiveCamera
-  billboardGroup: THREE.Group
+  cam: GL.PerspectiveCamera
+  billboardGroup: GL.Group
   setTiles(t: TileSource): void
   syncBillboards(s: Scene): void
   renderOccluderDepth(r: unknown): void
@@ -32,7 +32,7 @@ describe('ghost depth pass', () => {
     const seen: number[] = []
     let target: unknown = 'frame'
     const fake = {
-      getDrawingBufferSize: (v: THREE.Vector2) => v.set(64, 32),
+      getDrawingBufferSize: (v: GL.Vector2) => v.set(64, 32),
       getRenderTarget: () => target,
       setRenderTarget: (t: unknown) => void (target = t),
       clear: () => {},
@@ -56,11 +56,11 @@ describe('ghost depth pass', () => {
     s.player = { x: 0, y: 0 }
     s.billboards = [{ x: 3, y: 3, tile: 1, kind: 'monster', height: 1, attitude: 'hostile' }]
     r.syncBillboards(s)
-    const depthCam = new THREE.Layers()
+    const depthCam = new GL.Layers()
     depthCam.set(0)
     const ghost = r.billboardGroup.children.find((h) => h.userData.kind === 'ghost')!
     const sprite = r.billboardGroup.children.find((h) => h.userData.kind === 'monster')!
-    const meshes = (h: THREE.Object3D) => h.children.filter((c) => (c as THREE.Mesh).geometry)
+    const meshes = (h: GL.Object3D) => h.children.filter((c) => (c as GL.Mesh).geometry)
     expect(meshes(ghost).length).toBeGreaterThan(0)
     for (const m of meshes(ghost)) expect(m.layers.test(depthCam)).toBe(false)
     const body = meshes(sprite).filter((c) => !c.userData.shared && !c.userData.hull)

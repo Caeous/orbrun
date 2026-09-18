@@ -17,7 +17,7 @@ let session: Session | null = null
 let lobby: FrontEnd | null = null
 let game: GameScreen | null = null
 /**
- * The game screen, and three.js with it, is a chunk of its own: the front
+ * The game screen, and the renderer with it, is a chunk of its own: the front
  * end draws without it, and fetches it once the first screen is up, so a
  * Play is still instant and the account list never waits on the renderer.
  */

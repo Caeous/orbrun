@@ -127,6 +127,13 @@ export class FrontEnd {
   private nav = new FocusNav()
   private session: Session | null = null
   private unsub: (() => void) | null = null
+  /**
+   * `destroy` was called: the screen is off the page, and nothing that lands afterwards (a `.where` fetch
+   * still in the air) may redraw it or follow a session on its behalf, which would keep it alive
+   */
+  private destroyed = false
+  /** pulled on `destroy`, so the fetches in flight stop instead of finishing for a screen that is gone */
+  private aborter = new AbortController()
   private _view: View = 'home'
   private reloaded = false
   private error: string | null = null
@@ -185,6 +192,8 @@ export class FrontEnd {
   }
 
   destroy() {
+    this.destroyed = true
+    this.aborter.abort()
     this.unsub?.()
     if (this.frame) cancelAnimationFrame(this.frame)
     this.osk.detach()
@@ -453,13 +462,14 @@ export class FrontEnd {
    * redrawn while it would read the same.
    */
   refresh() {
+    if (this.destroyed) return
     if (this._view === 'home') this.showHome()
     else if (this._view === 'watch') this.showWatch()
   }
 
   /** A redraw on the next frame: a burst of messages (the roster on arrival) is drawn once. */
   private schedule() {
-    if (this.frame) return
+    if (this.frame || this.destroyed) return
     this.frame = requestAnimationFrame(() => {
       this.frame = 0
       this.refresh()
@@ -736,12 +746,14 @@ export class FrontEnd {
       if (!url) continue
       let text: string
       try {
-        const r = await fetch(url)
+        const r = await fetch(url, { signal: this.aborter.signal })
         if (!r.ok) continue
         text = await r.text()
       } catch {
         continue
       }
+      // landed for a screen that is gone (the abort came between the bytes and here): it is nobody's news
+      if (this.destroyed) return
       const w = parseWhereis(text)
       if (!w) continue
       if (!known) setMorgueDir(server.id, who, dir)

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { emptyScene, cellKey, makeCamera, type Scene, type SceneCell, type TileSource } from '@orbrun/scene'
 import { Render2d } from '../src/index.js'
 
@@ -277,6 +277,44 @@ describe('Render2d draw order', () => {
     // three cells right of the player, in view; (4,1) is three cells east: turned, three
     // cells up, off a 3-row canvas
     expect(wide.images.map((i) => `${i.dx},${i.dy}`)).toEqual(['30,10', '30,40'])
+  })
+  it('looks the minimap’s cells up by position instead of walking the whole level, and shows the same cells', () => {
+    const { canvas, fills } = fakeCanvas()
+    const r = new Render2d({ cellSize: 4, follow: true, mode: 'minimap', up: 2 })
+    r.mount(canvas)
+    r.resize(20, 20, 1)
+    // a level far larger than the map's disc, the player in its middle
+    const scene = sceneWith([])
+    for (let y = 0; y < 60; y++) for (let x = 0; x < 60; x++) scene.cells.set(cellKey(x, y), floor(x, y))
+    const values = vi.spyOn(scene.cells, 'values')
+    r.setScene(scene)
+    r.setCamera(makeCamera(30, 30, Math.PI / 4))
+    r.render()
+    expect(values).not.toHaveBeenCalled()
+    // a quarter of the level's cells at most were fetched: the range is the turned canvas, not the level
+    const looked = fills.length
+    expect(looked).toBeGreaterThan(25)
+    expect(looked).toBeLessThan(200)
+    // the walk over every cell draws the same squares in the same places
+    const whole = fakeCanvas()
+    const w = new Render2d({ cellSize: 4, follow: true, mode: 'minimap', up: 2 })
+    w.mount(whole.canvas)
+    w.resize(20, 20, 1)
+    const small = sceneWith([])
+    // fewer cells than the range holds: walked whole, in the level's order
+    for (let y = 25; y < 35; y++) for (let x = 25; x < 35; x++) small.cells.set(cellKey(x, y), floor(x, y))
+    const ranged = fakeCanvas()
+    const g = new Render2d({ cellSize: 4, follow: true, mode: 'minimap', up: 2 })
+    g.mount(ranged.canvas)
+    g.resize(20, 20, 1)
+    for (const [view, sc] of [[w, small], [g, scene]] as const) {
+      view.setScene(sc)
+      view.setCamera(makeCamera(30, 30, Math.PI / 4))
+      view.render()
+    }
+    const at = (f: { x: number; y: number }[]) => f.map((p) => `${p.x},${p.y}`).sort()
+    const inner = at(whole.fills)
+    expect(at(ranged.fills).filter((p) => inner.includes(p))).toEqual(inner)
   })
   it('stands a feature upright over the turned ground, where a door lies with it', () => {
     // `uprightYaw` 0 leaves what is built into the ground lying with it. A

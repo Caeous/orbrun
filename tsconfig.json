@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "packages/scene" },
+    { "path": "packages/gl" },
     { "path": "packages/webtiles" },
     { "path": "packages/gamedata" },
     { "path": "packages/scene-webtiles" },

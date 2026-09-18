@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
-import { Render3d } from '../src/index.js'
+import * as GL from '@orbrun/gl'
+import { Render3d, SAME_DOWN, SAME_RIGHT } from '../src/index.js'
 import { emptyScene, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
 /**
@@ -18,9 +18,9 @@ const tiles: TileSource = {
 
 type Priv = {
   setTiles(t: TileSource): void
-  billboardGroup: THREE.Group
+  billboardGroup: GL.Group
   syncBillboards(s: Scene): void
-  atlas(name: string): { mask?: Uint8Array | null; texel?: (x: number, y: number) => number }
+  atlas(name: string): { mask?: Uint8Array | null }
 }
 
 function scene(): Scene {
@@ -34,9 +34,9 @@ function scene(): Scene {
 /** Every rim face as (edge, texel it wears): the edge is its plane and the texel span it covers. */
 function edges(r: Priv): Map<string, string> {
   const h = r.billboardGroup.children.find((c) => c.userData.kind === 'monster')!
-  const m = h.children.find((c) => (c as THREE.Mesh).geometry && !c.userData.shared && !c.userData.hull) as THREE.Mesh
-  const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute
-  const uv = m.geometry.getAttribute('uv') as THREE.BufferAttribute
+  const m = h.children.find((c) => (c as GL.Mesh).geometry && !c.userData.shared && !c.userData.hull) as GL.Mesh
+  const pos = m.geometry.getAttribute('position') as GL.BufferAttribute
+  const uv = m.geometry.getAttribute('uv') as GL.BufferAttribute
   const k = 1 / 32, hw = (RECT.w / 32) / 2
   const out = new Map<string, string>()
   for (let f = 4; f < pos.count; f += 4) {
@@ -59,11 +59,18 @@ function build(colours?: (x: number, y: number) => number): { r: Priv; faces: nu
   // a 4x4 body at (5..8, 9..12) with a notch out of its bottom-right corner
   const mask = new Uint8Array(16 * 16)
   for (let y = 9; y < 13; y++) for (let x = 5; x < 9; x++) if (!(x === 8 && y === 12)) mask[y * 16 + x] = 1
+  // the colours are kept as the mask's SAME bits: a body texel that holds the colour of the next along, or down
+  if (colours)
+    for (let y = 0; y < 16; y++)
+      for (let x = 0; x < 16; x++) {
+        if (mask[y * 16 + x] !== 1) continue
+        if (x + 1 < 16 && colours(x, y) === colours(x + 1, y)) mask[y * 16 + x] |= SAME_RIGHT
+        if (y + 1 < 16 && colours(x, y) === colours(x, y + 1)) mask[y * 16 + x] |= SAME_DOWN
+      }
   r.atlas('main').mask = mask
-  r.atlas('main').texel = colours
   r.syncBillboards(scene())
   const h = r.billboardGroup.children.find((c) => c.userData.kind === 'monster')!
-  const m = h.children.find((c) => (c as THREE.Mesh).geometry && !c.userData.shared && !c.userData.hull) as THREE.Mesh
+  const m = h.children.find((c) => (c as GL.Mesh).geometry && !c.userData.shared && !c.userData.hull) as GL.Mesh
   return { r, faces: (m.geometry.getAttribute('position').count - 4) / 4 }
 }
 

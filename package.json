@@ -30,7 +30,6 @@
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
-    "@types/three": "^0.185.4",
     "happy-dom": "^20.14.0",
     "opentype.js": "^2.0.0",
     "typescript": "^5.9.2",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
+import * as GL from '@orbrun/gl'
 import { Render3d, type RenderStats } from '../src/index.js'
 import { cellKey, emptyScene, makeCamera, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
@@ -20,13 +20,15 @@ const tiles: TileSource = {
 type Guts = {
   stats: RenderStats
   renderer: unknown
-  billboardGroup: THREE.Group
+  billboardGroup: GL.Group
   records: Map<string, unknown>
-  selected: THREE.Object3D[]
+  selected: GL.Object3D[]
   atlas(name: string): { mask?: Uint8Array | null }
   syncBillboards(s: Scene): boolean
-  bakeStanding(g: THREE.Group, eye: { x: number; y: number }): void
+  bakeStanding(g: GL.Group, eye: { x: number; y: number }): void
   syncSelection(): void
+  fixtures: Map<string, GL.Object3D>
+  levelGroup: GL.Group
 }
 
 /** A renderer whose WebGL is a stub: `render` draws nothing, and the rest of what a frame asks of it is inert. */
@@ -37,7 +39,7 @@ function stubbed(): { r: Render3d; g: Guts; draws: number } {
   let target: unknown = null
   g.renderer = {
     render: () => void state.draws++,
-    getDrawingBufferSize: (v: THREE.Vector2) => v.set(64, 32),
+    getDrawingBufferSize: (v: GL.Vector2) => v.set(64, 32),
     getRenderTarget: () => target,
     setRenderTarget: (t: unknown) => void (target = t),
     clear: () => {},
@@ -77,9 +79,9 @@ function room(): Scene {
 }
 
 const snapshot = (g: Guts) => ({ ...g.stats })
-const baked = (g: Guts) => g.billboardGroup.children.filter((c) => c.userData.baked) as THREE.Mesh[]
+const baked = (g: Guts) => g.billboardGroup.children.filter((c) => c.userData.baked) as GL.Mesh[]
 /** Every baked buffer and its upload version: two frames with the same picture leave every version as it was. */
-const versions = (g: Guts) => baked(g).map((m) => [m.geometry, ...Object.values(m.geometry.attributes).map((a) => (a as THREE.BufferAttribute).version), m.geometry.index!.version] as const)
+const versions = (g: Guts) => baked(g).map((m) => [m.geometry, ...Object.values(m.geometry.attributes).map((a) => (a as GL.BufferAttribute).version), m.geometry.index!.version] as const)
 
 function frame(r: Render3d, s: Scene) {
   r.setScene(s)
@@ -120,8 +122,37 @@ describe('the crowd across scenes', () => {
     const after = snapshot(g)
     expect([after.spriteBuilds, after.spriteDrops, after.chunkBakes]).toEqual([before.spriteBuilds, before.spriteDrops, before.chunkBakes])
     expect(versions(g)).toEqual(was)
+    // the level stands as it was: a step is not a layout change
+    expect(after.levelBuilds).toBe(before.levelBuilds)
     // the light moved with the player: the shade field is what carries it
     expect(after.fieldUpdates).toBe(before.fieldUpdates + 1)
+  })
+
+  it('rebuilds the level only when the player steps onto or off a standing feature', () => {
+    const { r, g } = stubbed()
+    const s = room()
+    // a staircase at (4, 2), standing
+    const stairs = s.cells.get(cellKey(4, 2))!
+    stairs.featureTile = 2
+    stairs.stance = 'upright'
+    r.setCamera(makeCamera(2, 2))
+    frame(r, s)
+    const before = snapshot(g)
+    // a step beside it: the level stands
+    s.player = { x: 3, y: 2 }
+    s.revision++
+    frame(r, s)
+    expect(g.stats.levelBuilds).toBe(before.levelBuilds)
+    // a step onto it: the staircase lies down under the camera, which is a new level
+    s.player = { x: 4, y: 2 }
+    s.revision++
+    frame(r, s)
+    expect(g.stats.levelBuilds).toBe(before.levelBuilds + 1)
+    // and off again: it stands back up
+    s.player = { x: 5, y: 2 }
+    s.revision++
+    frame(r, s)
+    expect(g.stats.levelBuilds).toBe(before.levelBuilds + 2)
   })
 
   it('rebuilds one sprite, and bakes only its chunks, when it moves', () => {
@@ -148,6 +179,104 @@ describe('the crowd across scenes', () => {
     expect([...touchedChunks]).toEqual(['16,16'])
     // and nothing was allocated: the chunk's buffers had the room
     expect(after.chunkAllocs).toBe(before.chunkAllocs)
+  })
+
+  it('writes and uploads only the changed span of a chunk when one sprite of it moves', () => {
+    const { r, g } = stubbed()
+    const s = room()
+    r.setCamera(makeCamera(2, 2))
+    frame(r, s)
+    const before = snapshot(g)
+    // the second monster steps within the near chunk, which the other near monster and the item share
+    s.billboards[1] = { ...s.billboards[1], y: 6 }
+    s.revision++
+    frame(r, s)
+    const after = snapshot(g)
+    expect(after.spriteBuilds).toBe(before.spriteBuilds + 1)
+    expect(after.chunkBakes).toBe(before.chunkBakes + 1)
+    // the sprites that stood still were left in place, not written again
+    expect(after.keptVertices).toBeGreaterThan(before.keptVertices)
+    expect(after.bakedVertices - before.bakedVertices).toBeLessThan(after.keptVertices - before.keptVertices)
+    // the ranges handed to the GPU cover the rewritten spans, not the whole buffer
+    const crowd = (g as unknown as { billboardCrowd: { chunks: Map<string, { dirty: boolean; batches: Map<string, { mesh: GL.Mesh; slots: unknown[] }> }> } }).billboardCrowd
+    const near = crowd.chunks.get('0,0')!
+    let partial = 0
+    for (const b of near.batches.values()) {
+      const pos = b.mesh.geometry.getAttribute('position') as GL.BufferAttribute
+      const span = pos.updateRanges.reduce((n, u) => n + u.count, 0)
+      if (span > 0 && span < b.mesh.geometry.drawRange.count * 3) partial++
+    }
+    expect(partial).toBeGreaterThan(0)
+    // and the buffers hold byte for byte what a full write leaves
+    const kept = new Map<GL.Mesh, { arrays: ArrayLike<number>[]; count: number }>()
+    for (const b of near.batches.values()) {
+      const geo = b.mesh.geometry
+      kept.set(b.mesh, { arrays: [...Object.values(geo.attributes).map((a) => (a as GL.BufferAttribute).array.slice()), geo.index!.array.slice()], count: geo.drawRange.count })
+      b.slots = []
+    }
+    near.dirty = true
+    g.bakeStanding(g.billboardGroup, { x: 2, y: 2 })
+    for (const b of near.batches.values()) {
+      const geo = b.mesh.geometry
+      const was = kept.get(b.mesh)!
+      expect(geo.drawRange.count).toBe(was.count)
+      const now = [...Object.values(geo.attributes).map((a) => (a as GL.BufferAttribute).array), geo.index!.array]
+      now.forEach((a, i) => expect(Array.from(a as ArrayLike<number>)).toEqual(Array.from(was.arrays[i])))
+    }
+  })
+})
+
+describe('the fixtures across layouts', () => {
+  /** The room with a statue at (8, 8) and a fountain at (12, 12), both standing. */
+  function furnished(): Scene {
+    const s = room()
+    for (const [x, y] of [[8, 8], [12, 12]]) {
+      const c = s.cells.get(cellKey(x, y))!
+      c.featureTile = 3
+      c.feature = { type: 'other', name: 'statue' }
+      c.stance = 'upright'
+    }
+    return s
+  }
+
+  it('leaves a fixture standing through a layout rebuild, and takes it down when the level no longer has it', () => {
+    const { r, g } = stubbed()
+    const s = furnished()
+    r.setCamera(makeCamera(2, 2))
+    frame(r, s)
+    expect(g.fixtures.size).toBe(2)
+    const stood = new Map(g.fixtures)
+    const before = snapshot(g)
+    // a wall becomes floor: the level's meshes are built again
+    s.cells.get(cellKey(19, 10))!.kind = 'floor'
+    s.revision++
+    s.layoutRevision = s.revision
+    frame(r, s)
+    const after = snapshot(g)
+    expect(after.levelBuilds).toBe(before.levelBuilds + 1)
+    // the same holders stand, nothing of theirs was written or allocated again
+    expect([...g.fixtures.entries()]).toEqual([...stood.entries()])
+    expect(after.chunkAllocs).toBe(before.chunkAllocs)
+    expect(after.bakedVertices).toBe(before.bakedVertices)
+    expect(after.keptVertices).toBeGreaterThan(before.keptVertices)
+    // the statue goes: its holder comes down, the fountain's stays
+    const statue = s.cells.get(cellKey(8, 8))!
+    statue.featureTile = undefined
+    statue.feature = undefined
+    statue.stance = undefined
+    s.revision++
+    s.layoutRevision = s.revision
+    frame(r, s)
+    expect(g.fixtures.size).toBe(1)
+    const [key, holder] = [...g.fixtures][0]
+    expect(key.startsWith('12,12|')).toBe(true)
+    expect(stood.get(key)).toBe(holder)
+    // and new tiles bring every fixture down, to be built from them
+    r.setTiles(tiles)
+    expect(g.fixtures.size).toBe(0)
+    frame(r, s)
+    expect(g.fixtures.size).toBe(1)
+    expect(g.fixtures.get(key)).not.toBe(holder)
   })
 })
 

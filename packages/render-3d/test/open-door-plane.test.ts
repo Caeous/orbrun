@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
+import * as GL from '@orbrun/gl'
 import { Render3d } from '../src/index.js'
 import { cellKey, emptyScene, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
@@ -11,7 +11,7 @@ const tiles: TileSource = {
   atlasNames: () => ['main'],
 }
 
-type Priv = { setTiles(t: TileSource): void; levelGroup: THREE.Group; rebuildLevel(s: Scene): void; atlas(name: string): { mask?: Uint8Array | null } }
+type Priv = { setTiles(t: TileSource): void; levelGroup: GL.Group; rebuildLevel(s: Scene): void; atlas(name: string): { mask?: Uint8Array | null } }
 
 function render(scene: Scene): Priv {
   const r = new Render3d() as unknown as Priv
@@ -51,7 +51,7 @@ function corridor(along: 'x' | 'z' | 'none'): Scene {
   return s
 }
 
-function build(scene: Scene): THREE.Object3D[] {
+function build(scene: Scene): GL.Object3D[] {
   return render(scene).levelGroup.children.filter((c) => c.userData.fixedFacing)
 }
 
@@ -59,7 +59,7 @@ function build(scene: Scene): THREE.Object3D[] {
 function jambReach(r: Priv): number {
   let max = 0
   for (const child of r.levelGroup.children) {
-    const mesh = child as THREE.Mesh
+    const mesh = child as GL.Mesh
     if (!mesh.isMesh) continue
     const pos = mesh.geometry.getAttribute('position')
     for (let i = 0; i < pos.count; i++) {
@@ -90,7 +90,7 @@ describe('an open door', () => {
   /** Full height, like the closed door's block, and in the wall plane rather than standing back from it. */
   it('fills its doorway', () => {
     const [door] = build(corridor('x'))
-    const mesh = door.children[0] as THREE.Mesh
+    const mesh = door.children[0] as GL.Mesh
     mesh.geometry.computeBoundingBox()
     const bb = mesh.geometry.boundingBox!
     // (the quad is inset a quarter texel by UV_INSET)
@@ -128,12 +128,12 @@ describe('an open door', () => {
     r.atlas('main').mask = mask
     r.rebuildLevel(corridor('x'))
     const [door] = r.levelGroup.children.filter((c) => c.userData.fixedFacing)
-    const ink = door.children.find((c) => c.userData.hull) as THREE.Mesh
+    const ink = door.children.find((c) => c.userData.hull) as GL.Mesh
     expect(ink).toBeTruthy()
-    const mat = ink.material as THREE.MeshBasicMaterial
-    expect(mat.side).toBe(THREE.DoubleSide)
+    const mat = ink.material as GL.MeshBasicMaterial
+    expect(mat.side).toBe(GL.DoubleSide)
     expect(mat.color.getHex()).toBe(0)
-    const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
+    const pos = ink.geometry.getAttribute('position') as GL.BufferAttribute
     // the eight texels round the body as four flat faces (the row above, the row below, the two columns beside), all in the board's plane
     expect(pos.count).toBe(4 * 4)
     for (let i = 0; i < pos.count; i++) expect(pos.getZ(i)).toBe(0)
@@ -153,8 +153,8 @@ describe('an open door', () => {
     r.atlas('main').mask = mask
     r.rebuildLevel(corridor('x'))
     const [door] = r.levelGroup.children.filter((c) => c.userData.fixedFacing)
-    const ink = door.children.find((c) => c.userData.hull) as THREE.Mesh
-    const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
+    const ink = door.children.find((c) => c.userData.hull) as GL.Mesh
+    const pos = ink.geometry.getAttribute('position') as GL.BufferAttribute
     // above, below and right of the body, not left
     expect(pos.count).toBe(3 * 4)
     let x0 = Infinity
@@ -176,7 +176,7 @@ describe('an open door', () => {
     r.atlas('main').mask = mask
     r.rebuildLevel(corridor('x'))
     const [door] = r.levelGroup.children.filter((c) => c.userData.fixedFacing)
-    const board = door.children.find((c) => !c.userData.hull) as THREE.Mesh
-    expect((board.geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
+    const board = door.children.find((c) => !c.userData.hull) as GL.Mesh
+    expect((board.geometry.getAttribute('position') as GL.BufferAttribute).count).toBe(4)
   })
 })

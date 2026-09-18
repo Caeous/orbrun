@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
+import * as GL from '@orbrun/gl'
 import { Render3d, type RenderStats } from '../src/index.js'
 import { cellKey, emptyScene, makeCamera, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
@@ -7,7 +7,7 @@ import { cellKey, emptyScene, makeCamera, type Scene, type TileRect, type TileSo
  * Resource ownership: what the renderer makes, the renderer releases —
  * explicitly, on `destroy`, on a new tileset, and as sprites come and go —
  * and what it holds across a run of transitions stays bounded. Counted by
- * three.js's own `dispose` events on every geometry, material and texture
+ * @orbrun/gl's own `dispose` events on every geometry, material and texture
  * the scene graph and the fields reference, not by timings.
  */
 const RECT: TileRect = { atlas: 'main', sx: 4, sy: 8, w: 4, h: 4, ox: 0, oy: 0, cell: 32 }
@@ -20,16 +20,16 @@ const tiles: TileSource = {
 type Guts = {
   stats: RenderStats
   renderer: unknown
-  three: THREE.Scene
-  billboardGroup: THREE.Group
-  levelGroup: THREE.Group
+  stage: GL.Scene
+  billboardGroup: GL.Group
+  levelGroup: GL.Group
   records: Map<string, unknown>
-  shadeTex: THREE.Texture | null
-  flashTex: THREE.Texture | null
-  depthTarget: THREE.WebGLRenderTarget | null
+  shadeTex: GL.Texture | null
+  flashTex: GL.Texture | null
+  depthTarget: GL.WebGLRenderTarget | null
   atlases: Map<string, unknown>
   atlas(name: string): { mask?: Uint8Array | null }
-  billboardCrowd: { meshes(): THREE.Mesh[] }
+  billboardCrowd: { meshes(): GL.Mesh[] }
 }
 
 function stubbed(): { r: Render3d; g: Guts } {
@@ -38,7 +38,7 @@ function stubbed(): { r: Render3d; g: Guts } {
   let target: unknown = null
   g.renderer = {
     render: () => {},
-    getDrawingBufferSize: (v: THREE.Vector2) => v.set(64, 32),
+    getDrawingBufferSize: (v: GL.Vector2) => v.set(64, 32),
     getRenderTarget: () => target,
     setRenderTarget: (t: unknown) => void (target = t),
     clear: () => {},
@@ -74,16 +74,16 @@ function room(n: number, seed = 0): Scene {
 }
 
 /** Every geometry, material and texture the given groups (the whole scene by default) and the fields reference right now, with dispose listeners on. */
-function track(g: Guts, roots: THREE.Object3D[] = [g.three]) {
-  const geometry = new Set<THREE.BufferGeometry>()
-  const material = new Set<THREE.Material>()
-  const texture = new Set<THREE.Texture>()
+function track(g: Guts, roots: GL.Object3D[] = [g.stage]) {
+  const geometry = new Set<GL.BufferGeometry>()
+  const material = new Set<GL.Material>()
+  const texture = new Set<GL.Texture>()
   for (const root of roots) root.traverse((o) => {
-    const m = o as THREE.Mesh
+    const m = o as GL.Mesh
     if (m.geometry) geometry.add(m.geometry)
     if (m.material) for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
       material.add(mat)
-      const map = (mat as THREE.MeshBasicMaterial).map
+      const map = (mat as GL.MeshBasicMaterial).map
       if (map) texture.add(map)
     }
   })
@@ -155,10 +155,10 @@ describe('resource ownership', () => {
     first.billboards.push({ x: 5, y: 5, tile: 1, kind: 'monster', height: 1, attitude: 'hostile', alpha: 0.5 })
     r.setScene(first)
     r.render()
-    const own = g.billboardGroup.children.filter((c) => !(c as THREE.Mesh).isMesh).flatMap((h) => h.children).filter((c) => c.userData.ownMaterial) as THREE.Mesh[]
+    const own = g.billboardGroup.children.filter((c) => !(c as GL.Mesh).isMesh).flatMap((h) => h.children).filter((c) => c.userData.ownMaterial) as GL.Mesh[]
     expect(own.length).toBeGreaterThan(0)
     let disposedOwn = 0
-    for (const m of own) (m.material as THREE.Material).addEventListener('dispose', () => disposedOwn++)
+    for (const m of own) (m.material as GL.Material).addEventListener('dispose', () => disposedOwn++)
     // a run of turns: monsters shuffle every frame, the translucent one leaves
     let meshesAfter = 0
     for (let i = 1; i <= 30; i++) {

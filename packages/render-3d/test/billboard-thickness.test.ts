@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
+import * as GL from '@orbrun/gl'
 import { Render3d } from '../src/index.js'
 import { emptyScene, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
@@ -19,7 +19,7 @@ const tiles: TileSource = {
 type Priv = {
   setTiles(t: TileSource): void
   setCursor(c: { x: number; y: number; mode?: string } | null): void
-  billboardGroup: THREE.Group
+  billboardGroup: GL.Group
   syncBillboards(s: Scene): void
   syncSelection(): void
   atlas(name: string): { mask?: Uint8Array | null }
@@ -43,14 +43,14 @@ function scene(alpha?: number): Scene {
   return s
 }
 
-function quads(r: Priv, kind: string): THREE.Mesh[] {
+function quads(r: Priv, kind: string): GL.Mesh[] {
   const h = r.billboardGroup.children.find((c) => c.userData.kind === kind)!
-  return h.children.filter((c) => (c as THREE.Mesh).geometry && !c.userData.shared && !c.userData.hull) as THREE.Mesh[]
+  return h.children.filter((c) => (c as GL.Mesh).geometry && !c.userData.shared && !c.userData.hull) as GL.Mesh[]
 }
 
-function hulls(r: Priv, kind: string): THREE.Mesh[] {
+function hulls(r: Priv, kind: string): GL.Mesh[] {
   const h = r.billboardGroup.children.find((c) => c.userData.kind === kind)!
-  return h.children.filter((c) => c.userData.hull) as THREE.Mesh[]
+  return h.children.filter((c) => c.userData.hull) as GL.Mesh[]
 }
 
 describe('billboard thickness', () => {
@@ -58,7 +58,7 @@ describe('billboard thickness', () => {
     const r = maskedRenderer()
     r.syncBillboards(scene())
     const [m] = quads(r, 'monster')
-    const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute
+    const pos = m.geometry.getAttribute('position') as GL.BufferAttribute
     // the front quad's four corners, then a rim of eight faces (four texel edges on each of two axes)
     expect(pos.count).toBe(4 + 8 * 4)
     const k = 1 / 32
@@ -78,8 +78,8 @@ describe('billboard thickness', () => {
     expect(y1).toBeCloseTo(hw - 1 * k, 6)
     expect(y0).toBeCloseTo(hw - 3 * k, 6)
     // rim faces wear their own texel's centre — the block is body all through — and are darker than the front
-    const uv = m.geometry.getAttribute('uv') as THREE.BufferAttribute
-    const col = m.geometry.getAttribute('color') as THREE.BufferAttribute
+    const uv = m.geometry.getAttribute('uv') as GL.BufferAttribute
+    const col = m.geometry.getAttribute('color') as GL.BufferAttribute
     expect(uv.getX(4)).toBeCloseTo((5 + 0.5) / 16, 6)
     expect(uv.getY(4)).toBeCloseTo((9 + 0.5) / 16, 6)
     const front = col.getX(0)
@@ -101,7 +101,7 @@ describe('billboard thickness', () => {
     mask[9 * 16 + 6] = 2
     r.syncBillboards(scene())
     const [m] = quads(r, 'monster')
-    const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute
+    const pos = m.geometry.getAttribute('position') as GL.BufferAttribute
     // the front quad, then a rim round the 2x1 body: two faces on the long sides, one at each end
     expect(pos.count).toBe(4 + 6 * 4)
     let y1 = -Infinity
@@ -122,8 +122,8 @@ describe('billboard thickness', () => {
     const r = maskedRenderer()
     r.syncBillboards(scene())
     const [m] = quads(r, 'monster')
-    const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute
-    const uv = m.geometry.getAttribute('uv') as THREE.BufferAttribute
+    const pos = m.geometry.getAttribute('position') as GL.BufferAttribute
+    const uv = m.geometry.getAttribute('uv') as GL.BufferAttribute
     // the quad's top-left and top-right corners, and the uvs mapped onto them
     const [x0, x1] = [pos.getX(0), pos.getX(1)]
     const [u0, u1] = [uv.getX(0), uv.getX(1)]
@@ -149,10 +149,10 @@ describe('billboard thickness', () => {
     r.syncBillboards(scene())
     const [ink] = hulls(r, 'monster')
     expect(ink).toBeTruthy()
-    const mat = ink.material as THREE.MeshBasicMaterial
-    expect(mat.side).toBe(THREE.BackSide)
+    const mat = ink.material as GL.MeshBasicMaterial
+    expect(mat.side).toBe(GL.BackSide)
     expect(mat.color.getHex()).toBe(0x000000)
-    const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
+    const pos = ink.geometry.getAttribute('position') as GL.BufferAttribute
     // the 2x2 body grown a texel on four sides is a 12-texel cross. Its back is one plane, built as three
     // rectangles (the 2x4 column and the two side texel pairs), and its 16 exposed edges merge into 12 sides,
     // a run each (mesh.ts): the same faces as one quad per texel, in fewer
@@ -194,13 +194,13 @@ describe('billboard thickness', () => {
     r.syncBillboards(scene())
     const [ink] = hulls(r, 'ghost')
     expect(ink).toBeTruthy()
-    const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
+    const pos = ink.geometry.getAttribute('position') as GL.BufferAttribute
     // eight texels round the 2x2 body: the row above, the row below, and the two columns beside it, a face each
     expect(pos.count).toBe(4 * 4)
     for (let i = 0; i < pos.count; i++) expect(pos.getZ(i)).toBe(0)
-    const col = ink.geometry.getAttribute('color') as THREE.BufferAttribute
+    const col = ink.geometry.getAttribute('color') as GL.BufferAttribute
     for (let i = 0; i < col.count; i++) expect([col.getX(i), col.getY(i), col.getZ(i)]).toEqual([0, 0, 0])
-    const mat = ink.material as THREE.ShaderMaterial
+    const mat = ink.material as GL.ShaderMaterial
     expect(mat.isShaderMaterial).toBe(true)
     expect(mat.uniforms.map).toBeUndefined()
     const h = r.billboardGroup.children.find((c) => c.userData.kind === 'ghost')!
@@ -216,7 +216,7 @@ describe('billboard thickness', () => {
     const r = maskedRenderer([[4, 8]])
     r.syncBillboards(scene())
     const [ink] = hulls(r, 'monster')
-    const pos = ink.geometry.getAttribute('position') as THREE.BufferAttribute
+    const pos = ink.geometry.getAttribute('position') as GL.BufferAttribute
     const hw = (4 / 32) / 2
     // three texels: the body, and one to its right and below; the back as two rectangles, and the eight
     // exposed edges as six runs
@@ -233,21 +233,21 @@ describe('billboard thickness', () => {
   it('leaves the damage bar and badges, the ghost, and a translucent sprite flat', () => {
     const r = maskedRenderer()
     r.syncBillboards(scene())
-    expect((quads(r, 'monster')[1].geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
-    expect((quads(r, 'ghost')[0].geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
+    expect((quads(r, 'monster')[1].geometry.getAttribute('position') as GL.BufferAttribute).count).toBe(4)
+    expect((quads(r, 'ghost')[0].geometry.getAttribute('position') as GL.BufferAttribute).count).toBe(4)
     expect(hulls(r, 'monster')).toHaveLength(1)
     r.syncBillboards(scene(0.5))
-    expect((quads(r, 'monster')[0].geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
+    expect((quads(r, 'monster')[0].geometry.getAttribute('position') as GL.BufferAttribute).count).toBe(4)
     expect(hulls(r, 'monster')).toHaveLength(0)
   })
   /** The shells the cursor put up: on holders of their own beside the crowd (`syncSelection`), one per selected sprite. */
-  function shells(r: Priv): THREE.Mesh[] {
-    return r.billboardGroup.children.filter((c) => c.userData.selection).flatMap((h) => h.children as THREE.Mesh[])
+  function shells(r: Priv): GL.Mesh[] {
+    return r.billboardGroup.children.filter((c) => c.userData.selection).flatMap((h) => h.children as GL.Mesh[])
   }
   it('puts a wider shell round the sprite under the cursor, outside the black hull', () => {
     const r = maskedRenderer()
-    const width = (m: THREE.Mesh) => {
-      const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute
+    const width = (m: GL.Mesh) => {
+      const pos = m.geometry.getAttribute('position') as GL.BufferAttribute
       let x0 = Infinity, x1 = -Infinity
       for (let i = 0; i < pos.count; i++) { x0 = Math.min(x0, pos.getX(i)); x1 = Math.max(x1, pos.getX(i)) }
       return x1 - x0
@@ -261,14 +261,14 @@ describe('billboard thickness', () => {
     expect(shell).toBeTruthy()
     // the hull's black is untouched: the shell is a second mesh beside it, in the cursor's colour
     const ink = hulls(r, 'monster').find((m) => !m.userData.shell)!
-    expect((ink.material as THREE.MeshBasicMaterial).color.getHex()).toBe(0x000000)
-    expect((shell.material as THREE.MeshBasicMaterial).color.getHex()).not.toBe(0x000000)
+    expect((ink.material as GL.MeshBasicMaterial).color.getHex()).toBe(0x000000)
+    expect((shell.material as GL.MeshBasicMaterial).color.getHex()).not.toBe(0x000000)
     // a texel wider each side than the hull — the shell is free of the tile's bounds, which the ink keeps to —
     // and its back sits deeper so the hull paints over what they share
     const k = 1 / 32
     expect(width(shell)).toBeCloseTo(width(ink) + 2 * k, 6)
-    const sz = shell.geometry.getAttribute('position') as THREE.BufferAttribute
-    const iz = ink.geometry.getAttribute('position') as THREE.BufferAttribute
+    const sz = shell.geometry.getAttribute('position') as GL.BufferAttribute
+    const iz = ink.geometry.getAttribute('position') as GL.BufferAttribute
     let smin = 0, imin = 0
     for (let i = 0; i < sz.count; i++) smin = Math.min(smin, sz.getZ(i))
     for (let i = 0; i < iz.count; i++) imin = Math.min(imin, iz.getZ(i))
@@ -277,7 +277,7 @@ describe('billboard thickness', () => {
     const holder = shell.parent!
     expect(holder.userData.billboard).toBe(true)
     expect(holder.position.toArray()).toEqual([3.5, 0, 3.5])
-    expect(shell.position.toArray()).toEqual((hulls(r, 'monster')[0] as THREE.Mesh).position.toArray())
+    expect(shell.position.toArray()).toEqual((hulls(r, 'monster')[0] as GL.Mesh).position.toArray())
     expect(shell.renderOrder).toBe(ink.renderOrder)
     // the ghost is never shelled, and a cursor on another cell leaves the sprite alone
     expect(hulls(r, 'ghost').some((m) => m.userData.shell)).toBe(false)
@@ -294,7 +294,7 @@ describe('billboard thickness', () => {
     r.syncBillboards(scene())
     r.syncSelection()
     const [shell] = shells(r)
-    const pos = shell.geometry.getAttribute('position') as THREE.BufferAttribute
+    const pos = shell.geometry.getAttribute('position') as GL.BufferAttribute
     let y0 = Infinity
     for (let i = 0; i < pos.count; i++) y0 = Math.min(y0, pos.getY(i))
     // the holder stands on the cell, so the sprite's own frame puts the floor at -(mesh y)
@@ -304,6 +304,6 @@ describe('billboard thickness', () => {
     const r = new Render3d() as unknown as Priv
     r.setTiles(tiles)
     r.syncBillboards(scene())
-    expect((quads(r, 'monster')[0].geometry.getAttribute('position') as THREE.BufferAttribute).count).toBe(4)
+    expect((quads(r, 'monster')[0].geometry.getAttribute('position') as GL.BufferAttribute).count).toBe(4)
   })
 })

@@ -5,8 +5,8 @@ import { antechamberScene } from './scene'
 import { loadRoomTiles } from './tiles'
 
 /**
- * The room's renderer: three.js and the level renderer, in the chunk the
- * game already loads them in. `RoomView` (view.ts) imports this lazily, so
+ * The room's renderer: the level renderer and the GL backend under it, in
+ * the chunk the game already loads them in. `RoomView` (view.ts) imports this lazily, so
  * the front end's first paint never waits on it.
  */
 /** the room's own eye, for a build with no settings to read (tools/build/poster.mjs): the game's defaults */

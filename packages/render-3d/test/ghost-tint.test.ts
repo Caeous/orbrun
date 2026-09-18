@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
+import * as GL from '@orbrun/gl'
 import { Render3d } from '../src/index.js'
 import { cellKey, emptyScene, type Scene, type SceneCell, type TileRect, type TileSource } from '@orbrun/scene'
 
@@ -24,15 +24,15 @@ function sceneWithMonster(visibility: SceneCell['visibility']): Scene {
 function build(scene: Scene) {
   const r = new Render3d() as unknown as {
     setTiles(t: TileSource): void
-    billboardGroup: THREE.Group
+    billboardGroup: GL.Group
     syncBillboards(s: Scene): void
   }
   r.setTiles(tiles)
   r.syncBillboards(scene)
   const quad = (kind: string) => {
     const h = r.billboardGroup.children.find((c) => c.userData.kind === kind)!
-    const m = h.children.find((c) => (c as THREE.Mesh).geometry && !c.userData.shared) as THREE.Mesh
-    const c = m.geometry.getAttribute('color') as THREE.BufferAttribute
+    const m = h.children.find((c) => (c as GL.Mesh).geometry && !c.userData.shared) as GL.Mesh
+    const c = m.geometry.getAttribute('color') as GL.BufferAttribute
     return [c.getX(0), c.getY(0), c.getZ(0)]
   }
   return { sprite: quad('monster'), ghost: quad('ghost') }

@@ -6,9 +6,44 @@
  * footprints that overlays the literal definition so any seam shows in red.
  * Served by the app's dev server at /testbed/walls.html; not part of the build.
  */
-import * as THREE from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import * as GL from '@orbrun/gl'
 import { asciiClassAt, insetFootprint, insetOracle, inPoly, type ClassAt, type FootprintOptions } from '@orbrun/render-3d'
+
+/**
+ * A drag-to-orbit camera about a target: a drag turns, the wheel zooms; the
+ * bed's one need of an orbit control, on @orbrun/gl.
+ */
+class OrbitControls {
+  target = new GL.Vector3()
+  enabled = true
+  private theta = 0
+  private phi = 1
+  private radius = 10
+  private drag: { x: number; y: number } | null = null
+  constructor(private camera: GL.PerspectiveCamera, el: HTMLElement) {
+    el.addEventListener('pointerdown', (e) => { if (this.enabled) this.drag = { x: e.clientX, y: e.clientY } })
+    addEventListener('pointerup', () => (this.drag = null))
+    addEventListener('pointermove', (e) => {
+      if (!this.drag || !this.enabled) return
+      this.theta -= (e.clientX - this.drag.x) * 0.005
+      this.phi = Math.max(0.05, Math.min(Math.PI / 2 - 0.02, this.phi - (e.clientY - this.drag.y) * 0.005))
+      this.drag = { x: e.clientX, y: e.clientY }
+    })
+    el.addEventListener('wheel', (e) => { if (this.enabled) this.radius = Math.max(0.5, this.radius * Math.exp(e.deltaY * 0.001)) }, { passive: true })
+  }
+  /** Take the orbit from wherever the camera stands now. */
+  sync() {
+    const d = new GL.Vector3().subVectors(this.camera.position, this.target)
+    this.radius = d.length() || 1
+    this.theta = Math.atan2(d.x, d.z)
+    this.phi = Math.acos(Math.max(-1, Math.min(1, d.y / this.radius)))
+  }
+  update() {
+    const r = this.radius, sp = Math.sin(this.phi)
+    this.camera.position.set(this.target.x + r * sp * Math.sin(this.theta), this.target.y + r * Math.cos(this.phi), this.target.z + r * sp * Math.cos(this.theta))
+    this.camera.lookAt(this.target)
+  }
+}
 
 const LAYOUTS: Record<string, string[]> = {
   corridor: ['#########', '#.......#', '#.#######', '#.#.....#', '#.#.....#', '#.......#', '#########'],
@@ -59,7 +94,7 @@ function options(): FootprintOptions {
 // ---------------------------------------------------------------------------
 // Textures: a 32-texel brick tile with a bright border texel, so tile seams and stretch are visible
 
-function tileTexture(kind: 'wall' | 'floor'): THREE.Texture {
+function tileTexture(kind: 'wall' | 'floor'): GL.Texture {
   const c = document.createElement('canvas')
   c.width = c.height = 32
   const g = c.getContext('2d')!
@@ -79,28 +114,27 @@ function tileTexture(kind: 'wall' | 'floor'): THREE.Texture {
     g.fillStyle = '#33333a'
     for (let i = 0; i < 40; i++) g.fillRect((i * 7) % 32, (i * 13) % 32, 2, 2)
   }
-  const t = new THREE.CanvasTexture(c)
-  t.magFilter = t.minFilter = THREE.NearestFilter
-  t.wrapS = t.wrapT = THREE.RepeatWrapping
-  t.colorSpace = THREE.SRGBColorSpace
+  const t = new GL.CanvasTexture(c)
+  t.magFilter = t.minFilter = GL.NearestFilter
+  t.wrapS = t.wrapT = GL.RepeatWrapping
+  t.colorSpace = GL.SRGBColorSpace
   return t
 }
 
 // ---------------------------------------------------------------------------
-// Three
+// Scene
 
-const renderer = new THREE.WebGLRenderer({ antialias: true })
+const renderer = new GL.WebGLRenderer({ antialias: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 view.append(renderer.domElement)
-const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x000000)
-const camera = new THREE.PerspectiveCamera(70, 1, 0.02, 200)
-const orbit = new OrbitControls(camera, renderer.domElement)
-orbit.enableDamping = true
-const wallMat = new THREE.MeshBasicMaterial({ map: tileTexture('wall'), vertexColors: true })
-const floorMat = new THREE.MeshBasicMaterial({ map: tileTexture('floor'), vertexColors: true })
-const voidMat = new THREE.MeshBasicMaterial({ color: 0x000000 })
-const level = new THREE.Group()
+const scene = new GL.Scene()
+scene.background = new GL.Color(0x000000)
+const camera = new GL.PerspectiveCamera(70, 1, 0.02, 200)
+const orbit = new OrbitControls(camera, renderer.domElement as HTMLCanvasElement)
+const wallMat = new GL.MeshBasicMaterial({ map: tileTexture('wall'), vertexColors: true })
+const floorMat = new GL.MeshBasicMaterial({ map: tileTexture('floor'), vertexColors: true })
+const voidMat = new GL.MeshBasicMaterial({ color: 0x000000 })
+const level = new GL.Group()
 scene.add(level)
 
 let mode: 'orbit' | 'walk' = 'orbit'
@@ -140,17 +174,17 @@ class Geo {
     for (const q of p) this.pos.push(...q)
     for (const u of uv) this.uv.push(...u)
     for (let i = 0; i < p.length; i++) this.col.push(shade, shade, shade)
-    const tris = THREE.ShapeUtils.triangulateShape(p.map(([x, , z]) => new THREE.Vector2(x, z)), [])
+    const tris = GL.ShapeUtils.triangulateShape(p.map(([x, , z]) => new GL.Vector2(x, z)), [])
     for (const [a, bb, c] of tris) this.idx.push(b + a, b + bb, b + c)
   }
-  build(mat: THREE.Material): THREE.Mesh | null {
+  build(mat: GL.Material): GL.Mesh | null {
     if (!this.idx.length) return null
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3))
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2))
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3))
+    const g = new GL.BufferGeometry()
+    g.setAttribute('position', new GL.Float32BufferAttribute(this.pos, 3))
+    g.setAttribute('uv', new GL.Float32BufferAttribute(this.uv, 2))
+    g.setAttribute('color', new GL.Float32BufferAttribute(this.col, 3))
     g.setIndex(this.idx)
-    return new THREE.Mesh(g, mat)
+    return new GL.Mesh(g, mat)
   }
 }
 
@@ -164,7 +198,7 @@ function rebuild() {
   const at = asciiClassAt(rows)
   const o = options()
   const { w, h } = bounds()
-  for (const c of [...level.children]) { level.remove(c); (c as THREE.Mesh).geometry?.dispose() }
+  for (const c of [...level.children]) { level.remove(c); (c as GL.Mesh).geometry?.dispose() }
   const walls = new Geo(), floors = new Geo(), voids = new Geo()
   let faces = 0
   for (let z = -1; z <= h; z++) {
@@ -188,7 +222,7 @@ function rebuild() {
         const ua = Math.abs(f.nx) > 0.5 ? az : ax, ub = Math.abs(f.nx) > 0.5 ? bz : bx
         const shade = Math.abs(f.nx) > 0.5 ? SIDE_SHADE : 1
         // wind the quad so its front faces the footprint's outward normal
-        const cross = new THREE.Vector3(bx - ax, 0, bz - az).cross(new THREE.Vector3(0, 1, 0))
+        const cross = new GL.Vector3(bx - ax, 0, bz - az).cross(new GL.Vector3(0, 1, 0))
         const p: [number, number, number][] = [[ax, 0, az], [bx, 0, bz], [bx, 1, bz], [ax, 1, az]]
         const uv: [number, number][] = [[ua, 0], [ub, 0], [ub, 1], [ua, 1]]
         if (cross.x * f.nx + cross.z * f.nz < 0) { p.reverse(); uv.reverse() }
@@ -278,6 +312,7 @@ resize()
   const { w, h } = bounds()
   camera.position.set(w / 2, Math.max(w, h) * 0.9, h * 1.4)
   orbit.target.set(w / 2, 0, h / 2)
+  orbit.sync()
 }
 
 let last = performance.now()

@@ -82,7 +82,8 @@ bot, a recorder or a viewer can use them on their own. Each has a README.
 | [`@orbrun/scene`](packages/scene) | The renderer-facing world model: cells, billboards, camera, directions, minibars, and the `MapRenderer` and `TileSource` contracts | nothing |
 | [`@orbrun/scene-webtiles`](packages/scene-webtiles) | `GameState` + gamedata → `Scene`. All the DCSS knowledge: tile ranges, feature classification, monster list rules, the viewmodel | webtiles, gamedata, scene |
 | [`@orbrun/render-2d`](packages/render-2d) | Top-down Canvas 2D renderer of a `Scene`; also the minimap | scene |
-| [`@orbrun/render-3d`](packages/render-3d) | First-person three.js renderer of a `Scene` | scene, three |
+| [`@orbrun/gl`](packages/gl) | A small scene graph and WebGL2 backend: what the renderer needs and nothing more | nothing |
+| [`@orbrun/render-3d`](packages/render-3d) | First-person renderer of a `Scene` | scene, gl |
 | [`@orbrun/vault`](packages/vault) | A supported subset of DCSS's `.des` vault format, compiled to a `Scene` | scene, scene-webtiles |
 
 `apps/orbrun` is the game: server picker, lobby, login, HUD, menus and

@@ -14,7 +14,7 @@ import { isStationaryItemName } from '@orbrun/webtiles'
 /** What gets a pip: nothing, the monster list's monsters, or those and items on cells in sight. */
 export type EdgePipMode = 'off' | 'monsters' | 'all'
 
-/** A point in camera space, three.js convention: x right, y up, z toward the viewer (in front of the lens is z < 0). */
+/** A point in camera space: x right, y up, z toward the viewer (in front of the lens is z < 0). */
 export interface CamPoint {
   x: number
   y: number

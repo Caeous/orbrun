@@ -441,7 +441,44 @@ export class Render2d implements MapRenderer {
       return !(sx < -cs || sy < -cs || sx > this.width || sy > this.height)
     }
     if (glyphs || hybrid) ctx.font = `${Math.floor(cs * 0.8)}px ${this.opts.glyphFont}`
-    for (const cell of scene.cells.values()) {
+    /**
+     * The cells a minimap can show, looked up by position instead of found by
+     * walking every cell of the level: the map turns with the view, so it is
+     * drawn again at every step of a turn, and a whole explored level is far
+     * more cells than the disc holds. The canvas (with `inView`'s margin)
+     * turned back onto the map is the range; a range wider than the level
+     * (the level map, an empty level) walks the cells as before. Only for
+     * the minimap: its blocks stay in their squares, so the order the cells
+     * come in changes no pixel, where a tile view's tall features spill over
+     * their neighbours and must keep the level's own order.
+     */
+    const minimapCells = (): Iterable<SceneCell> => {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (const [cx, cy] of [[-cs / 2, -cs / 2], [this.width + cs / 2, -cs / 2], [this.width + cs / 2, this.height + cs / 2], [-cs / 2, this.height + cs / 2]]) {
+        const dx = cx - pvx
+        const dy = cy - pvy
+        const x = pvx + dx * cosR + dy * sinR
+        const y = pvy - dx * sinR + dy * cosR
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+      const x0 = Math.floor(minX / cs - 0.5) - 1 + ox
+      const x1 = Math.ceil(maxX / cs - 0.5) + 1 + ox
+      const y0 = Math.floor(minY / cs - 0.5) - 1 + oy
+      const y1 = Math.ceil(maxY / cs - 0.5) + 1 + oy
+      if ((x1 - x0 + 1) * (y1 - y0 + 1) >= scene.cells.size) return scene.cells.values()
+      const found: SceneCell[] = []
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          const cell = scene.cells.get(cellKey(x, y))
+          if (cell) found.push(cell)
+        }
+      }
+      return found
+    }
+    for (const cell of minimap ? minimapCells() : scene.cells.values()) {
       const sx = (cell.x - ox) * cs
       const sy = (cell.y - oy) * cs
       if (!inView(sx, sy)) continue

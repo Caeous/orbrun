@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
+import * as GL from '@orbrun/gl'
 import { Render3d } from '../src/index.js'
 import { emptyScene, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
@@ -30,8 +30,8 @@ function sceneWithBadge(): Scene {
   return s
 }
 
-function vertexColour(mesh: THREE.Mesh): [number, number, number] {
-  const c = mesh.geometry.getAttribute('color') as THREE.BufferAttribute
+function vertexColour(mesh: GL.Mesh): [number, number, number] {
+  const c = mesh.geometry.getAttribute('color') as GL.BufferAttribute
   return [c.getX(0), c.getY(0), c.getZ(0)]
 }
 
@@ -39,7 +39,7 @@ describe('ghost badges', () => {
   it('draws status badges through walls, in their own colours', () => {
     const r = new Render3d() as unknown as {
       setTiles(t: TileSource): void
-      billboardGroup: THREE.Group
+      billboardGroup: GL.Group
       syncBillboards(s: Scene): void
     }
     r.setTiles(tiles)
@@ -51,15 +51,15 @@ describe('ghost badges', () => {
     expect(ghost && sprite).toBeTruthy()
 
     // sprite and badge both reach the ghost pass
-    const ghostQuads = ghost!.children.filter((c) => (c as THREE.Mesh).geometry)
-    const spriteQuads = sprite!.children.filter((c) => (c as THREE.Mesh).geometry && !c.userData.shared)
+    const ghostQuads = ghost!.children.filter((c) => (c as GL.Mesh).geometry)
+    const spriteQuads = sprite!.children.filter((c) => (c as GL.Mesh).geometry && !c.userData.shared)
     expect(ghostQuads.length).toBe(2)
     expect(spriteQuads.length).toBe(2)
 
     // the remembered tint colours the sprite; the badge keeps its own colours
-    expect(vertexColour(ghostQuads[0] as THREE.Mesh).map((v) => +v.toFixed(2))).toEqual([0.55, 0.6, 0.8])
-    expect(vertexColour(ghostQuads[1] as THREE.Mesh)).toEqual([1, 1, 1])
+    expect(vertexColour(ghostQuads[0] as GL.Mesh).map((v) => +v.toFixed(2))).toEqual([0.55, 0.6, 0.8])
+    expect(vertexColour(ghostQuads[1] as GL.Mesh)).toEqual([1, 1, 1])
     // and the badge stacks over the sprite rather than restarting the z ladder
-    expect((ghostQuads[1] as THREE.Mesh).position.z).toBeGreaterThan((ghostQuads[0] as THREE.Mesh).position.z)
+    expect((ghostQuads[1] as GL.Mesh).position.z).toBeGreaterThan((ghostQuads[0] as GL.Mesh).position.z)
   })
 })
