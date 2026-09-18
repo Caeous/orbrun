@@ -22,7 +22,7 @@ import { directionKey, isTextEntry, keydownMessage } from './keys'
 import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
 import { gamepadHints, type PadHintEvidence } from './gamepad-hints'
 import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INSET, type Settings } from './servers'
-import { CAM_DISTANCES, CAM_HEIGHTS, type SettingGroup } from './settings-rows'
+import { type SettingGroup } from './settings-rows'
 
 /** The most drawn pixels per CSS pixel the game view gets (Part IV of rendering-3d.md): the display's density, capped here. */
 const VIEW_MAX_DPR = 1
@@ -33,10 +33,6 @@ const ACTIVE_MS = 500
 
 /** css pixels a touch must travel before a press becomes a look drag */
 const DRAG_SLOP = 6
-/** css pixels of wheel that make one stop of third-person camera distance */
-const WHEEL_STEP = 40
-/** wheel lines (deltaMode 1) are worth this many pixels */
-const WHEEL_LINE = 40
 /** level-map cells per unit of right-stick look while the map is open */
 const MAP_PAN_RATE = 0.12
 /** game.js `show_diameter`: the cells across a full field of view, which the view is fitted to */
@@ -174,10 +170,6 @@ export class GameScreen {
   /** Lets go of a drag with no click behind it: the window lost focus, or the button was released out of sight. */
   private cancelDrag: () => void = () => {}
   private onWindowBlur: () => void = () => {}
-  /** Wheel scrolled since the last camera step, in css pixels; a trackpad arrives in crumbs. */
-  private wheel = 0
-  /** Shift was down for the wheel crumbs counted so far: distance and height do not pool each other's scroll. */
-  private wheelShift = false
   /** where the pointer is aiming, in canvas css pixels: the hovering mouse, or the finger on a touch screen */
   private hover: { x: number; y: number } | null = null
   /** dungeon_renderer.js tooltip_timeout: the cell tooltip waits half a second under a still pointer */
@@ -388,7 +380,7 @@ export class GameScreen {
   /**
    * The left edge, in screen px, of whatever hand is drawn in the right half
    * of the view (rendering-3d.md II.7), so the HUD's corner keeps clear of
-   * the weapon; null with no hand there (2D, third person, hands off, unarmed).
+   * the weapon; null with no hand there (2D, hands off, unarmed).
    */
   private handsLeft(): number | null {
     if (!this.is3d || !this.viewPx) return null
@@ -446,7 +438,6 @@ export class GameScreen {
   applySettings() {
     this.settingsCache = null
     const st = this.settings()
-    this.cam.thirdPerson = st.view === 'third'
     this.cam.setRestPitch(radians(st.restPitch))
     document.documentElement.style.setProperty('--ui-scale', String(st.uiScale))
     this.grid.setTextSize(this.textPx())
@@ -467,7 +458,7 @@ export class GameScreen {
   }
 
   private render3dOptions(st: Settings) {
-    return { view: st.view, camDistance: st.camDistance, camHeight: st.camHeight, eyeHeight: st.eyeHeight, restPitch: radians(st.restPitch), fov: st.fov, viewmodel: st.viewmodel, wallInset: WALL_INSET, chamfer: CHAMFER, motion: !this.cam.reducedMotion }
+    return { eyeHeight: st.eyeHeight, fov: st.fov, viewmodel: st.viewmodel, wallInset: WALL_INSET, chamfer: CHAMFER, motion: !this.cam.reducedMotion }
   }
 
   /** A melee attack lifts the weapon a touch (rendering-3d.md II.7); frames follow until it settles. */
@@ -792,47 +783,6 @@ export class GameScreen {
     g.renderer.destroy()
   }
 
-  /** First ⇄ third person (rendering-3d.md II.11): a setting, so it sticks across sessions. */
-  private toggleView() {
-    const st = this.hooks.settings()
-    st.view = st.view === 'third' ? 'first' : 'third'
-    saveSettings(st)
-    this.applySettings()
-    this.hud.status(st.view === 'third' ? 'Third person' : 'First person')
-  }
-
-  /**
-   * Third-person camera distance (rendering-3d.md II.11), one stop at a
-   * time. It clamps at the ends rather than wrapping the way the settings
-   * row does: a wheel that jumped from nearest to furthest would read as a
-   * cut, not a zoom. A setting, so it sticks; the shot still pulls the
-   * camera in when the cells behind are tight.
-   */
-  private zoomCamera(d: number) {
-    const st = this.hooks.settings()
-    const n = step(CAM_DISTANCES, st.camDistance, d)
-    if (n === st.camDistance) return
-    st.camDistance = n
-    saveSettings(st)
-    this.applySettings()
-    this.hud.status(`Camera ${n.toFixed(2)} cells back`)
-  }
-
-  /**
-   * Third-person camera height (rendering-3d.md II.11), Shift and the wheel,
-   * one stop at a time and clamped at the ends the way the distance is: from
-   * the doll's waist to just under the lid.
-   */
-  private raiseCamera(d: number) {
-    const st = this.hooks.settings()
-    const n = step(CAM_HEIGHTS, st.camHeight, d)
-    if (n === st.camHeight) return
-    st.camHeight = n
-    saveSettings(st)
-    this.applySettings()
-    this.hud.status(`Camera ${n.toFixed(2)} cells up`)
-  }
-
   /** A deliberate view switch by the player sticks, even inside the level map. */
   private userToggleRenderer() {
     this.mapBorrowed2d = false
@@ -904,8 +854,7 @@ export class GameScreen {
     }
     // cell_renderer.js draw_minibars: the player's bars, when tile_show_minihealthbar / tile_show_minimagicbar allow
     const minibars = { hp: p.hp, hpMax: p.hp_max, mp: p.mp, mpMax: p.mp_max, showHp: o.tile_show_minihealthbar !== false, showMp: o.tile_show_minimagicbar !== false }
-    if (this.is3d) (this.renderer as Render3d).setMinibars(minibars)
-    else {
+    if (!this.is3d) {
       const num = (v: unknown, d: number) => (typeof v === 'number' && v > 0 ? v : d)
       const px = num(o.tile_cell_pixels, 32)
       const scale = mapView ? num(o.tile_map_scale, 60) : num(o.tile_viewport_scale, 100)
@@ -1476,26 +1425,6 @@ export class GameScreen {
         this.onPointer(ev.clientX - rect.left, ev.clientY - rect.top, d.button)
       }
     }
-    // the wheel pulls the third-person camera in and out, and with Shift raises
-    // and lowers it; in first person there is nothing to zoom, and the page
-    // keeps its own scroll
-    c.addEventListener('wheel', (ev) => {
-      if (!this.is3d || this.hooks.settings().view !== 'third') return
-      ev.preventDefault()
-      // a browser turns Shift+wheel into a horizontal scroll, so the notch can
-      // arrive on either axis: take whichever one moved
-      const raw = ev.deltaY || ev.deltaX
-      const px = ev.deltaMode === 0 ? raw : raw * WHEEL_LINE
-      const shift = ev.shiftKey
-      this.wheel = this.wheel * px > 0 && shift === this.wheelShift ? this.wheel + px : px
-      this.wheelShift = shift
-      if (Math.abs(this.wheel) < WHEEL_STEP) return
-      const d = Math.sign(this.wheel)
-      this.wheel = 0
-      // wheel up (negative delta) draws the camera in, or with Shift lifts it
-      if (shift) this.raiseCamera(-d)
-      else this.zoomCamera(d)
-    }, { passive: false })
     // a drag does not survive leaving the page: the button released out there
     // sends no pointerup, and coming back should not still be a press
     this.onWindowBlur = () => this.cancelDrag()
@@ -1704,9 +1633,6 @@ export class GameScreen {
       case 'toggleRenderer':
         this.userToggleRenderer()
         break
-      case 'toggleView':
-        this.toggleView()
-        break
       case 'levelmap':
         this.runner.execute(LEVEL_MAP)
         break
@@ -1721,23 +1647,9 @@ export class GameScreen {
 
   private systemAction(op: string) {
     if (op === 'toggleRenderer') this.userToggleRenderer()
-    else if (op === 'toggleView') this.toggleView()
     else if (op === 'chat') this.chat.padFocus()
     else if (op === 'disconnect') this.hooks.onSystem('disconnect')
   }
-}
-
-/**
- * The stop `d` steps from whichever of `values` `cur` is nearest, clamped at
- * the ends rather than wrapping the way the settings row does: a wheel that
- * jumped from nearest to furthest would read as a cut, not a move.
- */
-function step(values: readonly number[], cur: number, d: number): number {
-  let i = 0
-  for (let k = 1; k < values.length; k++) {
-    if (Math.abs(values[k] - cur) < Math.abs(values[i] - cur)) i = k
-  }
-  return values[Math.max(0, Math.min(values.length - 1, i + d))]
 }
 
 /** Degrees to radians: the Camera angle setting is degrees, every camera is radians. */

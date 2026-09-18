@@ -67,17 +67,10 @@ export class CameraController {
   }
   reducedMotion = false
   /**
-   * Third person (rendering-3d.md II.11): the camera stands under the lid
-   * behind the player, so the glance range is a fraction of first person's;
-   * clamping here rather than in the renderer keeps the stick from winding
-   * up pitch it cannot show.
-   */
-  thirdPerson = false
-  /**
    * Where the camera points at rest: the Camera angle setting, in radians,
-   * negative below the horizon. It is the pitch a fresh camera starts on and
-   * the centre of third person's glance window; free look is measured from
-   * wherever the camera happens to point, so nothing ever springs back to it.
+   * negative below the horizon. It is the pitch a fresh camera starts on;
+   * free look is measured from wherever the camera happens to point, so
+   * nothing ever springs back to it.
    */
   restPitch = REST_PITCH
   private lastMoveTs = 0
@@ -212,9 +205,9 @@ export class CameraController {
 
   /**
    * The player chose another rest angle: the view tilts with it, so the
-   * change shows at once in the settings menu, and third person's window
-   * moves under it. Set this before restoring a saved view (the saved pitch
-   * is already where the player left it, angle and all).
+   * change shows at once in the settings menu. Set this before restoring a
+   * saved view (the saved pitch is already where the player left it, angle
+   * and all).
    */
   setRestPitch(p: number) {
     const d = p - this.restPitch
@@ -223,7 +216,7 @@ export class CameraController {
   }
 
   private clampPitch(p: number): number {
-    return this.thirdPerson ? clamp(p, this.restPitch - THIRD_GLANCE, this.restPitch + THIRD_GLANCE) : clamp(p, -PITCH_MAX, PITCH_MAX)
+    return clamp(p, -PITCH_MAX, PITCH_MAX)
   }
 
   /**
@@ -664,12 +657,6 @@ const HEADING_OFFSETS = [1, -1, 2, -2, 3, -3, 4]
 
 /** pitch limit: nearly straight up or down, stopping short of the pole so yaw stays meaningful */
 const PITCH_MAX = (Math.PI / 180) * 85
-/**
- * Third-person glance, as an offset either side of the rest pitch: the camera
- * is 0.75 up under a 1.0 lid, so past this there is only lid or floor to see.
- * The renderer clamps the final pitch to the same window.
- */
-const THIRD_GLANCE = (Math.PI / 180) * 30
 
 function kingMoves(scene: Scene, b: Billboard): number {
   return Math.max(Math.abs(b.x - scene.player.x), Math.abs(b.y - scene.player.y))

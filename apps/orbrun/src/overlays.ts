@@ -2793,9 +2793,8 @@ export class Overlays {
       add(`${HELP_COMMAND.label} (${HELP_COMMAND.key})`, 'the manual, and what every key does', () => this.hooks.send(cm.input(HELP_COMMAND.key)))
     }
     if (opts.inGame) add('Chat (F12)', 'talk to whoever is watching', () => this.hooks.onSystemAction('chat'))
-    // 2D and third person are out for now (VIEW_OPTIONS in servers.ts); the camera is client-side, so a spectator may move it too
+    // 2D is out for now (VIEW_OPTIONS in servers.ts)
     if (playing && VIEW_OPTIONS) add('Toggle 2D / 3D view', 'the floor laid flat, or stood up around you', () => this.hooks.onSystemAction('toggleRenderer'))
-    if (opts.inGame && VIEW_OPTIONS) add('Toggle first / third person', 'out of your own eyes, or over your shoulder', () => this.hooks.onSystemAction('toggleView'))
     add('Gamepad', 'what each button does, and how to change it', () => this.showBindings(this.hooks.padKind?.() ?? 'generic', again), true)
     add('Settings', "Orbrun's own options: the camera, the controls, the HUD", () => this.showSettings(again))
     // a player saves (crawl's S, which asks first, then go_lobby brings the front end back); a spectator has nothing to

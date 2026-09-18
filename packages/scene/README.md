@@ -16,8 +16,7 @@ Also here, because every consumer needs them:
   `nearestHostile`, `blocksExplore`, `nearestBlocker`, `nearestOf`.
 - Layout change detection for renderers that rebuild geometry only when the
   level changes: `cellLayoutEquals`, `sceneLayoutEquals`.
-- Camera placement for a third-person or orbit shot: `orbitShot`,
-  `cameraApproach`, `makeCamera`, `REST_PITCH`.
+- The camera: `makeCamera`, `REST_PITCH`.
 - `bars.ts`: the health and magic minibar rules ported from the official
   client's cell renderer (`woundLevel`, `minibarRects`, `fillRun`, colours).
 

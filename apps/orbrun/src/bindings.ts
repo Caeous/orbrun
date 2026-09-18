@@ -51,7 +51,7 @@ export type Action =
   | { kind: 'prompt'; hotkey: string }
   /** the focus layer's cursor over the top overlay (popup, prompt, CRT screen, dialog) */
   | { kind: 'focus'; op: FocusOp }
-  | { kind: 'ui'; op: 'commands' | 'travel' | 'equipment' | 'palette' | 'system' | 'keyboard' | 'faceHostile' | 'toggleRenderer' | 'toggleView' | 'levelmap' | 'bindings' | 'scrollLog' | 'popupAction'; arg?: number; category?: CommandCategory; section?: string }
+  | { kind: 'ui'; op: 'commands' | 'travel' | 'equipment' | 'palette' | 'system' | 'keyboard' | 'faceHostile' | 'toggleRenderer' | 'levelmap' | 'bindings' | 'scrollLog' | 'popupAction'; arg?: number; category?: CommandCategory; section?: string }
   | { kind: 'osk'; op: 'move' | 'type' | 'backspace' | 'space' | 'submit' | 'cancel' | 'shift'; dir?: Dir8 }
 
 /** Which section of the command palette applies: the cmd-keys.h key table for the mode. */
@@ -558,7 +558,7 @@ function staticLabel(a: Action): string {
     case 'keys':
       return a.label
     case 'ui':
-      return { commands: 'Actions', travel: 'Travel', equipment: 'Equipment', palette: 'Commands', system: 'Orbrun menu', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', toggleView: 'Camera', levelmap: 'Map', bindings: 'Gamepad', scrollLog: 'Log', popupAction: 'Action' }[a.op]
+      return { commands: 'Actions', travel: 'Travel', equipment: 'Equipment', palette: 'Commands', system: 'Orbrun menu', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', levelmap: 'Map', bindings: 'Gamepad', scrollLog: 'Log', popupAction: 'Action' }[a.op]
     default:
       return actionLabel(a, EMPTY_CTX)
   }
@@ -615,7 +615,7 @@ export function actionLabel(a: Action, ctx: Context, button?: Button): string {
     }
     case 'ui':
       if (a.op === 'popupAction') return ctx.popupActions?.[a.arg ?? 0]?.label || 'Action'
-      return { commands: 'Actions', travel: 'Travel', equipment: 'Equipment', palette: 'Commands', system: 'Menu', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', toggleView: 'Camera', levelmap: 'Map', bindings: 'Gamepad', scrollLog: 'Log' }[a.op]
+      return { commands: 'Actions', travel: 'Travel', equipment: 'Equipment', palette: 'Commands', system: 'Menu', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', levelmap: 'Map', bindings: 'Gamepad', scrollLog: 'Log' }[a.op]
     case 'osk':
       return { move: 'Move', type: 'Type', backspace: 'Backspace', space: 'Space', submit: 'Done', cancel: 'Cancel', shift: 'Shift' }[a.op]
     case 'step':

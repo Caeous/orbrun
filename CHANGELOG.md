@@ -54,5 +54,5 @@ of what Orbrun does today.
 - Anonymous page counts on the hosted site only — no cookies, nothing about
   your game — and nothing at all from local builds.
 - Not yet: sound, the feel layer (sway, hit shake, vignettes), a desktop or
-  Steam shell, offline play against a local engine. The third-person and
-  top-down views exist but are not offered in this release.
+  Steam shell, offline play against a local engine. The top-down view
+  exists but is not offered in this release.

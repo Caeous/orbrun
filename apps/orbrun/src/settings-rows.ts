@@ -64,25 +64,11 @@ export function rowOff(r: SettingRow, s: Settings = getSettings()): boolean {
 }
 
 /**
- * Third-person camera distance, in cells, nearest first (rendering-3d.md
- * II.11). The far end is ORBIT_BACK, the cell the shot stands in; the near end
- * is over the shoulder, inside the player's own cell. A tight shot pulls the
- * camera in from whichever of these is chosen. The stops are a twentieth of
- * a cell apart, the same resolution as the height: at the near end a
- * quarter-cell jump is most of the shot.
- */
-export const CAM_DISTANCES = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5, 1.55, 1.6, 1.65, 1.7, 1.75, 1.8, 1.85, 1.9, 1.95, 2] as const
-
-/**
  * Camera height, in cells, lowest first (rendering-3d.md II.11): 0 is the
- * floor and 1 the lid, and the stops keep clear of both. One list serves
- * both cameras. In first person it is the eye, 0.65 by default; the low end is
- * a kobold's view of the corridor and the high end brushes the lid. In third person it is the shot: the low end sits at the
- * doll's waist and reads as a follow-cam looking level down the corridor,
- * the high end is just under the lid, looking down over the doll, and the
- * default 0.75 stands over the eye so the shot never feels lower than first
- * person. The distance's default, 0.7, is an over-the-shoulder shot. The stops are a twentieth of a cell apart, like the distance: the
- * height sets the pitch of the whole shot, so it is worth aiming finely.
+ * floor and 1 the lid, and the stops keep clear of both. It is the eye, 0.65
+ * by default; the low end is a kobold's view of the corridor and the high end
+ * brushes the lid. The stops are a twentieth of a cell apart: the height sets
+ * the pitch of the whole view, so it is worth aiming finely.
  */
 export const CAM_HEIGHTS = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9] as const
 
@@ -122,12 +108,11 @@ export const MINIMAP_TILES: readonly number[] = Array.from({ length: (MINIMAP_TI
 export const MINIMAP_CELLS: readonly number[] = [8, 10, 12, 14, 16, 20, 24, 28, 32]
 
 /**
- * The rows that only make sense while 2D and third person are offered
- * (`VIEW_OPTIONS` in servers.ts): the two that choose them, and the camera
- * distance, which is third person's alone. They stay written here so bringing
- * the modes back is one flag.
+ * The rows that only make sense while 2D is offered (`VIEW_OPTIONS` in
+ * servers.ts): the one that chooses it. It stays written here so bringing the
+ * mode back is one flag.
  */
-const VIEW_MODE_ROWS = ['View', 'Camera', 'Camera distance']
+const VIEW_MODE_ROWS = ['View']
 
 
 /**
@@ -150,24 +135,7 @@ const leftRightRows: SettingRow[] = ([
 export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   // Camera
   row('Camera', 'View', 'renderer', ['3d', '2d'], 'In the dungeon in 3D, or from above as the console shows it.', (v) => (v === '3d' ? '3D' : 'Top down (2D)')),
-  row('Camera', 'Camera', 'view', ['first', 'third'], 'From the eyes of the @, or from a cell behind them with the @ in view.', (v) => (v === 'first' ? 'First person' : 'Third person')),
-  row(
-    'Camera',
-    'Camera distance',
-    'camDistance',
-    CAM_DISTANCES,
-    (s) => (s.view === 'third' ? 'How far behind the @ the third-person camera stands. The mouse wheel does the same.' : 'Third person only: how far behind the @ the camera stands.'),
-    (v) => (v as number).toFixed(2) + ' cells',
-    (s) => s.view !== 'third',
-  ),
-  row<'camHeight' | 'eyeHeight'>(
-    'Camera',
-    'Camera height',
-    (s) => (s.view === 'third' ? 'camHeight' : 'eyeHeight'),
-    CAM_HEIGHTS,
-    (s) => (s.view === 'third' ? 'How high the third-person camera stands, from the floor to the ceiling. Shift and the mouse wheel do the same.' : 'How high your eyes stand, from the floor to the ceiling.'),
-    (v) => (v as number).toFixed(2) + ' cells',
-  ),
+  row('Camera', 'Camera height', 'eyeHeight', CAM_HEIGHTS, 'How high your eyes stand, from the floor to the ceiling.', (v) => (v as number).toFixed(2) + ' cells'),
   row('Camera', 'Camera angle', 'restPitch', CAM_ANGLES, 'Where the view points at rest: level with the horizon, or tipped down toward the floor ahead.', (v) => ((v as number) === 0 ? 'Level' : Math.abs(v as number) + '° ' + ((v as number) < 0 ? 'down' : 'up'))),
   row('Camera', 'Field of view', 'fov', [60, 70, 75, 85, 95], 'How wide the first-person view opens.', (v) => v + '°'),
   row('Camera', 'Hands', 'viewmodel', [true, false], 'The wielded weapon and off-hand item, drawn in view.', (v) => (v ? 'Weapon and shield shown' : 'Hidden')),

@@ -1,6 +1,6 @@
 # @orbrun/render-3d
 
-A first-person (and third-person) [three.js](https://threejs.org) renderer of
+A first-person [three.js](https://threejs.org) renderer of
 a `@orbrun/scene` `Scene`: walls as inset masonry, floors and ceilings,
 standing features, doors, water and lava, monsters and items as billboards
 that face the camera (each a shallow block with a shaded rim, like the hands),

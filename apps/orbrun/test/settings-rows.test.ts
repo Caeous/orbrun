@@ -17,7 +17,6 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 /** Any row, offered or not; `SETTING_ROWS` is what the player sees. */
 const row = (label: string) => ALL_SETTING_ROWS.find((r) => r.label === label)!
-const third = () => ({ ...defaultSettings, view: 'third' as const })
 
 describe('what is written down', () => {
   beforeEach(() => store.clear())
@@ -43,30 +42,20 @@ describe('what is written down', () => {
 
   it('keeps a view the build has taken away rather than erasing it on the next save', () => {
     if (VIEW_OPTIONS) return
-    store.set('orbrun.settings', JSON.stringify({ renderer: '2d', view: 'third' }))
+    store.set('orbrun.settings', JSON.stringify({ renderer: '2d' }))
     saveSettings(getSettings())
-    expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({ renderer: '2d', view: 'third' })
+    expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({ renderer: '2d' })
   })
 })
 
-describe('camera rows follow the Camera setting', () => {
+describe('camera rows', () => {
   beforeEach(() => saveSettings({ ...defaultSettings }))
 
-  it('Camera height sets the eye in first person and the shot in third', () => {
+  it('Camera height sets the eye', () => {
     const height = row('Camera height')
     expect(rowKey(height)).toBe('eyeHeight')
     expect(settingValue(height)).toBe('0.65 cells')
     expect(rowHint(height)).toMatch(/eyes/)
-    expect(rowKey(height, third())).toBe('camHeight')
-    expect(settingValue(height, third())).toBe('0.75 cells')
-    expect(rowHint(height, third())).toMatch(/third-person/)
-  })
-
-  it('each height is kept on its own', () => {
-    const height = row('Camera height')
-    adjustSetting(height, 1)
-    expect(getSettings().eyeHeight).toBe(0.7)
-    expect(getSettings().camHeight).toBe(0.75)
   })
 
   it('the default eye is a stop and steps a twentieth either way', () => {
@@ -79,43 +68,23 @@ describe('camera rows follow the Camera setting', () => {
     expect(getSettings().eyeHeight).toBe(0.7)
   })
 
-  it('Camera distance is off in first person and inert, on in third', () => {
-    const dist = row('Camera distance')
-    expect(rowOff(dist)).toBe(true)
-    expect(rowHint(dist)).toMatch(/Third person only/)
-    expect(adjustSetting(dist, 1)).toBe('0.70 cells')
-    expect(getSettings().camDistance).toBe(0.7)
-    expect(rowOff(dist, third())).toBe(false)
-    expect(rowHint(dist, third())).toMatch(/How far behind/)
-  })
-
-  it('no other row is ever off', () => {
-    for (const view of ['first', 'third'] as const) {
-      saveSettings({ ...defaultSettings, view })
-      for (const r of SETTING_ROWS) if (r.label !== 'Camera distance') expect(rowOff(r)).toBe(false)
-    }
+  it('no row is ever off', () => {
+    for (const r of ALL_SETTING_ROWS) expect(rowOff(r)).toBe(false)
   })
 })
 
-describe('2D and third person are temporarily out (VIEW_OPTIONS)', () => {
+describe('2D is temporarily out (VIEW_OPTIONS)', () => {
   beforeEach(() => saveSettings({ ...defaultSettings }))
 
-  it('the flag is off, so the rows that choose them are not offered', () => {
+  it('the flag is off, so the View row is not offered', () => {
     expect(VIEW_OPTIONS).toBe(false)
-    for (const label of ['View', 'Camera', 'Camera distance']) {
-      expect(row(label)).toBeDefined()
-      expect(SETTING_ROWS.find((r) => r.label === label)).toBeUndefined()
-    }
+    expect(row('View')).toBeDefined()
+    expect(SETTING_ROWS.find((r) => r.label === 'View')).toBeUndefined()
   })
 
-  it('a session saved in 2D or third person comes back in 3D first person', () => {
-    saveSettings({ ...defaultSettings, renderer: '2d', view: 'third' })
+  it('a session saved in 2D comes back in 3D', () => {
+    saveSettings({ ...defaultSettings, renderer: '2d' })
     expect(getSettings().renderer).toBe('3d')
-    expect(getSettings().view).toBe('first')
-  })
-
-  it('no offered row is ever off, since the only one that can be is out', () => {
-    for (const r of SETTING_ROWS) expect(rowOff(r)).toBe(false)
   })
 })
 

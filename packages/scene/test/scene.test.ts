@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { blocksExplore, cameraApproach, cellKey, emptyScene, cellAhead, isThreat, nearestBlocker, nearestHostile, orbitShot, rotateDir, yawToDir, dirToYaw, cellLayoutEquals, sceneLayoutEquals, shadeOf, MEMORY_SHADE, type Billboard, type SceneCell, type Scene } from '../src/index.js'
+import { blocksExplore, cellKey, emptyScene, cellAhead, isThreat, nearestBlocker, nearestHostile, rotateDir, yawToDir, dirToYaw, cellLayoutEquals, sceneLayoutEquals, shadeOf, MEMORY_SHADE, type Billboard, type SceneCell, type Scene } from '../src/index.js'
 
 function cell(x: number, y: number, kind: SceneCell['kind'], visibility: SceneCell['visibility'] = 'visible'): SceneCell {
   return {
@@ -46,93 +46,6 @@ describe('directions', () => {
     const s = sceneFrom(['...', '.@.', '...'])
     expect(cellAhead(s, 0)?.y).toBe(0)
     expect(cellAhead(s, 2)?.x).toBe(2)
-  })
-})
-
-describe('third-person shot (rendering-3d.md II.11)', () => {
-  it('stands two cells straight behind the player, against facing, cutting nothing in open ground', () => {
-    const s = sceneFrom(['.....', '.....', '..@..', '.....', '.....'])
-    const shot = orbitShot(s, 0) // facing north: camera is south
-    expect(shot).toEqual({ x: 2, y: 4, back: 2, cut: [] })
-  })
-  it('lowers the walls it stands in and looks across after a corner', () => {
-    // corridor from the west turning north: facing north, both cells behind are rock
-    const s = sceneFrom(['#.#', '#@#', '.##', '###'])
-    const shot = orbitShot(s, 0)
-    expect(shot).toEqual({ x: 1, y: 3, back: 2, cut: [cellKey(1, 2), cellKey(1, 3)] })
-  })
-  it('cuts only the occluders on the way, not open floor', () => {
-    const s = sceneFrom(['@', '.', '#'])
-    expect(orbitShot(s, 0)).toEqual({ x: 0, y: 2, back: 2, cut: [cellKey(0, 2)] })
-  })
-  it('comes in to one cell when the far cell was never seen', () => {
-    const s = sceneFrom(['@', '.', ' '])
-    expect(orbitShot(s, 0)).toEqual({ x: 0, y: 1, back: 1, cut: [] })
-  })
-  it('does not stand past a never-seen cell even if its own cell is known', () => {
-    const s = sceneFrom(['@', ' ', '.'])
-    expect(orbitShot(s, 0)).toBeNull()
-  })
-  it('is null when nothing behind is known, or the player is off the level', () => {
-    expect(orbitShot(sceneFrom(['@', ' ']), 0)).toBeNull()
-    const s = sceneFrom(['.....', '..@..', '.....'])
-    s.playerOnLevel = false
-    expect(orbitShot(s, 0)).toBeNull()
-  })
-  it('follows diagonal facings along the diagonal', () => {
-    const s = sceneFrom(['.....', '.....', '..@..', '.....', '.....'])
-    expect(orbitShot(s, 1)).toMatchObject({ x: 0, y: 4, back: 2 }) // facing NE: camera SW
-  })
-})
-
-describe('third-person camera approach (rendering-3d.md II.11)', () => {
-  const N = 0
-  it('cuts nothing at rest in open ground', () => {
-    const s = sceneFrom(['.....', '.....', '..@..', '.....', '.....'])
-    expect(cameraApproach(s, dirToYaw(N), 1.5, 0.5)).toEqual({ back: 1.5, cut: [] })
-  })
-  it('cuts the diagonal rock the arc sweeps through mid-turn at a corridor corner', () => {
-    // corridor from the west turning north; the camera is halfway between facing N and facing E
-    const s = sceneFrom(['#.#', '#@#', '###', '###'])
-    const yaw = (dirToYaw(N) + dirToYaw(rotateDir(N, 2))) / 2 // NE, 45 degrees into the turn: the eye is SW, in (0,2)
-    const a = cameraApproach(s, yaw, 1.5, 0.5)
-    expect(a.back).toBe(1.5)
-    expect(a.cut).toContain(cellKey(0, 2))
-    expect(a.cut).not.toContain(cellKey(1, 1))
-  })
-  it('cuts the wall a free look parks the camera beside, and the wall it looks across', () => {
-    // facing east after a free look, in a north-south corridor: the camera stands in the west wall
-    const s = sceneFrom(['##.#', '##@#', '##.#'])
-    const a = cameraApproach(s, dirToYaw(rotateDir(N, 2)), 1.5, 0.5)
-    expect(a.back).toBe(1.5)
-    expect(a.cut).toEqual([cellKey(0, 1), cellKey(1, 1)])
-  })
-  it('at the near end still lowers the wall whose face the eye touches, never the player cell', () => {
-    const s = sceneFrom(['##.#', '##@#', '##.#'])
-    const a = cameraApproach(s, dirToYaw(rotateDir(N, 2)), 0.5, 0.5)
-    expect(a.cut).toEqual([cellKey(1, 1)])
-  })
-  it('stands off the eased eye mid-glide, not the destination cell', () => {
-    // walking east along a corridor: the doll is halfway between (1,1) and (2,1); the camera, 1.5 back
-    // against east, stands in (0,1), the wall behind the cell it left, and cuts it; the home cell is the
-    // one under the doll, never cut
-    const s = sceneFrom(['####', '#.@#', '####'])
-    const a = cameraApproach(s, dirToYaw(rotateDir(N, 2)), 1.5, 0.5, { x: 1.5, y: 1 })
-    expect(a.back).toBe(1.5)
-    expect(a.cut).toContain(cellKey(0, 1))
-    expect(a.cut).not.toContain(cellKey(1, 1))
-    expect(a.cut).not.toContain(cellKey(2, 1))
-  })
-  it('pulls in toward the player until the way is clear of never-seen void', () => {
-    const s = sceneFrom(['@', '.', ' '])
-    const a = cameraApproach(s, dirToYaw(N), 1.5, 0.5)
-    expect(a.back).toBeLessThan(1.5)
-    expect(a.back).toBeGreaterThanOrEqual(0.5)
-    expect(a.cut).toEqual([])
-  })
-  it('stops at the near end even when that is void', () => {
-    const s = sceneFrom(['@', ' '])
-    expect(cameraApproach(s, dirToYaw(N), 1.5, 0.5).back).toBe(0.5)
   })
 })
 

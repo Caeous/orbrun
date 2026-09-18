@@ -14,9 +14,6 @@ const tiles: TileSource = {
 type Guts = {
   cam: THREE.PerspectiveCamera
   billboardGroup: THREE.Group
-  doll: THREE.Object3D | null
-  opts: { view: 'first' | 'third' }
-  shot: unknown
   setTiles(t: TileSource): void
   syncBillboards(s: Scene): void
   bakeStanding(g: THREE.Group, eye: { x: number; y: number }): void
@@ -117,18 +114,5 @@ describe('baked crowd', () => {
     // the first vertex is the body's first corner, lifted by the mesh's own place in the holder and no more
     expect(pos.getY(0)).toBeCloseTo(local, 6)
     expect(Math.abs(pos.getX(0))).toBeLessThan(1)
-  })
-
-  it('leaves the doll standing as a holder of its own', () => {
-    const r = new Render3d() as unknown as Guts
-    r.setTiles(tiles)
-    r.opts.view = 'third'
-    r.shot = { x: 0, y: 0, cut: [] }
-    const s = crowd()
-    s.billboards.push({ x: 0, y: 0, tile: 1, kind: 'player', height: 1 })
-    r.syncBillboards(s)
-    expect(r.doll).toBeTruthy()
-    r.bakeStanding(r.billboardGroup, { x: 0, y: 0 })
-    expect(r.billboardGroup.children).toContain(r.doll)
   })
 })

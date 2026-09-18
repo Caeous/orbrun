@@ -247,36 +247,6 @@ describe('rest pitch (the Camera angle setting)', () => {
     c.setRestPitch(0)
     expect(c.camera.pitch).toBeCloseTo(0.2)
   })
-
-  it('carries the third-person window with it', () => {
-    const c = cam(0)
-    c.thirdPerson = true
-    c.setRestPitch(-(Math.PI / 180) * 30)
-    c.lookBy(0, -Math.PI / 2)
-    expect(c.camera.pitch).toBeCloseTo(-(Math.PI / 180) * 60, 5)
-    c.lookBy(0, Math.PI)
-    expect(c.camera.pitch).toBeCloseTo(0, 5)
-  })
-})
-
-describe('third-person glance', () => {
-  it('clamps pitch to the window under the lid, and frees it again in first person', () => {
-    const c = cam(0)
-    c.thirdPerson = true
-    c.lookBy(0, -Math.PI / 2)
-    expect(c.camera.pitch).toBeCloseTo(REST_PITCH - (Math.PI / 180) * 30, 5)
-    c.lookBy(0, Math.PI)
-    expect(c.camera.pitch).toBeCloseTo(REST_PITCH + (Math.PI / 180) * 30, 5)
-    c.thirdPerson = false
-    c.lookBy(0, -Math.PI / 2)
-    expect(c.camera.pitch).toBeLessThan(-(Math.PI / 180) * 60)
-  })
-  it('restores a saved view within the third-person window', () => {
-    const c = cam(0)
-    c.thirdPerson = true
-    c.restore({ yaw: 0, pitch: -1.4 })
-    expect(c.camera.pitch).toBeCloseTo(REST_PITCH - (Math.PI / 180) * 30, 5)
-  })
 })
 
 describe('camera facing after a keyboard step', () => {

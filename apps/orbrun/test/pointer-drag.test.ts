@@ -20,7 +20,7 @@ function harness() {
   const screen = Object.assign(Object.create(GameScreen.prototype), {
     canvas, is3d: true, drag: null, hover: null, pointerLive: false, tooltipTimer: 0,
     cam: { lookBy, endDrag }, hud: { hideTooltip: vi.fn() }, session: { state: initialState() },
-    hooks: { settings: () => ({ lookSensitivity: 1, invertLook: false, view: 'third' }) },
+    hooks: { settings: () => ({ lookSensitivity: 1, invertLook: false }) },
     inputFrom: vi.fn(), wake: vi.fn(), armCellTooltip: vi.fn(), onPointer,
   }) as { attachPointer(c: HTMLCanvasElement): void; cancelDrag(): void; drag: unknown }
   screen.attachPointer(canvas)

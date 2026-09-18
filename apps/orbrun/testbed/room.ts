@@ -34,7 +34,7 @@ let vault: Vault
 let scene: Scene
 let cam: Camera
 let light: { x: number; y: number }
-const r3 = new Render3d({ view: 'first', fov: ROOM_FOV, eyeHeight: ROOM_EYE_HEIGHT, viewmodel: false, motion: false })
+const r3 = new Render3d({ fov: ROOM_FOV, eyeHeight: ROOM_EYE_HEIGHT, viewmodel: false, motion: false })
 r3.mount(canvas)
 const r2 = new Render2d({ cellSize: 24, mode: 'tiles', follow: false })
 const map2d = $<HTMLCanvasElement>('map2d')

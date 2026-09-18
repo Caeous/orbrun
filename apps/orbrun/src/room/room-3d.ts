@@ -55,5 +55,5 @@ export class Room3d {
 
 /** The renderer's options under `st`: first person always (there is no @ to stand behind), the eye and the lens as the player set them. */
 function roomOptions(st: Settings) {
-  return { view: 'first' as const, fov: st.fov ?? ROOM_FOV, eyeHeight: st.eyeHeight ?? ROOM_EYE_HEIGHT, viewmodel: false, motion: false }
+  return { fov: st.fov ?? ROOM_FOV, eyeHeight: st.eyeHeight ?? ROOM_EYE_HEIGHT, viewmodel: false, motion: false }
 }

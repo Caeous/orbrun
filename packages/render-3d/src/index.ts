@@ -3,19 +3,10 @@ import * as THREE from 'three'
 import {
   cellKey,
   dirToYaw,
-  minibarRects,
-  MINIBAR_CELL,
-  type Minibars,
   keyToXY,
-  orbitShot,
-  cameraApproach,
-  ORBIT_BACK,
-  REST_PITCH,
   type Billboard,
   type Camera,
   type CellKey,
-  type OrbitShot,
-  type ViewMode,
   type MapRenderer,
   type Scene,
   type SceneCell,
@@ -40,41 +31,17 @@ import { extrudeFaces, runs } from './mesh.js'
  *
  * World mapping: cell (x, y) -> world (x, 0, y). North (-y) is -z. Wall
  * height is 1. The camera stands at eye height 0.65 by default (the
- * `eyeHeight` option moves it), or in third person (rendering-3d.md II.11)
- * on a cell behind the player, under the lid.
+ * `eyeHeight` option moves it).
  */
 
 export interface Render3dOptions {
-  /** First person (the eyes) or third person (a cell behind the player). */
-  view?: ViewMode
   /** Field of view in degrees. */
   fov?: number
   /**
-   * Third person only: how far behind the player the camera stands, in
-   * cells. Clamped to what the shot allows (II.11), so a tight shot pulls it
-   * in whatever this says.
-   */
-  camDistance?: number
-  /**
-   * Third person only: how high the camera stands, in cells (0 is the floor,
-   * 1 the lid). Clamped to THIRD_MIN_H..THIRD_MAX_H so it never sits in the
-   * floor or in the ceiling.
-   */
-  camHeight?: number
-  /**
-   * First person only: how high the eye stands, in cells (0 is the floor, 1
-   * the lid). Default EYE; clamped to EYE_MIN..EYE_MAX so it is never in the
-   * floor or the lid.
+   * How high the eye stands, in cells (0 is the floor, 1 the lid). Default
+   * EYE; clamped to EYE_MIN..EYE_MAX so it is never in the floor or the lid.
    */
   eyeHeight?: number
-  /**
-   * Where the camera points at rest, in radians off the horizon (negative
-   * looks down): the Camera angle setting. First person takes the pitch
-   * straight off the camera, so this only matters in third person, where the
-   * shot's own rest pitch comes from its height and the player's glance is
-   * measured from this. Default REST_PITCH.
-   */
-  restPitch?: number
   /**
    * Truncated corners (II.1): every convex wall corner is cut off by a
    * diagonal face this far back along each edge, in cells, clamped to half
@@ -93,83 +60,17 @@ export interface Render3dOptions {
    */
   viewmodel?: boolean
   /**
-   * The player's health and magic bars (scene bars.ts), drawn over the
-   * doll's head in third person exactly as a monster's damage bar is; in
-   * first person the doll is the camera and the HUD's stats pane carries
-   * them. `setMinibars` updates them without rebuilding the level.
-   */
-  minibars?: Minibars | null
-  /**
    * Attack cue: a tiny thrust of the wielded weapon toward the centre on a melee attack. Off under
    * the platform's reduced-motion preference; the hands then never move.
    */
   motion?: boolean
 }
 
-// First person: the eye stands EYE up by default; the `eyeHeight` option
-// (the Camera height setting, in first person) moves it between EYE_MIN and
-// EYE_MAX, the same range the third-person camera has, clear of floor and lid.
+// The eye stands EYE up by default; the `eyeHeight` option (the Camera height
+// setting) moves it between EYE_MIN and EYE_MAX, clear of floor and lid.
 const EYE = 0.65
 const EYE_MIN = 0.25
 const EYE_MAX = 0.9
-// Third person (II.11). The camera stands on the facing line, up to
-// ORBIT_BACK behind the player and THIRD_H up: under the 1.0 lid, over the
-// 0.65 eye, so it never clips a lid or a wall face (a cell centre is half a
-// cell from any face). It looks at the floor THIRD_AHEAD cells past the
-// player, THIRD_SHOULDER to the right of the facing line, so the doll sits
-// left of centre and the cell ahead stays clear. The stick glances from
-// there within THIRD_PITCH_MIN..MAX: under a lid there is no more to see.
-// THIRD_H is the default; the `camHeight` option (the Camera height setting,
-// and Shift+wheel) moves it between THIRD_MIN_H, low enough to read as a
-// follow-cam at the doll's waist, and THIRD_MAX_H, well over the lid. Over
-// the lid (above LID_H) the level is built without its lids and with every
-// wall capped, so the shot looks down into it as onto a model, and nothing
-// on the way to the doll needs cutting down.
-const THIRD_H = 0.75
-const THIRD_MIN_H = 0.25
-const THIRD_MAX_H = 3
-const LID_H = 1
-const THIRD_AHEAD = 2
-/**
- * How far back along the facing line the camera stands, in cells: the
- * `camDistance` option (the Camera distance setting, and the mouse wheel),
- * defaulting to THIRD_BACK. It is pulled in from the shot cell's centre so
- * the doll reads at handheld size, and is clamped to the shot: never past
- * the cell the shot cut down, and never nearer than THIRD_MIN_BACK. The near
- * end is an over-the-shoulder shot: the camera is inside the player's own
- * cell, a quarter cell behind the doll, which the shoulder offset keeps left
- * of centre. Nearer than that the camera is in the doll and the view is
- * better off in first person, which is its own setting.
- */
-const THIRD_BACK = 0.7
-const THIRD_MIN_BACK = 0.25
-const THIRD_MAX_BACK = ORBIT_BACK
-const THIRD_SHOULDER = 0.35
-// the glance runs from a look straight down to a look a little up; under the
-// lid the rest pitch keeps it in the lower part of that range on its own
-const THIRD_PITCH_MIN = -(Math.PI / 180) * 85
-const THIRD_PITCH_MAX = (Math.PI / 180) * 20
-/**
- * The player's own doll is drawn at this fraction of the height the builder
- * resolved: at the near camera stops a full-height doll fills the frame and
- * buries the cell ahead. Only the player is scaled; every other actor and item
- * keeps the size the scene gives it, so nothing about what the view tells the
- * player changes. An experiment knob — one number to revert.
- */
-const DOLL_SCALE = 0.75
-/** Attack cue in third person: the doll lunges this far (cells) along facing and settles back over VM_LIFT_S. */
-const DOLL_LUNGE = 0.25
-/**
- * The doll stands this far (cells) behind its cell's centre, toward the
- * camera, so it reads a little larger and leaves more of its own cell and
- * the cell ahead in view. Along the live yaw, so it stays put in the frame
- * through a turn rather than skipping between facings. It never comes nearer
- * the camera than THIRD_MIN_BACK: at the near stops the offset shrinks to
- * nothing.
- */
-const DOLL_BACK = 0.2
-/** Ghost tint of the player's own doll when masonry hides it from the third-person camera. */
-const DOLL_GHOST_TINT = { r: 0.85, g: 0.9, b: 1 }
 // Viewmodel (II.7). The hands sit in their own perspective overlay, framed so
 // the view is two units tall at the hands' depth; a full 32-texel icon is
 // VM_SIZE units high. Each icon is extruded from its texels into a block
@@ -188,7 +89,7 @@ const VM_FOV = 40
 /** Shade of an extruded block's faces relative to the texel colour: front, top, side, bottom. The hands and the standing sprites share it. */
 const BLOCK_SHADE = { front: 1, top: 0.86, side: 0.7, bottom: 0.5 }
 /**
- * Standing sprites (monsters, items, the doll, doors and statues) are given
+ * Standing sprites (monsters, items, doors and statues) are given
  * thickness: behind the front quad every opaque texel is extruded this many
  * texels deep, with the rim of side faces shaded as the hands' are, so a
  * sprite seen from off-centre or from above reads as a slab rather than a
@@ -249,7 +150,7 @@ const FIXTURE_H = 0.9
 const STAIR_H = 0.7
 /**
  * How far an upright feature's board stands back from the middle of its cell,
- * in cells. Actors, items and the doll stand at the cell's middle too, and
+ * in cells. Actors and items stand at the cell's middle too, and
  * every standing sprite faces the camera, so a board left there is coplanar
  * with whatever stands on it: the two z-fight, and a character on a staircase
  * is sliced by its steps. A sprite's own block deep is enough to put the
@@ -259,7 +160,6 @@ const STAIR_H = 0.7
  */
 const FIXTURE_BACK = BB_DEPTH / 32
 const DIAGONALS: [number, number][] = [[-1, -1], [1, -1], [-1, 1], [1, 1]]
-const PLINTH_H = 3 / 32
 // Ghost pass (rendering-3d.md II.4): anything the 2D client would show on the
 // map but the geometry hides shows through as its own sprite, dimmed and
 // tinted by what it is, so the 3D view never hides what the server reports.
@@ -839,18 +739,6 @@ export class Render3d implements MapRenderer {
   private selected: THREE.Object3D[] = []
   private selectionDirty = false
   readonly stats: RenderStats = { levelBuilds: 0, crowdSyncs: 0, spriteBuilds: 0, spriteDrops: 0, selectionBuilds: 0, fieldUpdates: 0, chunkBakes: 0, chunkAllocs: 0, bakedVertices: 0 }
-  /** Flat materials for the bars' rects, one per colour and alpha. */
-  private barMats = new Map<string, THREE.MeshBasicMaterial>()
-  private plinths = new Set<CellKey>()
-  /** Third person: the camera stands over the lid, so the level is built without lids and with capped walls (II.11). */
-  private aboveLid = false
-  /** Third person: the shot the level was last built for, and the occluders it lowers (II.11). */
-  private shot: OrbitShot | null = null
-  /** Third person: how far behind the player the camera stands this frame, and the cells the way there cut (II.11). */
-  private approach = { back: 0, cut: [] as CellKey[] }
-  private cutKey = ''
-  /** Third person: the player's doll, moved for the attack lunge. */
-  private doll: THREE.Object3D | null = null
   private raycaster = new THREE.Raycaster()
   private pickMeshes: THREE.Mesh[] = []
   private voidMat: THREE.MeshBasicMaterial
@@ -910,17 +798,12 @@ export class Render3d implements MapRenderer {
     this.twin(this.hullSelMat, this.makeStandingMaterial(this.hullSelMat))
     this.twin(this.shadowMat, this.makeStandingMaterial(this.shadowMat))
     this.opts = {
-      view: opts.view ?? 'first',
       fov: opts.fov ?? 85,
-      camDistance: opts.camDistance ?? THIRD_BACK,
-      camHeight: opts.camHeight ?? THIRD_H,
       eyeHeight: opts.eyeHeight ?? EYE,
-      restPitch: opts.restPitch ?? REST_PITCH,
       chamfer: opts.chamfer ?? 1 / 32,
       wallInset: opts.wallInset ?? WALL_INSET,
       viewmodel: opts.viewmodel ?? true,
       motion: opts.motion ?? true,
-      minibars: opts.minibars ?? null,
     }
     this.cam.fov = this.opts.fov
     this.cam.rotation.order = 'YXZ'
@@ -1230,14 +1113,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.builtLayout = -1
   }
 
-  /** A new `player` message: the doll's bars are redrawn on the next frame; the level and the rest of the crowd stand. */
-  setMinibars(m: Minibars | null) {
-    const before = minibarRects(this.opts.minibars)
-    const after = minibarRects(m)
-    this.opts.minibars = m
-    if (JSON.stringify(before) !== JSON.stringify(after)) this.crowdDirty = true
-  }
-
   setTiles(tiles: TileSource): void {
     this.tiles = tiles
     for (const a of this.atlases.values()) {
@@ -1281,7 +1156,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     // nothing stands: the chunks' meshes and the shells go too, rather than waiting for a bake to find them empty
     this.billboardCrowd.clear()
     this.clearSelection()
-    this.doll = null
     this.ghostCount = 0
     this.selectionDirty = true
   }
@@ -1410,8 +1284,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.cursorMesh.geometry.dispose()
     this.cursorTileMesh.geometry.dispose()
     this.cursorRingMat.dispose()
-    for (const m of this.barMats.values()) m.dispose()
-    this.barMats.clear()
     this.vmMat.dispose()
     this.voidMat.dispose()
     this.hullMat.dispose()
@@ -1443,8 +1315,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * pips.ts): the vertical half-angle, the aspect, the view's pixel height
    * (so a pip can be drawn the size the sprite would have been) and cell
    * centres in the camera's own space, so what the pips call "off screen" is
-   * exactly what this frame did not draw, first or third person, mid-turn or
-   * at rest.
+   * exactly what this frame did not draw, mid-turn or at rest.
    */
   projector(): { tanHalfY: number; aspect: number; height: number; toCamera(x: number, y: number, h: number): { x: number; y: number; z: number } } {
     const cam = this.cam
@@ -1496,12 +1367,10 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       this.cursorMesh.visible = this.cursorTileMesh.visible = false
       return
     }
-    const k = cellKey(cur.x, cur.y)
     // the cursor marks a cell, not a wall cap: it lies on the ground even when the cell is solid
     // (its materials skip the depth test, so it shows through the wall at eye level, though a
-    // sprite on the cell still covers it, CURSOR_ORDER), and rides a lowered wall's plinth so it
-    // is not buried inside it
-    const h = this.plinths.has(k) ? PLINTH_H : 0
+    // sprite on the cell still covers it, CURSOR_ORDER)
+    const h = 0
     const rect = cur.tile !== undefined && this.tiles ? this.tiles.tile(cur.tile) : undefined
     const a = rect ? this.atlas(rect.atlas) : null
     if (rect && a) {
@@ -1564,12 +1433,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.pickMeshes = []
     const tiles = this.tiles
     if (!tiles) return
-    // only the third-person camera's approach lowers a wall: the cells it stands in or looks across come down to plinths (II.11)
-    this.plinths = new Set()
-    if (this.shot) {
-      for (const k of this.shot.cut) this.plinths.add(k)
-      for (const k of this.approach.cut) this.plinths.add(k)
-    }
     const fo = this.fo()
     const framed = framedDoors(scene)
     // A framed door's cell counts as wall for the footprint rule: the wall run
@@ -1604,13 +1467,10 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       if (!a) return null
       return { r, a, uv: this.uvFor(r, a) }
     }
-    // over the lid there is no lid: the camera looks down into the level, and every wall gets a cap instead
-    const lids = !this.aboveLid
-    const levelCeiling = lids && scene.level.ceilingTile !== null ? tileOf(scene.level.ceilingTile) : null
+    const levelCeiling = scene.level.ceilingTile !== null ? tileOf(scene.level.ceilingTile) : null
     const ceilingCache = new Map<number, ReturnType<typeof tileOf>>()
-    /** The lid over an open cell: its own nearby-wall tile, else the level's; none over the lid. */
+    /** The lid over an open cell: its own nearby-wall tile, else the level's. */
     const ceilingOf = (c: SceneCell | undefined) => {
-      if (!lids) return null
       if (scene.level.sky !== 'none') return null
       if (!c || c.ceilingTile === undefined) return levelCeiling
       let t = ceilingCache.get(c.ceilingTile)
@@ -1619,18 +1479,17 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     }
     /**
      * Whether a cell's feature stands as a billboard here. Upright features do
-     * — except the one underfoot in first person, where the camera sits in the
-     * middle of the sprite, and any a monster, an item or the doll stands on:
+     * — except the one underfoot, where the camera sits in the middle of the
+     * sprite, and any a monster or an item stands on:
      * there the tile lies back down on the floor, so a staircase you or a
      * centaur are standing on still reads as one.
      */
     const onPlayer = (c: SceneCell) => scene.playerOnLevel && c.x === scene.player.x && c.y === scene.player.y
     const occupied = this.occupiedFeatures(scene)
-    const stands = (c: SceneCell) => c.stance === 'upright' && !(!this.shot && onPlayer(c)) && !occupied.has(cellKey(c.x, c.y))
+    const stands = (c: SceneCell) => c.stance === 'upright' && !onPlayer(c) && !occupied.has(cellKey(c.x, c.y))
     const heightOfFeature = (c: SceneCell) => (c.feature?.type === 'stairs' ? STAIR_H : FIXTURE_H)
     const isSolid = (c: SceneCell | undefined) => !c || c.kind === 'unknown' || c.occluder
     const isVoidCell = (c: SceneCell | undefined) => !c || c.kind === 'unknown'
-    const heightOf = (c: SceneCell | undefined, k: CellKey) => (isSolid(c) ? (this.plinths.has(k) ? PLINTH_H : 1) : 0)
 
     // iterate over bounds so void columns bordering known space exist
     const b = scene.bounds
@@ -1674,9 +1533,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         // solid: wall, door or void. The body is the footprint of II.1
         // (inset walls): the cell minus the floor grown by the inset, so it
         // meets every neighbour flush. Faces come from the footprint; corner
-        // chamfers, plinths and the patches of floor and lid that continue
-        // under and over the removed parts are added here.
-        const h = heightOf(cell, k)
+        // chamfers and the patches of floor and lid that continue under and
+        // over the removed parts are added here.
         const isVoid = isVoidCell(cell)
         const openN = !isSolid(n)
         const openS = !isSolid(s)
@@ -1700,7 +1558,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         // A face is parametrised by t0..t1 along its edge (x for N/S, z for
         // W/E), its depth in from the cell edge it faces away from, and the
         // height it starts at.
-        const facePoints = (d: Dir, t0: number, t1: number, depth: number, y0: number, y1 = h): [number, number, number][] => {
+        const facePoints = (d: Dir, t0: number, t1: number, depth: number, y0: number, y1 = 1): [number, number, number][] => {
           switch (d) {
             case 'n': { const z = y + depth; return [[x + t1, y0, z], [x + t0, y0, z], [x + t0, y1, z], [x + t1, y1, z]] }
             case 's': { const z = y + 1 - depth; return [[x + t0, y0, z], [x + t1, y0, z], [x + t1, y1, z], [x + t0, y1, z]] }
@@ -1733,41 +1591,34 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
             voids.quad(p, { u0: 0, v0: 0, u1: 1, v1: 1 }, 0, { r: 0, g: 0, b: 0 })
             return
           }
-          if (h === 1) {
-            // full wall: tile stretched from y0..1
-            const uv = { ...wt.uv, ...faceU(d, wt.uv, t0, t1) }
-            uv.v1 = wt.uv.v1 - (wt.uv.v1 - wt.uv.v0) * y0
-            get(wt.r.atlas).at(x, y).quad(p, uv, faceShade, tint, undefined, true)
-            // decals on the face (blood, silence), pushed a hair off the
-            // masonry. A decal's rect is trimmed to its opaque texels and sits
-            // at its ox/oy in the tile, so it covers only that patch of the
-            // face, clipped to this segment; the face's u runs against t on N
-            // and E (see faceU).
-            if (cell?.wallOverlays) {
-              const nx = d === 'w' ? -0.003 : d === 'e' ? 0.003 : 0
-              const nz = d === 'n' ? -0.003 : d === 's' ? 0.003 : 0
-              const flip = d === 'n' || d === 'e'
-              for (const o of cell.wallOverlays) {
-                const ot = tileOf(o)
-                if (!ot) continue
-                const c = ot.r.cell
-                const fx0 = ot.r.ox / c, fx1 = (ot.r.ox + ot.r.w) / c
-                const fy0 = 1 - (ot.r.oy + ot.r.h) / c, fy1 = 1 - ot.r.oy / c
-                const tA = Math.max(t0, flip ? 1 - fx1 : fx0), tB = Math.min(t1, flip ? 1 - fx0 : fx1)
-                const yA = Math.max(y0, fy0), yB = Math.min(1, fy1)
-                if (tB - tA < 1e-6 || yB - yA < 1e-6) continue
-                const fu = (tx: number) => lerp(ot.uv.u0, ot.uv.u1, (tx - fx0) / (fx1 - fx0))
-                const fv = (wy: number) => lerp(ot.uv.v0, ot.uv.v1, (1 - wy - ot.r.oy / c) / (ot.r.h / c))
-                const ouv = { u0: fu(flip ? 1 - tB : tA), u1: fu(flip ? 1 - tA : tB), v0: fv(yB), v1: fv(yA) }
-                const pd = facePoints(d, tA, tB, depth, yA, yB).map(([px, py, pz]) => [px + nx, py, pz + nz] as [number, number, number])
-                getDecal(ot.r.atlas, cell, o).at(x, y).quad(pd, ouv, faceShade, tint, undefined, true)
-              }
+          // the tile stretched from y0..1
+          const uv = { ...wt.uv, ...faceU(d, wt.uv, t0, t1) }
+          uv.v1 = wt.uv.v1 - (wt.uv.v1 - wt.uv.v0) * y0
+          get(wt.r.atlas).at(x, y).quad(p, uv, faceShade, tint, undefined, true)
+          // decals on the face (blood, silence), pushed a hair off the
+          // masonry. A decal's rect is trimmed to its opaque texels and sits
+          // at its ox/oy in the tile, so it covers only that patch of the
+          // face, clipped to this segment; the face's u runs against t on N
+          // and E (see faceU).
+          if (cell?.wallOverlays) {
+            const nx = d === 'w' ? -0.003 : d === 'e' ? 0.003 : 0
+            const nz = d === 'n' ? -0.003 : d === 's' ? 0.003 : 0
+            const flip = d === 'n' || d === 'e'
+            for (const o of cell.wallOverlays) {
+              const ot = tileOf(o)
+              if (!ot) continue
+              const c = ot.r.cell
+              const fx0 = ot.r.ox / c, fx1 = (ot.r.ox + ot.r.w) / c
+              const fy0 = 1 - (ot.r.oy + ot.r.h) / c, fy1 = 1 - ot.r.oy / c
+              const tA = Math.max(t0, flip ? 1 - fx1 : fx0), tB = Math.min(t1, flip ? 1 - fx0 : fx1)
+              const yA = Math.max(y0, fy0), yB = Math.min(1, fy1)
+              if (tB - tA < 1e-6 || yB - yA < 1e-6) continue
+              const fu = (tx: number) => lerp(ot.uv.u0, ot.uv.u1, (tx - fx0) / (fx1 - fx0))
+              const fv = (wy: number) => lerp(ot.uv.v0, ot.uv.v1, (1 - wy - ot.r.oy / c) / (ot.r.h / c))
+              const ouv = { u0: fu(flip ? 1 - tB : tA), u1: fu(flip ? 1 - tA : tB), v0: fv(yB), v1: fv(yA) }
+              const pd = facePoints(d, tA, tB, depth, yA, yB).map(([px, py, pz]) => [px + nx, py, pz + nz] as [number, number, number])
+              getDecal(ot.r.atlas, cell, o).at(x, y).quad(pd, ouv, faceShade, tint, undefined, true)
             }
-          } else {
-            // plinth skirt: bottom texel row stretched, darker
-            const a = wt.a
-            const uv = { ...faceU(d, wt.uv, t0, t1), v0: (wt.r.sy + wt.r.h - 1.5) / a.height, v1: (wt.r.sy + wt.r.h - 0.5) / a.height }
-            get(wt.r.atlas).at(x, y).quad(p, uv, faceShade * 0.4, tint, undefined, true)
           }
         }
         for (const f of fp.faces) {
@@ -1776,13 +1627,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
           let t0 = horizontal ? Math.min(f.a[0], f.b[0]) : Math.min(f.a[1], f.b[1])
           let t1 = horizontal ? Math.max(f.a[0], f.b[0]) : Math.max(f.a[1], f.b[1])
           const depth = d === 'n' ? f.a[1] : d === 's' ? 1 - f.a[1] : d === 'w' ? f.a[0] : 1 - f.a[0]
-          let y0 = 0
-          if (f.covered) {
-            // a boundary the neighbour's body covers: only the part above a lower neighbour (a plinth) shows
-            const otherH = heightOf(across[d].other, across[d].ok)
-            if (otherH >= h) continue
-            y0 = otherH
-          }
+          // a boundary the neighbour's body covers shows nothing: every wall is the same height
+          if (f.covered) continue
+          const y0 = 0
           // a notched corner at either end of the face shortens it
           for (let i = 0; i < 4; i++) {
             if (!cornerOn[i] || Nv[i] === 0) continue
@@ -1796,7 +1643,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         }
         // Horizontal patches of the cell in local [0,1]^2 (fx along x, fz
         // along z): the floor of the open cell across the edge continues
-        // under what the inset removed, its lid over it; a plinth's top.
+        // under what the inset removed, its lid over it.
         const floorUV = (uv: { u0: number; v0: number; u1: number; v1: number }, fx: number, fz: number): [number, number] => [lerp(uv.u0, uv.u1, fx), lerp(uv.v0, uv.v1, fz)]
         const ceilUV = (uv: { u0: number; v0: number; u1: number; v1: number }, fx: number, fz: number): [number, number] => [lerp(uv.u0, uv.u1, fx), lerp(uv.v1, uv.v0, fz)]
         // horizontal polygon at height py; `pts` wound to face up (counter-clockwise on the map), reversed for a lid
@@ -1815,7 +1662,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
           const ft = other && other.floorTile !== undefined ? tileOf(other.floorTile) : null
           if (ft) flat(get(ft.r.atlas).at(lx, lz), 0, pts, (fx, fz) => floorUV(ft.uv, fx, fz), true, 1)
           const ceiling = ceilingOf(other)
-          if (h === 1 && ceiling) flat(get(ceiling.r.atlas).at(lx, lz), 1, pts, (fx, fz) => ceilUV(ceiling.uv, fx, fz), false, 0.75)
+          if (ceiling) flat(get(ceiling.r.atlas).at(lx, lz), 1, pts, (fx, fz) => ceilUV(ceiling.uv, fx, fz), false, 0.75)
         }
         const { x0, x1, z0, z1, t } = rect
         if (openN) patch([[0, z0], [1, z0], [1, 0], [0, 0]], n)
@@ -1843,55 +1690,20 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
           const ch: [number, number, number][] = [
             [x + p0[0], 0, y + p0[1]],
             [x + p1[0], 0, y + p1[1]],
-            [x + p1[0], h, y + p1[1]],
-            [x + p0[0], h, y + p0[1]],
+            [x + p1[0], 1, y + p1[1]],
+            [x + p0[0], 1, y + p0[1]],
           ]
           const chShade = (1 + SIDE_SHADE) / 2
           const nsDir: Dir = i >> 1 ? 's' : 'n'
           const u = black ? null : faceU(nsDir, wt.uv, Math.min(C[0], A[0]), Math.max(C[0], A[0]))
           if (black || !u) {
             voids.quad(ch, { u0: 0, v0: 0, u1: 1, v1: 1 }, 0, { r: 0, g: 0, b: 0 })
-          } else if (h === 1) {
-            get(wt.r.atlas).at(x, y).quad(ch, { ...wt.uv, ...u }, chShade, tint, undefined, true)
           } else {
-            const a = wt.a
-            get(wt.r.atlas).at(x, y).quad(ch, { ...u, v0: (wt.r.sy + wt.r.h - 1.5) / a.height, v1: (wt.r.sy + wt.r.h - 0.5) / a.height }, chShade * 0.4, tint, undefined, true)
+            get(wt.r.atlas).at(x, y).quad(ch, { ...wt.uv, ...u }, chShade, tint, undefined, true)
           }
           // the cut-off triangle: floor continues in from the cell across the N/S edge, the lid covers it
           const tri: [number, number][] = (i & 1) === i >> 1 ? [C, A, Bp, Bp] : [C, Bp, A, A]
           patch(tri, i >> 1 ? s : n)
-        }
-        // top of a plinth: the body outline at plinth height; over the lid
-        // every wall is capped the same way, at its full height, so the
-        // level reads as solid blocks from above rather than open boxes
-        if (h < 1 || !lids) {
-          const outline: [number, number][] = []
-          for (const i of [0, 1, 3, 2]) {
-            const [cx, cz] = cornerPt(i)
-            if (rect.cut[i]) {
-              if (i === 0) outline.push([0, t], [t, t], [t, 0])
-              else if (i === 1) outline.push([1 - t, 0], [1 - t, t], [1, t])
-              else if (i === 3) outline.push([1, 1 - t], [1 - t, 1 - t], [1 - t, 1])
-              else outline.push([t, 1], [t, 1 - t], [0, 1 - t])
-            } else if (cornerOn[i] && Nv[i] > 0) {
-              const N = Nv[i]
-              const sx = i & 1 ? -1 : 1, sz = i >> 1 ? -1 : 1
-              const A: [number, number] = [cx + sx * N, cz]
-              const Bp: [number, number] = [cx, cz + sz * N]
-              if (i === 0 || i === 3) outline.push(Bp, A)
-              else outline.push(A, Bp)
-            } else outline.push([cx, cz])
-          }
-          outline.reverse()
-          const ts = black ? 0 : 1
-          const top = black ? voids : get(wt.r.atlas).at(x, y)
-          const uvOf = (fx: number, fz: number): [number, number] => (black ? [0, 0] : floorUV(wt.uv, fx, fz))
-          flat(top, h, outline, uvOf, true, ts)
-          // ceiling above a plinth so the room keeps its lid, in the lid of the room it stands in
-          const ceiling = isVoid ? null : ceilingOf(openN ? n : openS ? s : openW ? w : e)
-          if (ceiling) {
-            get(ceiling.r.atlas).at(x, y).quad([[x, 1, y], [x + 1, 1, y], [x + 1, 1, y + 1], [x, 1, y + 1]], ceiling.uv, 0.75, tint)
-          }
         }
       }
     }
@@ -2333,51 +2145,18 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
   }
 
   /**
-   * The player's health and magic bars on the doll (scene bars.ts): the same
-   * rects the 2D renderer paints, as flat quads in the doll's frame, on the
-   * top edge where a monster's damage bar now sits. `above` is how many
-   * sprite layers the holder already has, so the bars stack over them.
-   */
-  private addMinibars(holder: THREE.Object3D, scale: number, above: number) {
-    const rects = minibarRects(this.opts.minibars)
-    if (!rects.length) return
-    const cell = MINIBAR_CELL
-    let i = above
-    for (const r of rects) {
-      const key = r.colour + '@' + r.alpha
-      let mat = this.barMats.get(key)
-      if (!mat) {
-        mat = new THREE.MeshBasicMaterial({ color: r.colour, transparent: r.alpha < 1, opacity: r.alpha, depthWrite: false, side: THREE.DoubleSide })
-        this.barMats.set(key, mat)
-      }
-      const wq = (r.w / cell) * scale
-      const hq = (r.h / cell) * scale
-      const cx = ((r.x + r.w / 2 - cell / 2) / cell) * scale
-      const bottom = ((cell - (r.y + r.h)) / cell) * scale
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(wq, hq), mat)
-      mesh.position.set(cx, bottom + hq / 2, i * 0.002)
-      mesh.renderOrder = 1 + i
-      // the bars write no depth: nothing to give the ghosts' depth image
-      mesh.layers.set(LAYER_NO_DEPTH)
-      holder.add(mesh)
-      i++
-    }
-  }
-
-  /**
    * The key of everything a billboard's holders are built from: the sprite
    * itself, where it stands, how it is lit where its light is baked (a cloud
    * or a translucent sprite wears a material of its own that reads no shade
    * map), whether its cell is in view (its ghost's strength and tint), and for
-   * the doll, the shot and the bars. Two scenes that give the same key give
-   * the same holders, so the ones standing are kept.
+   * whether its cell is in view. Two scenes that give the same key give the
+   * same holders, so the ones standing are kept.
    */
-  private spriteKey(b: Billboard, shade: number, ghostKind: GhostKind, third: boolean): string {
+  private spriteKey(b: Billboard, shade: number, ghostKind: GhostKind): string {
     const layers = b.layers ? b.layers.map((l) => `${l.tile},${l.ox || 0},${l.oy || 0},${l.ymax ?? ''}`).join(';') : ''
     const icons = b.statusIcons ? b.statusIcons.map((i) => `${i.tile},${i.ox},${i.oy},${i.at || ''}`).join(';') : ''
     const own = b.kind === 'cloud' || (b.alpha !== undefined && b.alpha < 1)
-    const doll = b.kind === 'player' ? `${third ? 1 : 0}|${JSON.stringify(minibarRects(this.opts.minibars))}` : ''
-    return `${b.kind}|${b.x},${b.y}|${b.tile}|${b.height}|${b.alpha ?? ''}|${b.scenery ? 1 : 0}|${layers}|${icons}|${ghostKind}|${own ? shade : ''}|${doll}`
+    return `${b.kind}|${b.x},${b.y}|${b.tile}|${b.height}|${b.alpha ?? ''}|${b.scenery ? 1 : 0}|${layers}|${icons}|${ghostKind}|${own ? shade : ''}`
   }
 
   /**
@@ -2404,16 +2183,15 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       this.recordsTint = tintKey
       this.dropRecords()
     }
-    const third = this.opts.view === 'third' && !!this.shot
     const wanted = new Map<string, { b: Billboard; cell: SceneCell | undefined; shade: number; ghostKind: GhostKind }>()
     for (const b of scene.billboards) {
-      // in first person the player is the camera and the cell underfoot is behind it; in third person both are in view
-      if (b.kind === 'player' && !third) continue
-      if (b.x === scene.player.x && b.y === scene.player.y && scene.playerOnLevel && b.kind !== 'cloud' && !third) continue
+      // the player is the camera, and the cell underfoot is behind it
+      if (b.kind === 'player') continue
+      if (b.x === scene.player.x && b.y === scene.player.y && scene.playerOnLevel && b.kind !== 'cloud') continue
       const cell = scene.cells.get(cellKey(b.x, b.y))
       const shade = this.shadeFor(cell, scene)
       const ghostKind: GhostKind = cell?.visibility === 'visible' ? 'visible' : 'remembered'
-      let key = this.spriteKey(b, shade, ghostKind, third)
+      let key = this.spriteKey(b, shade, ghostKind)
       // two of a kind on one cell (a scene may carry them): each keeps a record of its own
       while (wanted.has(key)) key += '#'
       wanted.set(key, { b, cell, shade, ghostKind })
@@ -2427,7 +2205,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     }
     for (const [key, spec] of wanted) {
       if (this.records.has(key)) continue
-      const rec = this.buildRecord(scene, key, spec.b, spec.cell, spec.shade, spec.ghostKind, third)
+      const rec = this.buildRecord(scene, key, spec.b, spec.cell, spec.shade, spec.ghostKind)
       if (rec) this.records.set(key, rec)
       changed = true
     }
@@ -2447,13 +2225,12 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         if (m.geometry) m.geometry.dispose()
         if (m.userData.ownMaterial) (m.material as THREE.Material).dispose()
       })
-      if (h === this.doll) this.doll = null
     }
     if (rec.ghost) this.ghostCount--
   }
 
   /** Stand one billboard: its holder, its ghost where it has one (II.4), its shadow. */
-  private buildRecord(scene: Scene, key: string, b: Billboard, cell: SceneCell | undefined, shade: number, ghostKind: GhostKind, third: boolean): SpriteRecord | null {
+  private buildRecord(scene: Scene, key: string, b: Billboard, cell: SceneCell | undefined, shade: number, ghostKind: GhostKind): SpriteRecord | null {
     const tiles = this.tiles!
     const tint = scene.level.tint
     const tileOf = (id: number) => {
@@ -2464,7 +2241,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       return { r, a, uv: this.uvFor(r, a) }
     }
     const group = this.billboardGroup
-    /** A holder into the crowd where it can be baked; a holder of its own (the doll, its own material) stays in the group. */
+    /** A holder into the crowd where it can be baked; a holder of its own (its own material) stays in the group. */
     const stand = (h: THREE.Object3D, bake: boolean) => {
       if (bake && this.billboardCrowd.mergeable(h)) this.billboardCrowd.add(h, b.x, b.y)
     }
@@ -2507,7 +2284,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         if (t) layers.push({ ...t, ox: i.ox, oy: i.at === 'top' ? -t.r.oy : i.oy, flat: true })
       }
     }
-    const bh = b.kind === 'player' ? b.height * DOLL_SCALE : b.height
+    const bh = b.height
     // scenery monsters (plants, bushes) are fixtures: they stand square like statues and take their light from the shade map
     const translucent = b.alpha !== undefined && b.alpha < 1
     // a sprite's light comes from the shade map (`makeBillboardMaterial`); only a translucent one,
@@ -2516,10 +2293,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const holder = this.addStanding(group, b.x, b.y, layers, bh, translucent ? shade : 1, tint, !!b.scenery, 'none', !translucent, 0, undefined, shells)
     holder.userData.kind = b.kind
     const holders = [holder]
-    if (b.kind === 'player') {
-      this.doll = holder
-      this.addMinibars(holder, bh, nSprite + (b.statusIcons?.length ?? 0))
-    }
     // whatever the 2D map shows on the cell shows through walls here (II.4):
     // the sprite and its status badges, so a sleeping or fleeing monster
     // reads the same behind a wall as in the open.
@@ -2543,9 +2316,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
             ? GHOST_TINT.remembered
             : b.kind === 'projectile'
               ? GHOST_TINT.projectile
-              : b.kind === 'player'
-                ? DOLL_GHOST_TINT
-                : GHOST_TINT.item
+              : GHOST_TINT.item
       // the badges keep their own colours so a damage bar or a "zzz" reads the same through a wall as in the open
       const ghostLayers = layers.map((l, i) => (i < nSprite ? l : { ...l, tint: BADGE_TINT }))
       // a visible ghost's light comes from the shade map too (`GHOST_SHADE`); a remembered one is its tint alone
@@ -2579,8 +2350,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     sh.rotation.x = -Math.PI / 2
     sh.position.set(0, 0.003, 0)
     holder.add(sh)
-    // the doll glides and lunges every frame: it stays a holder of its own
-    for (const h of holders) stand(h, h !== this.doll)
+    for (const h of holders) stand(h, true)
     this.stats.spriteBuilds++
     return { key, x: b.x, y: b.y, holders, shells, position: holder.position.clone(), ghost }
   }
@@ -2634,10 +2404,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * Bake the group's standing holders into the crowd's chunk meshes
    * (crowd.ts): every chunk a holder joined or left since the last bake is
    * written again, its holders taken back to front from the eye; the rest
-   * stand as they are. Left as holders: the doll (it glides and lunges every
-   * frame), a sprite standing at a heading of its own (an open door), the
-   * selected shells, and anything wearing a material of its own (a
-   * translucent sprite, a cloud).
+   * stand as they are. Left as holders: a sprite standing at a heading of its
+   * own (an open door), the selected shells, and anything wearing a material
+   * of its own (a translucent sprite, a cloud).
    */
   private bakeStanding(group: THREE.Group, eye: { x: number; y: number }) {
     const crowd = group === this.levelGroup ? this.levelCrowd : this.billboardCrowd
@@ -2648,31 +2417,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const scene = this.scene
     const cam = this.camera
     if (!r || !scene || !cam) return
-    // third person: the shot follows the facing goal, and a change of camera
-    // cell or of the walls it cuts rebuilds the level with them lowered
-    const shot = this.opts.view === 'third' ? orbitShot(scene, cam.facing) : null
-    // over the lid nothing stands between the camera and the doll: the walls
-    // are a cell high and the camera looks down over them, so none is cut
-    const aboveLid = !!shot && this.thirdHeight() > LID_H
-    if (shot && aboveLid) shot.cut = []
-    // ...and so does the ground the camera really stands on: mid-turn and after
-    // a free look the eye is off the facing line, and whatever it stands in or
-    // looks across there comes down too, or pulls the camera in if never seen
-    if (shot) {
-      const dist = Math.hypot(shot.x - scene.player.x, shot.y - scene.player.y)
-      const back = Math.max(THIRD_MIN_BACK, Math.min(this.opts.camDistance, THIRD_MAX_BACK, dist))
-      // from the eased eye (a glide's doll), not the cell: the walls between them are the ones in the way now
-      this.approach = cameraApproach(scene, cam.yaw, back, THIRD_MIN_BACK, { x: cam.eyeX, y: cam.eyeY })
-      if (aboveLid) this.approach.cut = []
-    }
-    const cutKey = shot ? `${shot.x},${shot.y}:${shot.cut.join(',')}|${this.approach.cut.join(',')}|${aboveLid ? 'over' : 'under'}` : ''
-    if (cutKey !== this.cutKey) {
-      this.cutKey = cutKey
-      this.shot = shot
-      this.aboveLid = aboveLid
-      this.builtRevision = -1
-      this.builtLayout = -1
-    }
     if (scene.revision !== this.builtRevision) {
       this.builtRevision = scene.revision
       const bg = scene.level.sky === 'open' ? 0x0b1220 : scene.level.sky === 'dark' ? 0x120818 : 0x000000
@@ -2701,17 +2445,12 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     }
     // the selected shell follows the cursor and the sprites, on its own
     if (this.selectionDirty) this.syncSelection()
-    // camera
-    if (shot) this.placeThirdPerson(scene, cam)
-    else {
-      // the eased eye (camera.ts `walkTo`), not the cell: mid-glide it is between the two
-      this.cam.position.set(cam.eyeX + 0.5, Math.max(EYE_MIN, Math.min(EYE_MAX, this.opts.eyeHeight)), cam.eyeY + 0.5)
-      this.cam.rotation.set(cam.pitch, -cam.yaw, 0)
-    }
+    // camera: the eased eye (camera.ts `walkTo`), not the cell: mid-glide it is between the two
+    this.cam.position.set(cam.eyeX + 0.5, Math.max(EYE_MIN, Math.min(EYE_MAX, this.opts.eyeHeight)), cam.eyeY + 0.5)
+    this.cam.rotation.set(cam.pitch, -cam.yaw, 0)
     // Billboards face the camera (yaw only), and it is the camera's own yaw
-    // that counts, not the facing: in third person the shot is aimed a
-    // shoulder's width right of the facing line, so the two differ by a few
-    // degrees and a billboard squared to the facing stands visibly turned.
+    // that counts, not the facing: mid-turn the two differ, and a billboard
+    // squared to the facing would stand visibly turned.
     // Squared to the view plane a sprite is never foreshortened, so its
     // texture is sampled head-on and stays as sharp as the art allows.
     // The baked crowd (`bakeStanding`) turns in the shader; the holders left standing turn here.
@@ -2729,46 +2468,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.renderViewmodel(r, scene)
   }
 
-  /** The third-person camera's height, clamped to its range. */
-  private thirdHeight(): number {
-    return Math.max(THIRD_MIN_H, Math.min(THIRD_MAX_H, this.opts.camHeight))
-  }
-
-  /**
-   * Third person (II.11). The camera swings on an arc about the player's
-   * cell at the shot's distance, so at rest (yaw on a heading) it stands at
-   * the centre of the cell behind, and mid-turn it sweeps between two such
-   * cells rather than cutting the corner. It aims at the floor THIRD_AHEAD
-   * cells ahead of the player, a shoulder's width right of the facing line;
-   * the stick's pitch is a glance from that rest, clamped for the lid.
-   */
-  private placeThirdPerson(scene: Scene, cam: Camera) {
-    // the doll and the orbit stand on the eased eye, so a glide carries them both, not the camera alone
-    const px = cam.eyeX + 0.5, pz = cam.eyeY + 0.5
-    const fx = Math.sin(cam.yaw), fz = -Math.cos(cam.yaw)
-    const back = this.approach.back
-    const ex = px - fx * back, ez = pz - fz * back
-    const eh = this.thirdHeight()
-    this.cam.position.set(ex, eh, ez)
-    // aim point: ahead along facing, offset to the right (right = (cos yaw, sin yaw))
-    const ax = px + fx * THIRD_AHEAD + Math.cos(cam.yaw) * THIRD_SHOULDER
-    const az = pz + fz * THIRD_AHEAD + Math.sin(cam.yaw) * THIRD_SHOULDER
-    const dx = ax - ex, dz = az - ez
-    const restYaw = Math.atan2(dx, -dz)
-    const restPitch = -Math.atan2(eh, Math.hypot(dx, dz))
-    const pitch = Math.max(THIRD_PITCH_MIN, Math.min(THIRD_PITCH_MAX, restPitch + (cam.pitch - this.opts.restPitch)))
-    this.cam.rotation.set(pitch, -restYaw, 0)
-    // attack cue: the doll lunges along facing and settles back
-    if (this.doll) {
-      const t = Number.isNaN(this.vmLift) ? NaN : this.liftEnvelope(nowSeconds() - this.vmLift)
-      const lunge = Number.isNaN(t) ? 0 : t * DOLL_LUNGE
-      if (Number.isNaN(t)) this.vmLift = NaN
-      const gx = Math.sin(dirToYaw(cam.facing)), gz = -Math.cos(dirToYaw(cam.facing))
-      const off = Math.min(DOLL_BACK, Math.max(0, back - THIRD_MIN_BACK))
-      this.doll.position.set(px + gx * lunge - fx * off, 0, pz + gz * lunge - fz * off)
-    }
-  }
-
   // ------------------------------------------------------------- viewmodel
 
   /** Where the hands are drawn, as fractions of the canvas (II.7), so the HUD keeps its corner clear of them; empty when no hand is. */
@@ -2779,8 +2478,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
   }
 
   private get vmVisible(): boolean {
-    // no hands in third person: the doll is the body
-    if (this.shot) return false
     return this.opts.viewmodel && !!this.viewmodel && (!!this.viewmodel.weapon || !!this.viewmodel.offhand)
   }
 

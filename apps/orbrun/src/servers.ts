@@ -1,4 +1,3 @@
-import type { ViewMode } from '@orbrun/scene'
 import type { HintMode } from './gamepad-hints'
 import type { GameLink } from '@orbrun/webtiles'
 import bundled from '../data/servers.json'
@@ -375,13 +374,7 @@ export function leftRightTurns(source: DirSource, s: Settings = getSettings()): 
 
 export interface Settings {
   renderer: '3d' | '2d'
-  /** Where the 3D camera stands: in the eyes, or on a cell behind the player (rendering-3d.md II.11). */
-  view: ViewMode
-  /** Third person: how far behind the player the camera stands, in cells (rendering-3d.md II.11). */
-  camDistance: number
-  /** Third person: how high the camera stands, in cells: 0 is the floor, 1 the lid (rendering-3d.md II.11). */
-  camHeight: number
-  /** First person: how high the eye stands, in cells: 0 is the floor, 1 the lid (rendering-3d.md II.11). */
+  /** How high the eye stands, in cells: 0 is the floor, 1 the lid (rendering-3d.md II.11). */
   eyeHeight: number
   fov: number
   /** Where the camera points at rest, in degrees off the horizon: negative looks down, positive up (rendering-3d.md II.11). */
@@ -436,14 +429,12 @@ function leftRightFrom(saved: Partial<Settings> & OldLeftRight, now: keyof Setti
 
 const SETTINGS_KEY = 'orbrun.settings'
 /**
- * Temporarily off (2026-09-06): the top-down (2D) view and the third-person
- * camera are not offered to the player. Both still work and are still built —
- * the level map borrows the 2D renderer, and `view` / `camDistance` still
- * drive the camera — but nothing player-facing switches to them: the View,
- * Camera and Camera distance settings rows are dropped (settings-rows.ts), the
- * pause menu loses its two toggles (overlays.ts), Shift+F1 does nothing
- * (game.ts), and a session saved in either mode is read back as 3D first
- * person (`getSettings`). Set this to `true` to bring all of it back at once.
+ * Temporarily off (2026-09-06): the top-down (2D) view is not offered to the
+ * player. It still works and is still built — the level map borrows the 2D
+ * renderer — but nothing player-facing switches to it: the View settings row
+ * is dropped (settings-rows.ts), the pause menu loses its toggle
+ * (overlays.ts), and a session saved in 2D is read back as 3D
+ * (`getSettings`). Set this to `true` to bring it back at once.
  */
 export const VIEW_OPTIONS: boolean = false
 /**
@@ -461,9 +452,6 @@ export const CHAMFER = 1 / 32
 export const WALL_INSET = 12 / 32
 export const defaultSettings: Settings = {
   renderer: '3d',
-  view: 'first',
-  camDistance: 0.7,
-  camHeight: 0.75,
   eyeHeight: 0.65,
   fov: 85,
   restPitch: -5,
@@ -486,11 +474,8 @@ export function getSettings(): Settings {
   s.hints = hintsFrom(saved)
   s.leftRightKeys = leftRightFrom(saved, 'leftRightKeys', ['leftRightArrows', 'leftRightVim', 'leftRightNumpad'])
   s.leftRightPad = leftRightFrom(saved, 'leftRightPad', ['leftRightDpad', 'leftRightStick'])
-  // while 2D and third person are out, a session saved in either comes back in 3D first person
-  if (!VIEW_OPTIONS) {
-    s.renderer = '3d'
-    s.view = 'first'
-  }
+  // while 2D is out, a session saved in it comes back in 3D
+  if (!VIEW_OPTIONS) s.renderer = '3d'
   return s
 }
 
@@ -499,7 +484,7 @@ export function getSettings(): Settings {
  * default is left out of storage, so a default we move later moves for
  * everyone who never touched that row. Settings the build has taken away
  * (`VIEW_OPTIONS`) keep whatever a saved session said — `getSettings` reads
- * them back as 3D first person, but the choice is not erased on the next save.
+ * it back as 3D, but the choice is not erased on the next save.
  */
 export function saveSettings(s: Settings) {
   const saved = load<Partial<Settings>>(SETTINGS_KEY, {})
@@ -508,11 +493,9 @@ export function saveSettings(s: Settings) {
     if (s[key] !== defaultSettings[key]) (out as Record<string, unknown>)[key] = s[key]
   }
   if (!VIEW_OPTIONS) {
-    for (const key of ['renderer', 'view'] as const) {
-      const was = saved[key]
-      if (was !== undefined && was !== defaultSettings[key]) (out as Record<string, unknown>)[key] = was
-      else delete out[key]
-    }
+    const was = saved.renderer
+    if (was !== undefined && was !== defaultSettings.renderer) out.renderer = was
+    else delete out.renderer
   }
   save(SETTINGS_KEY, out)
 }

@@ -23,7 +23,6 @@ type Guts = {
   billboardGroup: THREE.Group
   records: Map<string, unknown>
   selected: THREE.Object3D[]
-  opts: { view: 'first' | 'third'; minibars: unknown }
   atlas(name: string): { mask?: Uint8Array | null }
   syncBillboards(s: Scene): boolean
   bakeStanding(g: THREE.Group, eye: { x: number; y: number }): void
@@ -31,8 +30,8 @@ type Guts = {
 }
 
 /** A renderer whose WebGL is a stub: `render` draws nothing, and the rest of what a frame asks of it is inert. */
-function stubbed(view: 'first' | 'third' = 'first'): { r: Render3d; g: Guts; draws: number } {
-  const r = new Render3d({ viewmodel: false, motion: false, view })
+function stubbed(): { r: Render3d; g: Guts; draws: number } {
+  const r = new Render3d({ viewmodel: false, motion: false })
   const g = r as unknown as Guts
   const state = { draws: 0 }
   let target: unknown = null
@@ -149,27 +148,6 @@ describe('the crowd across scenes', () => {
     expect([...touchedChunks]).toEqual(['16,16'])
     // and nothing was allocated: the chunk's buffers had the room
     expect(after.chunkAllocs).toBe(before.chunkAllocs)
-  })
-
-  it('rebuilds only the doll when the player\'s bars change', () => {
-    const { r, g } = stubbed('third')
-    const s = room()
-    s.billboards.push({ x: 2, y: 2, tile: 1, kind: 'player', height: 1 })
-    r.setCamera(makeCamera(2, 2))
-    r.setMinibars({ hp: 10, hpMax: 10, mp: 5, mpMax: 5, showHp: true, showMp: true })
-    frame(r, s)
-    const before = snapshot(g)
-    const was = versions(g)
-    r.setMinibars({ hp: 5, hpMax: 10, mp: 5, mpMax: 5, showHp: true, showMp: true })
-    r.render()
-    const after = snapshot(g)
-    expect(after.spriteBuilds).toBe(before.spriteBuilds + 1)
-    expect(after.spriteDrops).toBe(before.spriteDrops + 1)
-    // the doll itself is never baked; its ghost is, so its own chunk is written again and no other
-    expect(after.chunkBakes).toBe(before.chunkBakes + 1)
-    const wasBy = new Map(was.map((v) => [v[0], JSON.stringify(v.slice(1))]))
-    const touched = baked(g).filter((m) => wasBy.get(m.geometry) !== JSON.stringify(versions(g).find((v) => v[0] === m.geometry)!.slice(1)))
-    expect(new Set(touched.map((m) => m.userData.chunk))).toEqual(new Set(['0,0']))
   })
 })
 
