@@ -15,6 +15,7 @@ import { pickSplash } from './splash'
 import { renderMarkdown } from './markdown'
 import aboutText from '../../../ABOUT.md?raw'
 import changelogText from '../../../CHANGELOG.md?raw'
+import steamText from '../../../STEAM.md?raw'
 
 /** What to do once a fresh connection is up: rejoin a game or a spectate. */
 export type Intent = { kind: 'play'; gameId: string } | { kind: 'watch'; username: string }
@@ -991,7 +992,7 @@ export class FrontEnd {
   }
 
   /**
-   * About and what's new, read here, one step away from the title screen;
+   * About, what's new and the Steam steps, read here, one step away from the title screen;
    * the source, the game's own site and PocketZot are the exits, in a new tab.
    */
   private showAbout() {
@@ -1000,6 +1001,7 @@ export class FrontEnd {
       { id: BACK, label: 'Back', marker: '<', hint: 'Back to the front.', fn: () => this.back() },
       { id: 'about:doc', label: 'About Orbrun', marker: '?', hint: 'What Orbrun is, how it plays, and what it does with your account.', fn: () => this.showDoc({ title: 'About Orbrun', body: () => renderMarkdown(aboutText, { dropTitle: true }), from: () => this.showAbout() }) },
       { id: 'about:new', label: 'What’s new', marker: '?', hint: 'What changed, newest first.', fn: () => this.showDoc({ title: 'What’s new', body: () => renderMarkdown(changelogText, { dropTitle: true }), from: () => this.showAbout() }) },
+      { id: 'about:steam', label: 'Add to Steam', marker: '?', hint: 'Five steps that put Orbrun in your Steam library, on a Deck or a desktop.', fn: () => this.showDoc({ title: 'Add to Steam', body: () => renderMarkdown(steamText, { dropTitle: true }), from: () => this.showAbout() }) },
     ]
     const links = h('nav', { class: 'about-links', 'aria-label': 'Links out' })
     const extra: Focusable[] = []

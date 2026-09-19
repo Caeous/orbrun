@@ -6,7 +6,7 @@
  *
  *   assets/logo.svg                    the README's wordmark: the orb beside the name, as the title screen sets it
  *   apps/orbrun/public/favicon.svg     the orb on a dark rounded square
- *   apps/orbrun/public/deck/art/*.png  Steam artwork: icon (the orb), logo, hero, grid, portrait (the wordmark)
+ *   apps/orbrun/public/steam/art/*.png  Steam artwork: icon (the orb), logo, hero, grid, portrait (the wordmark)
  *
  *   node tools/build/brand.mjs
  *
@@ -22,7 +22,7 @@ import opentype from 'opentype.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const pub = path.join(root, 'apps/orbrun/public')
-const art = path.join(pub, 'deck/art')
+const art = path.join(pub, 'steam/art')
 const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'orbrun-brand-'))
 const run = (cmd, args) => execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'] })
 
@@ -127,5 +127,5 @@ deck(path.join(art, 'logo.png'), wordRounded, 1152)
 deck(path.join(art, 'hero.png'), word, 1152, 1920, 620)
 deck(path.join(art, 'grid.png'), word, 864, 920, 430)
 deck(path.join(art, 'portrait.png'), word, 540, 600, 900)
-for (const f of ['assets/logo.svg', 'apps/orbrun/public/favicon.svg', ...fs.readdirSync(art).map((f) => `apps/orbrun/public/deck/art/${f}`)]) console.log(`${f}  ${fs.statSync(path.join(root, f)).size} bytes`)
+for (const f of ['assets/logo.svg', 'apps/orbrun/public/favicon.svg', ...fs.readdirSync(art).map((f) => `apps/orbrun/public/steam/art/${f}`)]) console.log(`${f}  ${fs.statSync(path.join(root, f)).size} bytes`)
 fs.rmSync(tmp, { recursive: true, force: true })

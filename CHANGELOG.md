@@ -51,9 +51,9 @@ of what Orbrun does today.
   from the connected server at runtime, so stable and trunk both work.
 - Multiple accounts across multiple servers, plus any server you add by URL.
   A dropped connection is reopened and logged back in on its own.
-- Steam Deck install: `curl -fsSL https://orbrun.app/deck | sh` in Desktop Mode
-  sets up a kiosk browser with controller access and adds Orbrun to your Steam
-  library with artwork.
+- Plays from your Steam library, on a Steam Deck, Windows, Linux or a Mac, as
+  a non-Steam game that opens a kiosk browser on orbrun.app. The five steps,
+  with artwork, are in STEAM.md and under About & credits.
 - Hosted at orbrun.app: nothing to install, no Orbrun account, and tile data
   loads from whichever server you connect to.
 - Anonymous page counts on the hosted site only — no cookies, nothing about

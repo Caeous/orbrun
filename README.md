@@ -48,25 +48,16 @@ Steam shell, and offline play against a local engine.
 - Nothing version-specific is hardcoded: enums, tile tables and atlases are
   loaded from the connected server at runtime, so stable and trunk both work.
 - Multiple accounts across multiple servers, plus any server you add by URL.
-- One-line Steam Deck installer that adds Orbrun to your Steam library.
+- Plays from your Steam library on a Deck, Windows, Linux or a Mac as a non-Steam game; see below.
 
 See [ABOUT.md](ABOUT.md) for the full tour, including the controls and the
 security and privacy notes, and [CHANGELOG.md](CHANGELOG.md) for what's new.
 
-## Steam Deck
+## Add to Steam
 
-In Desktop Mode, open Konsole and run:
-
-```sh
-curl -fsSL https://orbrun.app/deck | sh
-```
-
-It installs a kiosk browser, lets it see the controller, and adds Orbrun to
-your Steam library with artwork. Read [the script](apps/orbrun/public/deck.sh)
-first if you like; it needs no `sudo` and is safe to re-run. Once, in Gaming
-Mode, set the controller layout to the **Gamepad with Joystick Trackpad**
-template: Steam Input's default for a non-Steam shortcut turns the pad into a
-mouse.
+Orbrun runs from your Steam library, on a Steam Deck, Windows, Linux or a Mac,
+as a non-Steam game that opens a kiosk browser on orbrun.app. Five steps, no
+script to run: see [STEAM.md](STEAM.md).
 
 ## DCSS as a library
 

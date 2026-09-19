@@ -17,7 +17,7 @@ describe('the repository’s documents, drawn in the front end', () => {
       '- another',
       '',
       '```sh',
-      'curl -fsSL https://orbrun.app/deck | sh',
+      'flatpak --user override --filesystem=/run/udev:ro com.google.Chrome',
       '```',
       '',
       '| Key | Does |',
@@ -28,7 +28,7 @@ describe('the repository’s documents, drawn in the front end', () => {
     expect(doc.querySelector('p')?.textContent).toBe('One line and the next, joined.')
     expect(doc.querySelector('h3')?.textContent).toBe('Section')
     expect(Array.from(doc.querySelectorAll('li')).map((li) => li.textContent)).toEqual(['an item that wraps', 'another'])
-    expect(doc.querySelector('pre code')?.textContent).toBe('curl -fsSL https://orbrun.app/deck | sh')
+    expect(doc.querySelector('pre code')?.textContent).toBe('flatpak --user override --filesystem=/run/udev:ro com.google.Chrome')
     expect(doc.querySelector('th')?.textContent).toBe('Key')
     expect(doc.querySelector('td code')?.textContent).toBe('k')
   })

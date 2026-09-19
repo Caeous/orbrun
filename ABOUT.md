@@ -17,8 +17,8 @@ existing WebTiles account — or register a new one, or spectate without an
 account. Then start a game and play. There is nothing to install and no Orbrun
 account: your browser talks to the DCSS server directly.
 
-On a Steam Deck, see [Steam Deck](#steam-deck) below for the one-line
-installer that puts Orbrun in your library with artwork.
+To play through Steam, on a Deck or a desktop, see [Add to Steam](STEAM.md)
+for the five steps that put Orbrun in your library with artwork.
 
 ## Features
 
@@ -91,19 +91,11 @@ The action bar at the bottom of the screen always shows what each button does
 in the current mode, because the server, not a guess, says what mode you are
 in.
 
-## Steam Deck
+## Add to Steam
 
-In Desktop Mode, open Konsole and run:
-
-```sh
-curl -fsSL https://orbrun.app/deck | sh
-```
-
-It installs a kiosk browser, grants it access to the controller, and adds
-Orbrun to your Steam library with artwork. Nothing needs `sudo` and nothing
-touches the read-only root filesystem; the script is safe to re-run. Once, in
-Gaming Mode, set the controller layout template to **Gamepad with Joystick
-Trackpad** so Steam passes the pad through instead of turning it into a mouse.
+Orbrun runs from your Steam library, on a Steam Deck, Windows, Linux or a Mac,
+as a non-Steam game that opens a kiosk browser on orbrun.app. Five steps, no
+script to run: see [STEAM.md](STEAM.md).
 
 ## Version support
 
