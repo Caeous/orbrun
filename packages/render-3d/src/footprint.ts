@@ -35,6 +35,13 @@ export interface FootprintFace {
   b: Pt
   nx: number
   nz: number
+  /**
+   * A boundary segment the neighbour's body covers. Not part of the surface
+   * between two walls; reported so a renderer can still draw it where the
+   * neighbour only counts as wall for the rule and is really open: the
+   * reveal either side of a doorway (`framedDoors`).
+   */
+  covered?: boolean
 }
 
 /** A solid cell's body rectangle before corner cuts, its inset, and which corners (nw, ne, sw, se) a diagonal floor cell cuts. */
@@ -131,7 +138,9 @@ export function insetFootprint(at: ClassAt, x: number, z: number, o: FootprintOp
 
   // Exposed part of every edge. An edge on the cell boundary is hidden where
   // the neighbour's body covers it (every wall is the same height, so nothing
-  // shows there); every other edge faces grown floor.
+  // shows there), and reported `covered` for a neighbour that is not really
+  // a wall; every other edge faces grown floor.
+  const coveredSegs: FootprintFace[] = []
   const segs: FootprintFace[][] = poly.map((p, i) => {
     const q = poly[(i + 1) % poly.length]
     const dx = q[0] - p[0], dz = q[1] - p[1]
@@ -152,12 +161,16 @@ export function insetFootprint(at: ClassAt, x: number, z: number, o: FootprintOp
       const bb: Pt = horizontal ? [v, p[1]] : [p[0], v]
       return { a, b: bb, nx, nz }
     }
+    for (const [ha, hb] of holes) {
+      const s = Math.max(lo, ha), e = Math.min(hi, hb)
+      if (e - s > EPS) coveredSegs.push({ ...seg([s, e]), covered: true })
+    }
     const parts = subtract(lo, hi, holes)
     if (!fwd) parts.reverse()
     return parts.map(seg)
   })
 
-  return { poly, faces: segs.flat() }
+  return { poly, faces: [...segs.flat(), ...coveredSegs] }
 }
 
 /** Classify a Scene's cells for the footprint rule: never-seen space is void, occluders are walls, the rest is floor. */

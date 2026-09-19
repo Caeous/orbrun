@@ -1756,6 +1756,11 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
           let t0 = horizontal ? Math.min(f.a[0], f.b[0]) : Math.min(f.a[1], f.b[1])
           let t1 = horizontal ? Math.max(f.a[0], f.b[0]) : Math.max(f.a[1], f.b[1])
           const depth = d === 'n' ? f.a[1] : d === 's' ? 1 - f.a[1] : d === 'w' ? f.a[0] : 1 - f.a[0]
+          // A boundary the neighbour's body covers shows nothing between two walls of one height. Across a
+          // framed door it is the reveal: the door's cell counts as wall for the footprint rule (`classAt`)
+          // so the run keeps its thickness up to the doorway, but the cell is floor, and the run's cut end
+          // stands open to it from the floor up, on either side of the board that hangs in the middle.
+          if (f.covered && !framed.has(across[d].ok)) continue
           const y0 = 0
           // a notched corner at either end of the face shortens it
           for (let i = 0; i < 4; i++) {

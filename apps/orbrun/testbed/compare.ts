@@ -11,7 +11,7 @@
  * pose), `frameTimes()` (per pose: mean `render()` CPU time over a run of
  * steady frames paced on animation frames, draw calls per frame, and the
  * renderer's work counters),
- * `pick(i, px, py)`, `frame(i)` and the renderer `r`. Nothing here depends on time: the attack lift is never
+ * `pick(i, px, py)`, `frame(i)`, the renderer `r` and its `scene` (for a script that walks the player about). Nothing here depends on time: the attack lift is never
  * started, so every frame is a pure function of its pose.
  */
 import { Render3d, type Render3dOptions } from '@orbrun/render-3d'
@@ -254,6 +254,7 @@ w.capture = capture
 w.frameTimes = frameTimes
 w.pick = pick
 w.r = r
+w.scene = scene
 w.frame = (i: number) => frame(POSES[i])
 w.current = () => current
 window.addEventListener('resize', fit)
