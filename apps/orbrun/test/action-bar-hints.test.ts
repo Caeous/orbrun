@@ -129,3 +129,42 @@ describe('the stack under a centred panel', () => {
     expect(inner.actionbar.classList.contains('row')).toBe(false)
   })
 })
+
+describe('the pad menu strip', () => {
+  type Inner = { update: Hud['update']; menubar: HTMLElement; actionbar: HTMLElement; renderMenus(c: Context, k: PadKind, show: boolean): void }
+  function hud(): Inner {
+    const host = document.createElement('div')
+    document.body.append(host)
+    return new Hud(host, { onSelectMonster() {}, onBarAction() {}, onMinimapClick() {}, onPanelItem() {}, onPanelShow() {} }) as unknown as Inner
+  }
+  const chips = (side: Element) => [...side.querySelectorAll('.chip')].map((c) => [c.classList[1], c.querySelector('.label')?.textContent])
+
+  it('stacks each pair in its corner, Actions and Equipment at the foot', () => {
+    const inner = hud()
+    inner.renderMenus(ctx({}), 'xbox', true)
+    expect(inner.menubar.hidden).toBe(false)
+    const [left, right] = inner.menubar.querySelectorAll('.side')
+    expect(chips(left)).toEqual([['SELECT', 'Travel'], ['LB', 'Actions']])
+    expect(chips(right)).toEqual([['START', 'Character'], ['Y', 'Equipment']])
+    expect(inner.menubar.querySelector('.chip.LB svg')).not.toBeNull()
+  })
+
+  it('is only for the play view, not a menu, aiming, the keyboard or a spectator', () => {
+    const inner = hud()
+    inner.renderMenus(ctx({ mode: 'menu' }), 'xbox', true)
+    expect(inner.menubar.hidden).toBe(true)
+    inner.renderMenus(ctx({ mode: 'targeting' }), 'xbox', true)
+    expect(inner.menubar.hidden).toBe(true)
+    inner.renderMenus(ctx({}), 'xbox', false)
+    expect(inner.menubar.hidden).toBe(true)
+    expect(inner.menubar.querySelector('.chip')).toBeNull()
+  })
+
+  it('lifts the contextual stack onto the pairs\' lower row while it is up', () => {
+    const inner = hud()
+    inner.renderMenus(ctx({}), 'xbox', true)
+    expect(inner.actionbar.style.getPropertyValue('--foot')).toMatch(/px$/)
+    inner.renderMenus(ctx({ mode: 'menu' }), 'xbox', true)
+    expect(inner.actionbar.style.getPropertyValue('--foot')).toBe('0px')
+  })
+})

@@ -141,8 +141,9 @@ export class GamepadHints {
       if (!this.knows('move')) teaching.push(tip('LSTICK', 'Move', { kind: 'step', dir: 0 }))
       if (!this.knows('look')) teaching.push(tip('RSTICK', 'Look around', { kind: 'look', dx: 0, dy: 0 }))
       if (!teaching.length) {
+        // Travel (Select) and the other menu buttons stand along the view's foot (hud.ts renderMenus), so they need no lesson
         const table = bindingTable(ctx)
-        for (const button of ['R3', 'SELECT', 'X'] as const) {
+        for (const button of ['R3', 'X'] as const) {
           const a = table[button]
           if (!a) continue
           if (a.kind === 'hold') {

@@ -4,7 +4,7 @@ import { Render2d } from '@orbrun/render-2d'
 import { monsterGroups } from '@orbrun/scene-webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
 import { h, clear, escapeHtml, replace } from './dom'
-import { CONTINUE, buttonGroup, promptLabels, type Action, type BindingLabel } from './bindings'
+import { CONTINUE, barLabels, buttonGroup, promptLabels, type Action, type BindingLabel } from './bindings'
 
 /** A tap-or-hold button down: which, and the press's length as a fraction of the hold (bindings.ts HOLD_MS). */
 export interface HoldProgress {
@@ -13,7 +13,7 @@ export interface HoldProgress {
 }
 import { glyph, glyphName } from './glyphs'
 import type { Context } from './context'
-import type { PadKind } from './gamepad'
+import type { Button, PadKind } from './gamepad'
 import type { InputDevice } from './game'
 import { mapFacingOf } from './camera'
 import { MORPH, animate, coverTransform, reducedMotion, type Rect } from './mapmorph'
@@ -81,6 +81,11 @@ const POPUP_MODES: ReadonlySet<Context['mode']> = new Set(['menu', 'popup', 'crt
 
 /** the action panel's cell before `action_panel_scale`, as cell_renderer.js sizes one (`tile_cell_pixels`) */
 const PANEL_CELL = 32
+
+/** The pad's menu buttons (bindings.ts COMMAND), by the hand that reaches them: each pair top to bottom, the everyday one at the foot. */
+const MENU_LEFT: readonly Button[] = ['SELECT', 'LB']
+const MENU_RIGHT: readonly Button[] = ['START', 'Y']
+const MENU_BUTTONS: readonly Button[] = [...MENU_LEFT, ...MENU_RIGHT]
 
 /**
  * One row of the WebTiles monster list (`monster_list.js`): a strip of sprites
@@ -274,6 +279,8 @@ export class Hud {
   /** the scrim over the world while a `--more--` is pending (renderMessages): under the message pane and the bar, over everything else */
   private scrim = h('div', { class: 'more-scrim' })
   private actionbar = h('div', { class: 'actionbar' })
+  /** the pad's standing menu buttons along the view's last row (renderMenus) */
+  private menubar = h('div', { class: 'menubar', hidden: true })
   private statusEl = h('div', { class: 'status-line', style: { display: 'none' } })
   private hooks: HudHooks
   private lastMsgKey = ''
@@ -316,7 +323,7 @@ export class Hud {
     this.statusR2d.mount(this.statusCanvas)
     this.trapped.append(this.trappedCanvas)
     this.trappedR2d.mount(this.trappedCanvas)
-    this.root.append(this.pips, this.trapped, this.stats, this.sidebar, this.statuses, this.actionPanel, this.scrim, this.messages, this.actionbar)
+    this.root.append(this.pips, this.trapped, this.stats, this.sidebar, this.statuses, this.actionPanel, this.scrim, this.messages, this.menubar, this.actionbar)
     host.append(this.root, this.statusEl, this.panelTooltip)
     this.minimap.mount(this.minimapCanvas)
     this.portrait.mount(this.portraitCanvas)
@@ -393,6 +400,13 @@ export class Hud {
     this.actionbar.style.width = at.width + 'px'
     this.actionbar.style.top = at.top + at.height + 'px'
     this.actionbar.style.transform = 'translateY(-100%)'
+    // the menu buttons stand in both bottom corners of the same rows, the right pair on the view's own right edge under the
+    // sidebar's column rather than the free part's (pipsPx); the stack starts above them (renderMenus)
+    this.menubar.style.left = at.left + 'px'
+    this.menubar.style.width = this.pipsPx.width + 'px'
+    this.menubar.style.top = at.top + at.height + 'px'
+    this.menubar.style.transform = 'translateY(-100%)'
+    this.menuKey = ''
     // the action panel stands in the strip along the top between the stats pane and the minimap (grid/panel.ts), each a
     // cell's gutter away; the minimap's left edge is where it hangs from the column's right edge, not the column's own
     const statsPx = host.px(cells.stats)
@@ -463,9 +477,10 @@ export class Hud {
    * `hints` false hides the corner prompts on both devices (the Hints setting
    * is off). The game supplies the pad's adaptive/contextual selection
    * through `padLabels`, and `holding` names the tap-or-hold button it is
-   * holding down, with how far towards the hold the press has come.
+   * holding down, with how far towards the hold the press has come. `menus`
+   * stands the pad's menu buttons along the view's last row (renderMenus).
    */
-  update(state: GameState, scene: Scene, cam: Camera, ctx: Context, padKind: PadKind, gd: Gamedata | null, spectating: boolean, device: InputDevice, nearby: 'list' | 'pips' = 'list', hints = true, padLabels?: BindingLabel[], holding?: HoldProgress | null) {
+  update(state: GameState, scene: Scene, cam: Camera, ctx: Context, padKind: PadKind, gd: Gamedata | null, spectating: boolean, device: InputDevice, nearby: 'list' | 'pips' = 'list', hints = true, padLabels?: BindingLabel[], holding?: HoldProgress | null, menus = false) {
     if (!this.cells) return
     if (state.rev.player !== this.lastPlayerRev) {
       this.lastPlayerRev = state.rev.player
@@ -484,6 +499,7 @@ export class Hud {
       this.lastMsgKey = msgKey
       this.renderMessages(state, spectating)
     }
+    this.renderMenus(ctx, padKind, menus && device === 'pad' && !spectating)
     this.renderBar(ctx, padKind, spectating, device, hints, padLabels)
     this.showHold(holding)
   }
@@ -1060,7 +1076,7 @@ export class Hud {
     const avoid: PxRect[] = []
     // the panes a pip steps round: the stats pane, the action panel in the strip beside it, the prompt stack, and the
     // sidebar's panes (skipped with the column)
-    for (const el of [this.stats, this.actionPanel, this.actionbar, this.statuses, this.minimapCanvas, this.monsters]) {
+    for (const el of [this.stats, this.actionPanel, this.actionbar, this.menubar, this.statuses, this.minimapCanvas, this.monsters]) {
       if (el.hidden || (this.sidebar.hidden && el.parentElement === this.sidebar)) continue
       const r = el.getBoundingClientRect()
       const host = this.root.getBoundingClientRect()
@@ -1315,6 +1331,36 @@ export class Hud {
 
   /** The bar's prompt chips by button, so a hold can light one without a rebuild (showHold). */
   private barChips = new Map<string, HTMLElement>()
+  private menuKey = ''
+
+  /**
+   * The pad's standing menu buttons, in the view's two bottom corners: the
+   * ones that open a screen rather than spend a turn. The left hand's pair
+   * (Select: Travel over LB: Actions) stands in the left corner reading from
+   * its glyphs, the right hand's (Start: Character, the Orbrun menu, over Y: Equipment)
+   * hard against the right edge with its glyphs at the edge, so each pair
+   * sits where its thumb or finger is. Only while the play view is up and
+   * the pad spoke last: in a menu or while aiming these buttons mean other
+   * things, and the contextual stack (renderBar) stands on their lower row.
+   */
+  private renderMenus(ctx: Context, padKind: PadKind, show: boolean) {
+    const labels = show && ctx.mode === 'command' ? barLabels(ctx).filter((l) => MENU_BUTTONS.includes(l.button as Button)) : []
+    const key = labels.map((l) => l.button + ':' + l.label).join(',') + padKind
+    if (this.menuKey === key) return
+    this.menuKey = key
+    this.menubar.hidden = labels.length === 0
+    clear(this.menubar)
+    if (labels.length) {
+      const side = (buttons: readonly Button[]) => h('span', { class: 'side' }, ...buttons.map((b) => labels.find((l) => l.button === b)).filter((l) => !!l).map((l) => this.chip(l, l.button + ':' + l.label + padKind, padKind)))
+      this.menubar.append(side(MENU_LEFT), side(MENU_RIGHT))
+    }
+    // the pairs stand a row off the view's foot (styles.css .menubar --rise), and the stack lifts the same, so the
+    // interact prompt shares their lower row (styles.css .actionbar.contextual --foot)
+    const rows = [...this.menubar.querySelectorAll<HTMLElement>('.side:last-child .chip')]
+    const pitch = rows.length === 2 ? rows[1].offsetTop - rows[0].offsetTop : 0
+    this.menubar.style.setProperty('--rise', pitch + 'px')
+    this.actionbar.style.setProperty('--foot', pitch + 'px')
+  }
 
   /**
    * The contextual prompts, stacked in the bottom-right corner of the view.
@@ -1340,15 +1386,17 @@ export class Hud {
     this.actionbar.dataset.v = key
     this.actionbar.hidden = labels.length === 0
     this.actionbar.classList.add('contextual')
-    // a centred popup leaves the corner only the strip under it: the prompts run along that strip in one row
-    // instead of climbing behind the panel (styles.css .actionbar.contextual.row)
+    // a centred popup leaves the corner only the strip under it: the prompts fill that strip two abreast, as the
+    // pad's menu pairs stand, instead of climbing behind the panel in one column (styles.css .actionbar.contextual.row)
     this.actionbar.classList.toggle('row', POPUP_MODES.has(ctx.mode))
     const keep = new Map(this.barChips)
     this.barChips.clear()
     clear(this.actionbar)
     let group: HTMLElement | null = null
     let groupName = ''
-    for (const l of labels) {
+    // under a panel the strip is a grid two prompts wide, filled from the corner: leftward along the last row, then the row above
+    const rows = Math.ceil(labels.length / 2)
+    labels.forEach((l, i) => {
       const g = buttonGroup(l.button)
       if (g !== groupName || !group) {
         groupName = g
@@ -1358,9 +1406,10 @@ export class Hud {
       const k = l.button + ':' + l.label + '/' + (l.hold || '') + !!l.teaching + padKind
       const kept = keep.get(l.button)
       const chip = kept && kept.dataset.k === k ? kept : this.chip(l, k, padKind)
+      chip.style.gridArea = POPUP_MODES.has(ctx.mode) ? rows - Math.floor(i / 2) + ' / ' + ((i % 2) + 1) : ''
       group.append(chip)
       this.barChips.set(l.button, chip)
-    }
+    })
   }
 
   /** One prompt: the button's glyph, the label, and the hold's label under it when there is one. Inert to a press: the view answers, not the prompt. */

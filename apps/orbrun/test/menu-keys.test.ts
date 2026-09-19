@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { initialState, reduce, MouseMode, Keys, type ClientMessage, type GameState } from '@orbrun/webtiles'
 import { Overlays } from '../src/overlays'
 import { deriveContext, type Context } from '../src/context'
+import { actionLabel } from '../src/bindings'
 import useItem from './fixtures/menus/menu-use_item-1.json'
 import pickup from './fixtures/menus/menu-pickup-1.json'
 import inventory from './fixtures/menus/menu-inventory-1.json'
@@ -148,6 +149,31 @@ describe('a server menu on the keyboard', () => {
     expect(sent.some((m) => m.msg === 'key')).toBe(false)
     ov.menuOp(st, 'select')
     expect(sent.at(-1)).toEqual({ msg: 'key', keycode: Keys.ENTER })
+  })
+  it('select with no row under the cursor leaves a single-select arrows menu, as Esc does (the death inventory)', () => {
+    // end.cc end_game shows display_inventory (invent.cc): MF_SINGLESELECT | MF_ARROWS_SELECT without MF_INIT_HOVER, so it
+    // opens with last_hovered -1, where Enter is a no-op on the server (menu.cc CMD_MENU_SELECT: process_selection
+    // keeps the menu for an empty selection); the recorded menu-inventory-1 opens the same way before its menu_scroll
+    const { ov, st, sent, frame } = setup()
+    reduce(st, inventory.msgs[0] as never)
+    const ctx = frame()
+    expect(st.menus[0]!.last_hovered).toBe(-1)
+    expect(actionLabel({ kind: 'menu', op: 'select' }, ctx)).toBe('exit')
+    ov.menuOp(st, 'select')
+    expect(sent.at(-1)).toEqual({ msg: 'key', keycode: 27 })
+    // with a row under the cursor, select is Enter again, and reads as the keyhelp's select
+    ov.menuOp(st, 'next')
+    expect(actionLabel({ kind: 'menu', op: 'select' }, frame())).toBe('select')
+    ov.menuOp(st, 'select')
+    expect(sent.at(-1)).toEqual({ msg: 'key', keycode: Keys.ENTER })
+  })
+  it('select with no row under the cursor stays raw on a multiselect menu, where Esc would drop the marks', () => {
+    const { ov, st, sent, frame } = setup()
+    reduce(st, pickup.msgs[0] as never)
+    frame()
+    expect(st.menus[0]!.last_hovered).toBe(-1) // pickup: MF_MULTISELECT | MF_ARROWS_SELECT, no MF_INIT_HOVER
+    ov.menuOp(st, 'select')
+    expect(sent.at(-1)).toEqual({ msg: 'key', keycode: 32 })
   })
   it('the pad\'s bumpers jump between sections, as menu.cc cycle_headers does for `,`, in both directions and round the ends', () => {
     // menu-inventory-1: Hand Weapons (0), Missiles (7), Armour (11), Jewellery (15), Talismans (20) head 22 rows

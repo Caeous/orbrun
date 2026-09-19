@@ -1364,6 +1364,10 @@ export class Overlays {
         const hk = it?.hotkeys?.[0]
         // the shop's letters mark (or, in examine mode, describe) the row, as its help says; Enter there buys
         if (menu.tag === 'shop' && hk !== undefined) this.hooks.send(cm.key(hk))
+        // a single-select arrows menu with no row under the cursor (no MF_INIT_HOVER: the inventory, and the
+        // one end.cc shows on death): Enter is the server's no-op there (menu.cc CMD_MENU_SELECT, process_selection
+        // keeps an empty selection's menu), so A leaves as Esc does. Not on a multiselect, where Esc drops the marks
+        else if (arrows && !multi && this.hovered < 0) this.hooks.send(cm.key(27))
         else if (arrows) this.hooks.send(cm.key(multi ? 32 : 13))
         else if (hk !== undefined) this.hooks.send(cm.key(hk))
         else this.hooks.send(cm.key(13))

@@ -592,6 +592,8 @@ export function actionLabel(a: Action, ctx: Context, button?: Button): string {
         const sections = !!ctx.menu && menuHasSections(ctx.menu.menu)
         return a.op === 'sectionNext' ? (sections ? 'Next section' : 'Page down') : sections ? 'Previous section' : 'Page up'
       }
+      // nothing under the cursor on a single-select arrows menu: A leaves the menu (Overlays.menuOp), and says so
+      if (a.op === 'select' && ctx.menu && ctx.menu.arrowsSelect && !ctx.menu.multiselect && ctx.menu.menu.last_hovered < 0) return 'exit'
       // select, page down, page up, exit and toggle selected are the keyhelp's own words (menu.cc Menu::get_keyhelp)
       return { next: 'Next', prev: 'Previous', pageNext: 'page down', pagePrev: 'page up', first: 'First', last: 'Last', select: 'select', altSelect: 'List', examine: 'Examine', toggle: 'toggle selected', cancel: 'exit', left: 'Left', right: 'Right' }[a.op]
     }
@@ -615,7 +617,7 @@ export function actionLabel(a: Action, ctx: Context, button?: Button): string {
     }
     case 'ui':
       if (a.op === 'popupAction') return ctx.popupActions?.[a.arg ?? 0]?.label || 'Action'
-      return { commands: 'Actions', travel: 'Travel', equipment: 'Equipment', palette: 'Commands', system: 'Menu', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', levelmap: 'Map', bindings: 'Gamepad', scrollLog: 'Log' }[a.op]
+      return { commands: 'Actions', travel: 'Travel', equipment: 'Equipment', palette: 'Commands', system: 'Character', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', levelmap: 'Map', bindings: 'Gamepad', scrollLog: 'Log' }[a.op]
     case 'osk':
       return { move: 'Move', type: 'Type', backspace: 'Backspace', space: 'Space', submit: 'Done', cancel: 'Cancel', shift: 'Shift' }[a.op]
     case 'step':

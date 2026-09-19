@@ -1898,6 +1898,7 @@ canvas.minimap.hidden {
 }
 
 .actionbar .chip,
+.menubar .chip,
 .prompts .chip {
   position: relative;
   display: inline-flex;
@@ -1931,8 +1932,9 @@ canvas.minimap.hidden {
   align-items: flex-end;
   justify-content: flex-start;
   gap: 0.2em;
-  /* a cell in from the edge, and left of the first-person weapon when one is drawn there (hud.ts keepClear) */
-  padding: 0 calc(var(--cw, 10px) + var(--hands-inset, 0px)) 0.15em 0;
+  /* a cell in from the edge, and left of the first-person weapon when one is drawn there (hud.ts keepClear); the foot
+     lifts over the pad's menu row while it is up (hud.ts renderMenus) */
+  padding: 0 calc(var(--cw, 10px) + var(--hands-inset, 0px)) calc(0.15em + var(--foot, 0px)) 0;
   transition: padding-right 200ms ease;
   pointer-events: none;
 }
@@ -1947,6 +1949,8 @@ canvas.minimap.hidden {
   background: none;
   border: 0;
   border-radius: 0;
+  /* the HUD's lightgray, as the menu pairs, the stats pane and the log wear it */
+  color: var(--color-7);
   text-shadow:
     0 0 3px #000,
     0 1px 2px rgba(0, 0, 0, 0.85);
@@ -1956,17 +1960,89 @@ canvas.minimap.hidden {
   cursor: default;
 }
 /*
+ * The pad's menu buttons (hud.ts renderMenus): a pair stacked in each bottom
+ * corner of the view, the left hand's reading from its glyphs, the right
+ * hand's hard against the right edge with its glyphs at the edge, the same
+ * shadowed text as the contextual stack. They keep the corners whatever the
+ * first-person weapon does: the stack steps left of it, the pairs do not.
+ */
+.menubar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  /* a row up from the view's foot (hud.ts renderMenus sets --rise to the pair's row pitch) */
+  padding: 0 0.3em calc(0.15em + var(--rise, 0px)) 0.3em;
+  line-height: 1.2;
+  pointer-events: none;
+}
+.menubar[hidden] {
+  display: none;
+}
+.menubar .side {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2em;
+}
+.menubar .side:last-child {
+  align-items: flex-end;
+}
+.menubar .side:last-child .chip {
+  flex-direction: row-reverse;
+}
+.menubar .chip {
+  pointer-events: auto;
+  gap: 0.55em;
+  padding: 0.05em 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  /* the HUD's own lightgray, as the stats pane and the message log wear it, not the stack's white */
+  color: var(--color-7);
+  text-shadow:
+    0 0 3px #000,
+    0 1px 2px rgba(0, 0, 0, 0.85);
+}
+.menubar .chip .key {
+  position: relative;
+  display: inline-flex;
+  font-size: 1.45em;
+}
+.menubar .chip svg {
+  display: block;
+  font-size: 1.3em;
+  color: inherit;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+}
+.menubar .chip .label {
+  font: inherit;
+  white-space: nowrap;
+}
+
+/*
  * Under a centred panel (hud.ts POPUP_MODES) the corner is only the strip
- * between the panel's foot and the view's, so the stack lies down: the same
- * order read from the corner leftward, the primary prompt still at the edge,
- * wrapping upward only if the strip is too narrow for all of them.
+ * between the panel's foot and the view's, so the stack becomes a grid two
+ * prompts wide, filled from the corner (hud.ts renderBar sets each chip's
+ * cell): the primary prompt still at the edge on the last row, the next
+ * left of it, the rest on the rows above, glyphs in two columns as the pad's
+ * menu pairs stand. Right to left so the first column is the edge one; the
+ * chips themselves read left to right again.
  */
 .actionbar.contextual.row {
-  flex-direction: row-reverse;
-  flex-wrap: wrap-reverse;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: auto auto;
+  direction: rtl;
+  justify-content: start;
+  justify-items: start;
+  align-items: end;
   column-gap: 1.4em;
   row-gap: 0.2em;
+}
+.actionbar.contextual.row .group {
+  display: contents;
+}
+.actionbar.contextual.row .chip {
+  direction: ltr;
 }
 .actionbar.contextual .chip:hover {
   border: 0;
@@ -1976,6 +2052,9 @@ canvas.minimap.hidden {
 }
 .actionbar.contextual .chip .key {
   font-size: 1.45em;
+}
+.actionbar.contextual .chip svg {
+  color: inherit;
 }
 /* a named pile ("a +0 mace; a +2 robe of positive energy") is one line, cut with an ellipsis; the tooltip has it whole */
 .actionbar.contextual .chip .label,
