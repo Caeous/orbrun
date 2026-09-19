@@ -24,7 +24,7 @@ function harness(is3d: boolean) {
     canvas, is3d, renderer: old, park, hud: undefined, lastCursor: null, lastOptKey: 'x', needsRender: false,
     session: { state: initialState(), scene: emptyScene(), gamedata: undefined },
     attachPointer: vi.fn(), wake: vi.fn(), makeRenderer: () => fresh, revive: () => revived,
-  }) as { toggleRenderer(keepGhost?: boolean): unknown; lastCursor: SceneCursor | null; renderer: unknown }
+  }) as { toggleRenderer(): unknown; lastCursor: SceneCursor | null; renderer: unknown }
   return { screen, old, fresh, revived, park }
 }
 
@@ -35,7 +35,7 @@ describe('the renderer swap carries the cursor over', () => {
     // the frame already gave the cursor to the 3D view it was about to put aside
     h.old.setCursor(cursor)
     h.screen.lastCursor = cursor
-    h.screen.toggleRenderer(true)
+    h.screen.toggleRenderer()
     expect(h.screen.renderer).toBe(h.fresh)
     expect(h.fresh.setCursor).toHaveBeenCalledExactlyOnceWith(cursor)
   })

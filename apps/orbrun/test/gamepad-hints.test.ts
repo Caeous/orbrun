@@ -88,6 +88,14 @@ describe('adaptive gamepad teaching', () => {
     expect(teaching(h, targeting).map((l) => l.label)).toEqual(['Move cursor'])
   })
 
+  it('the level map stands its zoom and describe keys in the corner, since the server prints no key help there', () => {
+    const h = new GamepadHints()
+    const map = ctx({ mode: 'levelmap' })
+    expect(h.prompts(map, 'contextual').map((l) => [l.button, l.label])).toEqual([['X', 'Describe'], ['LT', 'Zoom out'], ['RT', 'Zoom in'], ['A', 'Travel here']])
+    expect(h.prompts(map, 'off').map((l) => [l.button, l.label])).toEqual([['A', 'Travel here']])
+    expect(teaching(h, map).map((l) => l.label)).toEqual(['Move cursor'])
+  })
+
   it.each(['command', 'menu', 'targeting', 'levelmap', 'popup', 'newgame', 'crt', 'dialog', 'more', 'prompt', 'yesno', 'text', 'spectating', 'lobby', 'ended', 'macro'] as const)(
     'never advertises B in %s, regardless of hint setting', (mode) => {
       const h = new GamepadHints()

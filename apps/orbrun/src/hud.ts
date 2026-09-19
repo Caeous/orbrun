@@ -16,7 +16,6 @@ import type { Context } from './context'
 import type { Button, PadKind } from './gamepad'
 import type { InputDevice } from './game'
 import { mapFacingOf } from './camera'
-import { MORPH, animate, coverTransform, reducedMotion, type Rect } from './mapmorph'
 import type { CellRect, GameLayout } from './grid/console'
 import type { GridHost } from './grid/host'
 import { paneRows } from './grid/messages'
@@ -230,7 +229,7 @@ export class Hud {
     this.minimap.setCursor(cursor)
     this.minimapKey = ''
   }
-  /** What the minimap was last drawn for; empty when it must draw again (a resize, a morph, a new cursor). */
+  /** What the minimap was last drawn for; empty when it must draw again (a resize, the level map closing, a new cursor). */
   private minimapKey = ''
   /**
    * The heading up the minimap's ground, in radians (camera `mapYaw`): eases
@@ -247,9 +246,8 @@ export class Hud {
    */
   minimapUpright = 0
   private minimapTiles: Gamedata | null = null
-  /** The level map is open: the minimap has morphed into it and stays out of sight. */
+  /** The level map is open: the minimap has become it and stays out of sight. */
   private minimapHidden = false
-  private minimapMorph: Promise<void> | null = null
   /** the WebTiles `#monster_list` */
   private monsters = h('div', { class: 'monsters' })
   private monsterRows: MonsterRow[] = []
@@ -1232,68 +1230,17 @@ export class Hud {
     ctx.restore()
   }
 
-  /** Where the minimap sits on screen: the start (and end) of the level-map morph. */
-  minimapRect(): Rect {
-    return this.minimapCanvas.getBoundingClientRect()
-  }
-
-  /**
-   * Level map opening: the minimap swells out over `view` and dissolves as
-   * the fullscreen map (moving along the same path) takes over. Once gone it
-   * stays hidden until `collapseMinimap`.
-   */
-  expandMinimap(view: Rect): Promise<void> {
-    const el = this.minimapCanvas
-    const from = this.minimapRect()
+  /** The level map is open: the fullscreen map stands in for the minimap, which keeps its slot so the monster list holds still. */
+  hideMinimap() {
     this.minimapHidden = true
-    el.classList.add('morphing')
-    const reduced = reducedMotion()
-    const t = reduced ? MORPH.reduced : MORPH.enter
-    const frames: Keyframe[] = reduced
-      ? [{ opacity: 1 }, { opacity: 0 }]
-      : [
-          { transform: 'none', opacity: 1 },
-          { opacity: 0.85, offset: 0.25 },
-          { opacity: 0, offset: 0.6 },
-          { transform: coverTransform(from, view), opacity: 0 },
-        ]
-    const p = (this.minimapMorph = animate(el, frames, { duration: t.duration, easing: t.easing, fill: 'forwards' }).then(() => {
-      if (this.minimapMorph !== p) return
-      this.minimapMorph = null
-      el.classList.remove('morphing')
-      el.classList.add('hidden')
-      for (const a of el.getAnimations?.() ?? []) a.cancel()
-    }))
-    return p
+    this.minimapCanvas.classList.add('hidden')
   }
 
-  /**
-   * Level map closing: the minimap arrives back in its corner, converging
-   * with the shrinking map, and the live minimap picks up underneath.
-   */
-  collapseMinimap(view: Rect): Promise<void> {
-    const el = this.minimapCanvas
-    for (const a of el.getAnimations?.() ?? []) a.cancel()
-    el.classList.remove('hidden')
-    el.classList.add('morphing')
+  /** The level map closed: the live minimap is back in its corner. */
+  showMinimap() {
+    this.minimapCanvas.classList.remove('hidden')
     this.minimapHidden = false
     this.minimapKey = ''
-    const from = this.minimapRect()
-    const reduced = reducedMotion()
-    const t = reduced ? MORPH.reduced : MORPH.exit
-    const frames: Keyframe[] = reduced
-      ? [{ opacity: 0 }, { opacity: 1 }]
-      : [
-          { transform: coverTransform(from, view), opacity: 0 },
-          { opacity: 0.9, offset: 0.55 },
-          { transform: 'none', opacity: 1 },
-        ]
-    const p = (this.minimapMorph = animate(el, frames, { duration: t.duration, easing: t.easing }).then(() => {
-      if (this.minimapMorph !== p) return
-      this.minimapMorph = null
-      el.classList.remove('morphing')
-    }))
-    return p
   }
 
   /**

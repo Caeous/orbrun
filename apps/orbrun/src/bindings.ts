@@ -232,16 +232,23 @@ const EXAMINE: Partial<Record<Button, Action>> = {
   START: ENTER,
 }
 
+/**
+ * The level map (X). Unlike an aim, the server prints no key help here, so
+ * the corner names what the pad cannot guess: X describes the cell under
+ * the cursor (`v`), and the triggers zoom (`{`/`}`, cmd-keys.h
+ * CMD_MAP_ZOOM_OUT/IN, which nudge `tile_map_scale` and send it back as a
+ * `set_option`). `{` goes as a keycode: as text it would open a JSON message
+ * (keys.ts). `+` and `-` scroll the map, so they are not zoom.
+ */
 const LEVELMAP: Partial<Record<Button, Action>> = {
   A: k('.', 'Travel here'),
   B: ESC,
   LB: k('<', 'Up stairs'),
   RB: k('>', 'Down stairs'),
-  X: k('v', 'Describe'),
+  X: situational(k('v', 'Describe')),
   Y: k('@', 'Find you'),
-  // zoom is { / }; '+' and '-' scroll the map
-  LT: kc(123, 'Zoom out'),
-  RT: k('}', 'Zoom in'),
+  LT: situational(kc(123, 'Zoom out')),
+  RT: situational(k('}', 'Zoom in')),
   SELECT: palette('levelmap'),
   START: ENTER,
 }

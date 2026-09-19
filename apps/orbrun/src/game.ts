@@ -11,7 +11,6 @@ import { CameraController } from './camera'
 import { deriveContext, deriveMode, isFocusMode, type Context } from './context'
 import type { FocusOp } from './focus'
 import { HOLD_MS, LEVEL_MAP, barLabels, contextualLabel, armsTapOrHold, holdAction, resolve, type Action, type CommandCategory, type RelDir } from './bindings'
-import { MORPH, animate, containTransform, reducedMotion } from './mapmorph'
 import { Runner, type LastStep } from './runner'
 import { Hud } from './hud'
 import { GridHost } from './grid/host'
@@ -50,12 +49,6 @@ export interface GameHooks {
   onSystem(op: 'disconnect'): void
   gamepad: GamepadInput
   initialInput?: InputDevice
-}
-
-/** An outgoing view kept on screen while it animates away. */
-interface Ghost {
-  canvas: HTMLCanvasElement
-  renderer: MapRenderer
 }
 
 /**
@@ -493,22 +486,18 @@ export class GameScreen {
   }
 
   /**
-   * Swap 2D ⇄ 3D. With `keepGhost` the outgoing canvas stays in the DOM
-   * (inert, above the new one) for the caller to animate away; its renderer
-   * is destroyed with it in `dropGhost`.
+   * Swap 2D ⇄ 3D. The outgoing view is destroyed, except a 3D view the level
+   * map puts aside, which is parked, canvas and all, for the map's close
+   * (park.ts).
    */
-  private toggleRenderer(keepGhost = false): Ghost | null {
+  private toggleRenderer() {
     const old = { canvas: this.canvas, renderer: this.renderer }
     this.is3d = !this.is3d
     // the 3D view parked while the map was open comes back with its own canvas (park.ts); otherwise a fresh
     // canvas, since WebGL and 2D contexts cannot share one
     const kept = this.is3d ? this.park.take() : null
     const c = kept ? kept.canvas : h('canvas', { class: 'view' })
-    c.classList.remove('ghost')
-    // the new view slides in underneath; the old one is never detached while
-    // it lingers, since re-inserting a WebGL canvas drops its drawing buffer
-    // (a parked canvas is drawn again on its first frame back, so that is nothing lost)
-    old.canvas.before(c)
+    old.canvas.replaceWith(c)
     this.canvas = c
     if (!kept) this.attachPointer(c)
     this.renderer = kept ? this.revive(kept) : this.makeRenderer()
@@ -519,14 +508,11 @@ export class GameScreen {
     this.lastOptKey = ''
     this.relayout(true)
     this.needsRender = true
-    if (!keepGhost) {
-      old.renderer.destroy()
-      old.canvas.remove()
-      return null
+    if (old.renderer instanceof Render3d && this.mapBorrowed2d && !this.is3d) {
+      this.park.keep({ canvas: old.canvas, renderer: old.renderer, tiles: this.session.gamedata, optionsKey: JSON.stringify(this.render3dOptions(this.hooks.settings())) })
+      return
     }
-    old.canvas.classList.remove('locked')
-    old.canvas.classList.add('ghost')
-    return old
+    old.renderer.destroy()
   }
 
   private showLoading(text: string) {
@@ -705,93 +691,27 @@ export class GameScreen {
 
   /**
    * The level map (X) is the WebTiles 2D view fullscreen: while it is open
-   * a 3D view swaps to the 2D renderer, and swaps back when it closes.
-   *
-   * The swap is staged as a morph (see mapmorph.ts): opening, the corner
-   * minimap grows into the fullscreen map; closing, the map shrinks back into
-   * the corner. The outgoing canvas lingers as a non-interactive ghost for
-   * the duration so nothing cuts to black.
+   * a 3D view swaps to the 2D renderer, and swaps back when it closes. The
+   * swap is a cut, in the frame the server's `ui_state` lands: the map is
+   * there to be read, and nothing stands between the key and the reading.
    */
   private syncMapRenderer(st: GameState) {
     const mapView = st.uiState === UiState.VIEW_MAP
     if (mapView === this.lastMapView) return
     this.lastMapView = mapView
-    // the canvas has its level-map cells by now (`relayout` ran first in the frame)
-    const view = this.canvas.getBoundingClientRect()
-    const mini = this.hud.minimapRect()
-    const reduced = reducedMotion()
     if (mapView) {
       if (this.is3d) {
         this.mapBorrowed2d = true
-        const ghost = this.toggleRenderer(true)
-        const t = reduced ? MORPH.reduced : MORPH.enter
-        const opts = { duration: t.duration, easing: t.easing }
-        // the world recedes a touch as the map comes forward
-        if (ghost)
-          void animate(
-            ghost.canvas,
-            reduced
-              ? [{ opacity: 1 }, { opacity: 0 }]
-              : [
-                  { opacity: 1, transform: 'none' },
-                  { opacity: 1, offset: 0.15 },
-                  { opacity: 0, transform: 'scale(1.04)', offset: 0.85 },
-                  { opacity: 0, transform: 'scale(1.04)' },
-                ],
-            opts,
-          ).then(() => this.dropGhost(ghost))
-        void animate(
-          this.canvas,
-          reduced
-            ? [{ opacity: 0 }, { opacity: 1 }]
-            : [
-                { transform: containTransform(view, mini), opacity: 0 },
-                { opacity: 1, offset: 0.45 },
-                { transform: 'none', opacity: 1 },
-              ],
-          opts,
-        )
+        this.toggleRenderer()
       }
-      void this.hud.expandMinimap(view)
+      this.hud.hideMinimap()
     } else {
       if (this.mapBorrowed2d) {
         this.mapBorrowed2d = false
-        if (!this.is3d) {
-          const ghost = this.toggleRenderer(true)
-          const t = reduced ? MORPH.reduced : MORPH.exit
-          const opts = { duration: t.duration, easing: t.easing }
-          if (ghost)
-            void animate(
-              ghost.canvas,
-              reduced
-                ? [{ opacity: 1 }, { opacity: 0 }]
-                : [
-                    { transform: 'none', opacity: 1 },
-                    { opacity: 0.9, offset: 0.5 },
-                    { transform: containTransform(view, mini), opacity: 0 },
-                  ],
-              opts,
-            ).then(() => this.dropGhost(ghost))
-          void animate(this.canvas, [{ opacity: 0 }, { opacity: 1, offset: 0.6 }, { opacity: 1 }], opts)
-        }
+        if (!this.is3d) this.toggleRenderer()
       }
-      void this.hud.collapseMinimap(view)
+      this.hud.showMinimap()
     }
-  }
-
-  /**
-   * The outgoing view has finished its morph. A 3D view the level map put
-   * aside is parked, canvas and all, for the map's close (park.ts); any other
-   * — a 2D view, or a 3D one the map has already closed on — is released.
-   */
-  private dropGhost(g: Ghost) {
-    g.canvas.remove()
-    // a morph still running when the screen was destroyed: the park was cleared with it, so nothing may be kept
-    if (!this.destroyed && g.renderer instanceof Render3d && this.mapBorrowed2d && !this.is3d) {
-      this.park.keep({ canvas: g.canvas, renderer: g.renderer, tiles: this.session.gamedata, optionsKey: JSON.stringify(this.render3dOptions(this.hooks.settings())) })
-      return
-    }
-    g.renderer.destroy()
   }
 
   /** A deliberate view switch by the player sticks, even inside the level map. */

@@ -1529,12 +1529,6 @@ img.room-poster.up {
 .game .grid-probe {
   font-family: var(--mono);
 }
-/* an outgoing view lingering through the level-map morph: inert, above the new view */
-.game canvas.view.ghost {
-  pointer-events: none;
-  cursor: default;
-  will-change: transform, opacity;
-}
 
 /*
  * The HUD on the one console grid (docs/console-grid.md). The grid host
@@ -1677,13 +1671,6 @@ canvas.minimap {
      lets through. Lighter than the text's two-step drop: the cells are solid
      blocks, not thin strokes, so they need less to sit off the view */
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
-}
-/* mid-morph into (or out of) the level map: above the rest of the HUD */
-canvas.minimap.morphing {
-  position: relative;
-  z-index: 4;
-  pointer-events: none;
-  will-change: transform, opacity;
 }
 /* the level map is open: the minimap has become it. Keeps its slot so the monster list holds still. */
 canvas.minimap.hidden {
