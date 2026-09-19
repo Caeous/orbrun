@@ -233,7 +233,7 @@ describe('the command menus', () => {
     expect(h.focused()).toBe('Wear armour')
     h.ov.clientOverlayInput('close')
     h.ov.showCommands(h.run, 'travel')
-    expect(h.focused()).toBe('Find downstairs')
+    expect(h.focused()).toBe('Go down a floor')
     expect(h.sent).toEqual([])
   })
 

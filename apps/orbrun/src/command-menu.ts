@@ -56,8 +56,10 @@ export const BATTLE_COMMANDS: CommandEntry[] = [
 
 export const TRAVEL_COMMANDS: CommandEntry[] = [
   command('Level map', 'X', 'the floor as far as you have seen it', 'CMD_DISPLAY_MAP'),
-  chord('Find downstairs', 'G', '>', 'walk to the nearest way down', 'CMD_MAP_FIND_DOWNSTAIR'),
-  chord('Find upstairs', 'G', '<', 'walk to the nearest way up', 'CMD_MAP_FIND_UPSTAIR'),
+  // crawl's `G>` / `G<` are interlevel travel to the next depth of this branch (travel.cc find_down_level):
+  // the run walks to a stair and takes it, so the row says where you end up, not what it looks for
+  chord('Go down a floor', 'G', '>', 'walk to a way down and take it', 'CMD_MAP_FIND_DOWNSTAIR'),
+  chord('Go up a floor', 'G', '<', 'walk to a way up and take it', 'CMD_MAP_FIND_UPSTAIR'),
   command('Travel to branch / floor', 'G', 'name a branch and a depth, and walk there', 'CMD_INTERLEVEL_TRAVEL'),
   control('Dungeon overview', 'Ctrl-O', 15, 'the branches, altars and shops you have found', 'CMD_DISPLAY_OVERMAP'),
   control('Find items / shops', 'Ctrl-F', 6, 'search everything you have seen, by name', 'CMD_SEARCH_STASHES'),
