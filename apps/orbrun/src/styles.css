@@ -1657,8 +1657,8 @@ img.room-poster.up {
    The canvas is square and the map is cut to the disc inscribed in it (hud.ts minimapBox, cutMinimapDisc): the map turns under
    the player, and a disc shows the same reach on every heading where a rectangle would swing its corners in and out of the
    level. The cut is made in the canvas rather than by a css clip-path so the drop-shadow below follows the rim — a filter is
-   applied before a clip, so a clip would take the shadow with the corners. The rim itself is bare: the drop-shadow is all that
-   sets the map off from the view, as it is for the stats and message panes. */
+   applied before a clip, so a clip would take the shadow with the corners. The rim itself is bare but for the north mark
+   (hud.ts northMark): the drop-shadow is all that sets the map off from the view, as it is for the stats and message panes. */
 canvas.minimap {
   flex: none;
   align-self: flex-end;

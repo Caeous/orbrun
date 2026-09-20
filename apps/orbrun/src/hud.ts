@@ -164,6 +164,63 @@ export function minimapBox(sideW: number, sideH: number, gridW: number, tiles: n
   )
   return { w: side * px, h: side * px }
 }
+
+/**
+ * The grid's own text colour for what is drawn on a canvas instead of in the
+ * dom, where a css variable cannot be named: styles.css `--color-7`,
+ * lightgray, which the stats and message panes inherit and the rc's
+ * `custom_text_colours` may replace (game.ts sets it on the root). The
+ * literal is the styles.css default, for before the stylesheet is up.
+ */
+function gridTextColour(): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--color-7').trim()
+  return v || '#babdb6'
+}
+
+/** The hud's own font (styles.css `--mono`), for the same reason as `gridTextColour`. */
+function gridFont(): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--mono').trim()
+  return v || 'monospace'
+}
+
+/** How much of the map's radius the north tick takes, and the floor and ceiling it keeps in css px on any map size. */
+const NORTH_TICK = { of: 0.045, min: 3, max: 8 }
+/** How solid the north mark is drawn against the map under it. */
+const NORTH_ALPHA = 0.6
+
+/** The N's type size as a fraction of the map's diameter, and its floor and ceiling in css px. */
+const NORTH_TEXT = { of: 0.07, min: 8, max: 14 }
+
+/**
+ * Where the north mark sits on a `size` px minimap whose ground stands at
+ * `upYaw` radians (renderer `upYaw`, hud `minimapUp`): the tick's inner and
+ * rim ends, and the centre the N is drawn about, in css px from the
+ * canvas's top-left.
+ *
+ * The renderer turns the ground by `-upYaw` about the map's centre, so the
+ * level's north — screen up on an unturned map — leaves the centre along
+ * (-sin upYaw, -cos upYaw). The mark rides that heading around the rim
+ * rather than sitting at a fixed notch: the map turns under the player, and
+ * a mark that turned with it would say nothing the ground did not.
+ */
+export function northMark(size: number, upYaw: number): { x: number; y: number; tick: { x1: number; y1: number; x2: number; y2: number }; font: number } {
+  const r = size / 2
+  const tick = Math.max(NORTH_TICK.min, Math.min(NORTH_TICK.max, size * NORTH_TICK.of))
+  const font = Math.max(NORTH_TEXT.min, Math.min(NORTH_TEXT.max, size * NORTH_TEXT.of))
+  const dx = -Math.sin(upYaw)
+  const dy = -Math.cos(upYaw)
+  // the tick stops a hairline short of the rim, so its stroke lies inside the disc rather than half off the canvas
+  const outer = r - 1
+  const inner = outer - tick
+  // the letter stands clear of the tick by a little under half its own height
+  const text = inner - font * 0.6
+  return {
+    x: r + dx * text,
+    y: r + dy * text,
+    tick: { x1: r + dx * inner, y1: r + dy * inner, x2: r + dx * outer, y2: r + dy * outer },
+    font,
+  }
+}
 export class Hud {
   root: HTMLElement
   /** the right column (game.html `#right_column`): the stats pane, the minimap, the monster list, on the sidebar's cells */
@@ -1204,6 +1261,7 @@ export class Hud {
     this.minimap.setCamera(cam)
     this.minimap.render()
     this.cutMinimapDisc()
+    this.drawMinimapNorth()
   }
 
   /**
@@ -1227,6 +1285,43 @@ export class Hud {
     ctx.arc(r, r, r, 0, Math.PI * 2)
     ctx.fillStyle = '#fff'
     ctx.fill()
+    ctx.restore()
+  }
+
+  /**
+   * The north mark: an N on the rim with a short tick out to it (northMark),
+   * drawn after the disc is cut so the cut does not take it. It rides the
+   * rim as the ground turns, and the letter itself stays upright, so the map
+   * can be read from any heading without a fixed top notch saying north is
+   * somewhere the ground says it is not. Only north is marked — the other
+   * three would be clutter on a map this small.
+   */
+  private drawMinimapNorth() {
+    const ctx = this.minimapCanvas.getContext('2d')
+    const size = this.minimapSize.w
+    if (!ctx || !size) return
+    const dpr = this.minimapCanvas.width / size || 1
+    const m = northMark(size, this.minimapUp)
+    ctx.save()
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    // the panes' own text colour, a little faint: the mark is there to be found when looked for, not to be read over
+    // the map. The drop keeps it legible at that alpha where the map is unexplored and the view shows through
+    const grey = gridTextColour()
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+    ctx.shadowBlur = 2
+    ctx.globalAlpha = NORTH_ALPHA
+    ctx.strokeStyle = grey
+    ctx.lineWidth = Math.max(1, Math.round(m.font / 8))
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(m.tick.x1, m.tick.y1)
+    ctx.lineTo(m.tick.x2, m.tick.y2)
+    ctx.stroke()
+    ctx.fillStyle = grey
+    ctx.font = `${Math.round(m.font)}px ${gridFont()}`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('N', m.x, m.y)
     ctx.restore()
   }
 
