@@ -18,12 +18,15 @@ export type OskOp = 'move' | 'type' | 'backspace' | 'space' | 'submit' | 'cancel
 export interface OskPrompt {
   button: GlyphName
   label: string
+  /** the chip that submits: a target may move it to another button (`OskTarget.submitButton`) */
+  submit?: boolean
 }
 
 /**
  * The hint line's buttons, in the dialogs' order: what types, then the
  * edits, then submit. Y's label is the keyboard's to name (Done, Send,
- * Submit). B, Start and Select remain usable but unlabelled.
+ * Submit). B, Start and Select remain usable but unlabelled. A target that
+ * confirms on Start alone (`OskTarget.submitButton`) wears Start in Y's place.
  */
 export function oskPrompts(submit = 'Done'): OskPrompt[] {
   return [
@@ -31,7 +34,7 @@ export function oskPrompts(submit = 'Done'): OskPrompt[] {
     { button: 'X', label: 'Backspace' },
     { button: 'RB', label: 'Space' },
     { button: 'LB', label: 'Shift' },
-    { button: 'Y', label: submit },
+    { button: 'Y', label: submit, submit: true },
   ]
 }
 
@@ -40,6 +43,8 @@ export interface OskTarget {
   input: HTMLInputElement | HTMLTextAreaElement
   /** Y / Enter */
   submit(): void
+  /** the pad button that submits, when it is not Y: the skill target prompt confirms on Start only (bindings.ts) */
+  submitButton?: GlyphName
   /** Select / Esc */
   cancel(): void
   /**
@@ -80,7 +85,8 @@ export class Osk {
     const kind = this.padKind()
     const line = h('div', { class: 'more' })
     for (const p of this.prompts) {
-      line.append(h('span', { class: 'osk-prompt', 'aria-label': `${glyphName(p.button, kind)} ${p.label}` }, glyph(p.button, kind), ' ' + p.label), ' · ')
+      const button = p.submit && this.target?.submitButton ? this.target.submitButton : p.button
+      line.append(h('span', { class: 'osk-prompt', 'aria-label': `${glyphName(button, kind)} ${p.label}` }, glyph(button, kind), ' ' + p.label), ' · ')
     }
     line.append('Enter / Esc')
     return line

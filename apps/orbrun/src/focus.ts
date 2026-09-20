@@ -11,6 +11,8 @@
 
 export interface Focusable {
   label: string
+  /** the terminal colour the label wears where it came from (a prompt's word in the message log), for the action bar */
+  colour?: number
   el: HTMLElement
   activate(): void
   /** column-like grouping: left / right move within a row, so a group is what a row spans */
@@ -36,6 +38,8 @@ export type FocusOp = 'next' | 'prev' | 'left' | 'right' | 'select' | 'altSelect
 export interface FocusInfo {
   /** label of the focused item, or null when nothing is focusable */
   label: string | null
+  /** the focused item's colour (`Focusable.colour`), when it has one */
+  colour?: number
   /** label of the cancel item when the screen has one ("No"), else null */
   cancelLabel: string | null
   /** label of the focused item's second action (Y), when it has one */
@@ -201,6 +205,7 @@ export class FocusNav {
     const cancel = this.items.find((f) => f.cancel)
     const info: FocusInfo = { label: cur ? cur.label : null, cancelLabel: cancel ? cancel.label : null, index: this.index, count: this.items.length }
     if (cur?.alt) info.altLabel = cur.alt.label
+    if (cur?.colour !== undefined) info.colour = cur.colour
     return info
   }
 

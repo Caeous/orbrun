@@ -19,7 +19,7 @@ import { Osk, oskPrompts, type OskOp, type OskTarget } from './osk'
 import commands from '../data/commands.json'
 import { FocusNav, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
 import { scrapeCrt } from './crt-scrape'
-import { focusFallback, promptButtons, type Action } from './bindings'
+import { focusFallback, promptButtons, submitOnStartOnly, type Action } from './bindings'
 import { CHARACTER_COMMANDS, COMMAND_MENUS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandMenu } from './command-menu'
 import { VIEW_OPTIONS } from './servers'
 import { settingGroups, type SettingGroup } from './settings-rows'
@@ -1880,7 +1880,7 @@ export class Overlays {
    */
   updatePrompt(mode: Mode, prompt: ParsedPrompt | undefined, device: InputDevice = 'pad') {
     let key = ''
-    let chips: { label: string; hotkey: string; send: () => void; cancel?: boolean }[] = []
+    let chips: { label: string; hotkey: string; colour?: number; send: () => void; cancel?: boolean }[] = []
     let text = ''
     let lead: string | null = null
     let buttons = new Map<string, Button>()
@@ -1893,7 +1893,7 @@ export class Overlays {
         lead = p.yesno ? null : promptLead(text)
         key = mode + '|' + device + '|' + text + '|' + (p.letters ? p.letters + '|' + (p.from ?? '') + '|' : '') + p.options.map((o) => o.hotkey + '=' + o.label + (o.held ? ':' + o.held : '')).join(',')
         // Tab and Enter are keys, not text (context.ts NAMED_KEYS)
-        chips = p.options.map((o) => ({ label: o.label, hotkey: o.hotkey, send: () => this.hooks.send(o.hotkey === '\t' || o.hotkey === '\r' ? cm.key(o.hotkey.charCodeAt(0)) : cm.input(o.hotkey)), cancel: o.hotkey.toLowerCase() === 'n' && p.yesno }))
+        chips = p.options.map((o) => ({ label: o.label, hotkey: o.hotkey, colour: o.colour, send: () => this.hooks.send(o.hotkey === '\t' || o.hotkey === '\r' ? cm.key(o.hotkey.charCodeAt(0)) : cm.input(o.hotkey)), cancel: o.hotkey.toLowerCase() === 'n' && p.yesno }))
         buttons = promptButtons(p)
         letters = p.letters ? p : null
       }
@@ -1934,7 +1934,10 @@ export class Overlays {
       chip.addEventListener('click', c.send)
       rowEl.append(chip)
       // one row of chips; the card is linear, so up/down walk it as well as left/right
-      this.promptFocusables.push({ label: c.label, el: chip, activate: c.send, row: 0, col: i, cancel: c.cancel, id: 'chip:' + i })
+      const item: Focusable = { label: c.label, el: chip, activate: c.send, row: 0, col: i, cancel: c.cancel, id: 'chip:' + i }
+      // the bar names the focused answer on A in the log's own colour (bindings.ts actionLabel)
+      if (c.colour !== undefined) item.colour = c.colour
+      this.promptFocusables.push(item)
     })
     el.append(rowEl)
     this.root.append(el)
@@ -2290,6 +2293,8 @@ export class Overlays {
     }
     // travel.cc _travel_depth_keyfilter: the keys that move the default target, as a row of the pad's keyboard
     if (tag === 'travel_depth') target.extras = TRAVEL_DEPTH_KEYS
+    // the prompt opened off Y (Set target on a skill row), so Y does not also confirm it: Start does (bindings.ts SKILL_TARGET_TEXT)
+    if (submitOnStartOnly(tag)) target.submitButton = 'START'
     input.addEventListener('keydown', (ev) => {
       ev.stopPropagation()
       if (ev.key === 'Escape') {

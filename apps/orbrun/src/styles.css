@@ -1936,7 +1936,8 @@ canvas.minimap.hidden {
   background: none;
   border: 0;
   border-radius: 0;
-  /* the HUD's lightgray, as the menu pairs, the stats pane and the log wear it */
+  /* the HUD's lightgray, as the menu pairs and the stats pane wear it; a label that names a line of the log
+     (--more--, a prompt's answer) carries that line's colour in its own tags (bindings.ts actionLabel, .fgN) */
   color: var(--color-7);
   text-shadow:
     0 0 3px #000,

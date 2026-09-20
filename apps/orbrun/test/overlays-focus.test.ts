@@ -321,11 +321,39 @@ describe('prompt card', () => {
     // the answers are not on the face buttons: the cursor and A pick one (this ctx is the frame's, cursor on the first chip)
     expect(t.X).toBeUndefined()
     expect(t.Y).toBeUndefined()
-    expect(actionLabel(t.A!, ctx)).toBe('(D)rop')
+    // the bar's label wears the log's colour for the word: the line was untagged, so the pane's white
+    expect(actionLabel(t.A!, ctx)).toBe('<white>(D)rop</white>')
     // Escape may cancel this prompt, so B stays the layer's cancel: no cancel chip, so it is Esc
     expect(t.B).toEqual({ kind: 'focus', op: 'cancel' })
     ov.focusOp(st, ctx, 'cancel')
     expect(sent).toEqual([{ msg: 'key', keycode: Keys.ESC }])
+  })
+  it('a prompt answer takes the colour the log painted its word in: the line\'s tag, or the pane\'s white untagged', () => {
+    const { st, frame } = setup()
+    // a live prompt line is tagged in its channel colour (`<white>Evoke which item?`); a word may carry its own tag inside it
+    reduce(st, { msg: 'msgs', messages: [{ text: '<cyan>(D)rop, <lightred>(w)ield</lightred>, or (e)at?</cyan>', channel: 2 }] })
+    reduce(st, { msg: 'input_mode', mode: MouseMode.PROMPT })
+    let ctx = frame()
+    expect(ctx.prompt?.options).toEqual([
+      { hotkey: 'D', label: '(D)rop', colour: 3 },
+      { hotkey: 'w', label: '(w)ield', colour: 12 },
+      { hotkey: 'e', label: '(e)at', colour: 3 },
+    ])
+    // the focused answer reaches the bar in that colour
+    expect(ctx.focus).toMatchObject({ label: '(D)rop', colour: 3 })
+    // the "k - label" form too, on a fresh log
+    const other = setup()
+    reduce(other.st, { msg: 'msgs', messages: [{ text: '<white>Where to? (Tab - <yellow>D:3</yellow>, ? - help) ', channel: 2 }] })
+    reduce(other.st, { msg: 'input_mode', mode: MouseMode.PROMPT })
+    expect(other.frame().prompt?.options).toEqual([
+      { hotkey: '\t', label: 'D:3', colour: 14 },
+      { hotkey: '?', label: 'Help', colour: 15 },
+    ])
+    // an answer of our own (Yes / No) wears no colour
+    reduce(st, { msg: 'msgs', messages: [{ text: '<white>Really attack? (y/n)', channel: 2 }] })
+    reduce(st, { msg: 'input_mode', mode: MouseMode.YESNO })
+    ctx = frame()
+    expect(ctx.prompt?.options).toEqual([{ hotkey: 'y', label: 'Yes' }, { hotkey: 'n', label: 'No' }])
   })
   it('a letter picker: "Adjust to which letter?" lays out every inventory letter, starting on the one being moved; A sends the lit letter', () => {
     const { ov, st, sent, frame, host } = setup()
@@ -402,12 +430,12 @@ describe('prompt card', () => {
     const ctx = frame()
     expect(ctx.mode).toBe('prompt')
     expect(ctx.prompt?.options).toEqual([
-      { hotkey: 't', label: 'Shout!' },
-      { hotkey: 'a', label: 'Attack new target' },
-      { hotkey: 'r', label: 'Retreat!' },
-      { hotkey: 's', label: 'Stop attacking' },
-      { hotkey: 'g', label: 'Guard the area' },
-      { hotkey: 'f', label: 'Follow me' },
+      { hotkey: 't', label: 'Shout!', colour: 15 },
+      { hotkey: 'a', label: 'Attack new target', colour: 15 },
+      { hotkey: 'r', label: 'Retreat!', colour: 15 },
+      { hotkey: 's', label: 'Stop attacking', colour: 15 },
+      { hotkey: 'g', label: 'Guard the area', colour: 15 },
+      { hotkey: 'f', label: 'Follow me', colour: 15 },
     ])
     expect(host.querySelector('.prompt-card .text')?.textContent).toBe('What are your orders?')
     ov.focusOp(st, ctx, 'right')
@@ -431,14 +459,14 @@ describe('prompt card', () => {
     reduce(st, { msg: 'input_mode', mode: MouseMode.PROMPT })
     let ctx = frame()
     expect(ctx.prompt?.options).toEqual([
-      { hotkey: '.', label: 'D:3' },
-      { hotkey: '?', label: 'Help' },
-      { hotkey: '!', label: 'Show branch list' },
+      { hotkey: '.', label: 'D:3', colour: 15 },
+      { hotkey: '?', label: 'Help', colour: 15 },
+      { hotkey: '!', label: 'Show branch list', colour: 15 },
     ])
     reduce(st, { msg: 'msgs', messages: [{ text: '(D) Dungeon        (T) Temple         (L) Lair           (O) Orc', channel: 0 }, { text: '(V) Vaults', channel: 0 }] })
     ctx = frame()
     expect(ctx.prompt?.options.map((o) => o.hotkey)).toEqual(['.', '?', '!', 'D', 'T', 'L', 'O', 'V'])
-    expect(ctx.prompt?.options[3]).toEqual({ hotkey: 'D', label: 'Dungeon' })
+    expect(ctx.prompt?.options[3]).toEqual({ hotkey: 'D', label: 'Dungeon', colour: 15 })
     // the list without a prompt line near it is not a prompt
     reduce(st, { msg: 'msgs', messages: Array.from({ length: 8 }, () => ({ text: '(D) Dungeon', channel: 0 })) })
     ctx = frame()
@@ -460,13 +488,13 @@ describe('prompt card', () => {
     let ctx = frame()
     expect(ctx.prompt?.text).toBe('Where to? (Tab/Enter - D:3, ? - help) ')
     expect(ctx.prompt?.options).toEqual([
-      { hotkey: 'D', label: 'Dungeon' },
-      { hotkey: 'T', label: 'Temple' },
-      { hotkey: 'L', label: 'Lair' },
-      { hotkey: 'O', label: 'Orcish' },
-      { hotkey: 'S', label: 'Snake' },
-      { hotkey: '\t', label: 'D:3' },
-      { hotkey: '?', label: 'Help' },
+      { hotkey: 'D', label: 'Dungeon', colour: 15 },
+      { hotkey: 'T', label: 'Temple', colour: 15 },
+      { hotkey: 'L', label: 'Lair', colour: 15 },
+      { hotkey: 'O', label: 'Orcish', colour: 15 },
+      { hotkey: 'S', label: 'Snake', colour: 15 },
+      { hotkey: '\t', label: 'D:3', colour: 15 },
+      { hotkey: '?', label: 'Help', colour: 15 },
     ])
     expect(ctx.focus).toMatchObject({ label: 'Dungeon', count: 7 })
     ov.focusOp(st, ctx, 'right')
@@ -549,7 +577,7 @@ describe('prompt card', () => {
     expect(t.X).toBeUndefined()
     expect(t.Y).toBeUndefined()
     expect(t.B).toBeUndefined()
-    expect(actionLabel(t.A!, ctx)).toBe('(S)trength')
+    expect(actionLabel(t.A!, ctx)).toBe('<white>(S)trength</white>')
     expect(Array.from(host.querySelectorAll('.prompt-card .chip')).map((c) => c.className)).toEqual(['chip focused', 'chip', 'chip'])
     // after the pad the chips wear no glyph: the cursor marks the answer
     expect(host.querySelector('.prompt-card .chip svg')).toBeNull()
@@ -976,6 +1004,17 @@ describe('the travel depth prompt', () => {
     expect(line.querySelectorAll('.osk-prompt svg').length).toBe(5)
     expect(line.textContent!.endsWith(' · Enter / Esc')).toBe(true)
     expect(host.querySelector('.osk .muted')).toBeNull()
+  })
+
+  it('the skill target prompt confirms on Start alone: it opened off Y, so Y neither submits nor wears Done', () => {
+    const { st, frame, host } = setup()
+    reduce(st, { msg: 'init_input', type: 'messages', tag: 'skill_target', prompt: 'Enter a skill target for Armour: ', maxlen: 3, size: 3, prefill: '0' })
+    const ctx = frame()
+    expect(ctx.textTag).toBe('skill_target')
+    expect(bindingTable(ctx).Y).toBeUndefined()
+    expect(bindingTable(ctx).START).toEqual({ kind: 'osk', op: 'submit' })
+    const line = host.querySelector('.osk .more')!
+    expect(Array.from(line.querySelectorAll('.osk-prompt')).map((p) => p.getAttribute('aria-label'))).toEqual(['A Type', 'X Backspace', 'RB Space', 'LB Shift', 'Menu Done'])
   })
 
   it('up and down keep their column: a wide row into the narrow extras row lands on its last key, not sideways', () => {

@@ -1,7 +1,7 @@
-import { Keys } from '@orbrun/webtiles'
+import { Keys, colouredText } from '@orbrun/webtiles'
 import type { Dir8 } from '@orbrun/scene'
 import type { Button, PadEvent } from './gamepad'
-import { isFocusMode, type Context, type MenuContext, type ParsedPrompt, type ShopContext } from './context'
+import { LOG_DEFAULT_COLOUR, isFocusMode, type Context, type MenuContext, type ParsedPrompt, type ShopContext } from './context'
 import type { FocusOp } from './focus'
 import { menuHasSections } from './menu-nav'
 
@@ -335,6 +335,19 @@ const TEXT: Partial<Record<Button, Action>> = {
   SELECT: { kind: 'osk', op: 'cancel' },
 }
 
+/**
+ * The skill target prompt (skill_menu.cc read_skill_target) opens off Y on a
+ * skill row (overlays.ts crtBody: Set target), so Y does not also submit it:
+ * a second press, or one held a beat, would send an empty target straight
+ * back. Start alone confirms there.
+ */
+const SKILL_TARGET_TEXT: Partial<Record<Button, Action>> = (({ Y: _y, ...rest }) => rest)(TEXT)
+
+/** The prompts whose keyboard Y does not submit (see SKILL_TARGET_TEXT). */
+export function submitOnStartOnly(textTag: string | undefined): boolean {
+  return textTag === 'skill_target'
+}
+
 const SPECTATING: Partial<Record<Button, Action>> = {
   B: SYSTEM,
   START: SYSTEM,
@@ -376,7 +389,7 @@ export function bindingTable(ctx: Context): Partial<Record<Button, Action>> {
     case 'levelmap':
       return LEVELMAP
     case 'text':
-      return TEXT
+      return submitOnStartOnly(ctx.textTag) ? SKILL_TARGET_TEXT : TEXT
     case 'spectating':
       return SPECTATING
     case 'lobby':
@@ -577,6 +590,8 @@ const EMPTY_CTX = { mode: 'command', layer: 'micro', ahead: { kind: 'floor' }, u
 export function actionLabel(a: Action, ctx: Context, button?: Button): string {
   switch (a.kind) {
     case 'keys':
+      // on a --more-- the chip under A reads as the pane's more row does: its text, in the pane's white
+      if (ctx.mode === 'more' && ctx.moreText && a.label === '--more--') return colouredText(ctx.moreText, LOG_DEFAULT_COLOUR, true)
       return a.label
     case 'contextual':
       return a.alt === undefined && hasInteractionChoice(ctx) ? 'Interact' : contextualLabel(ctx, a.alt)
@@ -606,13 +621,17 @@ export function actionLabel(a: Action, ctx: Context, button?: Button): string {
     }
     case 'prompt': {
       const o = ctx.prompt?.options.find((x) => x.hotkey.toLowerCase() === a.hotkey.toLowerCase())
-      return o ? o.label : a.hotkey === 'Y' || a.hotkey === 'y' ? 'Yes' : a.hotkey === 'N' || a.hotkey === 'n' ? 'No' : a.hotkey
+      // an answer read off the log wears the log's colour for it (context.ts `ParsedPrompt.options.colour`)
+      if (o) return o.colour !== undefined ? colouredText(o.label, o.colour) : o.label
+      return a.hotkey === 'Y' || a.hotkey === 'y' ? 'Yes' : a.hotkey === 'N' || a.hotkey === 'n' ? 'No' : a.hotkey
     }
     case 'focus': {
       const f = ctx.focus
       const fb = focusFallback(ctx)
       switch (a.op) {
         case 'select':
+          // a prompt's answer under the cursor keeps the colour the log gave it (overlays.ts updatePrompt)
+          if (f?.label && f.colour !== undefined) return colouredText(f.label, f.colour)
           return f?.label ?? fb.label
         case 'cancel':
           return f?.cancelLabel ?? fb.cancelLabel

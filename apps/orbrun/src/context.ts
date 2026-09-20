@@ -1,4 +1,4 @@
-import { MouseMode, UiState, floorItemsLabel, formattedStringToText, isStationaryItemName, topMenu, topPopup, type GameState, type MenuState, type Monster } from '@orbrun/webtiles'
+import { MouseMode, UiState, floorItemsLabel, formattedStringToSpans, formattedStringToText, isStationaryItemName, topMenu, topPopup, type GameState, type MenuState, type Monster } from '@orbrun/webtiles'
 import { cellAhead, cellUnder, billboardsAt, getCell, isThreat, monstersInView, type Camera, type Feature, type Scene, type SceneCell } from '@orbrun/scene'
 import type { FocusInfo } from './focus'
 
@@ -36,8 +36,13 @@ type Target =
 
 export interface ParsedPrompt {
   text: string
-  /** `held`: what the letter holds now, in the server's words (a letter picker over the inventory) */
-  options: { hotkey: string; label: string; held?: string }[]
+  /**
+   * `held`: what the letter holds now, in the server's words (a letter picker over the inventory).
+   * `colour`: the terminal colour the message pane painted the option's word in, for an option
+   * read off the log (`(S)trength`, `Shout!`), so a chip naming it wears the same; absent for an
+   * answer of our own (Yes, a bare letter).
+   */
+  options: { hotkey: string; label: string; held?: string; colour?: number }[]
   yesno: boolean
   /**
    * A letter picker: the prompt wants one letter, and the options are every
@@ -124,6 +129,28 @@ export interface Context {
   examining?: boolean
   /** the crt screen's tag (`skills`) when a CRT text screen is up, in menu or crt mode */
   crtTag?: string
+  /** the text prompt's tag (`skill_target`) in text mode */
+  textTag?: string
+  /** the pane's `--more--` row as printed (the server's `more_text` when it sent one), in more mode */
+  moreText?: string
+}
+
+/** the message pane's untagged text is the page's white (styles.css `.messages`) */
+export const LOG_DEFAULT_COLOUR = 15
+
+/**
+ * The colour the message pane paints the character at `at` of a log line's
+ * plain text (`formattedStringToText`) in: the innermost tag over it, else
+ * the pane's white. A prompt's option is one word in one colour, so the
+ * colour at its first character is the word's.
+ */
+export function logColourAt(formatted: string, at: number): number {
+  let n = 0
+  for (const s of formattedStringToSpans(formatted)) {
+    n += s.text.length
+    if (at < n) return s.fg ?? LOG_DEFAULT_COLOUR
+  }
+  return LOG_DEFAULT_COLOUR
 }
 
 /** Modes whose top overlay is driven by the focus layer rather than by mode-specific keys. */
@@ -288,23 +315,28 @@ function listedPrompt(lines: { text: string; channel?: number }[]): ParsedPrompt
   if (at < 0) return undefined
   const text = formattedStringToText(lines[at].text)
   const options: ParsedPrompt['options'] = []
-  const add = (hotkey: string, label: string) => {
+  const add = (hotkey: string, label: string, colour?: number) => {
     hotkey = NAMED_KEYS[hotkey] ?? hotkey
     if (options.some((o) => o.hotkey === hotkey)) return
     label = label.trim().replace(/[.,]+$/, '')
-    options.push({ hotkey, label: label ? label[0].toUpperCase() + label.slice(1) : hotkey })
+    const o: ParsedPrompt['options'][number] = { hotkey, label: label ? label[0].toUpperCase() + label.slice(1) : hotkey }
+    if (colour !== undefined) o.colour = colour
+    options.push(o)
   }
-  const keyed = (t: string) => {
+  // the label is the match's tail (the lookahead takes nothing), so its colour is the log's at that offset
+  const keyed = (line: string) => {
+    const t = formattedStringToText(line)
     let m: RegExpExecArray | null
     KEYED_RE.lastIndex = 0
-    while ((m = KEYED_RE.exec(t))) add(m[1], m[2])
+    while ((m = KEYED_RE.exec(t))) add(m[1], m[2], logColourAt(line, m.index + m[0].length - m[2].length))
   }
-  const listed = (t: string): boolean => {
+  const listed = (line: string): boolean => {
+    const t = formattedStringToText(line)
     let m: RegExpExecArray | null
     let any = false
     LISTED_RE.lastIndex = 0
     while ((m = LISTED_RE.exec(t))) {
-      add(m[1], m[2])
+      add(m[1], m[2], logColourAt(line, m.index + m[0].length - m[2].length))
       any = true
     }
     return any
@@ -312,18 +344,17 @@ function listedPrompt(lines: { text: string; channel?: number }[]): ParsedPrompt
   // a menu in the message pane: its rows are the prompt-channel lines just before the prompt, in their order
   let first = at
   while (first > 0 && lines[first - 1].channel === CH_PROMPT && LISTED_RE.test(formattedStringToText(lines[first - 1].text))) first--
-  for (let i = first; i < at; i++) listed(formattedStringToText(lines[i].text))
+  for (let i = first; i < at; i++) listed(lines[i].text)
   // or on the prompt line itself: the faded altar's "(a) Trog, (b) Okawaru or (c) Yredelemnul"
-  listed(text)
+  listed(lines[at].text)
   // god-prayer.cc `_prompt_ecu_worship`: "press enter to convert or escape to cancel"; the letters describe
   if (ECU_ALTAR_RE.test(text)) add('Enter', 'Convert')
   const d = DIGITS_RE.exec(text)
   if (d) for (let n = Number(d[1]); n <= Number(d[2]); n++) add(String(n), String(n))
-  keyed(text)
+  keyed(lines[at].text)
   for (let i = at + 1; i < lines.length; i++) {
-    const t = formattedStringToText(lines[i].text)
-    keyed(t)
-    listed(t)
+    keyed(lines[i].text)
+    listed(lines[i].text)
   }
   if (!options.length) return undefined
   return { text, options, yesno: false, cancel: true }
@@ -410,7 +441,7 @@ function parsePrompt(state: GameState): ParsedPrompt | undefined {
     const text = formattedStringToText(l.text)
     LISTED_RE.lastIndex = 0
     if (LISTED_RE.test(text)) continue
-    const options: { hotkey: string; label: string }[] = []
+    const options: ParsedPrompt['options'] = []
     if (yesnoMode && YESNO_RE.test(text)) {
       options.push({ hotkey: 'y', label: 'Yes' }, { hotkey: 'n', label: 'No' })
       return { text, options, yesno: true, cancel: true }
@@ -427,7 +458,7 @@ function parsePrompt(state: GameState): ParsedPrompt | undefined {
       let end = text.indexOf(' ', m.index)
       if (end < 0) end = text.length
       const label = text.slice(start, end).replace(/[,.?!:;]+$/, '')
-      options.push({ hotkey: m[1], label: label || m[1] })
+      options.push({ hotkey: m[1], label: label || m[1], colour: logColourAt(l.text, start) })
     }
     if (options.length) return { text, options, yesno: false, cancel: !STAT_GAIN_RE.test(text) }
   }
@@ -506,11 +537,13 @@ export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer
   const ctx: Context = { mode, layer, ahead, under, hostilesInView: hostiles, readiedAction: readiedAction(p.quiver_desc) }
   if (p.hp < p.hp_max || p.mp < p.mp_max) ctx.injured = true
   if (mode === 'yesno' || mode === 'prompt') ctx.prompt = parsePrompt(state)
+  if (mode === 'more') ctx.moreText = state.messages.moreText || '--more--'
   if (mode === 'menu') {
     ctx.menu = menuContext(state)
     if (ctx.menu?.menu.type === 'crt') ctx.crtTag = ctx.menu.menu.tag
   }
   if (mode === 'crt') ctx.crtTag = 'crt'
+  if (mode === 'text' && state.textInput?.tag) ctx.textTag = state.textInput.tag
   if (mode === 'targeting') {
     const c = state.cursors[0]
     if (c) {

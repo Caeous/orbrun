@@ -26,6 +26,22 @@ export const COLOUR_NAMES: Record<string, number> = {
   w: 15,
 }
 
+/** the canonical tag name of each of the sixteen terminal colours, by index */
+const COLOUR_TAGS = ['black', 'blue', 'green', 'cyan', 'red', 'magenta', 'brown', 'lightgrey', 'darkgrey', 'lightblue', 'lightgreen', 'lightcyan', 'lightred', 'lightmagenta', 'yellow', 'white']
+
+/**
+ * Text as a formatted string in one colour: `<red>text</red>`. Plain text
+ * has its `<` doubled so it stays a literal (`formattedStringToText` undoes
+ * it); text that is `formatted` already keeps its own tags, which then
+ * override the colour inside it. A colour outside the sixteen leaves the
+ * text as it was.
+ */
+export function colouredText(text: string, fg: number, formatted = false): string {
+  const name = COLOUR_TAGS[fg]
+  const inner = formatted ? text : text.replace(/</g, '<<')
+  return name ? '<' + name + '>' + inner + '</' + name + '>' : inner
+}
+
 function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }

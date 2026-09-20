@@ -160,6 +160,22 @@ describe('focus modes share one binding set', () => {
     expect(t.START).toMatchObject({ kind: 'keys', seq: [{ key: Keys.ENTER }] })
     for (const b of ['X', 'Y', 'LT', 'RT', 'LB', 'RB', 'L3', 'R3', 'SELECT'] as const) expect(t[b]).toBeUndefined()
   })
+  it('the --more-- chip under A reads as the pane\'s more row: its text, in the pane\'s white', () => {
+    // the pane's more row is the server's more_text when it sent one, else --more--, in the page's white
+    const t = bindingTable(ctx({ mode: 'more', moreText: '--more--' }))
+    expect(actionLabel(t.A!, ctx({ mode: 'more', moreText: '--more--' }))).toBe('<white>--more--</white>')
+    expect(actionLabel(t.A!, ctx({ mode: 'more', moreText: '<lightred>Press space</lightred>' }))).toBe('<white><lightred>Press space</lightred></white>')
+    // without the pane's row (a hand-made context) the chip keeps its own word
+    expect(actionLabel(t.A!, ctx({ mode: 'more' }))).toBe('--more--')
+  })
+  it('a prompt answer read off the log wears the colour the log gave the word', () => {
+    const c = ctx({ mode: 'prompt', prompt: { text: '', options: [{ hotkey: 'S', label: '(S)trength', colour: 3 }, { hotkey: 'y', label: 'Yes' }], yesno: false, cancel: true } })
+    expect(actionLabel({ kind: 'prompt', hotkey: 'S' }, c)).toBe('<cyan>(S)trength</cyan>')
+    expect(actionLabel({ kind: 'prompt', hotkey: 'y' }, c)).toBe('Yes')
+    // the focused answer on A carries its colour too (overlays.ts updatePrompt); an uncoloured one stays plain
+    expect(actionLabel({ kind: 'focus', op: 'select' }, ctx({ mode: 'prompt', focus: { label: '(S)trength', colour: 15, cancelLabel: null, index: 0, count: 3 } }))).toBe('<white>(S)trength</white>')
+    expect(actionLabel({ kind: 'focus', op: 'select' }, ctx({ mode: 'prompt', focus: { label: 'Dungeon', cancelLabel: null, index: 0, count: 3 } }))).toBe('Dungeon')
+  })
 })
 
 describe('every non-command mode can reach its section of the palette', () => {
