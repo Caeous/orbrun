@@ -17,6 +17,8 @@ Also here, because every consumer needs them:
 - Layout change detection for renderers that rebuild geometry only when the
   level changes: `cellLayoutEquals`, `sceneLayoutEquals`.
 - The camera: `makeCamera`, `REST_PITCH`.
+- `motion.ts`: shared player/monster arrival cadence and finite movement curves
+  (`StepCadence`, `planStep`, `sampleStep`), using only confirmed movement.
 - `bars.ts`: the health and magic minibar rules ported from the official
   client's cell renderer (`woundLevel`, `minibarRects`, `fillRun`, colours).
 

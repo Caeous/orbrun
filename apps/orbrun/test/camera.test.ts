@@ -1,6 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { REST_PITCH, cellKey, emptyScene, type Billboard, type Scene, type SceneCell } from '@orbrun/scene'
 import { CameraController, MAP_TURNS_DIAGONAL, trailStep } from '../src/camera'
+
+// These tests advance animation time themselves; arrival cadence has explicit-clock tests.
+beforeEach(() => {
+  vi.spyOn(performance, 'now').mockReturnValue(0)
+})
+afterEach(() => vi.restoreAllMocks())
 
 function cell(x: number, y: number, kind: SceneCell['kind']): SceneCell {
   return {
@@ -586,7 +592,7 @@ describe('the eye glides after a step', () => {
     expect(c.camera.eyeX).toBe(1)
     expect(c.camera.eyeY).toBe(-1)
   })
-  it('bounds fast travel to two grid steps behind and lands within 180 ms of its final update', () => {
+  it('bounds fast travel to two grid steps behind and lands within 100 ms of its final update', () => {
     const c = new CameraController()
     c.snapTo(0, 0)
     // a cell every frame, as `travel_delay 20` sends them
@@ -600,7 +606,7 @@ describe('the eye glides after a step', () => {
     c.walkTo(22, 0, [{ dx: 1, dy: 0 }, { dx: 1, dy: 0 }])
     c.update(0.02)
     expect(22 - c.camera.eyeX).toBeLessThanOrEqual(2 + 1e-9)
-    for (let i = 0; i < 8; i++) c.update(0.02)
+    for (let i = 0; i < 4; i++) c.update(0.02)
     expect(c.camera.eyeX).toBe(22)
     expect(c.update(0.02)).toBe(false)
   })
@@ -640,14 +646,14 @@ describe('movement timing', () => {
     return c
   }
 
-  it.each([30, 60, 120, 144])('lands within one frame of 180 ms at %i Hz, without overshoot', (fps) => {
+  it.each([30, 60, 120, 144])('lands within one frame of 100 ms at %i Hz, without overshoot', (fps) => {
     const c = walking()
     let previous = 0
-    for (let i = 1; i <= Math.ceil(0.18 * fps); i++) {
+    for (let i = 1; i <= Math.ceil(0.1 * fps); i++) {
       c.update(1 / fps)
       expect(c.camera.eyeX).toBeGreaterThanOrEqual(previous)
       expect(c.camera.eyeX).toBeLessThanOrEqual(1)
-      if (i / fps < 0.18) expect(c.camera.eyeX).toBeLessThan(1)
+      if (i / fps < 0.1) expect(c.camera.eyeX).toBeLessThan(1)
       previous = c.camera.eyeX
     }
     expect(c.camera.eyeX).toBe(1)
@@ -657,21 +663,22 @@ describe('movement timing', () => {
   it('keeps a prompt start but brakes to zero, without a long settling tail', () => {
     const c = walking()
     c.update(1 / 60)
-    expect(c.camera.eyeX).toBeGreaterThan(0.2)
-    expect(c.camera.eyeX).toBeLessThan(0.3)
-    c.update(0.12 - 1 / 60)
+    expect(c.camera.eyeX).toBeGreaterThan(0.4)
+    expect(c.camera.eyeX).toBeLessThan(0.45)
+    c.update(0.07 - 1 / 60)
     expect(c.camera.eyeX).toBeGreaterThan(0.95)
-    c.update(0.05)
+    c.update(0.025)
     const beforeLanding = c.camera.eyeX
-    c.update(0.01)
+    c.update(0.005)
     expect(1 - beforeLanding).toBeLessThan(0.001)
     expect(c.camera.eyeX).toBe(1)
   })
 
   it('has the same trajectory at equal times, regardless of frame partitions', () => {
     const reference = walking()
-    reference.update(0.1)
-    for (const frames of [[0.05, 0.05], Array(6).fill(1 / 60), Array(12).fill(1 / 120), [0.01, 0.03, 0.005, 0.055]]) {
+    reference.update(0.05)
+    expect(reference.camera.eyeX).toBeCloseTo(0.875, 12)
+    for (const frames of [[0.025, 0.025], Array(3).fill(1 / 60), Array(6).fill(1 / 120), [0.01, 0.02, 0.005, 0.015]]) {
       const c = walking()
       for (const dt of frames) c.update(dt)
       expect(c.camera.eyeX).toBeCloseTo(reference.camera.eyeX, 12)
@@ -692,7 +699,7 @@ describe('movement timing', () => {
   it('carries velocity through a new confirmed step, then lands on the new deadline', () => {
     const c = walking()
     const epsilon = 1e-6
-    c.update(0.1 - epsilon)
+    c.update(0.05 - epsilon)
     const before = c.camera.eyeX
     c.update(epsilon)
     const atReply = c.camera.eyeX
@@ -702,7 +709,7 @@ describe('movement timing', () => {
     c.update(epsilon)
     const speedAfter = (c.camera.eyeX - atReply) / epsilon
     expect(speedAfter).toBeCloseTo(speedBefore, 2)
-    c.update(0.18 - epsilon)
+    c.update(0.1 - epsilon)
     expect(c.camera.eyeX).toBe(2)
     expect(c.update(0.01)).toBe(false)
   })
@@ -710,9 +717,9 @@ describe('movement timing', () => {
   it('retargets consistently across frame rates without restarting on duplicate updates', () => {
     function run(dt: number) {
       const c = walking()
-      for (let i = 0; i < Math.round(0.1 / dt); i++) c.update(dt)
+      for (let i = 0; i < Math.round((1 / 30) / dt); i++) c.update(dt)
       c.walkTo(2, 0, [{ dx: 1, dy: 0 }])
-      for (let i = 0; i < Math.round(0.1 / dt); i++) {
+      for (let i = 0; i < Math.round((1 / 30) / dt); i++) {
         c.walkTo(2, 0, [])
         c.update(dt)
       }
@@ -721,8 +728,8 @@ describe('movement timing', () => {
     const a = run(1 / 30)
     const b = run(1 / 120)
     expect(a.camera.eyeX).toBeCloseTo(b.camera.eyeX, 12)
-    a.update(0.08)
-    b.update(0.08)
+    a.update(0.1 - 1 / 30)
+    b.update(0.1 - 1 / 30)
     expect(a.camera.eyeX).toBe(2)
     expect(b.camera.eyeX).toBe(2)
   })
@@ -743,13 +750,13 @@ describe('movement timing', () => {
     expect(c.update(0.01)).toBe(false)
   })
 
-  it('bounds delayed diagonal batches in grid steps and finishes the whole batch in 180 ms', () => {
+  it('bounds delayed diagonal batches in grid steps and finishes the whole batch in 100 ms', () => {
     const c = new CameraController()
     c.walkTo(20, -20, Array.from({ length: 20 }, () => ({ dx: 1, dy: -1 })))
     c.update(0.01)
     expect(20 - c.camera.eyeX).toBeLessThanOrEqual(2 + 1e-9)
     let previous = c.camera.eyeX
-    for (let i = 0; i < 17; i++) {
+    for (let i = 0; i < 9; i++) {
       c.update(0.01)
       expect(c.camera.eyeX).toBeGreaterThanOrEqual(previous)
       expect(c.camera.eyeX).toBeLessThanOrEqual(20)
@@ -817,5 +824,76 @@ describe('frame-independent turning', () => {
     c.update(0.02)
     expect(c.camera.yaw).toBeLessThan(before)
     expect(c.camera.yaw).toBeGreaterThan(315 * Math.PI / 180)
+  })
+})
+
+describe('autofight facing without continuous tracking', () => {
+  function setup() {
+    const scene = sceneFrom(['.......', '.......', '.......', '...@...', '.......', '.......', '.......'])
+    hostile(scene, 5, 2, 1)
+    const c = new CameraController()
+    c.snapTo(3, 3)
+    c.autofight(scene)
+    return { c, scene }
+  }
+
+  it('keeps the chosen compass heading while the player glides and the monster moves', () => {
+    const { c, scene } = setup()
+    const facing = c.facing
+    c.update(1, 1)
+    c.update(1, 2)
+    const yaw = c.camera.yaw
+    const pitch = c.camera.pitch
+    scene.player.x = 4
+    c.walkTo(4, 3, [{ dx: 1, dy: 0 }], 2)
+    scene.billboards[0].x = 2
+    scene.billboards[0].y = 5
+    for (let i = 1; i <= 10; i++) {
+      c.update(0.02, 2 + i * 0.02)
+      expect(c.camera.yaw).toBe(yaw)
+      expect(c.facing).toBe(facing)
+      expect(c.camera.pitch).toBe(pitch)
+    }
+    expect(c.camera.eyeX).toBe(4)
+    expect(c.update(0.02, 2.22)).toBe(false)
+    // A fresh Tab still faces its chosen enemy, using the normal compass heading.
+    c.autofight(scene)
+    expect(c.facing).toBe(5)
+  })
+
+  it.each(['drag', 'stick', 'turn'] as const)('manual %s still wins over a delayed autofight reply', (how) => {
+    const { c, scene } = setup()
+    c.update(0.05, 1)
+    if (how === 'drag') {
+      c.lookBy(0.3, 0.1)
+      c.endDrag()
+    } else if (how === 'stick') {
+      c.look(1, 0.5)
+      c.update(0.1, 1.1)
+      c.look(0, 0)
+    } else {
+      c.turn(1)
+      c.update(1, 2)
+    }
+    const facing = c.facing
+    const view = c.view
+    scene.player.x++
+    c.faceAfterMove(scene, 1, 0)
+    c.faceHostile(scene)
+    c.faceBlocker(scene, scene.billboards[0])
+    c.update(1, 3)
+    expect(c.camera.yaw).toBeCloseTo(view.yaw, 5)
+    expect(c.facing).toBe(facing)
+  })
+
+  it('does not steer when Tab is pressed during manual look', () => {
+    const { c, scene } = setup()
+    c.lookBy(0.2, 0)
+    c.autofight(scene)
+    c.endDrag()
+    const yaw = c.camera.yaw
+    c.faceAfterMove(scene, 1, 0)
+    c.update(1, 1)
+    expect(c.camera.yaw).toBe(yaw)
   })
 })

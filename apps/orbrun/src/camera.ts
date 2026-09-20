@@ -1,4 +1,9 @@
 import {
+  StepCadence,
+  MAX_WALK_LAG,
+  planStep,
+  sampleStep,
+  type StepCurve,
   DIR8_DX,
   DIR8_DY,
   dirToYaw,
@@ -76,8 +81,13 @@ export class CameraController {
   /** cell centres the eye has still to pass, in order, ending at the camera's cell (`walkTo`); empty once it stands there */
   private path: { x: number; y: number }[] = []
   /** Distance and speed are in grid steps, so a diagonal has the same timing as a cardinal step. */
-  private walk: { length: number; travelled: number; elapsed: number; duration: number; startSpeed: number } | null = null
+  private walk: (StepCurve & { travelled: number; elapsed: number }) | null = null
+  private cadence = new StepCadence()
   private walkSpeed = 0
+  /** Last sampled movement time; yaw/input still use the frame delta. */
+  private walkAt = 0
+  /** Steering revision at autofight input; null means it was pressed during manual look. */
+  private autofightRevision: number | null | undefined
 
   get facing(): Dir8 {
     return this.camera.facing
@@ -129,6 +139,13 @@ export class CameraController {
    * one update several cells on). No glide: nothing was drawn between.
    */
   snapTo(x: number, y: number) {
+    this.stopClosing()
+    this.cadence.reset()
+    this.landAt(x, y)
+  }
+
+  /** Landing keeps the arrival cadence; an explicit snap forgets it. */
+  private landAt(x: number, y: number) {
     this.camera.x = x
     this.camera.y = y
     this.camera.eyeX = x
@@ -145,9 +162,10 @@ export class CameraController {
    * than the straight line, so two hops through a doorway do not cut the
    * corner into the wall. Hops that do not add up to the destination (a
    * missed message) are replaced by the straight line where it is a single
-   * cell, else the walk is a jump and the eye snaps.
+   * cell, else the walk is a jump and the eye snaps. Arrival time (`now`,
+   * seconds) adjusts repeated steps within 100–140 ms; it never adds a hop.
    */
-  walkTo(x: number, y: number, hops: readonly { dx: number; dy: number }[]) {
+  walkTo(x: number, y: number, hops: readonly { dx: number; dy: number }[], now = performance.now() / 1000) {
     const c = this.camera
     if (this.reducedMotion) {
       this.snapTo(x, y)
@@ -175,12 +193,17 @@ export class CameraController {
       pts.length = 0
       if (x !== c.x || y !== c.y) pts.push({ x, y })
     }
+    if (pts.length === 0) return
+    // Sample the previous confirmed walk at the arrival time before retargeting,
+    // exactly as the monsters do. Never charge the new step for an older frame.
+    this.advanceWalk(0, now)
     c.x = x
     c.y = y
-    if (pts.length === 0) return
+    this.walkAt = now
     const moving = this.walk !== null
     this.path.push(...pts)
-    this.planWalk(this.pathLength(), WALK_SECONDS, moving ? this.walkSpeed : undefined)
+    const { duration, continuous } = this.cadence.confirm(now)
+    this.planWalk(this.pathLength(), duration, moving ? this.walkSpeed : undefined, continuous)
   }
 
   /** The view to keep between sessions: the way the camera faces right now. */
@@ -194,6 +217,7 @@ export class CameraController {
    * turns and auto-facing start from here.
    */
   restore(view: CameraView) {
+    this.stopClosing()
     const c = this.camera
     c.yaw = normalizeYaw(view.yaw)
     c.facing = yawToDir(c.yaw)
@@ -322,6 +346,7 @@ export class CameraController {
    * into them.
    */
   faceAfterMove(scene: Scene, dx: number, dy: number) {
+    if (this.autofightOverridden) return
     if (this.faceHostile(scene)) return
     this.setFacing(this.openHeading(scene, yawToDir(Math.atan2(dx, -dy))))
   }
@@ -350,6 +375,7 @@ export class CameraController {
   faceHostile(scene: Scene): boolean {
     const m = this.threat(scene)
     if (!m) return false
+    if (this.autofightOverridden) return true
     this.faceCell(scene, m.x, m.y)
     return true
   }
@@ -365,7 +391,8 @@ export class CameraController {
   faceBlocker(scene: Scene, named: Billboard | null = null): boolean {
     const m = named ?? nearestBlocker(scene)
     if (!m) return false
-    this.closing = false
+    if (this.autofightOverridden) return true
+    this.stopClosing()
     this.threatId = monsterId(m)
     this.faceCell(scene, m.x, m.y)
     return true
@@ -391,8 +418,14 @@ export class CameraController {
    */
   autofight(scene: Scene): boolean {
     const m = this.threat(scene)
-    if (!m) return false
-    this.faceCell(scene, m.x, m.y)
+    if (!m) {
+      this.stopClosing()
+      return false
+    }
+    this.autofightRevision = this.steering ? null : this._steeringRevision
+    if (!this.steering) {
+      this.faceCell(scene, m.x, m.y)
+    }
     const inReach = kingMoves(scene, m) <= 1
     this.closing = !inReach
     return inReach
@@ -401,6 +434,11 @@ export class CameraController {
   /** A move other than autofight's: the walk it was closing on is over. */
   stopClosing() {
     this.closing = false
+    this.autofightRevision = undefined
+  }
+
+  private get autofightOverridden(): boolean {
+    return this.autofightRevision !== undefined && this.autofightRevision !== this._steeringRevision
   }
 
   private threatId: number | undefined
@@ -493,11 +531,14 @@ export class CameraController {
     return n
   }
 
-  /** Advance easing. Returns true if the camera moved (a frame is needed). */
-  update(dt: number): boolean {
+  /**
+   * Advance easing. `now` is the shared presentation clock in seconds.
+   * Movement uses that clock; yaw eases toward the chosen compass heading.
+   */
+  update(dt: number, now?: number): boolean {
     if (!Number.isFinite(dt) || dt <= 0) return false
     const c = this.camera
-    let moved = false
+    let moved = this.advanceWalk(dt, now)
     if (this.freeLook) {
       c.yaw = normalizeYaw(c.yaw + this.lookVel * dt)
       c.pitch = this.clampPitch(c.pitch + this.pitchVel * dt)
@@ -530,7 +571,6 @@ export class CameraController {
       this._uprightYaw = upright
       moved = true
     }
-    if (this.glide(dt)) moved = true
     return moved
   }
 
@@ -546,16 +586,18 @@ export class CameraController {
     return total
   }
 
-  /**
-   * A finite landing, with zero speed at the end. An isolated step starts
-   * promptly (cubic ease-out); another confirmed step carries the current
-   * speed into a new Hermite curve instead of restarting from rest. Limiting
-   * its initial tangent to 3 keeps the curve monotone, even after catch-up.
-   * The duration covers the entire remaining path, never each queued cell.
-   */
-  private planWalk(length: number, duration: number, speed = 3 * length / duration) {
-    this.walk = { length, duration, elapsed: 0, travelled: 0, startSpeed: clamp(speed, 0, 3 * length / duration) }
+  /** Replan the whole confirmed path, carrying speed rather than starting each reply from rest. */
+  private planWalk(length: number, duration: number, speed: number | undefined, continuous: boolean) {
+    this.walk = { ...planStep(length, duration, speed, continuous), elapsed: 0, travelled: 0 }
     this.walkSpeed = this.walk.startSpeed
+  }
+
+  /** Sample movement on the host's clock; delta-only callers (the room/tests) still work. */
+  private advanceWalk(dt: number, now?: number): boolean {
+    const elapsed = now === undefined ? dt : Math.max(0, now - this.walkAt)
+    if (!this.walk || elapsed <= 0) return false
+    this.walkAt = now ?? this.walkAt + elapsed
+    return this.glide(elapsed)
   }
 
   private glide(dt: number): boolean {
@@ -569,17 +611,16 @@ export class CameraController {
     walk.elapsed = Math.min(walk.duration, walk.elapsed + dt)
     // Finish exactly, including accumulated floating-point time at the deadline.
     if (walk.duration - walk.elapsed < 1e-9) {
-      this.snapTo(c.x, c.y)
+      this.landAt(c.x, c.y)
       return true
     }
-    const t = walk.elapsed / walk.duration
-    const position = walk.length * t * t * (3 - 2 * t) + walk.startSpeed * walk.duration * t * (1 - t) ** 2
-    this.walkSpeed = Math.max(0, walk.length * 6 * t * (1 - t) / walk.duration + walk.startSpeed * (1 - t) * (1 - 3 * t))
+    const { distance: position, speed } = sampleStep(walk, walk.elapsed)
+    this.walkSpeed = speed
     const planned = Math.max(0, position - walk.travelled)
     // Leave room for an ordinary next step without a position jump. Only a
     // fast travel or burst of replies forces catch-up; it still follows the
     // real path, and rebasing keeps the original landing deadline.
-    let step = Math.max(planned, this.pathLength() - WALK_LAG)
+    let step = Math.max(planned, this.pathLength() - MAX_WALK_LAG)
     const caughtUp = step > planned
     while (step > 0 && this.path.length > 0) {
       const p = this.path[0]
@@ -595,7 +636,7 @@ export class CameraController {
         step = 0
       }
     }
-    if (caughtUp) this.planWalk(this.pathLength(), walk.duration - walk.elapsed, this.walkSpeed)
+    if (caughtUp) this.planWalk(this.pathLength(), walk.duration - walk.elapsed, this.walkSpeed, walk.continuous)
     else walk.travelled = position
     return true
   }
@@ -643,14 +684,6 @@ export function trailStep(scene: Scene): { dx: number; dy: number } | null {
 /** Exponential turn rates, calibrated to the old 60 Hz feel but independent of frame rate. */
 const TURN_RATE = 16
 const MAP_TURN_RATE = 21
-/**
- * Seconds to land after the latest confirmed movement, however many hops it
- * contains. The monsters' own step is timed to match (render-3d `motion.ts`
- * `STEP_SECONDS`), so one stepping beside the player lands as the player does.
- */
-const WALK_SECONDS = 0.18
-/** Maximum remaining grid steps during catch-up. Two leaves room to blend ordinary repeats. */
-const WALK_LAG = 2
 /** how far ahead a heading must be open before it counts as not facing a wall */
 const OPEN_DEPTH = 2
 /** rotations from a preferred heading, nearest first, ending with a full about-turn */

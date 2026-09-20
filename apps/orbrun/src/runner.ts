@@ -132,6 +132,7 @@ export class Runner {
       // that follow drive the camera: they are the explore's, not ours,
       // however recently we last stepped.
       if (isExplore(msg)) {
+        this.cam.stopClosing()
         this.lastStep = null
         this.recentSteps = []
         this.cam.faceBlocker(this.session.scene)

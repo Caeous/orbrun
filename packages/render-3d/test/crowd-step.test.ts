@@ -127,6 +127,77 @@ describe('a monster stepping', () => {
     r.destroy()
   })
 
+  it('draws the exact position exposed to camera tracking, on the supplied clock', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(999999) // deliberately unrelated to the presentation clock
+    const { r, g } = stubbed()
+    r.setCamera(makeCamera(2, 2))
+    const s = room(monster(5, 5))
+    r.setScene(s, 1)
+    r.render(1)
+    s.billboards = [monster(6, 5)]
+    s.revision++
+    r.setScene(s, 1.1)
+    expect(r.monsterPosition(s.billboards[0], 1.1)).toEqual({ x: 5, y: 5 })
+    // Drawing later must sample from arrival, not start a new glide at render time.
+    const shown = r.monsterPosition(s.billboards[0], 1.15)
+    expect(shown.x).toBeCloseTo(5.875, 9)
+    r.setScene(s, 1.15) // repeated setters must not restart it
+    r.render(1.15)
+    for (const h of holders(g)) {
+      expect(h.position.x).toBeCloseTo(shown.x + 0.5, 9)
+      expect(h.position.z).toBeCloseTo(shown.y + 0.5, 9)
+    }
+    r.render(1.2)
+    expect(r.animating).toBe(false)
+    expect(r.monsterPosition(s.billboards[0], 1.2)).toEqual({ x: 6, y: 5 })
+    r.destroy()
+  })
+
+  it('unbakes an out-and-back walk received before a draw, even on the same final cell', () => {
+    const { r, g } = stubbed()
+    r.setCamera(makeCamera(2, 2))
+    const s = room(monster(5, 5))
+    r.setScene(s, 1)
+    r.render(1)
+    s.billboards = [monster(6, 5)]
+    s.revision++
+    r.setScene(s, 1.1)
+    s.billboards = [monster(5, 5)]
+    s.revision++
+    r.setScene(s, 1.12)
+    r.render(1.13)
+    const shown = r.monsterPosition(s.billboards[0], 1.13)
+    expect(shown.x).toBeGreaterThan(5)
+    expect(holders(g).every((h) => h.parent === g.billboardGroup)).toBe(true)
+    for (const h of holders(g)) expect(h.position.x).toBeCloseTo(shown.x + 0.5, 9)
+    r.render(1.3)
+    expect(r.animating).toBe(false)
+    expect(holders(g).every((h) => h.parent === null)).toBe(true)
+    r.destroy()
+  })
+
+  it('drops motion on a level reset or when reduced motion is enabled mid-step', () => {
+    for (const reduced of [false, true]) {
+      const { r, g } = stubbed()
+      r.setCamera(makeCamera(2, 2))
+      const s = room(monster(5, 5))
+      r.setScene(s, 1)
+      r.render(1)
+      s.billboards = [monster(6, 5)]
+      s.revision++
+      r.setScene(s, 1.1)
+      r.render(1.12)
+      if (reduced) r.setOptions({ motion: false })
+      else r.resetMotion()
+      r.setScene(s, 1.13)
+      r.render(1.13)
+      expect(r.animating).toBe(false)
+      expect(r.monsterPosition(s.billboards[0], 1.13)).toEqual({ x: 6, y: 5 })
+      expect(holders(g).every((h) => h.parent === null)).toBe(true)
+      r.destroy()
+    }
+  })
+
   it('snaps a jump: a blink leaves nothing gliding', () => {
     let now = 1000
     vi.spyOn(performance, 'now').mockImplementation(() => now)

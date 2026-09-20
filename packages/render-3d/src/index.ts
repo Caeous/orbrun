@@ -526,6 +526,8 @@ interface SpriteRecord {
   ghost: boolean
   /** The monster's client id where it has one, so a step of its can move the holders (motion.ts). */
   moverId?: number
+  /** Whether these holders were built outside the baked crowd for a step. */
+  moving?: boolean
 }
 
 /** Work counters the test bed and the regression tests read. Rendering never does. */
@@ -822,6 +824,8 @@ export class Render3d implements MapRenderer {
    * buffers; landing puts it back (`render`).
    */
   private movers = new Movers()
+  /** Motion is observed on scene arrival, independently of when geometry is drawn. */
+  private motionRevision = -1
   /** The baked crowds: the scene's billboards, and the level's upright features (`bakeStanding`). */
   private billboardCrowd: Crowd
   private levelCrowd: Crowd
@@ -1225,6 +1229,10 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
   }
 
   setOptions(opts: Render3dOptions) {
+    if (opts.motion === false && this.opts.motion) {
+      this.resetMotion()
+      this.vmLift = NaN
+    }
     Object.assign(this.opts, opts)
     this.cam.fov = this.opts.fov
     this.cam.updateProjectionMatrix()
@@ -1321,8 +1329,29 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     return a
   }
 
-  setScene(scene: Scene): void {
+  setScene(scene: Scene, now = nowSeconds()): void {
     this.scene = scene
+    this.trackMotion(now)
+  }
+
+  /** Forget old-level movement, or stop it immediately when reduced motion is enabled. */
+  resetMotion(): void {
+    this.dropMoved([...this.records.values()].flatMap((rec) => rec.moverId !== undefined && this.movers.flying(rec.moverId) ? [rec.moverId] : []))
+    this.movers.clear()
+    this.motionRevision = -1
+  }
+
+  private trackMotion(now: number): void {
+    const scene = this.scene
+    if (!scene || !this.opts.motion || scene.revision === this.motionRevision) return
+    this.movers.track(scene.billboards, now)
+    this.motionRevision = scene.revision
+  }
+
+  /** The same cell-space position the sprite will occupy in render(now). */
+  monsterPosition(b: Billboard, now: number): { x: number; y: number } {
+    const offset = this.opts.motion ? this.movers.offset(monsterId(b), now) : null
+    return { x: b.x + (offset?.x ?? 0), y: b.y + (offset?.y ?? 0) }
   }
   setCamera(cam: Camera): void {
     this.camera = cam
@@ -1377,6 +1406,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     // outlives a drop of the records (a new tint, a rebuilt level), since a sprite built
     // again mid-step should carry on where it had got to
     this.movers.clear()
+    this.motionRevision = -1
     this.clearSelection()
     this.billboardCrowd.clear()
     this.levelCrowd.clear()
@@ -2454,7 +2484,11 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     }
     let changed = false
     for (const [key, rec] of this.records) {
-      if (wanted.has(key)) continue
+      const spec = wanted.get(key)
+      const id = spec?.b.kind === 'monster' ? monsterId(spec.b) : undefined
+      // Several arrivals before a draw can leave a monster back on the same
+      // cell, but mid-walk. Its old baked holder must still come out to move.
+      if (spec && rec.moverId === id && !!rec.moving === this.movers.flying(id)) continue
       this.dropRecord(rec)
       this.records.delete(key)
       changed = true
@@ -2613,7 +2647,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     holder.add(sh)
     for (const h of holders) stand(h, true)
     this.stats.spriteBuilds++
-    return { key, x: b.x, y: b.y, holders, shells, position: holder.position.clone(), ghost, moverId: id }
+    return { key, x: b.x, y: b.y, holders, shells, position: holder.position.clone(), ghost, moverId: id, moving: flying }
   }
 
   /**
@@ -2714,21 +2748,20 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const crowd = group === this.levelGroup ? this.levelCrowd : this.billboardCrowd
     crowd.bake(eye)
   }
-  render(): void {
+  render(now = nowSeconds()): void {
     const r = this.renderer
     const scene = this.scene
     const cam = this.camera
     if (!r || !scene || !cam) return
     // the attack lift runs on the clock, not on what shows it: it is over when its time is, whether the hands
     // are drawn or not (no viewmodel, empty hands), so `animating` cannot stick and keep the host rendering
-    const now = nowSeconds()
     this.lift = Number.isNaN(this.vmLift) ? NaN : this.liftEnvelope(now - this.vmLift)
     if (Number.isNaN(this.lift)) this.vmLift = NaN
     // A monster's step is read off the scene before the crowd is synced against it, so a sprite
     // that is about to glide is built out of the crowd; one whose step is over is dropped, and the
     // sync below builds it again, back in the crowd and standing on its cell.
     if (this.opts.motion) {
-      if (scene.revision !== this.builtRevision) this.movers.track(scene.billboards, now)
+      this.trackMotion(now)
       const landed = this.movers.landed(now)
       if (landed.length) this.dropMoved(landed)
     }

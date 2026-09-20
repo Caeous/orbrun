@@ -119,6 +119,8 @@ export class GameScreen {
   }
   /** `rev.player|rev.map` the viewmodel was last built from */
   private viewmodelRev = ''
+  /** Scene callbacks flushed inside a frame share its timestamp with both animations. */
+  private sceneTime: number | undefined
   private lastFrame = performance.now()
   private raf = 0
   /** the safety tick while the loop sleeps (IDLE_TICK_MS) */
@@ -433,6 +435,7 @@ export class GameScreen {
     if (this.session.gamedata && this.session.gamedata !== kept.tiles) r.setTiles(this.session.gamedata)
     const opts = this.render3dOptions(st)
     if (JSON.stringify(opts) !== kept.optionsKey) r.setOptions(opts)
+    r.resetMotion() // the map may have hidden intermediate steps; never replay an old walk on return
     r.setScene(this.session.scene)
     r.setCamera(this.cam.camera)
     return r
@@ -535,9 +538,14 @@ export class GameScreen {
     this.raf = requestAnimationFrame(this.loop)
     const dt = Math.min(0.1, (now - this.lastFrame) / 1000)
     this.lastFrame = now
-    if (this.session.flushScene()) this.needsRender = true
+    this.sceneTime = now / 1000
+    try {
+      if (this.session.flushScene()) this.needsRender = true
+    } finally {
+      this.sceneTime = undefined
+    }
     const beforeLook = { yaw: this.cam.camera.yaw, pitch: this.cam.camera.pitch }
-    if (this.cam.update(dt)) this.needsRender = true
+    if (this.advancePresentation(dt, now / 1000)) this.needsRender = true
     if (!this.awake(now)) {
       // nothing to do and nothing moving: no frames until something happens (`wake`) or the safety tick
       cancelAnimationFrame(this.raf)
@@ -622,13 +630,19 @@ export class GameScreen {
       // centre (`vgrdc`), the player in normal play and the map cursor while the
       // level map is open, so the map scrolls under the cursor as WebTiles' does
       if (this.renderer instanceof Render2d) this.renderer.setOptions({ center: st.map.viewCenter })
-      this.renderer.setScene(this.session.scene)
+      this.renderer.setScene(this.session.scene, now / 1000)
       this.renderer.setCamera(this.cam.camera)
-      this.renderer.render()
+      this.renderer.render(now / 1000)
       // edge pips follow the frame just drawn: only a 3D frame has a lens to be out of
       const r3d = this.renderer instanceof Render3d ? this.renderer : null
       this.hud.renderPips(this.session.scene, st, this.session.gamedata, r3d ? r3d.projector() : null, nearby === 'pips' ? 'all' : 'off')
     }
+  }
+
+  /** One timestamp for the camera's movement and the sprites rendered this frame. */
+  private advancePresentation(dt: number, now: number): boolean {
+    this.renderer.setScene(this.session.scene, now)
+    return this.cam.update(dt, now)
   }
 
   /**
@@ -923,6 +937,7 @@ export class GameScreen {
   }
 
   private onScene() {
+    const now = this.sceneTime ?? performance.now() / 1000
     const scene = this.session.scene
     const st = this.session.state
     const p = scene.player
@@ -933,6 +948,7 @@ export class GameScreen {
     if (scene.playerOnLevel) {
       const level = `${st.player.place}:${st.player.depth}`
       const newLevel = level !== this.lastLevel
+      if (newLevel && this.renderer instanceof Render3d) this.renderer.resetMotion()
       this.lastLevel = level
       const moved = p.x !== this.lastPos.x || p.y !== this.lastPos.y
       if (moved || newLevel) {
@@ -959,7 +975,7 @@ export class GameScreen {
         // the eye glides after a walk, by the hops the server drew (the rc's
         // `travel_delay`: a positive one sends every step, -1 sends the
         // arrival alone, which is a jump here as it is a jump there)
-        if (walk || (sameLevel && single)) this.cam.walkTo(p.x, p.y, walk ? hops : [{ dx, dy }])
+        if (walk || (sameLevel && single)) this.cam.walkTo(p.x, p.y, walk ? hops : [{ dx, dy }], now)
         else this.cam.snapTo(p.x, p.y)
         if (!sameLevel) {
           // level change: never nose-to-wall
@@ -1022,6 +1038,7 @@ export class GameScreen {
         else this.owedTurn = { names: [...(this.owedTurn?.names ?? []), ...names], newcomer: (this.owedTurn?.newcomer ?? false) || newest !== null }
       }
     }
+    this.renderer?.setScene(scene, now)
     this.needsRender = true
   }
 

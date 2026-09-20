@@ -11,6 +11,12 @@ nothing.
 
 - `Render3d` implements `MapRenderer`: `mount`, `setTiles`, `setScene`,
   `setCamera`, `setCursor`, `render`, `pick`, `resize`, `destroy`.
+- `setScene(scene, now)` observes movement at arrival; `render(now)` and
+  `monsterPosition(billboard, now)` sample the same presentation clock (seconds).
+  The app uses it to synchronise the camera's walk with the monsters;
+  omitting the timestamps keeps the standalone renderer on `performance.now()`.
+  `resetMotion()` drops old-level or parked-view movement without rebuilding
+  the standing crowd.
 - `footprint.ts`: the inset-wall geometry (`insetFootprint`, `bodyRect`,
   `inPoly`, `WALL_INSET`), pure functions over a `ClassAt` oracle so they are
   testable without WebGL.
@@ -25,8 +31,12 @@ nothing.
   step is read as a monster's client id changing cell between two scenes; only
   a single step glides, and a blink, a teleport or a burst of turns snaps. A
   sprite in flight stands out of the baked crowd for the length of its step
-  (0.18 s, the camera's `WALK_SECONDS`) and goes back into it on landing, so
-  moving it every frame never rewrites a chunk's buffers.
+  and goes back into it on landing, so moving it every frame never rewrites
+  a chunk's buffers. Player and monster timing share `scene/motion.ts`:
+  isolated steps take 100 ms; repeated steps adapt to arrival cadence within
+  100–140 ms, carrying speed and braking late. Only confirmed cells are
+  followed, including corners; bursts are caught up to at most two steps
+  behind and stalled replies always leave the sprite stopped at its last cell.
 - `mesh.ts`: exact merging of one-colour texel faces (the hulls, the ghost
   rings, the hands' ink) into rectangles and runs; textured rim faces merge
   only where neighbouring texels hold the very same colour.

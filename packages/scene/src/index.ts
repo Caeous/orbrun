@@ -21,6 +21,7 @@ export interface Rect {
 import type { WoundLevel } from './bars.js'
 
 export * from './bars.js'
+export * from './motion.js'
 
 /** 8 compass headings, clockwise from north. North is -y. */
 export type Dir8 = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7
@@ -504,10 +505,11 @@ export interface SceneCursor {
 export interface MapRenderer {
   mount(target: HTMLCanvasElement | OffscreenCanvas): void
   setTiles(tiles: TileSource): void
-  setScene(scene: Scene): void
+  /** Optional presentation timestamps are seconds on the same monotonic clock. */
+  setScene(scene: Scene, now?: number): void
   setCamera(cam: Camera): void
   setCursor(cursor: SceneCursor | null): void
-  render(): void
+  render(now?: number): void
   pick(px: number, py: number): CellKey | null
   resize(width: number, height: number, dpr: number): void
   destroy(): void

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { emptyScene } from '@orbrun/scene'
 import { OWN_STEP_WINDOW_MS, Runner, stepIsOurs, type LastStep, type RunnerHooks } from '../src/runner'
 import type { Session } from '../src/session'
@@ -43,15 +43,17 @@ describe('explore and the last step', () => {
     const sent: unknown[] = []
     const faced: number[] = []
     const session = { watching: false, scene: emptyScene(), send: (m: unknown) => sent.push(m) } as unknown as Session
-    const cam = { faceBlocker: () => (faced.push(1), false) } as unknown as CameraController
+    const stopClosing = vi.fn()
+    const cam = { faceBlocker: () => (faced.push(1), false), stopClosing } as unknown as CameraController
     const hooks = { context: () => ({ mode: 'command' }), now: () => 1000 } as unknown as RunnerHooks
-    return { r: new Runner(session, cam, hooks), sent, faced }
+    return { r: new Runner(session, cam, hooks), sent, faced, stopClosing }
   }
 
   it('sending `o` forgets the last step, so the explore’s first cell is path-driven', () => {
-    const { r, sent, faced } = runner()
+    const { r, sent, faced, stopClosing } = runner()
     r.lastStep = step()
     r.send({ msg: 'key', keycode: 'o'.charCodeAt(0) })
+    expect(stopClosing).toHaveBeenCalledOnce()
     expect(r.lastStep).toBeNull()
     expect(sent).toHaveLength(1)
     // with an unsafe monster in view the refusal is the event: the camera was asked to face the nearest blocker
