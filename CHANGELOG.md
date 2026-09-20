@@ -2,6 +2,11 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.1.5 — 2026-09-20
+
+- Monsters now walk between cells instead of jumping one to the next, gliding
+  after their step the way your own view does.
+
 ## 0.1.4 — 2026-09-18
 
 - Exploring no longer hitches: a step relights the level instead of rebuilding it, a newly seen cell rebuilds only what changed, and a crowd of sprites uploads only the sprites that moved. Nothing in the picture changed.

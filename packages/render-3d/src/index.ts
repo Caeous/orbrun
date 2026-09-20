@@ -22,6 +22,7 @@ import {
 import { bodyRect, insetFootprint, sceneClassAt, type ClassAt, type FootprintOptions } from './footprint.js'
 import { Crowd, type CrowdStats } from './crowd.js'
 import { extrudeFaces, runs } from './mesh.js'
+import { Movers, monsterId } from './motion.js'
 
 /**
  * @orbrun/render-3d
@@ -523,6 +524,8 @@ interface SpriteRecord {
   /** Where the sprite's holder stands (a projectile is lifted). */
   position: THREE.Vector3
   ghost: boolean
+  /** The monster's client id where it has one, so a step of its can move the holders (motion.ts). */
+  moverId?: number
 }
 
 /** Work counters the test bed and the regression tests read. Rendering never does. */
@@ -811,6 +814,14 @@ export class Render3d implements MapRenderer {
   private records = new Map<string, SpriteRecord>()
   /** The level's tint the records were built under; a new one drops them all. */
   private recordsTint = ''
+  /**
+   * The monsters mid-step (motion.ts): one that moved a cell is drawn gliding
+   * after it, as the eye glides after the player's feet. A sprite in flight
+   * stands out of the baked crowd for the length of its step, so moving it
+   * every frame costs a holder's transform and nothing of the crowd's
+   * buffers; landing puts it back (`render`).
+   */
+  private movers = new Movers()
   /** The baked crowds: the scene's billboards, and the level's upright features (`bakeStanding`). */
   private billboardCrowd: Crowd
   private levelCrowd: Crowd
@@ -1339,7 +1350,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
   }
   /** True while the attack lift is running, so the host keeps rendering frames. */
   get animating(): boolean {
-    return !Number.isNaN(this.vmLift)
+    return !Number.isNaN(this.vmLift) || this.movers.active
   }
   resize(width: number, height: number, dpr: number): void {
     this.width = Math.max(1, width)
@@ -1362,6 +1373,10 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    */
   destroy(): void {
     this.dropRecords()
+    // what the monsters were doing goes with the renderer; while it lives, a step under way
+    // outlives a drop of the records (a new tint, a rebuilt level), since a sprite built
+    // again mid-step should carry on where it had got to
+    this.movers.clear()
     this.clearSelection()
     this.billboardCrowd.clear()
     this.levelCrowd.clear()
@@ -2482,9 +2497,13 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       return { r, a, uv: this.uvFor(r, a) }
     }
     const group = this.billboardGroup
-    /** A holder into the crowd where it can be baked; a holder of its own (its own material) stays in the group. */
+    // a monster mid-step is moved every frame, so it stays a holder of its own: the crowd bakes its
+    // place into chunk buffers, and rewriting those each frame is what the bake exists to avoid
+    const id = b.kind === 'monster' ? monsterId(b) : undefined
+    const flying = this.movers.flying(id)
+    /** A holder into the crowd where it can be baked; a holder of its own (its own material, or a step under way) stays in the group. */
     const stand = (h: THREE.Object3D, bake: boolean) => {
-      if (bake && this.billboardCrowd.mergeable(h)) this.billboardCrowd.add(h, b.x, b.y)
+      if (bake && !flying && this.billboardCrowd.mergeable(h)) this.billboardCrowd.add(h, b.x, b.y)
       else this.giveCells(h, b.x, b.y)
     }
     if (b.kind === 'cloud') {
@@ -2594,7 +2613,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     holder.add(sh)
     for (const h of holders) stand(h, true)
     this.stats.spriteBuilds++
-    return { key, x: b.x, y: b.y, holders, shells, position: holder.position.clone(), ghost }
+    return { key, x: b.x, y: b.y, holders, shells, position: holder.position.clone(), ghost, moverId: id }
   }
 
   /**
@@ -2617,6 +2636,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       holder.userData.billboard = true
       holder.userData.selection = true
       holder.userData.kind = 'selection'
+      // the shell goes with the sprite while it steps (`placeMovers`)
+      holder.userData.moverId = rec.moverId
       for (const s of rec.shells) {
         const shell = this.hullGeometry(s.l, s.hTex, s.wq, s.hq, s.k, SEL_GROW, s.room)
         if (!shell) continue
@@ -2631,6 +2652,45 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       this.billboardGroup.add(holder)
       this.selected.push(holder)
       this.stats.selectionBuilds++
+    }
+  }
+
+  /**
+   * Stand every sprite mid-step where its glide has reached, its ghost and
+   * its selected shell with it: the cell's place plus the offset motion.ts
+   * gives, across the ground only (a projectile's lift, and every other
+   * height, is the holder's own). The sprite keeps the light and the ghost of
+   * the cell it is bound for the whole way over, as the scene already lit it
+   * there.
+   */
+  private placeMovers(now: number) {
+    const at = (h: THREE.Object3D, x: number, y: number, o: { x: number; y: number }) => {
+      h.position.x = x + 0.5 + o.x
+      h.position.z = y + 0.5 + o.y
+    }
+    for (const rec of this.records.values()) {
+      const o = this.movers.offset(rec.moverId, now)
+      if (!o) continue
+      for (const h of rec.holders) at(h, rec.x, rec.y, o)
+      for (const h of this.selected) {
+        if (h.userData.moverId === rec.moverId) at(h, rec.x, rec.y, o)
+      }
+    }
+  }
+
+  /**
+   * The sprites of the monsters whose step is over go: the next sync builds
+   * them again standing on their cells, back among the crowd's baked chunks
+   * (`buildRecord`). Nothing else is touched — the rest of the crowd never
+   * left it.
+   */
+  private dropMoved(ids: readonly number[]) {
+    const gone = new Set(ids)
+    for (const [key, rec] of this.records) {
+      if (rec.moverId === undefined || !gone.has(rec.moverId)) continue
+      this.dropRecord(rec)
+      this.records.delete(key)
+      this.crowdDirty = true
     }
   }
 
@@ -2661,8 +2721,17 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     if (!r || !scene || !cam) return
     // the attack lift runs on the clock, not on what shows it: it is over when its time is, whether the hands
     // are drawn or not (no viewmodel, empty hands), so `animating` cannot stick and keep the host rendering
-    this.lift = Number.isNaN(this.vmLift) ? NaN : this.liftEnvelope(nowSeconds() - this.vmLift)
+    const now = nowSeconds()
+    this.lift = Number.isNaN(this.vmLift) ? NaN : this.liftEnvelope(now - this.vmLift)
     if (Number.isNaN(this.lift)) this.vmLift = NaN
+    // A monster's step is read off the scene before the crowd is synced against it, so a sprite
+    // that is about to glide is built out of the crowd; one whose step is over is dropped, and the
+    // sync below builds it again, back in the crowd and standing on its cell.
+    if (this.opts.motion) {
+      if (scene.revision !== this.builtRevision) this.movers.track(scene.billboards, now)
+      const landed = this.movers.landed(now)
+      if (landed.length) this.dropMoved(landed)
+    }
     if (scene.revision !== this.builtRevision) {
       this.builtRevision = scene.revision
       const bg = scene.level.sky === 'open' ? 0x0b1220 : scene.level.sky === 'dark' ? 0x120818 : 0x000000
@@ -2691,6 +2760,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     }
     // the selected shell follows the cursor and the sprites, on its own
     if (this.selectionDirty) this.syncSelection()
+    // the monsters mid-step stand between their cells this frame
+    if (this.movers.active) this.placeMovers(now)
     // camera: the eased eye (camera.ts `walkTo`), not the cell: mid-glide it is between the two
     this.cam.position.set(cam.eyeX + 0.5, Math.max(EYE_MIN, Math.min(EYE_MAX, this.opts.eyeHeight)), cam.eyeY + 0.5)
     this.cam.rotation.set(cam.pitch, -cam.yaw, 0)

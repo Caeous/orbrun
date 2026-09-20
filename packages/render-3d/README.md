@@ -21,6 +21,12 @@ nothing.
   per 16-cell chunk of the level, with persistent buffers written in place,
   conservative bounding spheres for frustum culling, and blended batches
   ordered back to front by chunk each frame.
+- `motion.ts`: the monsters mid-step. WebTiles sends no move message, so a
+  step is read as a monster's client id changing cell between two scenes; only
+  a single step glides, and a blink, a teleport or a burst of turns snaps. A
+  sprite in flight stands out of the baked crowd for the length of its step
+  (0.18 s, the camera's `WALK_SECONDS`) and goes back into it on landing, so
+  moving it every frame never rewrites a chunk's buffers.
 - `mesh.ts`: exact merging of one-colour texel faces (the hulls, the ghost
   rings, the hands' ink) into rectangles and runs; textured rim faces merge
   only where neighbouring texels hold the very same colour.

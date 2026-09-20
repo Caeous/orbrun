@@ -643,7 +643,11 @@ export function trailStep(scene: Scene): { dx: number; dy: number } | null {
 /** Exponential turn rates, calibrated to the old 60 Hz feel but independent of frame rate. */
 const TURN_RATE = 16
 const MAP_TURN_RATE = 21
-/** Seconds to land after the latest confirmed movement, however many hops it contains. */
+/**
+ * Seconds to land after the latest confirmed movement, however many hops it
+ * contains. The monsters' own step is timed to match (render-3d `motion.ts`
+ * `STEP_SECONDS`), so one stepping beside the player lands as the player does.
+ */
 const WALK_SECONDS = 0.18
 /** Maximum remaining grid steps during catch-up. Two leaves room to blend ordinary repeats. */
 const WALK_LAG = 2
