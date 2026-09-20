@@ -42,9 +42,10 @@ const chord = (label: string, first: string, second: string, sub?: string, tile?
 export const BATTLE_COMMANDS: CommandEntry[] = [
   command('Quaff potion', 'q', 'drink one of the potions in the pack', 'POTION_OFFSET'),
   command('Read scroll', 'r', 'read one of the scrolls in the pack', 'SCROLL'),
-  // `z` and `a` only print "(? or * to list)" and wait for a letter; `*` opens the list (crawl spl-cast.cc, ability.cc)
+  // `z` only prints "(? or * to list)" and waits for a letter (spell_menu defaults off); `*` opens the list (crawl spl-cast.cc)
   chord('Cast spell', 'z', '*', 'the spells you have memorised', 'CMD_CAST_SPELL'),
-  chord('Use ability', 'a', '*', 'what your god, your form and your mutations grant', 'CMD_USE_ABILITY'),
+  // `a` opens the ability menu itself: ability_menu defaults on (crawl ability.cc activate_ability)
+  command('Use ability', 'a', 'what your god, your form and your mutations grant', 'CMD_USE_ABILITY'),
   command('Evoke item', 'V', 'wands, and the gear that has a use of its own', 'WAND_OFFSET'),
   command('Swap weapons', "'", 'to the weapon in slot b, and back again', 'WPN_DAGGER'),
   // `)` and `(` step the quiver without opening anything (cmd-keys.h CMD_CYCLE_QUIVER_*); they are

@@ -69,7 +69,7 @@ describe('the command menus', () => {
   })
 
   it('gives each button its own list, with no command on two of them', () => {
-    expect(BATTLE_COMMANDS.map((c) => c.key)).toEqual(['q', 'r', 'z *', 'a *', 'V', "'", 'Q', 'v', 't'])
+    expect(BATTLE_COMMANDS.map((c) => c.key)).toEqual(['q', 'r', 'z *', 'a', 'V', "'", 'Q', 'v', 't'])
     // the quiver cycles (`)` and `(`) are the palette's, not the button's
     expect(BATTLE_COMMANDS.some((c) => c.key === ')' || c.key === '(')).toBe(false)
     // Y is the gear button, and the pack is the first thing it opens
