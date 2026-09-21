@@ -6,50 +6,79 @@
  * the numbers as text for pasting.
  *
  * The frame loop marks its sections (`begin`, `mark`, `end`), and the
- * profile keeps a ring of the last WINDOW awake frames: how far apart they
- * arrived, and how long each section took. The loop parks between turns on
- * purpose, so an interval across a sleep is not a hitch and is not counted:
- * `resume` tells the profile the next frame starts a fresh run.
+ * profile keeps a ring of recent awake frames: how far apart they arrived,
+ * and how long each section took. The loop parks between turns on purpose,
+ * so an interval across a sleep is not a hitch and is not counted: `resume`
+ * tells the profile the next frame starts a fresh run.
+ *
+ * Everything in the readout is of that window and nothing older, which is
+ * what makes it readable move by move. A section that only fires on some
+ * frames (`level` on a rebuild, `bake` on an atlas change) would otherwise
+ * keep its last WINDOW samples for as long as the game ran, and read as a
+ * cost still being paid; so frames age out by time (WINDOW_MS) as well as by
+ * count, the worst frame is the worst of the window rather than of the
+ * session, and a section that has stopped firing leaves the readout. Age is
+ * counted from the newest frame, not from the clock, so a report read while
+ * the loop is parked still shows the turn that just happened.
  *
  * A long task (Chrome's `longtask` entry, a main-thread task past 50 ms)
  * reported between frames — a message burst parsed, a gamedata load, a GC —
  * is counted too, since the player feels it whether or not the loop ran.
  */
 
-/** frames kept for the percentiles */
+/** most frames kept for the percentiles */
 export const WINDOW = 240
+
+/** and how far back they are kept, measured from the newest frame */
+export const WINDOW_MS = 4000
 
 export interface Section {
   name: string
+  /** frames of the window this section was marked on */
+  n: number
+  /** the most recent sample, for reading a single move as it happens */
+  last: number
   p50: number
   p95: number
   max: number
 }
 
+/** one awake frame: when it ran, the gap from the frame before (NaN across a sleep), and what it did */
+export interface Frame {
+  at: number
+  gap: number
+  total: number
+  parts: [string, number][]
+  tags: string[]
+}
+
 export interface Report {
   frames: number
+  /** how much time the window covers, ms */
+  span: number
+  /** how long ago the newest frame ran, ms — a parked loop's numbers are this stale */
+  age: number
   /** ms between consecutive awake frames */
   interval: Section
   /** the loop body, all sections together */
   body: Section
   sections: Section[]
-  /** the worst body of the window, section by section, with what marked it */
-  worst: { total: number; at: number; parts: [string, number][]; tags: string[] } | null
+  /** the worst body of the window, section by section, with what marked it and how long ago it ran */
+  worst: { total: number; ago: number; parts: [string, number][]; tags: string[] } | null
   longTasks: { count: number; max: number }
 }
 
 export class FrameProfile {
-  private intervals: number[] = []
-  private bodies: number[] = []
-  private parts = new Map<string, number[]>()
+  private frames: Frame[] = []
+  private longs: { at: number; ms: number }[] = []
   private prevFrame = NaN
+  private newest = 0
+  private gap = NaN
+  private at = 0
   private frameStart = 0
   private markAt = 0
   private cur: [string, number][] = []
   private tags: string[] = []
-  private worst: Report['worst'] = null
-  private longCount = 0
-  private longMax = 0
 
   /** the loop woke from a sleep: the next interval has nothing to be measured against */
   resume() {
@@ -58,8 +87,8 @@ export class FrameProfile {
 
   /** the loop's callback fired at `now` and is running its body */
   begin(now: number) {
-    if (!Number.isNaN(this.prevFrame)) push(this.intervals, now - this.prevFrame)
-    this.prevFrame = now
+    this.gap = Number.isNaN(this.prevFrame) ? NaN : now - this.prevFrame
+    this.prevFrame = this.at = now
     this.frameStart = this.markAt = performance.now()
     this.cur = []
     this.tags = []
@@ -79,61 +108,71 @@ export class FrameProfile {
 
   end() {
     const total = performance.now() - this.frameStart
-    push(this.bodies, total)
-    for (const [name, ms] of this.cur) {
-      let arr = this.parts.get(name)
-      if (!arr) this.parts.set(name, (arr = []))
-      push(arr, ms)
-    }
-    if (!this.worst || total > this.worst.total) this.worst = { total, at: this.prevFrame, parts: this.cur, tags: this.tags }
+    this.frames.push({ at: this.at, gap: this.gap, total, parts: this.cur, tags: this.tags })
+    this.keep(this.at)
   }
 
   longTask(ms: number) {
-    this.longCount++
-    if (ms > this.longMax) this.longMax = ms
+    const at = performance.now()
+    this.longs.push({ at, ms })
+    this.keep(at)
+  }
+
+  /** drop what the window has left behind: past WINDOW frames, or older than WINDOW_MS before `now` */
+  private keep(now: number) {
+    this.newest = Math.max(this.newest, now)
+    const from = this.newest - WINDOW_MS
+    while (this.frames.length > WINDOW || (this.frames.length && this.frames[0].at < from)) this.frames.shift()
+    while (this.longs.length && this.longs[0].at < from) this.longs.shift()
   }
 
   reset() {
-    this.intervals = []
-    this.bodies = []
-    this.parts.clear()
-    this.worst = null
-    this.longCount = 0
-    this.longMax = 0
+    this.frames = []
+    this.longs = []
     this.prevFrame = NaN
+    this.newest = 0
   }
 
   report(): Report {
+    const fs = this.frames
+    const parts = new Map<string, number[]>()
+    for (const f of fs)
+      for (const [name, ms] of f.parts) {
+        let arr = parts.get(name)
+        if (!arr) parts.set(name, (arr = []))
+        arr.push(ms)
+      }
+    let worst: Frame | null = null
+    for (const f of fs) if (!worst || f.total > worst.total) worst = f
+    const newest = fs.length ? fs[fs.length - 1].at : this.newest
     return {
-      frames: this.bodies.length,
-      interval: stats('interval', this.intervals),
-      body: stats('body', this.bodies),
-      sections: [...this.parts].map(([n, a]) => stats(n, a)),
-      worst: this.worst,
-      longTasks: { count: this.longCount, max: this.longMax },
+      frames: fs.length,
+      span: fs.length ? newest - fs[0].at : 0,
+      age: Math.max(0, performance.now() - newest),
+      interval: stats('interval', fs.map((f) => f.gap).filter((g) => !Number.isNaN(g))),
+      body: stats('body', fs.map((f) => f.total)),
+      sections: [...parts].map(([n, a]) => stats(n, a)),
+      worst: worst && { total: worst.total, ago: newest - worst.at, parts: worst.parts, tags: worst.tags },
+      longTasks: { count: this.longs.length, max: this.longs.reduce((m, l) => Math.max(m, l.ms), 0) },
     }
   }
 }
 
-function push(arr: number[], v: number) {
-  arr.push(v)
-  if (arr.length > WINDOW) arr.shift()
-}
-
 export function stats(name: string, xs: readonly number[]): Section {
-  if (!xs.length) return { name, p50: 0, p95: 0, max: 0 }
+  if (!xs.length) return { name, n: 0, last: 0, p50: 0, p95: 0, max: 0 }
   const s = [...xs].sort((a, b) => a - b)
   const at = (q: number) => s[Math.min(s.length - 1, Math.floor(q * s.length))]
-  return { name, p50: at(0.5), p95: at(0.95), max: s[s.length - 1] }
+  return { name, n: xs.length, last: xs[xs.length - 1], p50: at(0.5), p95: at(0.95), max: s[s.length - 1] }
 }
 
 export function formatReport(r: Report): string {
   const f = (x: number) => x.toFixed(1).padStart(6)
-  const row = (s: Section) => `${s.name.padEnd(9)}${f(s.p50)}${f(s.p95)}${f(s.max)}`
-  const lines = [`${r.frames} frames`.padEnd(9) + '   p50   p95   max', row(r.interval), row(r.body), ...r.sections.map(row)]
+  const row = (s: Section) => `${s.name.padEnd(9)}${String(s.n).padStart(4)}${f(s.last)}${f(s.p50)}${f(s.p95)}${f(s.max)}`
+  const head = `${r.frames}f ${(r.span / 1000).toFixed(1)}s`.padEnd(9) + '   n  last   p50   p95   max'
+  const lines = [r.age > 250 ? `${head}  (${(r.age / 1000).toFixed(1)}s ago)` : head, row(r.interval), row(r.body), ...r.sections.map(row)]
   if (r.worst) {
     const parts = r.worst.parts.map(([n, ms]) => `${n} ${ms.toFixed(1)}`).join('  ')
-    lines.push(`worst ${r.worst.total.toFixed(1)}ms: ${parts}${r.worst.tags.length ? '  [' + r.worst.tags.join(', ') + ']' : ''}`)
+    lines.push(`worst ${r.worst.total.toFixed(1)}ms ${(r.worst.ago / 1000).toFixed(1)}s back: ${parts}${r.worst.tags.length ? '  [' + r.worst.tags.join(', ') + ']' : ''}`)
   }
   lines.push(`long tasks ${r.longTasks.count}, max ${r.longTasks.max.toFixed(0)}ms`)
   return lines.join('\n')
