@@ -2,12 +2,14 @@ import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, handsFootpr
 import * as THREE from 'three'
 import {
   cellKey,
+  cellLayoutEquals,
   dirToYaw,
   keyToXY,
   type Billboard,
   type Camera,
   type CellKey,
   type MapRenderer,
+  type Rect,
   type Scene,
   type SceneCell,
   type SceneCursor,
@@ -23,6 +25,8 @@ import { bodyRect, insetFootprint, sceneClassAt, type ClassAt, type FootprintOpt
 import { Crowd, type CrowdStats } from './crowd.js'
 import { extrudeFaces, runs } from './mesh.js'
 import { Movers, monsterId } from './motion.js'
+import { peelInk } from './peel.js'
+import type { PeelReply, PeelRequest } from './peel.worker.js'
 
 /**
  * @orbrun/render-3d
@@ -113,25 +117,6 @@ const BB_DEPTH = 1
 const UV_INSET = 0.25
 /** Texel alpha at or above which a texel is opaque, bbMat's alpha test (0.1) in 8 bits. */
 const OPAQUE_ALPHA = 26
-/**
- * The art's ink: an opaque texel this dark in every channel is the black line
- * crawl draws round a sprite and the shadow it paints at its feet, not the
- * body of the thing.
- */
-const INK_LEVEL = 24
-/**
- * The ink the eye can reach from outside a sprite is peeled off before the
- * atlas is drawn (`atlasMask`), up to this many texels deep. 2D needs that
- * line to tell a monster from the cell it stands on; in 3D the thing stands in
- * the world, lit and cast on the floor by its own shadow, and the line is a
- * black band round it that gains depth with the block, stands up where the art
- * painted a shadow at its feet, and fills the holes the art leaves. Peeling
- * eats only ink, so a body texel stops it: the eyes, the mouth and the lines
- * drawn inside a sprite are not reachable and stay. Deep enough for the
- * shadow crawl paints at a monster's feet, shallow enough that a sprite drawn
- * in ink all through keeps most of itself.
- */
-const INK_PEEL = 4
 /** Attack cue: the weapon thrusts this far (view units) toward the centre of the view and settles back over this many seconds. */
 const VM_LIFT_S = 0.22
 const VM_LIFT = 0.07
@@ -161,6 +146,23 @@ const STAIR_H = 0.7
  */
 const FIXTURE_BACK = BB_DEPTH / 32
 const DIAGONALS: [number, number][] = [[-1, -1], [1, -1], [-1, 1], [1, 1]]
+/**
+ * Cells a side of a level chunk. The level's geometry is kept one mesh set
+ * per chunk (`rebuildLevel`), so a step that reveals a few cells rebuilds the
+ * chunks round the player and leaves the rest of the level standing. Smaller
+ * chunks rebuild less and cost more meshes, and so more draw calls every
+ * frame; between 4 and 16 a step costs the same (docs/front-end-perf.md), so
+ * this is the largest of them — and the crowd's own chunk size (crowd.ts).
+ */
+const LEVEL_CHUNK = 16
+/**
+ * How far a cell's geometry reaches into its neighbours, in cells: the
+ * footprint rule reads a neighbour's own footprint to hide what it covers
+ * (footprint.ts `coverage`), which reads one cell further, and what counts as
+ * wall for the rule reads one further still (`framedDoors`). A cell that
+ * changed dirties every chunk within this much of it.
+ */
+const LEVEL_REACH = 3
 // Ghost pass (rendering-3d.md II.4): anything the 2D client would show on the
 // map but the geometry hides shows through as its own sprite, dimmed and
 // tinted by what it is, so the 3D view never hides what the server reports.
@@ -532,8 +534,10 @@ interface SpriteRecord {
 
 /** Work counters the test bed and the regression tests read. Rendering never does. */
 export interface RenderStats extends CrowdStats {
-  /** Level geometry rebuilt from scratch. */
+  /** Level geometry builds: a layout change, whether it touched one chunk or every one. */
   levelBuilds: number
+  /** Chunks of level geometry built (`buildChunk`): what a level build really costs. */
+  levelChunkBuilds: number
   /** Billboard syncs against a scene: the diff itself, whatever it found. */
   crowdSyncs: number
   /** Sprites built (a sprite and its ghost count once). */
@@ -557,6 +561,67 @@ interface SpriteLayer {
   tint?: { r: number; g: number; b: number }
   /** Drawn as a flat quad even on a thick sprite: the status badges and damage bar are marks on the sprite, not part of its body. */
   flat?: boolean
+}
+
+/** A canvas holding an atlas's cleaned pixels, and the context that reads them back. */
+interface AtlasCanvas {
+  canvas: HTMLCanvasElement | OffscreenCanvas
+  ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D
+}
+
+/** A tile ready to draw: its rect, the atlas it lives in, and its uvs there. */
+type TileDraw = { r: TileRect; a: AtlasEntry; uv: { u0: number; v0: number; u1: number; v1: number } }
+
+/**
+ * What every chunk of one level build shares (`rebuildLevel`): the scene
+ * itself, the classification and tile lookups built once for the build, and
+ * the cell range the chunks are clipped to.
+ */
+interface LevelBuild {
+  scene: Scene
+  tint: { r: number; g: number; b: number }
+  framed: Map<CellKey, number>
+  classAt: ClassAt
+  fo: FootprintOptions
+  tileOf: (id: number) => TileDraw | null
+  ceilingOf: (c: SceneCell | undefined) => TileDraw | null
+  stands: (c: SceneCell) => boolean
+  isSolid: (c: SceneCell | undefined) => boolean
+  isVoidCell: (c: SceneCell | undefined) => boolean
+  /** The scene's bounds grown by one, so void columns bordering known space exist. */
+  range: Rect
+}
+
+/** The parts of `a` no cell of `b` covers, as up to four rectangles. */
+function rectMinus(a: Rect, b: Rect): Rect[] {
+  if (a.right < a.left || a.bottom < a.top) return []
+  if (b.right < b.left || b.bottom < b.top) return [a]
+  const out: Rect[] = []
+  if (a.left < b.left) out.push({ left: a.left, right: Math.min(a.right, b.left - 1), top: a.top, bottom: a.bottom })
+  if (a.right > b.right) out.push({ left: Math.max(a.left, b.right + 1), right: a.right, top: a.top, bottom: a.bottom })
+  const l = Math.max(a.left, b.left), r = Math.min(a.right, b.right)
+  if (l <= r) {
+    if (a.top < b.top) out.push({ left: l, right: r, top: a.top, bottom: Math.min(a.bottom, b.top - 1) })
+    if (a.bottom > b.bottom) out.push({ left: l, right: r, top: Math.max(a.top, b.bottom + 1), bottom: a.bottom })
+  }
+  return out.filter((q) => q.right >= q.left && q.bottom >= q.top)
+}
+
+/** A triangle for warming a material's shader (`Render3d.warmShaders`), carrying what the real geometry carries. */
+function warmGeometry(withNormals: boolean): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3))
+  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(6), 2))
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(9), 3))
+  if (withNormals) g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(9), 3))
+  return g
+}
+
+/** Whether two sets hold the same keys. */
+function sameKeys(a: ReadonlySet<CellKey>, b: ReadonlySet<CellKey>): boolean {
+  if (a.size !== b.size) return false
+  for (const k of a) if (!b.has(k)) return false
+  return true
 }
 
 /** The four corner uvs of a quad in point order: the first point takes (u0, v1). */
@@ -776,7 +841,21 @@ export class Render3d implements MapRenderer {
   private builtLayout = -1
   private builtTint = ''
   /** Which upright features were standing when the level was built (`occupiedFeatures`). */
-  private builtOccupied = ''
+  private builtOccupied = new Set<CellKey>()
+  /** The level's meshes by chunk (`LEVEL_CHUNK`), in the order `buildChunk` made them. */
+  private levelChunks = new Map<number, THREE.Mesh[]>()
+  /** The cells the chunks were built from, for the next build's diff, and the range they cover. */
+  private builtCells = new Map<CellKey, SceneCell>()
+  private builtRange: Rect | null = null
+  /** What the chunks were built under that stands on no cell of theirs: the tint, the lid and the sky. */
+  private builtGlobals = ''
+  /** Set when the next level build cannot be a partial one: new tiles, or new options. */
+  private levelFull = true
+  /** The worker that peels an atlas's ink off the frame (`warmAtlases`); null where there can be none. */
+  private peelWorker: Worker | null | undefined = undefined
+  private peelId = 0
+  /** False once `destroy` has run: the warm-up runs off the frame and must not carry on into a renderer that is gone. */
+  private alive = true
   /** How many ghost sprites the billboards hold: none means no depth pass. */
   private ghostCount = 0
   /** One disc under every actor and item, shared. */
@@ -840,7 +919,7 @@ export class Render3d implements MapRenderer {
   /** The holders wearing the selected shells (`syncSelection`), and the cell they stand on. */
   private selected: THREE.Object3D[] = []
   private selectionDirty = false
-  readonly stats: RenderStats = { levelBuilds: 0, crowdSyncs: 0, spriteBuilds: 0, spriteDrops: 0, selectionBuilds: 0, fieldUpdates: 0, chunkBakes: 0, chunkAllocs: 0, bakedVertices: 0, keptVertices: 0 }
+  readonly stats: RenderStats = { levelBuilds: 0, levelChunkBuilds: 0, crowdSyncs: 0, spriteBuilds: 0, spriteDrops: 0, selectionBuilds: 0, fieldUpdates: 0, chunkBakes: 0, chunkAllocs: 0, bakedVertices: 0, keptVertices: 0 }
   private raycaster = new THREE.Raycaster()
   private pickMeshes: THREE.Mesh[] = []
   private voidMat: THREE.MeshBasicMaterial
@@ -1202,7 +1281,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * decals and translucent sprites, which write no depth and so would only
    * cost their draw calls here.
    */
-  private renderOccluderDepth(r: THREE.WebGLRenderer) {
+  /** The depth image the ghost pass reads, made at the frame's size or remade when that changes. */
+  private depthFor(r: THREE.WebGLRenderer): THREE.WebGLRenderTarget {
     const size = r.getDrawingBufferSize(this.bufferSize)
     const w = Math.max(1, Math.ceil(size.x * GHOST_DEPTH_SCALE))
     const h = Math.max(1, Math.ceil(size.y * GHOST_DEPTH_SCALE))
@@ -1213,6 +1293,12 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       rt = this.depthTarget = new THREE.WebGLRenderTarget(w, h, { depthTexture, depthBuffer: true, stencilBuffer: false })
       this.ghostUniforms.sceneDepth.value = depthTexture
     }
+    return rt
+  }
+
+  private renderOccluderDepth(r: THREE.WebGLRenderer) {
+    const rt = this.depthFor(r)
+    const size = this.bufferSize
     // the ghost shader maps its own fragment coordinate, in frame pixels, onto the image
     this.ghostUniforms.resolution.value.set(Math.max(1, size.x), Math.max(1, size.y))
     this.ghostUniforms.cameraNear.value = this.cam.near
@@ -1238,6 +1324,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     Object.assign(this.opts, opts)
     this.cam.fov = this.opts.fov
     this.cam.updateProjectionMatrix()
+    // the inset and the chamfer are in every wall's geometry, so nothing carries over
+    this.levelFull = true
     this.builtRevision = -1
     this.builtLayout = -1
   }
@@ -1276,6 +1364,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     // every sprite standing, and every fixture, was built from the old atlases
     this.dropRecords()
     this.dropFixtures()
+    // the level's chunks still stand, wearing materials that are gone; the next frame's build replaces every one
+    this.levelFull = true
     this.builtRevision = -1
     this.builtLayout = -1
   }
@@ -1413,6 +1503,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.billboardCrowd.clear()
     this.levelCrowd.clear()
     this.fixtures.clear()
+    this.clearLevel()
     for (const child of [...this.levelGroup.children]) {
       this.levelGroup.remove(child)
       child.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
@@ -1466,6 +1557,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.shadowMat.dispose()
     this.renderer?.dispose()
     this.renderer = null
+    this.peelWorker?.terminate()
+    this.peelWorker = undefined
+    this.alive = false
     this.builtRevision = -1
     this.builtLayout = -1
   }
@@ -1592,17 +1686,19 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     return out
   }
 
+  /**
+   * Build the level's geometry, one mesh set per chunk of `LEVEL_CHUNK` cells.
+   * Only the chunks the cells changed since the last build reach into are
+   * built again (`LEVEL_REACH`): a step that reveals a handful of cells leaves
+   * the rest of the level's meshes standing, where a whole-level rebuild
+   * every step is the walk's constant hitch (docs/front-end-perf.md). New
+   * tiles, new options, a new tint, lid or sky build every chunk.
+   */
   private rebuildLevel(scene: Scene) {
     this.stats.levelBuilds++
-    // the level's own meshes go; the fixtures (`fixtures`) and the crowd's baked meshes stand until the loop below says otherwise
-    for (const child of [...this.levelGroup.children]) {
-      if (!child.userData.level) continue
-      this.levelGroup.remove(child)
-      ;(child as THREE.Mesh).geometry.dispose()
-    }
-    this.pickMeshes = []
     const tiles = this.tiles
     if (!tiles) {
+      this.clearLevel()
       this.dropFixtures()
       return
     }
@@ -1617,24 +1713,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     // still chamfer back, so the doorway splays out into the room it opens on.
     const base = sceneClassAt(scene)
     const classAt: ClassAt = (x, z) => (framed.has(cellKey(x, z)) ? 'wall' : base(x, z))
-    const builders = new Map<string, GeoBuilder>()
-    const decalBuilders = new Map<string, GeoBuilder>()
-    const voids = new GeoBuilder()
     const tint = scene.level.tint
-    const get = (name: string) => {
-      let b = builders.get(name)
-      if (!b) builders.set(name, (b = new GeoBuilder()))
-      return b
-    }
-    /** The blended builder for a translucent decal (SceneCell.translucent), else the level's. */
-    const getDecal = (name: string, cell: SceneCell, id: number) => {
-      if (!cell.translucent?.includes(id)) return get(name)
-      let b = decalBuilders.get(name)
-      if (!b) decalBuilders.set(name, (b = new GeoBuilder()))
-      return b
-    }
     // a tile's rect and uvs are looked up once per rebuild: every floor cell asks for its tile, and a level has far more cells than tiles
-    const tileCache = new Map<number, { r: TileRect; a: AtlasEntry; uv: ReturnType<Render3d['uvFor']> } | null>()
+    const tileCache = new Map<number, TileDraw | null>()
     const tileOf = (id: number) => {
       let t = tileCache.get(id)
       if (t !== undefined) return t
@@ -1667,10 +1748,143 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const isSolid = (c: SceneCell | undefined) => !c || c.kind === 'unknown' || c.occluder
     const isVoidCell = (c: SceneCell | undefined) => !c || c.kind === 'unknown'
 
-    // iterate over bounds so void columns bordering known space exist
     const b = scene.bounds
-    for (let y = b.top - 1; y <= b.bottom + 1; y++) {
-      for (let x = b.left - 1; x <= b.right + 1; x++) {
+    // built over the bounds grown by one, so void columns bordering known space exist
+    const range: Rect = { left: b.left - 1, top: b.top - 1, right: b.right + 1, bottom: b.bottom + 1 }
+    const ctx: LevelBuild = { scene, tint, framed, classAt, fo, tileOf, ceilingOf, stands, isSolid, isVoidCell, range }
+    // what the chunks were built under that stands on no cell of theirs: a change here is every chunk's
+    const globals = `${tint.r},${tint.g},${tint.b}|${scene.level.ceilingTile}|${scene.level.sky}`
+    const full = this.levelFull || !this.builtRange || globals !== this.builtGlobals
+    this.levelFull = false
+    this.builtGlobals = globals
+    /** The chunks to build. */
+    const chunks = new Set<number>()
+    /** Mark every chunk the cells of `r` reach into (`LEVEL_REACH`). */
+    const markRect = (r: Rect) => {
+      if (r.right < r.left || r.bottom < r.top) return
+      for (let cz = Math.floor((r.top - LEVEL_REACH) / LEVEL_CHUNK); cz <= Math.floor((r.bottom + LEVEL_REACH) / LEVEL_CHUNK); cz++)
+        for (let cx = Math.floor((r.left - LEVEL_REACH) / LEVEL_CHUNK); cx <= Math.floor((r.right + LEVEL_REACH) / LEVEL_CHUNK); cx++)
+          chunks.add(cellKey(cx, cz))
+    }
+    const markKey = (k: CellKey) => {
+      const { x, y } = keyToXY(k)
+      markRect({ left: x, right: x, top: y, bottom: y })
+    }
+    /** The cells whose layout changed since the last build, and those the map has forgotten. */
+    const changed: CellKey[] = []
+    const gone: CellKey[] = []
+    if (full) {
+      // every chunk over the range, and every one standing, so a range that shrank leaves nothing behind
+      for (const ck of this.levelChunks.keys()) chunks.add(ck)
+      for (let cz = Math.floor(range.top / LEVEL_CHUNK); cz <= Math.floor(range.bottom / LEVEL_CHUNK); cz++)
+        for (let cx = Math.floor(range.left / LEVEL_CHUNK); cx <= Math.floor(range.right / LEVEL_CHUNK); cx++) chunks.add(cellKey(cx, cz))
+    } else {
+      for (const [k, cell] of scene.cells) {
+        const had = this.builtCells.get(k)
+        if (!had || !cellLayoutEquals(had, cell)) changed.push(k)
+      }
+      for (const k of this.builtCells.keys()) if (!scene.cells.has(k)) gone.push(k)
+      for (const k of changed) markKey(k)
+      for (const k of gone) markKey(k)
+      // a feature that has stood up or lain down since the last build (`occupiedFeatures`)
+      for (const k of occupied) if (!this.builtOccupied.has(k)) markKey(k)
+      for (const k of this.builtOccupied) if (!occupied.has(k)) markKey(k)
+      // the range grew or shrank: the cells that came into it, and those that left
+      for (const r of rectMinus(range, this.builtRange!)) markRect(r)
+      for (const r of rectMinus(this.builtRange!, range)) markRect(r)
+    }
+    for (const ck of chunks) this.buildChunk(ck, ctx)
+    this.pickMeshes = []
+    for (const meshes of this.levelChunks.values()) for (const m of meshes) if (m.userData.pick) this.pickMeshes.push(m)
+    if (full) {
+      this.builtCells.clear()
+      for (const [k, cell] of scene.cells) this.builtCells.set(k, cell)
+    } else {
+      for (const k of gone) this.builtCells.delete(k)
+      for (const k of changed) this.builtCells.set(k, scene.cells.get(k)!)
+    }
+    this.builtOccupied = occupied
+    this.builtRange = range
+    // Upright features stand as billboards built with the level. One whose key still holds
+    // (the same tile on the same cell, at the same height, heading and tint) is left standing;
+    // the rest are built, and whatever stood that the level no longer asks for comes down.
+    const tintKey = `${tint.r},${tint.g},${tint.b}`
+    const wanted = new Set<string>()
+    for (const cell of scene.cells.values()) {
+      if (cell.kind === 'unknown' || cell.occluder) continue
+      if (cell.featureTile === undefined || !stands(cell)) continue
+      const ft = tileOf(cell.featureTile)
+      if (!ft) continue
+      const doorYaw = framed.get(cellKey(cell.x, cell.y))
+      const key = `${cell.x},${cell.y}|${cell.featureTile}|${doorYaw ?? ''}|${doorYaw !== undefined ? 1 : heightOfFeature(cell)}|${tintKey}`
+      wanted.add(key)
+      if (this.fixtures.has(key)) continue
+      // An open door hangs in its doorway, not on the eye: its cell is a hole
+      // in a wall run, and a board that turns with the camera pulls the leaves
+      // and their arch off the two walls they are set into — from any angle but
+      // head-on the frame floats free of the opening. Squared to the wall it
+      // fills the gap, full height like the closed door's block, and needs no
+      // FIXTURE_BACK: it is in the wall plane, not in the way of what walks
+      // through it.
+      const yaw = doorYaw
+      if (yaw !== undefined) {
+        const door = this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], 1, 1, tint, true, 'none', true, 0, yaw)
+        this.giveCells(door, cell.x, cell.y)
+        this.fixtures.set(key, door)
+        continue
+      }
+      // a fixture takes its light from the shade map (featMat), so its vertex colour is the tint alone;
+      // it stands FIXTURE_BACK back, so whatever stands on the cell reads in front of it rather than through it
+      const h = this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], heightOfFeature(cell), 1, tint, true, 'none', true, FIXTURE_BACK)
+      this.fixtures.set(key, h)
+      if (this.levelCrowd.mergeable(h)) this.levelCrowd.add(h, cell.x, cell.y)
+      else this.giveCells(h, cell.x, cell.y)
+    }
+    for (const [key, h] of this.fixtures) {
+      if (wanted.has(key)) continue
+      this.fixtures.delete(key)
+      this.dropFixture(h)
+    }
+    // every chunk is baked again, its holders taken back to front from where the eye stands at this
+    // rebuild, as they always were; a holder whose slot is unchanged costs the bake nothing (crowd.ts `write`)
+    this.levelCrowd.invalidate()
+  }
+
+  /**
+   * One chunk of the level, built afresh: its old meshes go, and the cells of
+   * the chunk that lie in the build's range are emitted into one mesh per
+   * atlas, as the whole level once was. A cell's geometry reads its
+   * neighbours out of the scene, not out of the chunk, so a chunk's meshes are
+   * the same faces the whole-level build put there.
+   */
+  private buildChunk(ck: number, ctx: LevelBuild) {
+    this.dropChunk(ck)
+    const { scene, tint, framed, classAt, fo, tileOf, ceilingOf, stands, isSolid, isVoidCell, range } = ctx
+    const c0 = keyToXY(ck)
+    const x0 = Math.max(range.left, c0.x * LEVEL_CHUNK)
+    const x1 = Math.min(range.right, c0.x * LEVEL_CHUNK + LEVEL_CHUNK - 1)
+    const z0 = Math.max(range.top, c0.y * LEVEL_CHUNK)
+    const z1 = Math.min(range.bottom, c0.y * LEVEL_CHUNK + LEVEL_CHUNK - 1)
+    if (x1 < x0 || z1 < z0) return
+    this.stats.levelChunkBuilds++
+    const builders = new Map<string, GeoBuilder>()
+    const decalBuilders = new Map<string, GeoBuilder>()
+    const voids = new GeoBuilder()
+    const get = (name: string) => {
+      let g = builders.get(name)
+      if (!g) builders.set(name, (g = new GeoBuilder()))
+      return g
+    }
+    /** The blended builder for a translucent decal (SceneCell.translucent), else the level's. */
+    const getDecal = (name: string, cell: SceneCell, id: number) => {
+      if (!cell.translucent?.includes(id)) return get(name)
+      let g = decalBuilders.get(name)
+      if (!g) decalBuilders.set(name, (g = new GeoBuilder()))
+      return g
+    }
+    const meshes: THREE.Mesh[] = []
+    for (let y = z0; y <= z1; y++) {
+      for (let x = x0; x <= x1; x++) {
         const k = cellKey(x, y)
         const cell = scene.cells.get(k)
         const solid = isSolid(cell)
@@ -1892,9 +2106,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const a = this.atlas(name)
       if (!a) continue
       const mesh = new THREE.Mesh(geo, a.wallMat)
-      mesh.userData.level = true
+      mesh.userData.pick = true
       this.levelGroup.add(mesh)
-      this.pickMeshes.push(mesh)
+      meshes.push(mesh)
     }
     // translucent decals after the level, blended over the faces they mark
     for (const [name, gb] of decalBuilders) {
@@ -1903,60 +2117,39 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const a = this.atlas(name)
       if (!a) continue
       const mesh = new THREE.Mesh(geo, a.decalMat)
-      mesh.userData.level = true
       mesh.renderOrder = 1
       mesh.layers.set(LAYER_NO_DEPTH)
       this.levelGroup.add(mesh)
+      meshes.push(mesh)
     }
     const vg = voids.build()
     if (vg) {
       const mesh = new THREE.Mesh(vg, this.voidMat)
-      mesh.userData.level = true
       this.levelGroup.add(mesh)
+      meshes.push(mesh)
     }
-    // Upright features stand as billboards built with the level. One whose key still holds
-    // (the same tile on the same cell, at the same height, heading and tint) is left standing;
-    // the rest are built, and whatever stood that the level no longer asks for comes down.
-    const tintKey = `${tint.r},${tint.g},${tint.b}`
-    const wanted = new Set<string>()
-    for (const cell of scene.cells.values()) {
-      if (cell.kind === 'unknown' || cell.occluder) continue
-      if (cell.featureTile === undefined || !stands(cell)) continue
-      const ft = tileOf(cell.featureTile)
-      if (!ft) continue
-      const doorYaw = framed.get(cellKey(cell.x, cell.y))
-      const key = `${cell.x},${cell.y}|${cell.featureTile}|${doorYaw ?? ''}|${doorYaw !== undefined ? 1 : heightOfFeature(cell)}|${tintKey}`
-      wanted.add(key)
-      if (this.fixtures.has(key)) continue
-      // An open door hangs in its doorway, not on the eye: its cell is a hole
-      // in a wall run, and a board that turns with the camera pulls the leaves
-      // and their arch off the two walls they are set into — from any angle but
-      // head-on the frame floats free of the opening. Squared to the wall it
-      // fills the gap, full height like the closed door's block, and needs no
-      // FIXTURE_BACK: it is in the wall plane, not in the way of what walks
-      // through it.
-      const yaw = doorYaw
-      if (yaw !== undefined) {
-        const door = this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], 1, 1, tint, true, 'none', true, 0, yaw)
-        this.giveCells(door, cell.x, cell.y)
-        this.fixtures.set(key, door)
-        continue
-      }
-      // a fixture takes its light from the shade map (featMat), so its vertex colour is the tint alone;
-      // it stands FIXTURE_BACK back, so whatever stands on the cell reads in front of it rather than through it
-      const h = this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], heightOfFeature(cell), 1, tint, true, 'none', true, FIXTURE_BACK)
-      this.fixtures.set(key, h)
-      if (this.levelCrowd.mergeable(h)) this.levelCrowd.add(h, cell.x, cell.y)
-      else this.giveCells(h, cell.x, cell.y)
+    if (meshes.length) this.levelChunks.set(ck, meshes)
+  }
+
+  /** One chunk's meshes out of the level group, their geometry released. */
+  private dropChunk(ck: number) {
+    const meshes = this.levelChunks.get(ck)
+    if (!meshes) return
+    for (const m of meshes) {
+      this.levelGroup.remove(m)
+      m.geometry.dispose()
     }
-    for (const [key, h] of this.fixtures) {
-      if (wanted.has(key)) continue
-      this.fixtures.delete(key)
-      this.dropFixture(h)
-    }
-    // every chunk is baked again, its holders taken back to front from where the eye stands at this
-    // rebuild, as they always were; a holder whose slot is unchanged costs the bake nothing (crowd.ts `write`)
-    this.levelCrowd.invalidate()
+    this.levelChunks.delete(ck)
+  }
+
+  /** Every chunk down and what they were built from forgotten: the next build is a whole one. */
+  private clearLevel() {
+    for (const ck of [...this.levelChunks.keys()]) this.dropChunk(ck)
+    this.pickMeshes = []
+    this.builtCells.clear()
+    this.builtOccupied = new Set()
+    this.builtRange = null
+    this.levelFull = true
   }
 
   /** Take a fixture down: out of the crowd or the group, its geometry released. */
@@ -2400,36 +2593,185 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     const img = a.texture.image as TexImageSource | undefined
     if (!img) return null
     try {
-      let canvas: HTMLCanvasElement | OffscreenCanvas
-      if (typeof OffscreenCanvas !== 'undefined') canvas = new OffscreenCanvas(a.width, a.height)
-      else if (typeof document !== 'undefined') {
-        canvas = document.createElement('canvas')
-        canvas.width = a.width
-        canvas.height = a.height
-      } else return null
-      const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null
-      if (!ctx) return null
-      ctx.drawImage(img as CanvasImageSource, 0, 0)
-      const image = ctx.getImageData(0, 0, a.width, a.height)
+      const made = this.atlasCanvas(a)
+      if (!made) return null
+      made.ctx.drawImage(img as CanvasImageSource, 0, 0)
+      const image = made.ctx.getImageData(0, 0, a.width, a.height)
       const mask = peelInk(image.data, a.width, a.height, OPAQUE_ALPHA, this.tiles?.spriteRects?.(a.name))
-      ctx.putImageData(image, 0, 0)
-      a.texture.image = canvas as unknown as TexImageSource
-      a.texture.needsUpdate = true
-      a.mask = mask
-      // a tile's colours are read back from the canvas as its rim is built, not kept for the whole atlas
-      const rows = new Map<number, Uint8ClampedArray>()
-      a.texel = (x, y) => {
-        let row = rows.get(y)
-        if (!row) {
-          if (rows.size > 64) rows.clear()
-          rows.set(y, (row = ctx.getImageData(0, y, a.width, 1).data))
-        }
-        return ((row[x * 4] << 24) | (row[x * 4 + 1] << 16) | (row[x * 4 + 2] << 8) | row[x * 4 + 3]) >>> 0
-      }
+      this.installPeeled(a, made, image, mask)
     } catch {
       a.mask = null
     }
     return a.mask
+  }
+
+  /** A canvas of the atlas's size to hold its cleaned pixels; null where there is none to be had. */
+  private atlasCanvas(a: AtlasEntry): AtlasCanvas | null {
+    let canvas: HTMLCanvasElement | OffscreenCanvas
+    if (typeof OffscreenCanvas !== 'undefined') canvas = new OffscreenCanvas(a.width, a.height)
+    else if (typeof document !== 'undefined') {
+      canvas = document.createElement('canvas')
+      canvas.width = a.width
+      canvas.height = a.height
+    } else return null
+    const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null
+    return ctx ? { canvas, ctx } : null
+  }
+
+  /** The peeled image becomes what the atlas draws, and its opacity the atlas's mask. */
+  private installPeeled(a: AtlasEntry, made: AtlasCanvas, image: ImageData, mask: Uint8Array) {
+    const { canvas, ctx } = made
+    ctx.putImageData(image, 0, 0)
+    a.texture.image = canvas as unknown as TexImageSource
+    a.texture.needsUpdate = true
+    a.mask = mask
+    // a tile's colours are read back from the canvas as its rim is built, not kept for the whole atlas
+    const rows = new Map<number, Uint8ClampedArray>()
+    a.texel = (x, y) => {
+      let row = rows.get(y)
+      if (!row) {
+        if (rows.size > 64) rows.clear()
+        rows.set(y, (row = ctx.getImageData(0, y, a.width, 1).data))
+      }
+      return ((row[x * 4] << 24) | (row[x * 4 + 1] << 16) | (row[x * 4 + 2] << 8) | row[x * 4 + 3]) >>> 0
+    }
+  }
+
+  /**
+   * Peel the ink off every atlas of the tile source now, in a worker, rather
+   * than leaving each to the frame that first draws a sprite of it. Reading a
+   * whole atlas and walking its ink in (peel.ts) is the best part of a second
+   * on a Steam Deck, and in the frame it is the stall on entering a level
+   * (docs/front-end-perf.md); here the frame pays only for putting the
+   * finished pixels on a canvas. A host calls it while its loading screen is
+   * up, and need not wait for it: an atlas this does not reach is peeled in
+   * the frame as before (`atlasMask`), so nothing depends on it having run.
+   */
+  async warmAtlases(): Promise<void> {
+    const tiles = this.tiles
+    if (!tiles || !this.alive) return
+    // Only the atlases whose art stands in the world. The others are never read back at all
+    // (`atlasMask` is asked for by the standing sprites alone), and peeling a floor or wall
+    // atlas would clear the dark edge of every tile that touches a gap or the image's border.
+    // A source that does not say which is which is left to the frame, as it always was.
+    for (const name of tiles.spriteAtlases?.() ?? []) {
+      const a = this.atlas(name)
+      if (!a || a.mask !== undefined) continue
+      const img = a.texture.image as TexImageSource | undefined
+      if (!img) continue
+      const done = await this.peelInWorker(a, img).catch(() => false)
+      if (!done) this.atlasMask(a)
+      // the tiles may have been swapped out, or the renderer torn down, while that one was peeled
+      if (this.tiles !== tiles || !this.alive) return
+    }
+  }
+
+  /**
+   * One atlas peeled in the worker, on a copy of its image, and the result
+   * installed. False when there is no worker to be had (no `Worker`, no
+   * `createImageBitmap`, a worker that failed to start), so the caller falls
+   * back to peeling in place.
+   */
+  private async peelInWorker(a: AtlasEntry, img: TexImageSource): Promise<boolean> {
+    if (typeof Worker === 'undefined' || typeof createImageBitmap === 'undefined' || typeof OffscreenCanvas === 'undefined') return false
+    const worker = this.peeler()
+    if (!worker) return false
+    const bitmap = await createImageBitmap(img as ImageBitmapSource)
+    const id = ++this.peelId
+    const reply = await new Promise<PeelReply>((resolve) => {
+      const onMessage = (e: MessageEvent<PeelReply>) => {
+        if (e.data.id !== id) return
+        worker.removeEventListener('message', onMessage)
+        resolve(e.data)
+      }
+      worker.addEventListener('message', onMessage)
+      const req: PeelRequest = { id, bitmap, width: a.width, height: a.height, alphaMin: OPAQUE_ALPHA, sprites: this.tiles?.spriteRects?.(a.name) }
+      worker.postMessage(req, [bitmap])
+    })
+    if (!reply.data || !reply.mask) return false
+    // the atlas may have gone while the worker was at it
+    if (this.atlases.get(a.name) !== a || a.mask !== undefined) return true
+    const made = this.atlasCanvas(a)
+    if (!made) return false
+    this.installPeeled(a, made, new ImageData(new Uint8ClampedArray(reply.data as ArrayBuffer), a.width, a.height), new Uint8Array(reply.mask as ArrayBuffer))
+    return true
+  }
+
+  /**
+   * Compile the level's, the crowd's and the viewmodel's shaders now rather
+   * than in the frame that first draws with one. Compiling a program is tens
+   * of milliseconds on a Steam Deck, and the ghost pass doubles it: its depth
+   * image is a render target, whose output is linear where the canvas's is
+   * sRGB, and three keeps a program of its own for each — which is why the
+   * first frame of a level spends its time in `place` (docs/front-end-perf.md).
+   * The materials are warmed on a throwaway mesh apiece, so this wants only a
+   * mounted renderer and the atlases, not a level: a host calls it with its
+   * loading screen up, and need not wait for it. Safe to call again.
+   */
+  async warmShaders(): Promise<void> {
+    const r = this.renderer
+    if (!r || !this.alive) return
+    const mats = new Set<THREE.Material>([this.voidMat, this.shadowMat, this.hullMat, this.hullSelMat, this.inkMat, this.vmMat, this.cursorRingMat, this.ghostInkMat, this.ghostVisibleInkMat])
+    // One atlas is enough for the atlas materials: three keys a program on what the material is
+    // and what the geometry carries, not on which texture hangs off it, so the programs the first
+    // atlas asks for are the ones the rest ask for. Whichever atlases already exist are used;
+    // failing that one is made, rather than all of them for the sake of their materials.
+    const first = this.atlases.values().next().value ?? this.atlas(this.tiles?.atlasNames()[0] ?? '')
+    for (const a of first ? [first] : []) {
+      for (const m of [a.wallMat, a.featMat, a.decalMat, a.bbMat, a.ghostMat, a.ghostVisibleMat]) mats.add(m)
+    }
+    // and every `MERGED` twin the crowd bakes with, the atlases' and the hull inks' and the shadow's alike
+    for (const [plainMat, mergedMat] of this.mergedMats) {
+      mats.add(plainMat)
+      mats.add(mergedMat)
+    }
+    // One triangle per material, carrying what the real geometry does. Past the material, the
+    // only thing three keys a program on here is whether the geometry has normals (`vertexNormals`);
+    // the level's and the crowd's own attributes (`cell`, `cut`, `anchor`) are not in the key, and
+    // no colour of theirs carries alpha. Nothing but the shadow disc has normals (crowd.ts).
+    const plain = warmGeometry(false)
+    const normals = warmGeometry(true)
+    const warm = new THREE.Group()
+    // never drawn: `compile` walks the scene for materials whether or not they are visible
+    warm.visible = false
+    for (const m of mats) warm.add(new THREE.Mesh(plain, m))
+    for (const m of [this.shadowMat, this.mergedMats.get(this.shadowMat)]) if (m) warm.add(new THREE.Mesh(normals, m))
+    this.three.add(warm)
+    // Both passes are set up in one go, before anything is awaited: `compileAsync` walks the scene
+    // and asks for its programs there and then, and only the driver's link is waited on. A frame
+    // drawn in that wait must not find the ghost pass's render target still bound, or it would
+    // draw into it instead of the canvas.
+    const prev = r.getRenderTarget()
+    let passes: Promise<unknown>[] = []
+    try {
+      r.setRenderTarget(null)
+      passes.push(r.compileAsync(this.three, this.cam))
+      // the ghost pass's depth image is a render target, whose output is linear where the canvas's
+      // is sRGB: three keeps a program of its own for every material for it
+      r.setRenderTarget(this.depthFor(r))
+      passes.push(r.compileAsync(this.three, this.cam))
+    } catch {
+      // a driver that will not compile ahead of time still compiles in the frame
+      passes = []
+    } finally {
+      r.setRenderTarget(prev)
+      this.three.remove(warm)
+      plain.dispose()
+      normals.dispose()
+    }
+    await Promise.all(passes).catch(() => {})
+  }
+
+  /** The peel worker, started on first use; null where one cannot be. */
+  private peeler(): Worker | null {
+    if (this.peelWorker === undefined) {
+      try {
+        this.peelWorker = new Worker(new URL('./peel.worker.ts', import.meta.url), { type: 'module' })
+      } catch {
+        this.peelWorker = null
+      }
+    }
+    return this.peelWorker
   }
 
   /**
@@ -2779,11 +3121,10 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       // a step onto or off a staircase, the player's or a monster's, changes which features stand and which
       // lie flat (`occupiedFeatures`), which is part of the geometry; it is as rare as a layout change, and the
       // rest of a walk still leaves the level's meshes alone
-      const occKey = [...this.occupiedFeatures(scene)].sort().join('|')
-      if (scene.layoutRevision !== this.builtLayout || tintKey !== this.builtTint || occKey !== this.builtOccupied) {
+      const occ = this.occupiedFeatures(scene)
+      if (scene.layoutRevision !== this.builtLayout || tintKey !== this.builtTint || !sameKeys(occ, this.builtOccupied)) {
         this.builtLayout = scene.layoutRevision
         this.builtTint = tintKey
-        this.builtOccupied = occKey
         this.rebuildLevel(scene)
         this.mark?.('level')
         this.bakeStanding(this.levelGroup, { x: cam.eyeX, y: cam.eyeY })
@@ -3034,62 +3375,10 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
   }
 }
 
-/**
- * Peel the art's outline off `data` in place: the ink the eye can reach from
- * outside is cleared, `INK_PEEL` layers deep, and what is left comes back as
- * opacity, one byte per texel. Peeling eats only ink, so a body texel stops
- * it: the eyes, the mouth and the lines drawn inside a sprite are not
- * reachable and stay. `alphaMin` is the alpha at which a texel counts as
- * drawn at all.
- *
- * `sprites`, when given, is where the sprite art is (`TileSource.spriteRects`):
- * only ink inside those rects is peeled, and the edge of a rect reaches it as
- * the image's edge does. Crawl's atlases hold one kind each, so its sprite
- * atlases are peeled whole and its floor and wall atlases never asked; an
- * atlas that packs floors beside sprites would otherwise lose the dark edge
- * of a floor tile that touches a gap or the image's border, and show the
- * clear colour through the floor as a black line between cells.
- */
-export function peelInk(data: Uint8ClampedArray, w: number, h: number, alphaMin: number, sprites?: ReadonlyArray<{ sx: number; sy: number; w: number; h: number }>): Uint8Array {
-  // 0 clear, 1 body, 2 ink
-  const mask = new Uint8Array(w * h)
-  for (let i = 0; i < mask.length; i++) {
-    if (data[i * 4 + 3] < alphaMin) mask[i] = 0
-    else mask[i] = data[i * 4] < INK_LEVEL && data[i * 4 + 1] < INK_LEVEL && data[i * 4 + 2] < INK_LEVEL ? 2 : 1
-  }
-  // 1 where ink may be peeled: everywhere, or the sprite rects
-  let art: Uint8Array | null = null
-  if (sprites) {
-    art = new Uint8Array(w * h)
-    for (const r of sprites) for (let y = Math.max(0, r.sy); y < Math.min(h, r.sy + r.h); y++) art.fill(1, y * w + Math.max(0, r.sx), y * w + Math.min(w, r.sx + r.w))
-  }
-  for (let pass = 0; pass < INK_PEEL; pass++) {
-    const peeled: number[] = []
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const i = y * w + x
-        if (mask[i] !== 2 || (art && !art[i])) continue
-        const reached =
-          x === 0 || y === 0 || x === w - 1 || y === h - 1 ||
-          mask[i - 1] === 0 || mask[i + 1] === 0 || mask[i - w] === 0 || mask[i + w] === 0 ||
-          (art !== null && (!art[i - 1] || !art[i + 1] || !art[i - w] || !art[i + w]))
-        if (reached) peeled.push(i)
-      }
-    }
-    if (!peeled.length) break
-    for (const i of peeled) {
-      mask[i] = 0
-      data[i * 4 + 3] = 0
-    }
-  }
-  // what is left of the ink is inside the art — an eye, a mouth, a line between limbs — and is body like any other texel
-  for (let i = 0; i < mask.length; i++) if (mask[i] === 2) mask[i] = 1
-  return mask
-}
-
 function nowSeconds(): number {
   return (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000
 }
 
 export type { Billboard, Viewmodel }
 export * from './footprint.js'
+export { peelInk } from './peel.js'

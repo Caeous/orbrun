@@ -95,6 +95,12 @@ export interface GamedataFetch {
 }
 
 export const ATLASES = ['floor', 'wall', 'feat', 'main', 'player', 'gui', 'icons'] as const
+/**
+ * The atlases whose tiles stand in the world — features, items and monsters.
+ * A renderer reads these back to peel crawl's ink off the art; the others are
+ * only ever drawn as they are (`TileSource.spriteAtlases`).
+ */
+export const SPRITE_ATLASES = ['feat', 'main', 'player'] as const
 export type AtlasName = (typeof ATLASES)[number]
 
 const TILEINFO_ORDER: AtlasName[] = ['floor', 'wall', 'feat', 'main', 'player', 'gui', 'icons']
@@ -365,6 +371,10 @@ export class Gamedata implements TileSource {
 
   atlasNames(): string[] {
     return [...ATLASES]
+  }
+
+  spriteAtlases(): readonly string[] {
+    return SPRITE_ATLASES
   }
 
   setAtlas(name: string, img: TexImageSource) {

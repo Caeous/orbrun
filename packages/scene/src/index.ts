@@ -451,6 +451,15 @@ export interface TileSource {
    * treating sprite texels (peeling their outline) leaves the floors alone.
    */
   spriteRects?(atlas: string): ReadonlyArray<{ sx: number; sy: number; w: number; h: number }> | undefined
+  /**
+   * Which atlases hold art that stands in the world, when the source knows.
+   * Only those are ever read back and peeled, so only those are worth
+   * preparing ahead of the frame that first draws from one
+   * (`Render3d.warmAtlases`); a floor or wall atlas is never read back at all,
+   * and peeling one would take the dark edge off its tiles. A source that
+   * says nothing has every atlas peeled in the frame, as it always was.
+   */
+  spriteAtlases?(): readonly string[]
 }
 
 // ---------------------------------------------------------------------------

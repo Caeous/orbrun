@@ -32,6 +32,12 @@ const IDLE_TICK_MS = 250
 const ACTIVE_MS = 500
 
 /** css pixels a touch must travel before a press becomes a look drag */
+/**
+ * How long the renderer's one-off warm-up (`warmRenderer`) may wait for an
+ * idle moment before it is run anyway: long enough to keep off the frames the
+ * player is waiting for, short enough to be done before a level is drawn.
+ */
+const WARM_DELAY_MS = 2000
 const DRAG_SLOP = 6
 /** level-map cells per unit of right-stick look while the map is open */
 const MAP_PAN_RATE = 0.12
@@ -292,7 +298,10 @@ export class GameScreen {
         } else if (e.type === 'gamedata') {
           if (e.status === 'ready') {
             this.hideLoading()
-            if (this.session.gamedata) this.renderer.setTiles(this.session.gamedata)
+            if (this.session.gamedata) {
+              this.renderer.setTiles(this.session.gamedata)
+              this.warmRenderer(this.renderer)
+            }
             this.needsRender = true
           } else if (e.status === 'error') this.showLoading('Could not load game data: ' + (e.detail || ''))
           else this.showLoading(`Loading game data… ${e.done ?? 0}/${e.total ?? 0}`)
@@ -301,6 +310,7 @@ export class GameScreen {
     )
     if (this.session.gamedata) {
       this.renderer.setTiles(this.session.gamedata)
+      this.warmRenderer(this.renderer)
       this.hideLoading()
     } else this.showLoading('Loading game data…')
     this.onKeyDown = this.onKeyDown.bind(this)
@@ -418,12 +428,36 @@ export class GameScreen {
     return Math.min(window.devicePixelRatio || 1, VIEW_MAX_DPR)
   }
 
+  /**
+   * The 3D view's one-off work, taken off the frame that would otherwise pay
+   * for it: the atlases' ink peeled in a worker, and the shaders compiled.
+   * Both are what the loading screen is for — in a frame they are the stall
+   * on entering a level (docs/front-end-perf.md) — and both are optional, so
+   * nothing here waits or fails.
+   */
+  private warmRenderer(r: MapRenderer) {
+    if (!(r instanceof Render3d)) return
+    // In a task of its own, never this one: compiling the shaders blocks the
+    // thread for as long as the driver takes, and doing it here would hold up
+    // the view the player is waiting for to save a stall later on.
+    const run = () => {
+      void r.warmAtlases()
+      void r.warmShaders()
+    }
+    const idle = (window as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void }).requestIdleCallback
+    if (idle) idle.call(window, run, { timeout: WARM_DELAY_MS })
+    else setTimeout(run, 0)
+  }
+
   private makeRenderer(): MapRenderer {
     const st = this.hooks.settings()
     const r: MapRenderer = this.is3d ? new Render3d(this.render3dOptions(st)) : new Render2d({ cellSize: 32 })
     r.mount(this.canvas)
     this.viewmodelRev = ''
-    if (this.session.gamedata) r.setTiles(this.session.gamedata)
+    if (this.session.gamedata) {
+      r.setTiles(this.session.gamedata)
+      this.warmRenderer(r)
+    }
     r.setScene(this.session.scene)
     r.setCamera(this.cam.camera)
     return r
@@ -438,7 +472,10 @@ export class GameScreen {
     const r = kept.renderer
     const st = this.hooks.settings()
     this.viewmodelRev = ''
-    if (this.session.gamedata && this.session.gamedata !== kept.tiles) r.setTiles(this.session.gamedata)
+    if (this.session.gamedata && this.session.gamedata !== kept.tiles) {
+      r.setTiles(this.session.gamedata)
+      this.warmRenderer(r)
+    }
     const opts = this.render3dOptions(st)
     if (JSON.stringify(opts) !== kept.optionsKey) r.setOptions(opts)
     r.resetMotion() // the map may have hidden intermediate steps; never replay an old walk on return

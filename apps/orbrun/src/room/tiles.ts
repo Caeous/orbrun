@@ -65,6 +65,9 @@ export class RoomTiles implements TileSource, TileNames {
   spriteRects(name: string): ReadonlyArray<{ sx: number; sy: number; w: number; h: number }> | undefined {
     return name === ATLAS ? this.sprites : undefined
   }
+  spriteAtlases(): readonly string[] {
+    return [ATLAS]
+  }
   id(name: string): number | undefined {
     return this.ids.get(name)
   }
