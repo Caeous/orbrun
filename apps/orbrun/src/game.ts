@@ -648,11 +648,14 @@ export class GameScreen {
       if (this.renderer instanceof Render2d) this.renderer.setOptions({ center: st.map.viewCenter })
       this.renderer.setScene(this.session.scene, now / 1000)
       this.renderer.setCamera(this.cam.camera)
-      this.renderer.render(now / 1000)
-      // edge pips follow the frame just drawn: only a 3D frame has a lens to be out of
       const r3d = this.renderer instanceof Render3d ? this.renderer : null
-      this.hud.renderPips(this.session.scene, st, this.session.gamedata, r3d ? r3d.projector() : null, nearby === 'pips' ? 'all' : 'off')
+      // the 3D renderer marks its own stretches (level, bake, fields, crowd, place, draw) when measured
+      if (r3d) r3d.mark = perf ? (n) => perf.mark(n) : null
+      this.renderer.render(now / 1000)
       perf?.mark('render')
+      // edge pips follow the frame just drawn: only a 3D frame has a lens to be out of
+      this.hud.renderPips(this.session.scene, st, this.session.gamedata, r3d ? r3d.projector() : null, nearby === 'pips' ? 'all' : 'off')
+      perf?.mark('pips')
     }
     perf?.end()
   }

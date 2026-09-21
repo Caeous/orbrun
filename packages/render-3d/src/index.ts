@@ -750,6 +750,8 @@ function triangulateXZ(p: [number, number, number][]): number[][] {
 }
 
 export class Render3d implements MapRenderer {
+  /** A frame profiler's mark (perf.ts in the app): `render` names the stretch just done, so a late frame says which part was late. Unset when nothing is measuring. */
+  mark: ((name: string) => void) | null = null
   private renderer: THREE.WebGLRenderer | null = null
   private three = new THREE.Scene()
   private cam = new THREE.PerspectiveCamera(75, 1, 0.05, 200)
@@ -2783,13 +2785,18 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
         this.builtTint = tintKey
         this.builtOccupied = occKey
         this.rebuildLevel(scene)
+        this.mark?.('level')
         this.bakeStanding(this.levelGroup, { x: cam.eyeX, y: cam.eyeY })
+        this.mark?.('bake')
       }
       this.updateFields(scene)
+      this.mark?.('fields')
       // the crowd is synced against the scene, not rebuilt: what still stands is left standing
       if (this.syncBillboards(scene)) this.bakeStanding(this.billboardGroup, { x: cam.eyeX, y: cam.eyeY })
+      this.mark?.('crowd')
     } else if (this.crowdDirty) {
       if (this.syncBillboards(scene)) this.bakeStanding(this.billboardGroup, { x: cam.eyeX, y: cam.eyeY })
+      this.mark?.('crowd')
     }
     // the selected shell follows the cursor and the sprites, on its own
     if (this.selectionDirty) this.syncSelection()
@@ -2814,7 +2821,9 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.placeCursor()
     // the ghost pass needs the depth image only when there is a ghost to test against it
     if (this.ghostCount > 0) this.renderOccluderDepth(r)
+    this.mark?.('place')
     r.render(this.three, this.cam)
+    this.mark?.('draw')
     this.renderViewmodel(r, scene)
   }
 
