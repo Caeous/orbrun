@@ -2,6 +2,10 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.1.6 — 2026-09-21
+
+- The home screen offers Quit when Orbrun runs in its own window — a kiosk browser on a Steam Deck, or an installed app — where the browser gives you no way out. In a normal tab it stays hidden.
+
 ## 0.1.5 — 2026-09-20
 
 - Monsters now walk between cells instead of jumping one to the next, gliding

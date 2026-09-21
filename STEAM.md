@@ -88,3 +88,6 @@ page, open the controller icon, **Layout > Templates**, and pick
 On a Deck, switch back to Gaming Mode. Steam launches the browser full screen
 on orbrun.app, the pad reaches the game as a gamepad, and the shortcut shows
 up in your library with the artwork you set.
+
+A kiosk window has no tab to close, so the home screen grows a **Quit** row
+under Settings; it is hidden in an ordinary browser tab.

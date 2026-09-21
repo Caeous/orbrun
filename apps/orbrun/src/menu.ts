@@ -12,6 +12,7 @@ import type { PadEvent, PadKind } from './gamepad'
 import { Osk, oskPrompts } from './osk'
 import { glyph, glyphName, type GlyphName } from './glyphs'
 import { pickSplash } from './splash'
+import { canQuit, quit } from './quit'
 import { renderMarkdown } from './markdown'
 import aboutText from '../../../ABOUT.md?raw'
 import changelogText from '../../../CHANGELOG.md?raw'
@@ -879,6 +880,9 @@ export class FrontEnd {
     utilities.push({ id: 'about', label: 'About & credits', hint: 'About Orbrun, what’s new, and the people behind the game.', fn: () => this.showAbout() })
     const onPad = !!this.hooks.padConnected?.()
     rows.push({ id: 'settings', label: 'Settings', marker: '?', hint: 'Camera, controls, the HUD: kept on this device.' + (onPad ? ' (X)' : ''), fn: () => this.showSettings(() => this.showHome()) })
+    // straight under Settings, and only where the browser left no way out of its own: a kiosk window on a
+    // Deck, or an installed app (quit.ts). `<` is the way out, as it is out of the dungeon.
+    if (canQuit()) rows.push({ id: 'quit', label: 'Quit', marker: '<', hint: 'Close Orbrun. A game in progress is kept on the server.', fn: () => this.quit() })
     const shape = JSON.stringify([[...rows, ...utilities].map((r) => [r.id, r.label, r.sub, r.conn, r.main, !!r.also]), notices.map((n) => n.textContent)])
     // a report to put up has its screen drawn first, however little of it changed: the dialog stands on it
     if (this._view === 'home' && this.shape.get('home') === shape && !this.error && !report) return
@@ -1271,6 +1275,14 @@ export class FrontEnd {
     this.hooks.logout(account)
     this.session = null
     this.showHome()
+  }
+
+  /** Close the window, from the home screen's footer; a browser that refuses says so where the errors go. */
+  private quit() {
+    quit(() => {
+      this.error = 'This browser would not close the window. Close it yourself, or leave full screen with F11.'
+      this.showHome()
+    })
   }
 
   /**

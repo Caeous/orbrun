@@ -9,11 +9,8 @@ import { findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getS
 import { gamedataUrls } from '@orbrun/gamedata'
 import { morgueDirOf } from './whereis'
 import { settingsPanel } from './settings-panel'
-import { perfWanted } from './perf'
 
 const app = document.getElementById('app')!
-// the `?perf` flag is read here, before the routes drop the query from the address bar
-perfWanted()
 const gamepad = new GamepadInput()
 let lastInput: InputDevice = 'keyboard'
 let session: Session | null = null

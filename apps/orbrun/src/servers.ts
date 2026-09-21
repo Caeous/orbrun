@@ -605,10 +605,17 @@ export function parseRoute(href: string = window.location.href): Route {
   return { kind: 'home' }
 }
 
+/**
+ * The address for a route. The query is carried through unchanged: the flags
+ * that live there (`?perf`, `?fullscreen`) are set once when the page is
+ * opened — by a Steam shortcut's launch options, say — and a device with no
+ * address bar could not put one back, so a Play must not drop them.
+ */
 export function formatRoute(r: Route): string {
-  if (r.kind === 'home') return window.location.pathname
+  const base = window.location.pathname + window.location.search
+  if (r.kind === 'home') return base
   const hash = r.kind === 'lobby' ? 'lobby' : r.kind === 'play' ? 'play-' + encodeURIComponent(r.gameId) : 'watch-' + encodeURIComponent(r.username)
-  return `${window.location.pathname}#${hash}`
+  return `${base}#${hash}`
 }
 
 /**

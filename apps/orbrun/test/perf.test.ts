@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { FrameProfile, WINDOW, formatReport, stats } from '../src/perf'
+// @vitest-environment happy-dom
+import { afterEach, describe, expect, it } from 'vitest'
+import { FrameProfile, WINDOW, formatReport, perfWanted, stats } from '../src/perf'
 
 describe('perf stats', () => {
   it('takes percentiles of a sample', () => {
@@ -49,5 +50,20 @@ describe('perf stats', () => {
       p.end()
     }
     expect(p.report().frames).toBe(WINDOW)
+  })
+})
+
+/** The readout follows the address, and nothing else: no switch is left behind on the device. */
+describe('the perf flag', () => {
+  afterEach(() => history.replaceState(null, '', '/'))
+
+  it('is on with `?perf` and off without it, wherever the routes have got to', () => {
+    expect(perfWanted()).toBe(false)
+    history.replaceState(null, '', '/?perf')
+    expect(perfWanted()).toBe(true)
+    history.replaceState(null, '', '/?perf#play-dcss-web-trunk')
+    expect(perfWanted()).toBe(true)
+    history.replaceState(null, '', '/?perf=0')
+    expect(perfWanted()).toBe(false)
   })
 })

@@ -69,6 +69,20 @@ describe('routes', () => {
     expect(formatRoute({ kind: 'home' })).toBe('/')
   })
 
+  it('carries the query through, so the flags set at launch survive a Play', () => {
+    setChosenAccount(caeo)
+    history.replaceState(null, '', '/?fullscreen&perf')
+    try {
+      expect(formatRoute({ kind: 'home' })).toBe('/?fullscreen&perf')
+      expect(formatRoute({ kind: 'play', account: caeo, gameId: 'dcss-web-trunk' })).toBe('/?fullscreen&perf#play-dcss-web-trunk')
+      setRoute({ kind: 'play', account: caeo, gameId: 'dcss-web-trunk' })
+      expect(window.location.search).toBe('?fullscreen&perf')
+      expect(window.location.hash).toBe('#play-dcss-web-trunk')
+    } finally {
+      history.replaceState(null, '', '/')
+    }
+  })
+
   /**
    * The address bar is also the way back: opening a game leaves the screen it
    * was opened from in the history, so the browser's Back (and a handheld's

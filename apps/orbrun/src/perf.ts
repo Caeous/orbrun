@@ -139,22 +139,16 @@ export function formatReport(r: Report): string {
   return lines.join('\n')
 }
 
-const KEY = 'orbrun-perf'
-
 /**
- * Whether the readout is asked for: the stored switch, or `?perf` on the
- * URL. The routes rewrite the address bar without its query (servers.ts
- * `formatRoute`), so the flag is read once, at the front door, and kept in
- * storage; `?perf=0` clears it.
+ * Whether the readout is asked for: `?perf` on the address, as `?fullscreen`
+ * is read (quit.ts). The routes carry the query along (servers.ts
+ * `formatRoute`), so the flag lasts as long as the address does — through the
+ * lobby and into a game — and dropping it, or `?perf=0`, is the way off.
  */
 export function perfWanted(): boolean {
   try {
     const q = new URLSearchParams(window.location.search)
-    if (q.has('perf')) {
-      if (q.get('perf') === '0') localStorage.removeItem(KEY)
-      else localStorage.setItem(KEY, '1')
-    }
-    return localStorage.getItem(KEY) === '1'
+    return q.has('perf') && q.get('perf') !== '0'
   } catch {
     return false
   }
@@ -163,7 +157,8 @@ export function perfWanted(): boolean {
 /**
  * The on-screen readout: the report refreshed four times a second in a
  * corner, over everything. `orbrunPerf` on `window` switches it, so it can
- * be turned on from a remote console without a reload.
+ * be turned on from a remote console without a reload; that switch is this
+ * page's, and a reload is back to what `?perf` says.
  */
 export class PerfOverlay {
   readonly profile = new FrameProfile()
@@ -175,8 +170,8 @@ export class PerfOverlay {
   constructor(private host: HTMLElement) {
     if (perfWanted()) this.on()
     ;(window as unknown as { orbrunPerf: unknown }).orbrunPerf = {
-      on: () => this.on(true),
-      off: () => this.off(true),
+      on: () => this.on(),
+      off: () => this.off(),
       reset: () => this.profile.reset(),
       report: () => formatReport(this.profile.report()),
     }
@@ -186,8 +181,7 @@ export class PerfOverlay {
     return this.shown
   }
 
-  on(remember = false) {
-    if (remember) localStorage.setItem(KEY, '1')
+  on() {
     if (this.shown) return
     this.shown = true
     this.profile.reset()
@@ -209,8 +203,7 @@ export class PerfOverlay {
     }
   }
 
-  off(remember = false) {
-    if (remember) localStorage.removeItem(KEY)
+  off() {
     if (!this.shown) return
     this.shown = false
     clearInterval(this.timer)

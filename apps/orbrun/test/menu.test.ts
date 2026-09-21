@@ -158,6 +158,21 @@ describe('the front end: the home screen', () => {
     expect(sub(screen, 'Play')).toBeNull()
   })
 
+  it('offers Quit in the footer only where the browser left no way out', () => {
+    const { screen } = make()
+    expect(labels(screen)).not.toContain('Quit')
+    screen.destroy()
+    // a kiosk browser, as Steam launches it on a Deck: no tab, no chrome, so the menu is the way out
+    vi.spyOn(window, 'matchMedia').mockImplementation((q: string) => ({ matches: q === '(display-mode: fullscreen)' }) as MediaQueryList)
+    const kiosk = make().screen
+    expect(labels(kiosk)).toEqual(['Play', 'Watch', 'Settings', 'Quit', 'About & credits'])
+    expect(kiosk.root.querySelector('.home-footer')?.textContent).toBe('About & credits')
+    const close = vi.spyOn(window, 'close').mockImplementation(() => {})
+    pick(kiosk, 'Quit')
+    expect(close).toHaveBeenCalled()
+    vi.restoreAllMocks()
+  })
+
   it('reserves home help space for every row and footer hint as focus changes', () => {
     const { screen } = make()
     const help = screen.root.querySelector('.home-menu-help')!
