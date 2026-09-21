@@ -22,6 +22,7 @@ import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './
 import { gamepadHints, type PadHintEvidence } from './gamepad-hints'
 import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INSET, type Settings } from './servers'
 import { type SettingGroup } from './settings-rows'
+import { PerfOverlay } from './perf'
 
 /** The most drawn pixels per CSS pixel the game view gets (Part IV of rendering-3d.md): the display's density, capped here. */
 const VIEW_MAX_DPR = 1
@@ -76,6 +77,8 @@ export class GameScreen {
   private overlays: Overlays
   private hooks: GameHooks
   private ctx: Context
+  /** frame timing readout (perf.ts), on with `?perf` */
+  private perf: PerfOverlay
   private unsub: (() => void)[] = []
   private _needsRender = true
   /**
@@ -114,6 +117,7 @@ export class GameScreen {
       this.idleTimer = 0
       // the clock starts again with the loop: an easing's first frame must not be handed the whole sleep as its dt
       this.lastFrame = performance.now()
+      this.perf?.profile.resume()
       this.raf = requestAnimationFrame(this.loop)
     }
   }
@@ -212,6 +216,7 @@ export class GameScreen {
     this.root = h('div', { class: 'screen game' })
     host.append(this.root)
     this.root.append(this.canvas, this.loading)
+    this.perf = new PerfOverlay(this.root)
     const st = hooks.settings()
     this.is3d = st.renderer === '3d'
     this.grid = new GridHost(this.root, this.textPx())
@@ -330,6 +335,7 @@ export class GameScreen {
     clearTimeout(this.tooltipTimer)
     this.hud.destroy()
     this.overlays.destroy()
+    this.perf.destroy()
     this.grid.destroy()
     this.renderer.destroy()
     this.park.clear()
@@ -539,18 +545,26 @@ export class GameScreen {
     const dt = Math.min(0.1, (now - this.lastFrame) / 1000)
     this.lastFrame = now
     this.sceneTime = now / 1000
+    const perf = this.perf?.enabled ? this.perf.profile : null
+    perf?.begin(now)
     try {
-      if (this.session.flushScene()) this.needsRender = true
+      if (this.session.flushScene()) {
+        this.needsRender = true
+        perf?.tag('scene')
+      }
     } finally {
       this.sceneTime = undefined
     }
+    perf?.mark('scene')
     const beforeLook = { yaw: this.cam.camera.yaw, pitch: this.cam.camera.pitch }
     if (this.advancePresentation(dt, now / 1000)) this.needsRender = true
+    perf?.mark('present')
     if (!this.awake(now)) {
       // nothing to do and nothing moving: no frames until something happens (`wake`) or the safety tick
       cancelAnimationFrame(this.raf)
       this.raf = 0
       this.idleTimer = window.setTimeout(this.idleTick, IDLE_TICK_MS)
+      perf?.resume()
       return
     }
     this.dirty = false
@@ -623,9 +637,11 @@ export class GameScreen {
     this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing)
     this.chat.update(st, st.phase === 'playing' || st.phase === 'watching', !!st.lobby.username)
     this.syncTarget()
+    perf?.mark('ui')
     if (this.needsRender) {
       this.needsRender = false
       this.syncViewmodel(st)
+      perf?.mark('viewmodel')
       // dungeon_renderer.js set_view_center: the 2D view sits on the server's view
       // centre (`vgrdc`), the player in normal play and the map cursor while the
       // level map is open, so the map scrolls under the cursor as WebTiles' does
@@ -636,7 +652,9 @@ export class GameScreen {
       // edge pips follow the frame just drawn: only a 3D frame has a lens to be out of
       const r3d = this.renderer instanceof Render3d ? this.renderer : null
       this.hud.renderPips(this.session.scene, st, this.session.gamedata, r3d ? r3d.projector() : null, nearby === 'pips' ? 'all' : 'off')
+      perf?.mark('render')
     }
+    perf?.end()
   }
 
   /** One timestamp for the camera's movement and the sprites rendered this frame. */
@@ -666,6 +684,7 @@ export class GameScreen {
     this.idleTimer = 0
     if (!this.raf && !this.destroyed) {
       this.lastFrame = performance.now()
+      this.perf?.profile.resume()
       this.raf = requestAnimationFrame(this.loop)
     }
   }

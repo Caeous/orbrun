@@ -1512,6 +1512,22 @@ img.room-poster.up {
   background: #000;
 }
 
+/* the frame timing readout (perf.ts), over everything and in nothing's way */
+.game pre.perf {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  margin: 0;
+  padding: 4px 6px;
+  font: 11px/1.3 monospace;
+  color: #0f0;
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  white-space: pre;
+}
+
 .game canvas.view {
   /* set on the view's cells by the grid host (game.ts relayout); left, top, width, height are inline */
   position: absolute;
