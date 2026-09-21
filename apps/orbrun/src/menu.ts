@@ -1280,7 +1280,7 @@ export class FrontEnd {
   /** Close the window, from the home screen's footer; a browser that refuses says so where the errors go. */
   private quit() {
     quit(() => {
-      this.error = 'This browser would not close the window. Close it yourself, or leave full screen with F11.'
+      this.error = 'This browser would not close the window. Leave full screen with F11, or close it the way you opened it — on a Deck, the Steam button, then Exit.'
       this.showHome()
     })
   }

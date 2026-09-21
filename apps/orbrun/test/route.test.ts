@@ -120,6 +120,24 @@ describe('routes', () => {
       expect(history.length).toBe(len)
     })
 
+    /**
+     * A window of our own has no Back to serve, and Chrome refuses to close a
+     * window a script did not open once its history holds more than one
+     * entry — so an entry here would cost the Quit row (quit.ts).
+     */
+    it('adds no entry in a window of its own, so Quit can still close it', () => {
+      history.replaceState(null, '', '/?fullscreen')
+      try {
+        const before = history.length
+        setRoute({ kind: 'lobby', account: caeo })
+        setRoute({ kind: 'play', account: caeo, gameId: 'dcss-0.34' })
+        expect(window.location.hash).toBe('#play-dcss-0.34')
+        expect(history.length).toBe(before)
+      } finally {
+        history.replaceState(null, '', '/')
+      }
+    })
+
     it('does not stack an entry per game: one spectate to the next replaces it', () => {
       setRoute({ kind: 'lobby', account: caeo })
       setRoute({ kind: 'watch', account: caeo, username: 'someone' })

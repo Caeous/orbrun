@@ -1,6 +1,7 @@
 import type { HintMode } from './gamepad-hints'
 import type { GameLink } from '@orbrun/webtiles'
 import bundled from '../data/servers.json'
+import { canQuit } from './quit'
 
 export interface ServerInfo {
   id: string
@@ -632,11 +633,17 @@ function routeDepth(r: Route): number {
  * Put the route in the address bar. Neither push nor replace fires
  * `hashchange`, so this never comes back through `applyRoute`; only the
  * player's own Back, Forward or edit does.
+ *
+ * In a window of our own there is no Back to serve, and a second history
+ * entry costs the way out: Chrome refuses `window.close()` on a window a
+ * script did not open once the tab has more than one entry, so a Deck that
+ * had played a game could no longer Quit (quit.ts). There the address is
+ * only ever rewritten in place.
  */
 export function setRoute(r: Route) {
   const next = formatRoute(r)
   const cur = window.location.pathname + window.location.search + window.location.hash
   if (cur === next) return
-  if (routeDepth(r) > routeDepth(parseRoute())) history.pushState(null, '', next)
+  if (!canQuit() && routeDepth(r) > routeDepth(parseRoute())) history.pushState(null, '', next)
   else history.replaceState(null, '', next)
 }
