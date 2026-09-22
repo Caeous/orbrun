@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import { Render3d } from '../src/index.js'
+import { sameColours } from '../src/peel.js'
 import { emptyScene, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
 /**
@@ -20,7 +21,7 @@ type Priv = {
   setTiles(t: TileSource): void
   billboardGroup: THREE.Group
   syncBillboards(s: Scene): void
-  atlas(name: string): { mask?: Uint8Array | null; texel?: (x: number, y: number) => number }
+  atlas(name: string): { mask?: Uint8Array | null; same?: Uint8Array }
 }
 
 function scene(): Scene {
@@ -60,7 +61,16 @@ function build(colours?: (x: number, y: number) => number): { r: Priv; faces: nu
   const mask = new Uint8Array(16 * 16)
   for (let y = 9; y < 13; y++) for (let x = 5; x < 9; x++) if (!(x === 8 && y === 12)) mask[y * 16 + x] = 1
   r.atlas('main').mask = mask
-  r.atlas('main').texel = colours
+  // the same-colour bits as the peel would read them off an atlas painted with `colours`
+  if (colours) {
+    const data = new Uint8ClampedArray(16 * 16 * 4)
+    for (let y = 0; y < 16; y++)
+      for (let x = 0; x < 16; x++) {
+        const c = colours(x, y)
+        data.set([(c >>> 24) & 255, (c >>> 16) & 255, (c >>> 8) & 255, c & 255], (y * 16 + x) * 4)
+      }
+    r.atlas('main').same = sameColours(data, 16, 16)
+  }
   r.syncBillboards(scene())
   const h = r.billboardGroup.children.find((c) => c.userData.kind === 'monster')!
   const m = h.children.find((c) => (c as THREE.Mesh).geometry && !c.userData.shared && !c.userData.hull) as THREE.Mesh

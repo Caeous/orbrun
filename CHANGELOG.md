@@ -4,6 +4,7 @@ Notable changes to Orbrun, newest first.
 
 ## 0.1.6 — 2026-09-21
 
+- Arriving on a level no longer stalls on its statues, trees and stairs: their outlines were being read back off the art one row at a time. Nothing in the picture changed.
 - The home screen offers Quit when Orbrun runs in its own window — a kiosk browser on a Steam Deck, or an installed app — where the browser gives you no way out. In a normal tab it stays hidden.
 
 ## 0.1.5 — 2026-09-20

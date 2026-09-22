@@ -76,3 +76,35 @@ export function peelInk(data: Uint8ClampedArray, w: number, h: number, alphaMin:
   for (let i = 0; i < mask.length; i++) if (mask[i] === 2) mask[i] = 1
   return mask
 }
+
+/** `sameColours` bit: the texel holds the very same rgba as the one to its right. */
+export const SAME_RIGHT = 1
+/** `sameColours` bit: the texel holds the very same rgba as the one below it. */
+export const SAME_DOWN = 2
+
+/**
+ * Where neighbouring texels hold the very same colour, one byte per texel
+ * (`SAME_RIGHT`, `SAME_DOWN`), read off the peeled pixels. A rim's faces
+ * along an edge whose texels are all one colour sample the same thing, so
+ * `rimTemplate` builds them as one — and equality is transitive, so a run's
+ * texels are all alike exactly when each is like its neighbour. Kept in place
+ * of the pixels themselves: an atlas is megabytes of rgba, and reading rows
+ * back off its canvas as each rim is built is the cost of a canvas readback
+ * per row, which on entering a level was the level's whole fixtures pass
+ * (docs/front-end-perf.md).
+ */
+export function sameColours(data: Uint8ClampedArray, w: number, h: number): Uint8Array {
+  const out = new Uint8Array(w * h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x
+      const p = i * 4
+      let bits = 0
+      if (x + 1 < w && data[p] === data[p + 4] && data[p + 1] === data[p + 5] && data[p + 2] === data[p + 6] && data[p + 3] === data[p + 7]) bits |= SAME_RIGHT
+      const q = p + w * 4
+      if (y + 1 < h && data[p] === data[q] && data[p + 1] === data[q + 1] && data[p + 2] === data[q + 2] && data[p + 3] === data[q + 3]) bits |= SAME_DOWN
+      out[i] = bits
+    }
+  }
+  return out
+}

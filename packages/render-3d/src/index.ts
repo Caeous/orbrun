@@ -25,7 +25,7 @@ import { bodyRect, insetFootprint, sceneClassAt, type ClassAt, type FootprintOpt
 import { Crowd, type CrowdStats } from './crowd.js'
 import { extrudeFaces, runs } from './mesh.js'
 import { Movers, monsterId } from './motion.js'
-import { peelInk } from './peel.js'
+import { peelInk, sameColours, SAME_DOWN, SAME_RIGHT } from './peel.js'
 import type { PeelReply, PeelRequest } from './peel.worker.js'
 
 /**
@@ -475,12 +475,12 @@ interface AtlasEntry {
    */
   mask?: Uint8Array | null
   /**
-   * The colour of a texel of the peeled atlas, packed rgba, read from the
-   * canvas `atlasMask` drew it into; undefined where the pixels cannot be
-   * read. Two rim faces whose texels hold the same colour sample the same
-   * thing, so `rimTemplate` builds them as one.
+   * Where a texel of the peeled atlas holds the very same colour as the one to
+   * its right or below it (peel.ts `sameColours`), one byte per texel; undefined
+   * where the pixels cannot be read. Two rim faces whose texels hold the same
+   * colour sample the same thing, so `rimTemplate` builds them as one.
    */
-  texel?: (x: number, y: number) => number
+  same?: Uint8Array
 }
 
 /**
@@ -2656,18 +2656,23 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     // every face wears its own texel: the block is body all through, so there is no line to step off.
     // Neighbouring faces along an edge whose texels hold the very same colour sample the very same thing,
     // so they are built as one face wearing the first's texel (mesh.ts `runs`); where the colours cannot
-    // be read, every texel keeps its own face
-    const colour = l.a.texel
-    const same = (ax: number, ay: number, bx: number, by: number) => !!colour && colour(sx + ax, sy + ay) === colour(sx + bx, sy + by)
+    // be read, every texel keeps its own face. Equality is transitive, so a run is all one colour exactly
+    // when each texel is like the one before it, which is what the atlas's same-colour bits hold
+    // (peel.ts `sameColours`): no pixel is read here.
+    const same = l.a.same
+    /** Whether texel (tx, ty) holds the colour of the one to its left. */
+    const sameAsLeft = (tx: number, ty: number) => !!same && (same[(sy + ty) * aw + sx + tx - 1] & SAME_RIGHT) !== 0
+    /** Whether texel (tx, ty) holds the colour of the one above it. */
+    const sameAsAbove = (tx: number, ty: number) => !!same && (same[(sy + ty - 1) * aw + sx + tx] & SAME_DOWN) !== 0
     const edge = (on: boolean) => offEdges && on
     const uvAt = (tx: number, ty: number): [number, number] => [(sx + tx + 0.5) / aw, (sy + ty + 0.5) / ah]
-    /** The runs along `a0..a1` of texels `on` (a face here) that share their colour with the run's first. */
-    const sameRuns = (on: (t: number) => boolean, at: (t: number) => [number, number], a0: number, a1: number): [number, number][] => {
+    /** The runs along `a0..a1` of texels `on` (a face here) that share their colour with the run's first: `alike(t)` says texel t is like texel t - 1. */
+    const sameRuns = (on: (t: number) => boolean, alike: (t: number) => boolean, a0: number, a1: number): [number, number][] => {
       const out: [number, number][] = []
       for (const [r0, r1] of runs(on, a0, a1)) {
         let start = r0
         for (let t = r0 + 1; t <= r1; t++) {
-          if (t < r1 && same(...at(start), ...at(t))) continue
+          if (t < r1 && alike(t)) continue
           out.push([start, t])
           start = t
         }
@@ -2676,13 +2681,13 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     }
     for (let ty = 0; ty < hTex; ty++) {
       const y1 = -ty, y0 = y1 - 1
-      const row = (tx: number): [number, number] => [tx, ty]
+      const row = (tx: number) => sameAsLeft(tx, ty)
       if (!edge(ty === 0)) for (const [a, b] of sameRuns((tx) => body(tx, ty) && !body(tx, ty - 1), row, 0, w)) face([a, y1, z1, b, y1, z1, b, y1, z0, a, y1, z0], ...uvAt(a, ty), BLOCK_SHADE.top)
       if (!edge(ty === hTex - 1)) for (const [a, b] of sameRuns((tx) => body(tx, ty) && !body(tx, ty + 1), row, 0, w)) face([a, y0, z0, b, y0, z0, b, y0, z1, a, y0, z1], ...uvAt(a, ty), BLOCK_SHADE.bottom)
     }
     for (let tx = 0; tx < w; tx++) {
       const x0 = tx, x1 = tx + 1
-      const col = (ty: number): [number, number] => [tx, ty]
+      const col = (ty: number) => sameAsAbove(tx, ty)
       if (!edge(tx === 0)) for (const [a, b] of sameRuns((ty) => body(tx, ty) && !body(tx - 1, ty), col, 0, hTex)) face([x0, -b, z0, x0, -b, z1, x0, -a, z1, x0, -a, z0], ...uvAt(tx, a), BLOCK_SHADE.side)
       if (!edge(tx === w - 1)) for (const [a, b] of sameRuns((ty) => body(tx, ty) && !body(tx + 1, ty), col, 0, hTex)) face([x1, -b, z1, x1, -b, z0, x1, -a, z0, x1, -a, z1], ...uvAt(tx, a), BLOCK_SHADE.side)
     }
@@ -2710,7 +2715,7 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       made.ctx.drawImage(img as CanvasImageSource, 0, 0)
       const image = made.ctx.getImageData(0, 0, a.width, a.height)
       const mask = peelInk(image.data, a.width, a.height, OPAQUE_ALPHA, this.tiles?.spriteRects?.(a.name))
-      this.installPeeled(a, made, image, mask)
+      this.installPeeled(a, made, image, mask, sameColours(image.data, a.width, a.height))
     } catch {
       a.mask = null
     }
@@ -2731,22 +2736,13 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
   }
 
   /** The peeled image becomes what the atlas draws, and its opacity the atlas's mask. */
-  private installPeeled(a: AtlasEntry, made: AtlasCanvas, image: ImageData, mask: Uint8Array) {
+  private installPeeled(a: AtlasEntry, made: AtlasCanvas, image: ImageData, mask: Uint8Array, same: Uint8Array) {
     const { canvas, ctx } = made
     ctx.putImageData(image, 0, 0)
     a.texture.image = canvas as unknown as TexImageSource
     a.texture.needsUpdate = true
     a.mask = mask
-    // a tile's colours are read back from the canvas as its rim is built, not kept for the whole atlas
-    const rows = new Map<number, Uint8ClampedArray>()
-    a.texel = (x, y) => {
-      let row = rows.get(y)
-      if (!row) {
-        if (rows.size > 64) rows.clear()
-        rows.set(y, (row = ctx.getImageData(0, y, a.width, 1).data))
-      }
-      return ((row[x * 4] << 24) | (row[x * 4 + 1] << 16) | (row[x * 4 + 2] << 8) | row[x * 4 + 3]) >>> 0
-    }
+    a.same = same
   }
 
   /**
@@ -2800,12 +2796,12 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const req: PeelRequest = { id, bitmap, width: a.width, height: a.height, alphaMin: OPAQUE_ALPHA, sprites: this.tiles?.spriteRects?.(a.name) }
       worker.postMessage(req, [bitmap])
     })
-    if (!reply.data || !reply.mask) return false
+    if (!reply.data || !reply.mask || !reply.same) return false
     // the atlas may have gone while the worker was at it
     if (this.atlases.get(a.name) !== a || a.mask !== undefined) return true
     const made = this.atlasCanvas(a)
     if (!made) return false
-    this.installPeeled(a, made, new ImageData(new Uint8ClampedArray(reply.data as ArrayBuffer), a.width, a.height), new Uint8Array(reply.mask as ArrayBuffer))
+    this.installPeeled(a, made, new ImageData(new Uint8ClampedArray(reply.data as ArrayBuffer), a.width, a.height), new Uint8Array(reply.mask as ArrayBuffer), new Uint8Array(reply.same as ArrayBuffer))
     return true
   }
 

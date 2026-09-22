@@ -11,7 +11,7 @@
  * Nothing of the renderer is imported: the worker carries peel.ts alone, not
  * three.
  */
-import { peelInk } from './peel.js'
+import { peelInk, sameColours } from './peel.js'
 
 export interface PeelRequest {
   id: number
@@ -22,11 +22,12 @@ export interface PeelRequest {
   sprites?: ReadonlyArray<{ sx: number; sy: number; w: number; h: number }>
 }
 
-/** The cleaned pixels (RGBA) and the opacity mask, or why there are none. */
+/** The cleaned pixels (RGBA), the opacity mask and the same-colour bits (`sameColours`), or why there are none. */
 export interface PeelReply {
   id: number
   data?: ArrayBufferLike
   mask?: ArrayBufferLike
+  same?: ArrayBufferLike
   error?: string
 }
 
@@ -44,7 +45,8 @@ scope.onmessage = (e) => {
     ctx.drawImage(bitmap, 0, 0)
     const image = ctx.getImageData(0, 0, width, height)
     const mask = peelInk(image.data, width, height, alphaMin, sprites)
-    scope.postMessage({ id, data: image.data.buffer, mask: mask.buffer }, [image.data.buffer, mask.buffer])
+    const same = sameColours(image.data, width, height)
+    scope.postMessage({ id, data: image.data.buffer, mask: mask.buffer, same: same.buffer }, [image.data.buffer, mask.buffer, same.buffer])
   } catch (err) {
     scope.postMessage({ id, error: String(err) })
   } finally {
