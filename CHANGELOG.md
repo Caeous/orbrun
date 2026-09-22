@@ -2,6 +2,12 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.1.7 — 2026-09-22
+
+- Smoke and the other clouds now drift over the monsters standing in them, instead of disappearing behind whoever is in the cell.
+- Everything that stands — monsters, items, doors, statues, your own shadow — is now drawn straight from the art by the graphics card, one draw for a whole crowd, instead of being built as a little model each. Their thickness and dark outline are worked out as they draw, so nothing is built ahead of them either.
+- Walls on a big level go up faster: cells whose surroundings look alike reuse the shape already worked out for them.
+
 ## 0.1.6 — 2026-09-21
 
 - Arriving on a level no longer stalls on its statues, trees and stairs: their outlines were being read back off the art one row at a time. Nothing in the picture changed.

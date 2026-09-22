@@ -77,34 +77,34 @@ export function peelInk(data: Uint8ClampedArray, w: number, h: number, alphaMin:
   return mask
 }
 
-/** `sameColours` bit: the texel holds the very same rgba as the one to its right. */
-export const SAME_RIGHT = 1
-/** `sameColours` bit: the texel holds the very same rgba as the one below it. */
-export const SAME_DOWN = 2
+/** `distanceField` value for a texel no hull of any width reaches. */
+export const FAR = 255
 
 /**
- * Where neighbouring texels hold the very same colour, one byte per texel
- * (`SAME_RIGHT`, `SAME_DOWN`), read off the peeled pixels. A rim's faces
- * along an edge whose texels are all one colour sample the same thing, so
- * `rimTemplate` builds them as one — and equality is transitive, so a run's
- * texels are all alike exactly when each is like its neighbour. Kept in place
- * of the pixels themselves: an atlas is megabytes of rgba, and reading rows
- * back off its canvas as each rim is built is the cost of a canvas readback
- * per row, which on entering a level was the level's whole fixtures pass
- * (docs/front-end-perf.md).
+ * How far every texel stands from the body, counted in axis steps (the way
+ * the art's ink was drawn round it): 0 on a body texel, 1 beside one, 2 two
+ * steps out, and `FAR` past `maxD`. One byte per texel, sampled by the sprite
+ * shader (shaders.ts) to tell body from hull from air: the black hull round a
+ * standing sprite is every texel within one step of the body, the wider shell
+ * round the selected sprite within two. Computed here, in the worker that
+ * peeled the mask, so the frame never walks an atlas.
  */
-export function sameColours(data: Uint8ClampedArray, w: number, h: number): Uint8Array {
-  const out = new Uint8Array(w * h)
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const i = y * w + x
-      const p = i * 4
-      let bits = 0
-      if (x + 1 < w && data[p] === data[p + 4] && data[p + 1] === data[p + 5] && data[p + 2] === data[p + 6] && data[p + 3] === data[p + 7]) bits |= SAME_RIGHT
-      const q = p + w * 4
-      if (y + 1 < h && data[p] === data[q] && data[p + 1] === data[q + 1] && data[p + 2] === data[q + 2] && data[p + 3] === data[q + 3]) bits |= SAME_DOWN
-      out[i] = bits
+export function distanceField(mask: Uint8Array, w: number, h: number, maxD = 2): Uint8Array {
+  const out = new Uint8Array(w * h).fill(FAR)
+  let frontier: number[] = []
+  for (let i = 0; i < mask.length; i++) if (mask[i] === 1) { out[i] = 0; frontier.push(i) }
+  for (let d = 1; d <= maxD && frontier.length; d++) {
+    const next: number[] = []
+    for (const i of frontier) {
+      const x = i % w
+      const y = (i - x) / w
+      const visit = (j: number) => { if (out[j] === FAR) { out[j] = d; next.push(j) } }
+      if (x > 0) visit(i - 1)
+      if (x + 1 < w) visit(i + 1)
+      if (y > 0) visit(i - w)
+      if (y + 1 < h) visit(i + w)
     }
+    frontier = next
   }
   return out
 }

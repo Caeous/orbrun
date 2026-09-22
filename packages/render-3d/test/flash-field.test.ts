@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
-import { Render3d } from '../src/index.js'
+import { stubbed, type Guts } from './bed.js'
+import { LevelGrid } from '../src/grid.js'
+import { LevelMesher, uvFor, type MeshContext } from '../src/level-mesh.js'
+import { WALL_INSET } from '../src/index.js'
 import { cellKey, emptyScene, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
 const RECT: TileRect = { atlas: 'main', sx: 0, sy: 0, w: 32, h: 32, ox: 0, oy: 0, cell: 32 }
@@ -36,31 +38,27 @@ function room(flash?: { r: number; g: number; b: number; a: number }): Scene {
   return s
 }
 
-type Inner = {
-  setTiles(t: TileSource): void
-  levelGroup: THREE.Group
-  rebuildLevel(s: Scene): void
-  updateFields(s: Scene): void
-  flashTex: THREE.DataTexture | null
-  fieldUniforms: { flashMap: { value: THREE.Texture | null }; fieldOrigin: { value: THREE.Vector2 }; fieldSize: { value: THREE.Vector2 } }
-  atlases: Map<string, { ghostMat: THREE.ShaderMaterial; ghostVisibleMat: THREE.ShaderMaterial }>
-}
-
-function build(scene: Scene): Inner {
-  const r = new Render3d() as unknown as Inner
-  r.setTiles(tiles)
-  r.rebuildLevel(scene)
-  r.updateFields(scene)
-  return r
+function build(scene: Scene): Guts {
+  const { g } = stubbed({}, tiles)
+  g.updateFields(scene)
+  return g
 }
 
 /** The flash texel over cell (x, y), rgba 0..255. */
-function texel(r: Inner, x: number, y: number): number[] {
-  const o = r.fieldUniforms.fieldOrigin.value
-  const w = r.fieldUniforms.fieldSize.value.x
+function texel(g: Guts, x: number, y: number): number[] {
+  const o = g.fieldUniforms.fieldOrigin.value
+  const w = g.fieldUniforms.fieldSize.value.x
   const i = ((y - o.y) * w + (x - o.x)) * 4
-  const d = r.flashTex!.image.data as Uint8Array
+  const d = g.flashTex!.image.data as Uint8Array
   return [d[i], d[i + 1], d[i + 2], d[i + 3]]
+}
+
+/** The level's vertices, as the mesher builds them. */
+function vertices(scene: Scene): number {
+  const ctx: MeshContext = { tileOf: () => ({ r: RECT, atlas: 'main', uv: uvFor(RECT, 64, 64) }), fo: { inset: WALL_INSET }, chamfer: 1 / 32 }
+  const mesher = new LevelMesher(() => 0)
+  mesher.update(new LevelGrid(scene), ctx)
+  return [...mesher.chunks.values()].flat().reduce((n, g) => n + g.index.length, 0)
 }
 
 describe('the flash field', () => {
@@ -68,30 +66,23 @@ describe('the flash field', () => {
 
   /**
    * The flash is a wash over the whole cell, as WebTiles fills the cell with
-   * it in 2D — not a decal on the ground. It rides a field the materials read,
+   * it in 2D — not a decal on the ground. It rides a field the shaders read,
    * so a level that starts flashing builds exactly the same geometry.
    */
   it('adds no geometry: the same level, flashed or not', () => {
-    const plain = build(room())
-    const flashed = build(room(PARALYSED))
-    const count = (r: Inner) => r.levelGroup.children.length
-    const tris = (r: Inner) =>
-      r.levelGroup.children.reduce((n, c) => n + (((c as THREE.Mesh).geometry?.getIndex()?.count ?? 0) as number), 0)
-    expect(count(flashed)).toBe(count(plain))
-    expect(tris(flashed)).toBe(tris(plain))
+    expect(vertices(room(PARALYSED))).toBe(vertices(room()))
   })
 
   it('carries the server\'s colour and alpha, cell by cell', () => {
-    const r = build(room(PARALYSED))
-    expect(texel(r, 1, 1)).toEqual([64, 64, 255, 100])
+    const g = build(room(PARALYSED))
+    expect(texel(g, 1, 1)).toEqual([64, 64, 255, 100])
     // an unwashed cell keeps the colour and drops to nothing: the field is
     // filtered, and a black texel there would fringe the edge of the wash
-    expect(texel(r, 1, 0)).toEqual([64, 64, 255, 0])
+    expect(texel(g, 1, 0)).toEqual([64, 64, 255, 0])
   })
 
   it('leaves the field clear when nothing flashes', () => {
-    const r = build(room())
-    expect(texel(r, 1, 1)).toEqual([0, 0, 0, 0])
+    expect(texel(build(room()), 1, 1)).toEqual([0, 0, 0, 0])
   })
 
   /**
@@ -103,9 +94,9 @@ describe('the flash field', () => {
     const s = room()
     s.cells.get(cellKey(0, 1))!.flash = { r: 255, g: 255, b: 255, a: 1 }
     s.cells.get(cellKey(2, 1))!.flash = { r: 255, g: 255, b: 255, a: 64 }
-    const r = build(s)
-    expect(texel(r, 0, 1)[3]).toBe(1)
-    expect(texel(r, 2, 1)[3]).toBe(64)
+    const g = build(s)
+    expect(texel(g, 0, 1)[3]).toBe(1)
+    expect(texel(g, 2, 1)[3]).toBe(64)
   })
 
   /**
@@ -115,13 +106,13 @@ describe('the flash field', () => {
    * solid blob of the wrong colour behind every wall.
    */
   it('hands the ghost shaders the field uniforms', () => {
-    const r = build(room(PARALYSED))
-    const a = r.atlases.get('main')!
-    for (const m of [a.ghostMat, a.ghostVisibleMat]) {
-      expect(m.uniforms.flashMap).toBe(r.fieldUniforms.flashMap)
-      expect(m.uniforms.fieldOrigin).toBe(r.fieldUniforms.fieldOrigin)
-      expect(m.uniforms.fieldSize).toBe(r.fieldUniforms.fieldSize)
-      expect(m.uniforms.flashMap.value).toBe(r.flashTex)
+    const g = build(room(PARALYSED))
+    const a = g.atlas('main')!
+    for (const m of [a.sprite.ghostVisible, a.sprite.ghostRemembered]) {
+      expect(m.uniforms.flashMap).toBe(g.fieldUniforms.flashMap)
+      expect(m.uniforms.fieldOrigin).toBe(g.fieldUniforms.fieldOrigin)
+      expect(m.uniforms.fieldSize).toBe(g.fieldUniforms.fieldSize)
+      expect(m.uniforms.flashMap.value).toBe(g.flashTex)
     }
   })
 })

@@ -1,23 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
-import { Render3d } from '../src/index.js'
-import { cellKey, emptyScene, type Billboard, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
+import { LevelGrid } from '../src/grid.js'
+import { BB_DEPTH, FIXTURE_BACK, crowdInstances, fixtureInstances } from '../src/sprites.js'
+import { cellKey, emptyScene, type Billboard, type Scene, type TileRect } from '@orbrun/scene'
 
 const RECT: TileRect = { atlas: 'main', sx: 0, sy: 0, w: 32, h: 32, ox: 0, oy: 0, cell: 32 }
-
-const tiles: TileSource = {
-  tile: () => RECT,
-  atlas: () => ({ width: 64, height: 64 }) as unknown as TexImageSource,
-  atlasNames: () => ['main'],
-}
-
-type Priv = {
-  setTiles(t: TileSource): void
-  levelGroup: THREE.Group
-  billboardGroup: THREE.Group
-  rebuildLevel(s: Scene): void
-  syncBillboards(s: Scene): void
-}
 
 /** A 3x3 room, the middle row floor, an upright staircase on (2, 1) with `on` standing on it. */
 function stairsUnder(on: Billboard[]): Scene {
@@ -46,21 +32,12 @@ function stairsUnder(on: Billboard[]): Scene {
   return s
 }
 
-function build(scene: Scene): Priv {
-  const r = new Render3d() as unknown as Priv
-  r.setTiles(tiles)
-  r.rebuildLevel(scene)
-  r.syncBillboards(scene)
-  return r
-}
-
-function holders(g: THREE.Group): THREE.Object3D[] {
-  return g.children.filter((c) => c.userData.billboard)
-}
-
-/** The nearest face of a holder's first quad, in its own frame: the eye looks down -z of it. */
-function front(h: THREE.Object3D): number {
-  return (h.children[0] as THREE.Mesh).position.z
+function build(scene: Scene) {
+  const grid = new LevelGrid(scene)
+  return {
+    fixtures: fixtureInstances(scene, () => RECT, grid.framed, grid.occupied),
+    crowd: crowdInstances(scene, () => RECT, null).sprites,
+  }
 }
 
 const monster: Billboard = { x: 2, y: 1, tile: 9, kind: 'monster', height: 1, attitude: 'hostile' }
@@ -74,8 +51,10 @@ describe('an upright feature and what stands on it', () => {
    * floor instead, as it already does underfoot in first person.
    */
   it('lays the feature flat under a monster', () => {
-    expect(holders(build(stairsUnder([])).levelGroup)).toHaveLength(1)
-    expect(holders(build(stairsUnder([monster])).levelGroup)).toHaveLength(0)
+    expect(build(stairsUnder([])).fixtures).toHaveLength(1)
+    expect(build(stairsUnder([monster])).fixtures).toHaveLength(0)
+    // and the cell knows it: the level's own mesh draws the feature as a decal on the floor instead
+    expect([...new LevelGrid(stairsUnder([monster])).occupied]).toEqual([cellKey(2, 1)])
   })
 
   /**
@@ -84,11 +63,12 @@ describe('an upright feature and what stands on it', () => {
    * the sprite in the cell reads in front of it.
    */
   it('stands a feature back from a cloud passing over it', () => {
-    const r = build(stairsUnder([cloud]))
-    const [feature] = holders(r.levelGroup)
-    const [drift] = holders(r.billboardGroup)
-    expect(feature.position).toEqual(drift.position)
+    const { fixtures, crowd } = build(stairsUnder([cloud]))
+    const [feature] = fixtures
+    const [drift] = crowd
+    expect(feature.anchor).toEqual(drift.anchor)
     // the sprite's block is BB_DEPTH texels of its own scale deep; the board clears all of it
-    expect(front(feature)).toBeLessThanOrEqual(front(drift) - 1 / 32)
+    expect(feature.z[0]).toBe(-FIXTURE_BACK)
+    expect(feature.z[0]).toBeLessThanOrEqual(drift.z[0] - BB_DEPTH * drift.misc[2])
   })
 })

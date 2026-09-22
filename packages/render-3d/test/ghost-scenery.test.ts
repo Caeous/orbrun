@@ -1,15 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
-import { Render3d } from '../src/index.js'
-import { cellKey, emptyScene, type Scene, type Billboard, type TileRect, type TileSource } from '@orbrun/scene'
+import { crowdInstances } from '../src/sprites.js'
+import { cellKey, emptyScene, type Billboard, type Scene, type TileRect } from '@orbrun/scene'
 
 const RECT: TileRect = { atlas: 'main', sx: 0, sy: 0, w: 32, h: 32, ox: 0, oy: 0, cell: 32 }
-
-const tiles: TileSource = {
-  tile: () => RECT,
-  atlas: () => ({ width: 64, height: 64 }) as unknown as TexImageSource,
-  atlasNames: () => ['main'],
-}
 
 function sceneWith(b: Partial<Billboard>): Scene {
   const s = emptyScene()
@@ -20,16 +13,7 @@ function sceneWith(b: Partial<Billboard>): Scene {
   return s
 }
 
-function kinds(scene: Scene): string[] {
-  const r = new Render3d() as unknown as {
-    setTiles(t: TileSource): void
-    billboardGroup: THREE.Group
-    syncBillboards(s: Scene): void
-  }
-  r.setTiles(tiles)
-  r.syncBillboards(scene)
-  return r.billboardGroup.children.map((c) => c.userData.kind as string)
-}
+const passes = (scene: Scene) => crowdInstances(scene, () => RECT, null).sprites.map((i) => i.pass)
 
 /**
  * The ghost pass exists so the geometry never hides what the server reports.
@@ -38,11 +22,9 @@ function kinds(scene: Scene): string[] {
  */
 describe('scenery and the ghost pass', () => {
   it('gives a monster a ghost', () => {
-    expect(kinds(sceneWith({}))).toContain('ghost')
+    expect(passes(sceneWith({}))).toEqual(['opaque', 'ghostVisible'])
   })
   it('gives a plant no ghost, but keeps the sprite', () => {
-    const k = kinds(sceneWith({ scenery: true }))
-    expect(k).toContain('monster')
-    expect(k).not.toContain('ghost')
+    expect(passes(sceneWith({ scenery: true }))).toEqual(['opaque'])
   })
 })

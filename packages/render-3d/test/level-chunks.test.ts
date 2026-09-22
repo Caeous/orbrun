@@ -1,14 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import * as THREE from 'three'
-import { Render3d } from '../src/index.js'
-import { cellKey, emptyScene, type Billboard, type Scene, type SceneCell, type TileRect, type TileSource } from '@orbrun/scene'
+import { LevelGrid } from '../src/grid.js'
+import { LevelMesher, uvFor, type ChunkGeometry, type MeshContext } from '../src/level-mesh.js'
+import { WALL_INSET } from '../src/index.js'
+import { cellKey, emptyScene, type Billboard, type Scene, type SceneCell, type TileRect } from '@orbrun/scene'
 
 /**
  * The level's geometry is built chunk by chunk, and a build after the first
  * rebuilds only the chunks the changed cells reach into (`LEVEL_REACH`).
  * What that must never do is leave a face behind or a face over: these walk a
  * level as a player does, revealing cells a step at a time, and check after
- * every step that the chunks hold exactly the triangles a renderer that has
+ * every step that the chunks hold exactly the triangles a mesher that has
  * just built the whole level holds.
  *
  * Triangles are compared as a multiset per material kind, not in order: which
@@ -22,17 +23,13 @@ import { cellKey, emptyScene, type Billboard, type Scene, type SceneCell, type T
 const RECT: TileRect = { atlas: 'main', sx: 0, sy: 0, w: 32, h: 32, ox: 0, oy: 0, cell: 32 }
 const rectFor = (id: number): TileRect => ({ ...RECT, sx: (id % 2) * 32, sy: (id % 3) * 32 })
 
-const tiles: TileSource = {
-  tile: (id) => rectFor(id),
-  atlas: () => ({ width: 128, height: 128 }) as unknown as TexImageSource,
-  atlasNames: () => ['main'],
-}
-
-type Priv = {
-  setTiles(t: TileSource): void
-  levelGroup: THREE.Group
-  rebuildLevel(s: Scene): void
-  stats: { levelChunkBuilds: number }
+const ctx: MeshContext = {
+  tileOf: (id) => {
+    const r = rectFor(id)
+    return { r, atlas: 'main', uv: uvFor(r, 128, 128) }
+  },
+  fo: { inset: WALL_INSET },
+  chamfer: 1 / 32,
 }
 
 const W = 121
@@ -103,66 +100,61 @@ function seen(step: number, billboards: Billboard[] = []): Scene {
   return s
 }
 
-/** Every triangle of the level's meshes, by material kind, as comparable strings. */
-function triangles(g: THREE.Group): Map<string, string[]> {
+/** Every triangle of the level's chunks, by material kind, as comparable strings. */
+function triangles(mesher: LevelMesher): Map<string, string[]> {
   const out = new Map<string, string[]>()
-  for (const child of g.children) {
-    const mesh = child as THREE.Mesh
-    if (!mesh.isMesh) continue
-    const kind = mesh.userData.pick ? 'level' : mesh.renderOrder === 1 ? 'decal' : 'void'
-    const geo = mesh.geometry
-    const idx = geo.getIndex()!
-    const names = ['position', 'uv', 'color', 'cut', 'cell']
-    const list = out.get(kind) || []
-    for (let i = 0; i < idx.count; i += 3) {
-      const parts: string[] = []
-      for (let v = 0; v < 3; v++) {
-        const j = idx.getX(i + v)
-        for (const name of names) {
-          const a = geo.getAttribute(name)
-          for (let c = 0; c < a.itemSize; c++) parts.push(a.array[j * a.itemSize + c].toFixed(6))
+  for (const parts of mesher.chunks.values()) {
+    for (const g of parts) {
+      const list = out.get(g.kind) || []
+      const streams: [keyof ChunkGeometry, number][] = [['position', 3], ['uv', 2], ['color', 3], ['cut', 1], ['cell', 2]]
+      for (let i = 0; i < g.index.length; i += 3) {
+        const parts2: string[] = []
+        for (let v = 0; v < 3; v++) {
+          const j = g.index[i + v]
+          for (const [name, size] of streams) {
+            const a = g[name] as Float32Array
+            for (let c = 0; c < size; c++) parts2.push(a[j * size + c].toFixed(6))
+          }
         }
+        list.push(parts2.join(' '))
       }
-      list.push(parts.join(' '))
+      out.set(g.kind, list)
     }
-    out.set(kind, list)
   }
   for (const list of out.values()) list.sort()
   return out
 }
 
-function fresh(scene: Scene): Priv {
-  const r = new Render3d() as unknown as Priv
-  r.setTiles(tiles)
-  r.rebuildLevel(scene)
-  return r
+/** Build `scene` into `mesher`, whole or as the change reaches. */
+function build(mesher: LevelMesher, scene: Scene): LevelMesher {
+  mesher.update(new LevelGrid(scene), ctx)
+  return mesher
 }
 
-function expectSameGeometry(a: Priv, b: Priv, what: string) {
-  const ta = triangles(a.levelGroup)
-  const tb = triangles(b.levelGroup)
+const fresh = (scene: Scene) => build(new LevelMesher(() => 0), scene)
+
+function expectSameGeometry(a: LevelMesher, b: LevelMesher, what: string) {
+  const ta = triangles(a)
+  const tb = triangles(b)
   expect([...ta.keys()].sort(), what).toEqual([...tb.keys()].sort())
   for (const [kind, list] of ta) expect(list, `${what}: ${kind}`).toEqual(tb.get(kind))
 }
 
 describe('a level built in chunks', () => {
   it('builds the same geometry a step at a time as it does all at once', () => {
-    const walked = new Render3d() as unknown as Priv
-    walked.setTiles(tiles)
+    const walked = new LevelMesher(() => 0)
     for (let step = 0; step <= 20; step++) {
       const scene = seen(step)
-      walked.rebuildLevel(scene)
+      build(walked, scene)
       expectSameGeometry(walked, fresh(scene), `step ${step}`)
     }
   })
 
   it('leaves the chunks a step did not reach alone', () => {
-    const walked = new Render3d() as unknown as Priv
-    walked.setTiles(tiles)
-    walked.rebuildLevel(seen(12))
+    const walked = build(new LevelMesher(() => 0), seen(12))
     const whole = walked.stats.levelChunkBuilds
     walked.stats.levelChunkBuilds = 0
-    walked.rebuildLevel(seen(13))
+    build(walked, seen(13))
     expect(walked.stats.levelChunkBuilds).toBeGreaterThan(0)
     expect(walked.stats.levelChunkBuilds).toBeLessThan(whole / 2)
   })
@@ -178,15 +170,13 @@ describe('a level built in chunks', () => {
       for (let y = 13; y <= 19; y++) {
         const before = seen(4)
         if (!before.cells.has(cellKey(x, y))) continue
-        const walked = new Render3d() as unknown as Priv
-        walked.setTiles(tiles)
-        walked.rebuildLevel(before)
+        const walked = build(new LevelMesher(() => 0), before)
         const after = seen(4)
         const k = cellKey(x, y)
         const was = after.cells.get(k)!
         // a door opens into a wall, and a wall opens into floor: both move the footprints around them
         after.cells.set(k, { ...was, kind: was.occluder ? 'floor' : 'wall', occluder: !was.occluder, wallTile: was.occluder ? undefined : 1, featureTile: undefined, feature: undefined, stance: undefined })
-        walked.rebuildLevel(after)
+        build(walked, after)
         expectSameGeometry(walked, fresh(after), `cell ${x},${y} changed`)
       }
     }
@@ -196,30 +186,39 @@ describe('a level built in chunks', () => {
     const scene = seen(20)
     // a staircase the walk has seen: a monster standing on it lays it flat (`occupiedFeatures`)
     const stair = [...scene.cells.values()].find((c) => c.stance === 'upright')!
-    const walked = new Render3d() as unknown as Priv
-    walked.setTiles(tiles)
-    walked.rebuildLevel(scene)
+    const walked = build(new LevelMesher(() => 0), scene)
     const on: Billboard[] = [{ x: stair.x, y: stair.y, tile: 9, kind: 'monster', height: 1, attitude: 'hostile' }]
     const next = seen(20, on)
-    walked.rebuildLevel(next)
+    build(walked, next)
     expectSameGeometry(walked, fresh(next), 'monster on the stairs')
-    walked.rebuildLevel(seen(20))
+    build(walked, seen(20))
     expectSameGeometry(walked, fresh(seen(20)), 'monster gone')
   })
 
   it('rebuilds every chunk when the level changes under it', () => {
-    const scene = seen(20)
-    const walked = new Render3d() as unknown as Priv
-    walked.setTiles(tiles)
-    walked.rebuildLevel(scene)
+    const walked = build(new LevelMesher(() => 0), seen(20))
     // a new lid stands on no cell that carries it: every chunk is built again
     const lit = seen(20)
     lit.level.ceilingTile = 4
-    walked.rebuildLevel(lit)
+    build(walked, lit)
     expectSameGeometry(walked, fresh(lit), 'a new lid')
     const tinted = seen(20)
     tinted.level.tint = { r: 0.5, g: 0.6, b: 0.7 }
-    walked.rebuildLevel(tinted)
+    build(walked, tinted)
     expectSameGeometry(walked, fresh(tinted), 'a new tint')
+  })
+
+  /**
+   * A build the frame ran out of time for leaves the rest to `continue_`, and
+   * what that finishes is the very geometry the whole build would have left.
+   */
+  it('finishes a build cut short by the frame\'s budget', () => {
+    const scene = seen(20)
+    let clock = 0
+    const sliced = new LevelMesher(() => (clock += 10))
+    sliced.update(new LevelGrid(scene), ctx, 4)
+    expect(sliced.hasPending).toBe(true)
+    while (sliced.hasPending) sliced.continue_(4)
+    expectSameGeometry(sliced, fresh(scene), 'a build in slices')
   })
 })

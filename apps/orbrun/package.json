@@ -1,6 +1,6 @@
 {
   "name": "orbrun",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "description": "The Orbrun game: a first-person, controller-first WebTiles client for Dungeon Crawl Stone Soup",
   "license": "AGPL-3.0-or-later",

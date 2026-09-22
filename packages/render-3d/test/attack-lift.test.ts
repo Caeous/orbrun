@@ -1,36 +1,18 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import type * as THREE from '@orbrun/gl'
-import { Render3d } from '../src/index.js'
+import { stubbed } from './bed.js'
 import { cellKey, emptyScene, makeCamera, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
 /**
  * The attack cue is a timer, and `animating` is what keeps the host's loop
  * drawing frames for it (game.ts `idle`). It has to end on the clock whatever
- * is on show: with the hands off, or empty, or in third person without a
- * doll, nothing draws the lift, and the timer must still run out.
+ * is on show: with the hands off, or empty, nothing draws the lift, and the
+ * timer must still run out.
  */
 const RECT: TileRect = { atlas: 'main', sx: 4, sy: 8, w: 4, h: 4, ox: 0, oy: 0, cell: 32 }
 const tiles: TileSource = {
   tile: () => RECT,
   atlas: () => ({ width: 16, height: 16 }) as unknown as TexImageSource,
   atlasNames: () => ['main'],
-}
-
-function stubbed(opts: ConstructorParameters<typeof Render3d>[0]): Render3d {
-  const r = new Render3d({ motion: true, ...opts })
-  let target: unknown = null
-  ;(r as unknown as { renderer: unknown }).renderer = {
-    render: () => {},
-    getDrawingBufferSize: (v: THREE.Vector2) => v.set(64, 32),
-    getRenderTarget: () => target,
-    setRenderTarget: (t: unknown) => void (target = t),
-    clear: () => {},
-    clearDepth: () => {},
-    autoClear: true,
-    dispose: () => {},
-  }
-  r.setTiles(tiles)
-  return r
 }
 
 function room(): Scene {
@@ -53,12 +35,11 @@ describe('the attack lift', () => {
   for (const [what, opts] of [
     ['the viewmodel is off', { viewmodel: false }],
     ['the hands are empty', { viewmodel: true }],
-    ['the view is third person', { view: 'third' }],
   ] as const) {
     it(`runs out on the clock when ${what}, so the host is not kept rendering`, () => {
       let now = 1000
       vi.spyOn(performance, 'now').mockImplementation(() => now)
-      const r = stubbed(opts as ConstructorParameters<typeof Render3d>[0])
+      const { r } = stubbed({ motion: true, ...opts }, tiles)
       r.setCamera(makeCamera(2, 2))
       r.setScene(room())
       expect(r.animating).toBe(false)
@@ -74,7 +55,7 @@ describe('the attack lift', () => {
     })
   }
   it('is no cue at all with motion off', () => {
-    const r = stubbed({ motion: false })
+    const { r } = stubbed({ motion: false }, tiles)
     r.attack()
     expect(r.animating).toBe(false)
     r.destroy()

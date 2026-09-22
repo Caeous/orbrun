@@ -6,12 +6,12 @@
  * in the frame that first draws a sprite of that atlas, it is the stall a
  * player feels on entering a level (docs/front-end-perf.md). Here it runs on
  * a copy of the image while the loading screen is up, and the renderer gets
- * back the cleaned pixels and the mask to install.
+ * back the cleaned pixels and the distance field to upload.
  *
  * Nothing of the renderer is imported: the worker carries peel.ts alone, not
  * three.
  */
-import { peelInk, sameColours } from './peel.js'
+import { distanceField, peelInk } from './peel.js'
 
 export interface PeelRequest {
   id: number
@@ -22,12 +22,11 @@ export interface PeelRequest {
   sprites?: ReadonlyArray<{ sx: number; sy: number; w: number; h: number }>
 }
 
-/** The cleaned pixels (RGBA), the opacity mask and the same-colour bits (`sameColours`), or why there are none. */
+/** The cleaned pixels (RGBA) and the distance field (`distanceField`), or why there are none. */
 export interface PeelReply {
   id: number
   data?: ArrayBufferLike
-  mask?: ArrayBufferLike
-  same?: ArrayBufferLike
+  dist?: ArrayBufferLike
   error?: string
 }
 
@@ -45,8 +44,8 @@ scope.onmessage = (e) => {
     ctx.drawImage(bitmap, 0, 0)
     const image = ctx.getImageData(0, 0, width, height)
     const mask = peelInk(image.data, width, height, alphaMin, sprites)
-    const same = sameColours(image.data, width, height)
-    scope.postMessage({ id, data: image.data.buffer, mask: mask.buffer, same: same.buffer }, [image.data.buffer, mask.buffer, same.buffer])
+    const dist = distanceField(mask, width, height)
+    scope.postMessage({ id, data: image.data.buffer, dist: dist.buffer }, [image.data.buffer, dist.buffer])
   } catch (err) {
     scope.postMessage({ id, error: String(err) })
   } finally {

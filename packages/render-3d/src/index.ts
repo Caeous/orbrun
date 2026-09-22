@@ -1,1045 +1,308 @@
-import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, handsFootprint, type HandPose, type HandRect } from './hands.js'
 import * as THREE from 'three'
 import {
   cellKey,
-  cellLayoutEquals,
-  dirToYaw,
-  keyToXY,
+  flashOf,
+  getCell,
+  shadeOf,
   type Billboard,
   type Camera,
   type CellKey,
+  type HandItem,
   type MapRenderer,
-  type Rect,
   type Scene,
-  type SceneCell,
   type SceneCursor,
   type TileRect,
   type TileSource,
-  type HandItem,
   type Viewmodel,
-  shadeOf,
-  flashOf,
-  getCell,
 } from '@orbrun/scene'
-import { bodyRect, insetFootprint, sceneClassAt, type ClassAt, type FootprintOptions } from './footprint.js'
-import { Crowd, type CrowdStats } from './crowd.js'
-import { extrudeFaces, runs } from './mesh.js'
+import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, handsFootprint, type HandPose, type HandRect } from './hands.js'
+import { LevelGrid } from './grid.js'
+import { LevelMesher, uvFor, type ChunkGeometry, type LevelStats, type MeshContext, type TileDraw } from './level-mesh.js'
 import { Movers, monsterId } from './motion.js'
-import { peelInk, sameColours, SAME_DOWN, SAME_RIGHT } from './peel.js'
+import { distanceField, peelInk } from './peel.js'
 import type { PeelReply, PeelRequest } from './peel.worker.js'
+import {
+  BLOCK_SHADE,
+  MODE_FLASH_OVERRIDE,
+  MODE_HULL_FRONT,
+  MODE_THICK,
+  crowdInstances,
+  fixtureInstances,
+  type SpriteInstance,
+  type SpritePass,
+} from './sprites.js'
+import { BLIT_FRAG, BLIT_VERT, CURSOR_FRAG, CURSOR_VERT, FLAT_FRAG, LEVEL_FRAG, LEVEL_VERT, SHADOW_VERT, SPRITE_FRAG, SPRITE_VERT, VOID_FRAG } from './shaders.js'
+import { bodyRect, sceneClassAt } from './footprint.js'
 
 /**
  * @orbrun/render-3d
  *
- * First-person three.js renderer of a Scene. Depends only on @orbrun/scene
- * and three. Every classification it needs arrives on the Scene.
+ * First-person renderer of a Scene on three.js, used as a GL layer: raw
+ * shaders (shaders.ts), a flat scene of a few dozen meshes, and instancing
+ * for everything that stands. Depends only on @orbrun/scene and three.
  *
  * World mapping: cell (x, y) -> world (x, 0, y). North (-y) is -z. Wall
- * height is 1. The camera stands at eye height 0.65 by default (the
- * `eyeHeight` option moves it).
+ * height is 1. The camera stands at eye height EYE by default.
+ *
+ * A frame: the level's chunks (level-mesh.ts), the fixtures and the crowd as
+ * instances (sprites.ts), the shadows and the cursor, into a render target
+ * with a depth texture; that image on the canvas; the ghosts over it, tested
+ * against the depth image (II.4); the hands last, in their own overlay.
  */
 
 export interface Render3dOptions {
   /** Field of view in degrees. */
   fov?: number
-  /**
-   * How high the eye stands, in cells (0 is the floor, 1 the lid). Default
-   * EYE; clamped to EYE_MIN..EYE_MAX so it is never in the floor or the lid.
-   */
+  /** How high the eye stands, in cells (0 is the floor, 1 the lid). Default EYE; clamped to EYE_MIN..EYE_MAX. */
   eyeHeight?: number
-  /**
-   * Truncated corners (II.1): every convex wall corner is cut off by a
-   * diagonal face this far back along each edge, in cells, clamped to half
-   * the shorter body edge. Default 1/32 of a cell.
-   */
+  /** Truncated corners (II.1): every convex wall corner is cut off by a diagonal face this far back along each edge, in cells. Default 1/32. */
   chamfer?: number
-  /**
-   * Inset walls (II.1): how far the wall surface stands back from the
-   * floor, in cells, one value for the whole level and strictly under 0.5.
-   * 0 gives full-cell walls. Default WALL_INSET.
-   */
+  /** Inset walls (II.1): how far the wall surface stands back from the floor, in cells, strictly under 0.5. Default WALL_INSET. */
   wallInset?: number
-  /**
-   * Viewmodel (rendering-3d.md II.7): the wielded weapon and the off-hand
-   * item drawn from their item tiles in the lower corners. On by default.
-   */
+  /** Viewmodel (II.7): the wielded weapon and the off-hand item in the lower corners. On by default. */
   viewmodel?: boolean
-  /**
-   * Attack cue: a tiny thrust of the wielded weapon toward the centre on a melee attack. Off under
-   * the platform's reduced-motion preference; the hands then never move.
-   */
+  /** Attack cue and the monsters' glide. Off under the platform's reduced-motion preference. */
   motion?: boolean
 }
 
-// The eye stands EYE up by default; the `eyeHeight` option (the Camera height
-// setting) moves it between EYE_MIN and EYE_MAX, clear of floor and lid.
 const EYE = 0.65
 const EYE_MIN = 0.25
 const EYE_MAX = 0.9
-// Viewmodel (II.7). The hands sit in their own perspective overlay, framed so
-// the view is two units tall at the hands' depth; a full 32-texel icon is
-// VM_SIZE units high. Each icon is extruded from its texels into a block
-// VM_DEPTH texels thick with shaded sides; the icon's opaque extent is scaled
-// to VM_FILL of that so a 12-texel paperdoll shield and a 30-texel sword come
-// out about the same size in the hand. A pose is a roll in the icon's plane,
-// a pitch of the tip away from the player and a yaw toward the middle of the
-// view, applied in that order; the hands are held flat, facing the player. A
-// weapon tile is the profile seen from the wielder's outer side, so the
-// wielded weapon is turned half a circle and its blade heads up-left from a
-// grip low right. A shield is held as drawn.
-// VM_SIZE and the rest poses live in hands.ts, so the HUD can ask where the hands stand (`handsFootprint`).
-const VM_DEPTH = 2
-const VM_FILL = 0.9
-const VM_FOV = 40
-/** Shade of an extruded block's faces relative to the texel colour: front, top, side, bottom. The hands and the standing sprites share it. */
-const BLOCK_SHADE = { front: 1, top: 0.86, side: 0.7, bottom: 0.5 }
-/**
- * Standing sprites (monsters, items, doors and statues) are given
- * thickness: behind the front quad every opaque texel is extruded this many
- * texels deep, with the rim of side faces shaded as the hands' are, so a
- * sprite seen from off-centre or from above reads as a slab rather than a
- * sheet of paper. A texel deep and no more: the extrusion is the same texel
- * grid stood up, so a block's sides are square and the rim reads as one texel
- * of depth rather than a smear the eye takes for a second column of art. (The
- * hands are held close and lit in their own overlay, so they keep VM_DEPTH.)
- * The front quad is untouched, so what the sprite shows is exactly what it
- * showed flat. Ghosts, clouds and translucent sprites stay flat: they blend,
- * and a rim behind a blended face doubles up. So do the status badges and the
- * damage bar: they are marks on the sprite.
- */
-const BB_DEPTH = 1
-/**
- * How far `uvFor` insets a tile's uv rect, in texels, so a sample never
- * reaches the neighbouring tile in the atlas. Whatever is mapped with those
- * uvs must be inset by the same, or the tile is stretched over the quad and
- * what it draws no longer lines up with what is built on the texel grid.
- */
-const UV_INSET = 0.25
-/** Texel alpha at or above which a texel is opaque, bbMat's alpha test (0.1) in 8 bits. */
-const OPAQUE_ALPHA = 26
-/** Attack cue: the weapon thrusts this far (view units) toward the centre of the view and settles back over this many seconds. */
-const VM_LIFT_S = 0.22
-const VM_LIFT = 0.07
 /**
  * Inset walls (II.1): the wall surface stands this far back from the floor,
  * in cells (12 texels of 32), leaving a one-thick wall an 8-texel core and
  * a lone wall cell an 8-texel post.
  */
 export const WALL_INSET = 12 / 32
-/** The four diagonal neighbour offsets. */
-/**
- * How tall an upright feature stands, in cells. Stairs stand lower than a
- * door or a statue: they are a mouth in the floor, and a full-height board
- * would hide what walks behind them.
- */
-const FIXTURE_H = 0.9
-const STAIR_H = 0.7
-/**
- * How far an upright feature's board stands back from the middle of its cell,
- * in cells. Actors and items stand at the cell's middle too, and
- * every standing sprite faces the camera, so a board left there is coplanar
- * with whatever stands on it: the two z-fight, and a character on a staircase
- * is sliced by its steps. A sprite's own block deep is enough to put the
- * board behind the whole block, and it is well inside the inset wall face
- * (WALL_INSET), so a fixture against a wall never sinks into it. 2D draws the
- * feature first and the actor over it; this is the same order in depth.
- */
-const FIXTURE_BACK = BB_DEPTH / 32
-const DIAGONALS: [number, number][] = [[-1, -1], [1, -1], [-1, 1], [1, 1]]
-/**
- * Cells a side of a level chunk. The level's geometry is kept one mesh set
- * per chunk (`rebuildLevel`), so a step that reveals a few cells rebuilds the
- * chunks round the player and leaves the rest of the level standing. Smaller
- * chunks rebuild less and cost more meshes, and so more draw calls every
- * frame; between 4 and 16 a step costs the same (docs/front-end-perf.md), so
- * this is the largest of them — and the crowd's own chunk size (crowd.ts).
- */
-const LEVEL_CHUNK = 16
-/**
- * How far a cell's geometry reaches into its neighbours, in cells: the
- * footprint rule reads a neighbour's own footprint to hide what it covers
- * (footprint.ts `coverage`), which reads one cell further, and what counts as
- * wall for the rule reads one further still (`framedDoors`). A cell that
- * changed dirties every chunk within this much of it.
- */
-const LEVEL_REACH = 3
-/**
- * How long one frame may spend standing new billboards (`syncBillboards`),
- * in milliseconds. Entering a level stands the whole crowd at once — 84
- * monsters on Lair:2 cost 183ms of a 308ms frame (docs/front-end-perf.md) —
- * and a stall that long on the frame the level first draws is the one the
- * player sees. Past this much the rest is left for the next frame, nearest
- * cells first, so the crowd fills in over a few frames instead of holding
- * the first one. Small enough to leave room for the level and the draw
- * inside a 120Hz frame; the bake that follows is per chunk (crowd.ts) and
- * only touches the chunks the frame's own holders landed in.
- */
-const CROWD_BUDGET_MS = 4
-/**
- * Builds below this many are never sliced: the common sync stands one or two
- * sprites for a monster that stepped, where reading the clock and ordering
- * the work would cost more than the work does.
- */
-const CROWD_SLICE_MIN = 16
-/**
- * How long one frame may spend building level chunks (`rebuildLevel`), in
- * milliseconds. A step that reveals a few cells builds one or two chunks and
- * never reaches this; arriving on a level builds every one of them, which is
- * 62 ms on Lair:3 (docs/front-end-perf.md) and the frame the player waits on.
- * Past this the rest are left for the next frame, nearest the player first,
- * so the ground underfoot is there before the far corners are.
- */
+/** Texel alpha at or above which a texel is opaque. */
+const OPAQUE_ALPHA = 26
+/** How long one frame may spend building level chunks, in milliseconds; the rest go out over the frames after. */
 const LEVEL_BUDGET_MS = 4
-/**
- * Chunks below this many are never sliced: a step's own rebuild is one or two
- * of them, where reading the clock would cost more than the build does.
- */
-const LEVEL_SLICE_MIN = 4
-// Ghost pass (rendering-3d.md II.4): anything the 2D client would show on the
-// map but the geometry hides shows through as its own sprite, dimmed and
-// tinted by what it is, so the 3D view never hides what the server reports.
-/**
- * Remembered knowledge reads like the 2D map's dim tiles: nearly solid, told
- * apart by its cool tint and its short fade, not by being washed out. At the
- * 0.6 it started from an item behind a lit wall all but disappeared while the
- * 2D view drew it plainly.
- */
-const GHOST_ALPHA = 0.7
-/** Status badges are drawn in their own colours, ghost or not. */
-const BADGE_TINT = { r: 1, g: 1, b: 1 }
-/** Tints for what the server is not showing; anything in view keeps the sprite's own colours. */
-const GHOST_TINT = {
-  /** Monster on a remembered cell: sensed or detected, not in view. */
-  remembered: { r: 0.55, g: 0.6, b: 0.8 },
-  item: { r: 0.8, g: 0.8, b: 0.8 },
-  projectile: { r: 1, g: 1, b: 1 },
-}
-/**
- * How far a projectile in flight is lifted off the floor, in cells. The sprite
- * is half a cell tall, so its centre sits at this plus a quarter: low enough
- * to read as leaving the hands rather than the eye at EYE.
- */
-const PROJECTILE_LIFT = 0.1
-/**
- * Where the cursor sits in the transparent pass. It skips the depth test, so
- * order is all that holds it down: after the level and a sprite's ground
- * shadow (0), before the sprites themselves (1 and up), so whoever stands on
- * the marked cell is drawn over the far arm of the marker instead of under it
- * — the cursor rings the cell rather than the monster's face.
- */
-const CURSOR_ORDER = 0.5
-/**
- * Where the ghosts draw, ring and body, by kind: the ghosts of what the
- * server shows right now first, ink then body, then remembered knowledge
- * over them, ink then body. Within a kind a ring is never over a body; a
- * remembered hint (its ring included) lies over a visible ghost where the
- * two overlap behind a wall. The crowd is baked in chunks (crowd.ts), and
- * three.js orders their meshes by draw order first, so these hold across
- * chunks exactly as they held when the crowd was one mesh per material
- * drawn in this order.
- */
-const GHOST_ORDER = { visible: { ink: -4, body: -3 }, remembered: { ink: -2, body: -1 } }
-
-/** The cursor's ring. */
-const CURSOR_COLOUR = 0xff8800
-/** The cursor's colour on the level map, where it marks a cell rather than a target. */
-const CURSOR_MAP_COLOUR = 0xffffff
-/** The shell round the sprite the cursor stands on (`SEL_GROW`, `hullSelMat`). */
-const HULL_SEL_COLOUR = 0xffdd33
-/**
- * How many texels the selected sprite's shell stands out from its body, against
- * the hull's one. The black hull keeps its texel between the art and the yellow,
- * so the highlight is a line beside the sprite rather than a glow over it.
- */
-const SEL_GROW = 2
-/**
- * How much deeper than the hull the selected shell's back sits, in texels. The
- * shell is the whole hull grown a texel further, not a ring of the difference,
- * so over the body the two lie in one plane; this puts the black in front,
- * leaving only what the shell adds outside the hull's silhouette showing.
- */
-const SEL_BACK = 0.1
-/**
- * Ghost fade: a ghost holds full strength until it sits `GHOST_FADE_START`
- * cells behind its occluder, then falls to nothing by `GHOST_FADE`. Sight
- * reaches seven cells, so everything at fighting range reads as a sprite; only
- * what lies deeper thins out, and the whole explored level still does not pile
- * up behind every wall.
- */
+/** Ghost fade: full strength until this many cells behind its occluder, then to nothing by the second. */
 const GHOST_FADE_START = 5
 const GHOST_FADE = 14
-/**
- * The same fade for anything the server currently shows, which is never
- * allowed to disappear: a monster in view can stand at the edge of sight
- * behind the wall hiding it and would fade at the remembered range —
- * invisible in 3D while the 2D view draws it plainly. Over this range it stays
- * readable well past sight, which is what II.4 asks for: the 3D view never
- * hides what the server reports.
- */
+/** The same for anything the server currently shows, which is never allowed to disappear. */
 const GHOST_FADE_VISIBLE_START = 8
 const GHOST_FADE_VISIBLE = 30
+const CURSOR_COLOUR = 0xff8800
+const CURSOR_MAP_COLOUR = 0xffffff
+const HULL_SEL_COLOUR = 0xffdd33
+/** Viewmodel: the view is two units tall at the hands' depth; each icon is extruded VM_DEPTH texels and scaled so its opaque extent fills VM_FILL of VM_SIZE. */
+const VM_DEPTH = 2
+const VM_FILL = 0.9
+const VM_FOV = 40
+const VM_LIFT_S = 0.22
+const VM_LIFT = 0.07
 /**
- * A ghost of something the server shows right now is drawn at this alpha
- * rather than `GHOST_ALPHA`: sight and memory are the one distinction the
- * ghost pass has to make readable, so what is in view reads as a sprite behind
- * the wall while remembered knowledge stays a hint. Solid, because a wall's
- * edge can cut a sprite between its lit half and its ghost half, and anything
- * short of solid shows as a seam there.
+ * The layer of everything that is not the level or its fixtures: the crowd,
+ * the ghosts, the shadows, the cursor. The ghosts' depth image (II.4) is what
+ * the depth pass sees, layer 0 alone: the masonry and the statues, trees and
+ * doors standing in it — a monster behind any of those shows through. The
+ * crowd is drawn after the ghosts, so a nearer monster covers a farther one's
+ * ghost as it covers the monster itself.
  */
-const GHOST_ALPHA_VISIBLE = 1
-const SIDE_SHADE = 0.82
-/**
- * Ghost depth pass (II.4): the level's depth image is rendered at this
- * fraction of the frame's size. The ghosts fade over cells, not pixels, so a
- * coarser image costs nothing to look at and a quarter of the fill to make.
- */
-const GHOST_DEPTH_SCALE = 0.5
-
-/**
- * The layer of everything that never enters the ghosts' depth image: the
- * ghosts themselves (a draw that reads the image it writes is a feedback
- * loop), and whatever writes no depth anyway — the shadow discs, the
- * translucent sprites and clouds, the blended decals. The frame's camera sees
- * both layers; the depth pass sees layer 0 alone, and so skips every one of
- * these meshes without a traversal to hide them and another to show them.
- */
-const LAYER_NO_DEPTH = 1
-
-/**
- * The flash field: the colour the game washes a cell in — blue while
- * paralysed, grey while petrified, red while berserk, and while blind the
- * colour of whatever blinded you, thickening with the distance out to the
- * edge of sight. WebTiles' 2D view fills the whole cell with it
- * (cell_renderer.js `render_flash`), so in 3D it belongs to the whole cube and
- * not to the ground alone: every material lays it over its fragment, so the
- * walls, the lid, the sprites standing in the cell and the hands all take it,
- * and what is far off in a blind view is washed out until it can barely be
- * read.
- *
- * The field is sampled by world position and filtered, not stepped cell by
- * cell: a flash that thickens with distance would otherwise band into visible
- * squares across a floor running away from the eye.
- */
-const FLASH_PARS = /* glsl */ `
-uniform sampler2D flashMap;
-uniform vec2 fieldOrigin;
-uniform vec2 fieldSize;
-varying vec3 vWorldPos;`
-const FLASH_VERT_PARS = /* glsl */ `
-varying vec3 vWorldPos;`
-/** Set `vWorldPos` from the vertex three has already transformed (`transformed`). */
-const FLASH_VERT = /* glsl */ `
-vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
-/**
- * A merged standing mesh (`bakeStanding`): every sprite's vertices are in the
- * sprite's own frame, and `anchor` is where it stands. The vertex shader turns
- * the sprite to the eye's yaw about its anchor and stands it there, so one
- * mesh holds a whole crowd of billboards and still faces the camera as each
- * holder did on its own.
- */
-const STAND_VERT_PARS = /* glsl */ `
-#ifdef MERGED
-attribute vec3 anchor;
-uniform float standYaw;
-#endif`
-/** Rotate `transformed` about y by `standYaw` (three's `makeRotationY`) and put it on its anchor. */
-const STAND_VERT = /* glsl */ `
-#ifdef MERGED
-{
-  float c = cos(standYaw), s = sin(standYaw);
-  transformed = anchor + vec3(c * transformed.x + s * transformed.z, transformed.y, c * transformed.z - s * transformed.x);
-}
-#endif`
-/**
- * The `cell` attribute a shade-map shader reads its light through (`makeLevelMaterial`),
- * declared where a sprite carries one: a merged sprite does not, its cell is under its
- * anchor (`CELL_VERT`), so a crowd's buffers hold no cell per vertex.
- */
-const CELL_VERT_PARS = /* glsl */ `
-#ifndef MERGED
-attribute vec2 cell;
-#endif
-varying vec2 vCell;`
-/**
- * Set `vCell`: a merged sprite's anchor stands half a cell into its cell (`addStanding`),
- * so its floor is the cell exactly, as the attribute held it; anything else carries the attribute.
- */
-const CELL_VERT = /* glsl */ `
-#ifdef MERGED
-vCell = floor(anchor.xz);
-#else
-vCell = cell;
-#endif`
-/** Wash `c` in the flash standing over this fragment. */
-function flashApply(c: string): string {
-  return /* glsl */ `
-{
-  vec4 flash = texture2D(flashMap, (vWorldPos.xz - fieldOrigin) / fieldSize);
-  ${c}.rgb = mix(${c}.rgb, flash.rgb, flash.a);
-}`
-}
-
-// The ghost shaders test each fragment against a depth image of the level
-// rendered just before the frame. Only fragments that geometry hides pass,
-// and their alpha fades with the depth gap to the occluder in front.
-const GHOST_VERT = /* glsl */ `
-varying vec2 vUv;
-varying vec3 vColor;
-varying float vViewZ;
-#ifdef GHOST_SHADE
-${CELL_VERT_PARS}
-#endif
-${FLASH_VERT_PARS}
-${STAND_VERT_PARS}
-void main() {
-  vUv = uv;
-  vColor = color;
-#ifdef GHOST_SHADE
-${CELL_VERT}
-#endif
-  vec3 transformed = vec3(position);
-  ${STAND_VERT}
-  vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
-  vec4 mv = modelViewMatrix * vec4(transformed, 1.0);
-  vViewZ = mv.z;
-  gl_Position = projectionMatrix * mv;
-}`
-const GHOST_FRAG = /* glsl */ `
-#include <packing>
-uniform sampler2D sceneDepth;
-uniform vec2 resolution;
-uniform float cameraNear;
-uniform float cameraFar;
-uniform float fadeStart;
-uniform float fadeRange;
-uniform float opacity;
-#ifdef GHOST_MAP
-uniform sampler2D map;
-#endif
-#ifdef GHOST_SHADE
-uniform sampler2D shadeMap;
-varying vec2 vCell;
-#endif
-${FLASH_PARS}
-varying vec2 vUv;
-varying vec3 vColor;
-varying float vViewZ;
-void main() {
-  float d = texture2D(sceneDepth, gl_FragCoord.xy / resolution).x;
-  float occZ = perspectiveDepthToViewZ(d, cameraNear, cameraFar);
-  // view Z is negative going away; a nearer occluder has the larger value
-  float gap = occZ - vViewZ;
-  if (gap <= 0.002) discard;
-  float fade = 1.0 - smoothstep(fadeStart, fadeRange, gap);
-  vec4 c = vec4(vColor, 1.0);
-#ifdef GHOST_SHADE
-  // a ghost of something in view is lit as the sprite is: by its cell's entry in the shade map
-  c.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize).r;
-#endif
-#ifdef GHOST_MAP
-  vec4 t = texture2D(map, vUv);
-  if (t.a < 0.1) discard;
-  c *= t;
-#endif
-  gl_FragColor = vec4(c.rgb, c.a * opacity * fade);
-${flashApply('gl_FragColor')}
-  #include <colorspace_fragment>
-}`
-
-interface AtlasEntry {
-  /** the tile source's name for it */
-  name: string
-  texture: THREE.Texture
-  width: number
-  height: number
-  wallMat: THREE.MeshBasicMaterial
-  /** Upright features (statues, trees, altars): the level material without the wall's back-face cull. */
-  featMat: THREE.MeshBasicMaterial
-  /**
-   * Translucent decals (the travel-exclusion X): the level material blended
-   * instead of alpha-tested, drawn after the level over the floor or wall face
-   * it marks, without writing depth.
-   */
-  decalMat: THREE.MeshBasicMaterial
-  /** Ghost pass, remembered knowledge: sprite fragments the level hides, faded by depth gap. */
-  ghostMat: THREE.ShaderMaterial
-  /** The same for a cell in view: stronger, and over `GHOST_FADE_VISIBLE`, so what the server shows keeps its ghost however deep behind the wall it stands. */
-  ghostVisibleMat: THREE.ShaderMaterial
-  bbMat: THREE.MeshBasicMaterial
-  /** The merged (`MERGED`) twins of `featMat`, `bbMat`, `ghostMat` and `ghostVisibleMat`, for the baked crowd (`bakeStanding`). */
-  merged: THREE.Material[]
-  /**
-   * One byte per texel, 1 where the atlas is opaque, for the rim of a
-   * standing sprite's block; undefined until first asked for, null where the
-   * atlas's pixels cannot be read (no 2D canvas, an atlas that is not an image).
-   */
-  mask?: Uint8Array | null
-  /**
-   * Where a texel of the peeled atlas holds the very same colour as the one to
-   * its right or below it (peel.ts `sameColours`), one byte per texel; undefined
-   * where the pixels cannot be read. Two rim faces whose texels hold the same
-   * colour sample the same thing, so `rimTemplate` builds them as one.
-   */
-  same?: Uint8Array
-}
-
-/**
- * The rim of a standing sprite's block, in texel units relative to the tile's
- * top-left corner (y up, z toward the viewer, the front face at z = 0): the
- * side faces of every opaque texel that border a transparent one, with a
- * texel-centre uv and the face's shade. Built once per tile and clip height,
- * then placed and coloured per sprite.
- */
-interface RimTemplate {
-  pos: Float32Array
-  uv: Float32Array
-  shade: Float32Array
-  index: number[]
-}
-
-/**
- * The outline of a standing sprite's block, in the rim's units: a hull one
- * texel wider than the body on every side, as deep as the block, with a back
- * and sides but no front. Drawn black with its front faces culled, only the
- * faces that turn away from the eye show, and of those only what pokes out
- * past the body's own silhouette — a line a texel wide round the sprite from
- * every angle, crawl's ink put back after `peelInk` took it off the art.
- */
-interface HullTemplate {
-  pos: Float32Array
-  index: number[]
-}
-
-/**
- * The same line for the ghost pass (II.4), where a sprite is a flat quad with
- * no block and its shader is the depth test: the ring of texels round the
- * body, one flat face each in the quad's own plane, disjoint from the body
- * so the two never blend over each other. Drawn black with the ghost's own
- * material, it is hidden, faded and cut by the level exactly as the ghost is.
- */
-interface RingTemplate {
-  pos: Float32Array
-  index: number[]
-}
-
-/** Which pass a standing sprite belongs to: the lit sprite itself, or a ghost of it behind the geometry (II.4). */
-type GhostKind = 'none' | 'remembered' | 'visible'
-
-/**
- * What the selected shell of a standing layer is built from (`syncSelection`):
- * the layer and its clip, the quad it is placed on, and where the layer's mesh
- * stands in its holder. Recorded as the sprite is built, so the cursor landing
- * on it later builds the shell alone and leaves the crowd standing.
- */
-interface ShellSource {
-  l: SpriteLayer
-  hTex: number
-  wq: number
-  hq: number
-  k: number
-  room: number
-  position: THREE.Vector3
-  renderOrder: number
-}
-
-/**
- * One billboard of the scene as the renderer stands it (`syncBillboards`): its
- * holders (the sprite, and its ghost when it has one), what its selected
- * shells are built from, and the key of everything it was built from. A scene
- * that carries the same billboard again matches the key and the record stands
- * as it is; one that does not drops it and builds a new one.
- */
-interface SpriteRecord {
-  key: string
-  x: number
-  y: number
-  holders: THREE.Object3D[]
-  shells: ShellSource[]
-  /** Where the sprite's holder stands (a projectile is lifted). */
-  position: THREE.Vector3
-  ghost: boolean
-  /** The monster's client id where it has one, so a step of its can move the holders (motion.ts). */
-  moverId?: number
-  /** Whether these holders were built outside the baked crowd for a step. */
-  moving?: boolean
-}
+const LAYER_STANDING = 1
 
 /** Work counters the test bed and the regression tests read. Rendering never does. */
-export interface RenderStats extends CrowdStats {
-  /** Level geometry builds: a layout change, whether it touched one chunk or every one. */
-  levelBuilds: number
-  /** Chunks of level geometry built (`buildChunk`): what a level build really costs. */
-  levelChunkBuilds: number
-  /**
-   * Milliseconds inside `rebuildLevel`, split three ways: what it works out
-   * before building (`framedDoors` and the cell diff), the chunk loop itself,
-   * and the fixtures pass that follows. The `level` section of the readout is
-   * their sum; which of the three it is decides what is worth budgeting, and
-   * the compare bed's room is too unlike a real floor to say.
-   */
-  lvlSetMs: number
-  lvlChunkMs: number
-  lvlFixMs: number
-  /** Billboard syncs against a scene: the diff itself, whatever it found. */
+export interface RenderStats extends LevelStats {
+  /** Crowd instance lists written (a scene revision, a step under way, a cursor move). */
   crowdSyncs: number
-  /** Sprites built (a sprite and its ghost count once). */
-  spriteBuilds: number
-  /** Sprites dropped. */
-  spriteDrops: number
-  /** Selected shells rebuilt. */
-  selectionBuilds: number
+  /** Sprite instances written into batches, all passes. */
+  spriteWrites: number
+  /** Fixture instance lists written (a layout change). */
+  fixtureBuilds: number
   /** Shade and flash fields repainted. */
   fieldUpdates: number
 }
 
-interface SpriteLayer {
-  r: TileRect
-  a: AtlasEntry
-  uv: { u0: number; v0: number; u1: number; v1: number }
-  ox: number
-  oy: number
-  ymax?: number
-  /** Overrides the holder's tint for this layer alone (status badges keep their own colours in the ghost pass). */
-  tint?: { r: number; g: number; b: number }
-  /** Drawn as a flat quad even on a thick sprite: the status badges and damage bar are marks on the sprite, not part of its body. */
-  flat?: boolean
+interface AtlasEntry {
+  name: string
+  texture: THREE.Texture
+  width: number
+  height: number
+  /** The distance field (peel.ts), as a texture; null until the atlas is peeled, or where its pixels cannot be read. */
+  dist: THREE.DataTexture | null
+  /** false until peeled; 'failed' where the pixels cannot be read (an atlas that is not an image, no 2D canvas). */
+  peeled: boolean | 'failed'
+  uniforms: { map: THREE.IUniform; distMap: THREE.IUniform; atlasSize: THREE.IUniform }
+  level: THREE.RawShaderMaterial
+  decal: THREE.RawShaderMaterial
+  sprite: Record<SpritePass, THREE.RawShaderMaterial>
 }
 
-/** A canvas holding an atlas's cleaned pixels, and the context that reads them back. */
-interface AtlasCanvas {
-  canvas: HTMLCanvasElement | OffscreenCanvas
-  ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D
-}
+/** The instance attributes of a sprite batch, in the order `SPRITE_VERT` declares them, with their sizes. */
+const SPRITE_ATTRS: [string, number][] = [['iAnchor', 3], ['iQuad', 4], ['iZ', 2], ['iTexel', 4], ['iColor', 4], ['iMisc', 4], ['iCell', 2]]
 
-/** A tile ready to draw: its rect, the atlas it lives in, and its uvs there. */
-type TileDraw = { r: TileRect; a: AtlasEntry; uv: { u0: number; v0: number; u1: number; v1: number } }
-
-/**
- * What every chunk of one level build shares (`rebuildLevel`): the scene
- * itself, the classification and tile lookups built once for the build, and
- * the cell range the chunks are clipped to.
- */
-interface LevelBuild {
-  scene: Scene
-  tint: { r: number; g: number; b: number }
-  framed: Map<CellKey, number>
-  classAt: ClassAt
-  fo: FootprintOptions
-  tileOf: (id: number) => TileDraw | null
-  ceilingOf: (c: SceneCell | undefined) => TileDraw | null
-  stands: (c: SceneCell) => boolean
-  isSolid: (c: SceneCell | undefined) => boolean
-  isVoidCell: (c: SceneCell | undefined) => boolean
-  /** The scene's bounds grown by one, so void columns bordering known space exist. */
-  range: Rect
-}
-
-/** The parts of `a` no cell of `b` covers, as up to four rectangles. */
-function rectMinus(a: Rect, b: Rect): Rect[] {
-  if (a.right < a.left || a.bottom < a.top) return []
-  if (b.right < b.left || b.bottom < b.top) return [a]
-  const out: Rect[] = []
-  if (a.left < b.left) out.push({ left: a.left, right: Math.min(a.right, b.left - 1), top: a.top, bottom: a.bottom })
-  if (a.right > b.right) out.push({ left: Math.max(a.left, b.right + 1), right: a.right, top: a.top, bottom: a.bottom })
-  const l = Math.max(a.left, b.left), r = Math.min(a.right, b.right)
-  if (l <= r) {
-    if (a.top < b.top) out.push({ left: l, right: r, top: a.top, bottom: Math.min(a.bottom, b.top - 1) })
-    if (a.bottom > b.bottom) out.push({ left: l, right: r, top: Math.max(a.top, b.bottom + 1), bottom: a.bottom })
-  }
-  return out.filter((q) => q.right >= q.left && q.bottom >= q.top)
-}
-
-/** A triangle for warming a material's shader (`Render3d.warmShaders`), carrying what the real geometry carries. */
-function warmGeometry(withNormals: boolean): THREE.BufferGeometry {
-  const g = new THREE.BufferGeometry()
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3))
-  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(6), 2))
-  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(9), 3))
-  if (withNormals) g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(9), 3))
+/** A unit cube on [0,1]^3, wound outward, for the sprite boxes. */
+function unitBox(): THREE.BufferGeometry {
+  const g = new THREE.BoxGeometry(1, 1, 1)
+  g.translate(0.5, 0.5, 0.5)
+  g.deleteAttribute('normal')
+  g.deleteAttribute('uv')
   return g
 }
 
-/** Whether two sets hold the same keys. */
-function sameKeys(a: ReadonlySet<CellKey>, b: ReadonlySet<CellKey>): boolean {
-  if (a.size !== b.size) return false
-  for (const k of a) if (!b.has(k)) return false
-  return true
-}
-
-/** The four corner uvs of a quad in point order: the first point takes (u0, v1). */
-function quadUVs(uv: { u0: number; v0: number; u1: number; v1: number }, uvOrder?: number[]): [number, number][] {
-  const uvl: [number, number][] = [
-    [uv.u0, uv.v1],
-    [uv.u1, uv.v1],
-    [uv.u1, uv.v0],
-    [uv.u0, uv.v0],
-  ]
-  return (uvOrder || [0, 1, 2, 3]).map((i) => uvl[i])
-}
-
-/** A typed array that grows as it is pushed to: the level's vertex streams, written once per rebuild. */
-class Stream<T extends Float32Array | Uint32Array> {
-  length = 0
-  constructor(public array: T) {}
-  private room(n: number): T {
-    let a = this.array
-    if (this.length + n > a.length) {
-      let size = a.length * 2
-      while (size < this.length + n) size *= 2
-      const next = new (a.constructor as new (n: number) => T)(size)
-      next.set(a)
-      this.array = a = next
+/**
+ * One instanced draw: a mesh over a shared base geometry with its own
+ * instance buffers, grown as needed and written in place. `begin`, `push`
+ * each instance, `end`.
+ */
+class Batch {
+  readonly geometry: THREE.InstancedBufferGeometry
+  readonly mesh: THREE.Mesh
+  private capacity = 0
+  private count = 0
+  private arrays = new Map<string, Float32Array>()
+  constructor(base: THREE.BufferGeometry, material: THREE.Material, private attrs: [string, number][], renderOrder = 0) {
+    this.geometry = new THREE.InstancedBufferGeometry()
+    this.geometry.setIndex(base.getIndex())
+    this.geometry.setAttribute('position', base.getAttribute('position'))
+    this.mesh = new THREE.Mesh(this.geometry, material)
+    this.mesh.frustumCulled = false
+    this.mesh.renderOrder = renderOrder
+    this.geometry.instanceCount = 0
+    this.reserve(16)
+  }
+  private reserve(n: number) {
+    if (n <= this.capacity) return
+    let cap = Math.max(16, this.capacity)
+    while (cap < n) cap *= 2
+    for (const [name, size] of this.attrs) {
+      const next = new Float32Array(cap * size)
+      const old = this.arrays.get(name)
+      if (old) next.set(old.subarray(0, this.count * size))
+      this.arrays.set(name, next)
+      const attr = new THREE.InstancedBufferAttribute(next, size)
+      attr.setUsage(THREE.DynamicDrawUsage)
+      this.geometry.setAttribute(name, attr)
     }
-    return a
+    this.capacity = cap
   }
-  push2(x: number, y: number): void {
-    const a = this.room(2)
-    const i = this.length
-    a[i] = x
-    a[i + 1] = y
-    this.length = i + 2
+  begin() {
+    this.count = 0
   }
-  push3(x: number, y: number, z: number): void {
-    const a = this.room(3)
-    const i = this.length
-    a[i] = x
-    a[i + 1] = y
-    a[i + 2] = z
-    this.length = i + 3
-  }
-  push1(x: number): void {
-    const a = this.room(1)
-    a[this.length++] = x
-  }
-  /** The written part, as an array of its own. */
-  take(): T {
-    return this.array.slice(0, this.length) as T
-  }
-}
-
-/**
- * Gathers a level mesh's vertices. The streams are typed arrays written in
- * place: a rebuild of an explored level pushes hundreds of thousands of
- * values, and a number array grown by `push` and copied into a typed array at
- * the end cost more than the geometry it built. A value written to a
- * Float32Array rounds exactly as the copy did, so the buffers are the same.
- */
-class GeoBuilder {
-  private positions = new Stream(new Float32Array(3 * 256))
-  private uvs = new Stream(new Float32Array(2 * 256))
-  private colors = new Stream(new Float32Array(3 * 256))
-  private cut = new Stream(new Float32Array(256))
-  /** Per vertex, the cell whose light it takes: the level shader reads its shade from the shade map (II.9). */
-  private cells = new Stream(new Float32Array(2 * 256))
-  private indices = new Stream(new Uint32Array(6 * 128))
-  private cx = 0
-  private cz = 0
-  /** The cell the next faces are lit as. */
-  at(x: number, z: number): this {
-    this.cx = x
-    this.cz = z
-    return this
-  }
-  quad(
-    p: [number, number, number][],
-    uv: { u0: number; v0: number; u1: number; v1: number },
-    shade: number,
-    tint: { r: number; g: number; b: number },
-    uvOrder?: number[],
-    /** Wall face: back side culled. */
-    cut = false,
-  ) {
-    this.poly(p, quadUVs(uv, uvOrder), shade, tint, cut)
-  }
-  /** Polygon with explicit per-vertex uvs: a quad (a triangle when two points coincide), or a larger horizontal outline. */
-  poly(
-    p: [number, number, number][],
-    uv: [number, number][],
-    shade: number,
-    tint: { r: number; g: number; b: number },
-    cut = false,
-  ) {
-    const base = this.positions.length / 3
-    const n = p.length
-    const c = cut ? 1 : 0
-    const r = shade * tint.r, g = shade * tint.g, b = shade * tint.b
-    for (let i = 0; i < n; i++) {
-      const q = p[i]
-      this.positions.push3(q[0], q[1], q[2])
-      this.cut.push1(c)
-      this.cells.push2(this.cx, this.cz)
-      this.uvs.push2(uv[i][0], uv[i][1])
-      this.colors.push3(r, g, b)
+  /** Write one instance from `values`, an array per attribute in `attrs` order. */
+  push(values: ArrayLike<number>[]) {
+    this.reserve(this.count + 1)
+    for (let i = 0; i < this.attrs.length; i++) {
+      const [name, size] = this.attrs[i]
+      this.arrays.get(name)!.set(values[i], this.count * size)
     }
-    if (n === 4) {
-      this.indices.push3(base, base + 1, base + 2)
-      this.indices.push3(base, base + 2, base + 3)
-    } else for (const [a, b, c] of triangulateXZ(p)) this.indices.push3(base + a, base + b, base + c)
+    this.count++
   }
-  build(): THREE.BufferGeometry | null {
-    if (this.indices.length === 0) return null
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.BufferAttribute(this.positions.take(), 3))
-    g.setAttribute('uv', new THREE.BufferAttribute(this.uvs.take(), 2))
-    g.setAttribute('color', new THREE.BufferAttribute(this.colors.take(), 3))
-    g.setAttribute('cut', new THREE.BufferAttribute(this.cut.take(), 1))
-    g.setAttribute('cell', new THREE.BufferAttribute(this.cells.take(), 2))
-    // 16-bit indices while every one fits, as `setIndex` picks for a number array
-    const idx = this.indices.take()
-    let wide = false
-    for (let i = idx.length - 1; i >= 0; --i) if (idx[i] >= 65535) { wide = true; break }
-    g.setIndex(new THREE.BufferAttribute(wide ? idx : new Uint16Array(idx), 1))
-    return g
+  end() {
+    this.geometry.instanceCount = this.count
+    this.mesh.visible = this.count > 0
+    for (const [name, size] of this.attrs) {
+      const attr = this.geometry.getAttribute(name) as THREE.InstancedBufferAttribute
+      attr.needsUpdate = true
+      attr.addUpdateRange(0, this.count * size)
+    }
+  }
+  get size() {
+    return this.count
+  }
+  dispose() {
+    this.geometry.dispose()
   }
 }
 
-/**
- * Visit every cell the ground-plane segment from (ax, az) to (bx, bz)
- * touches, in order from the start, until `visit` returns true.
- */
-export function gridWalk(ax: number, az: number, bx: number, bz: number, visit: (x: number, z: number, k: CellKey) => boolean | void) {
-  let x = Math.floor(ax), z = Math.floor(az)
-  const dx = bx - ax, dz = bz - az
-  const sx = Math.sign(dx), sz = Math.sign(dz)
-  const tdx = dx === 0 ? Infinity : Math.abs(1 / dx)
-  const tdz = dz === 0 ? Infinity : Math.abs(1 / dz)
-  let tx = dx === 0 ? Infinity : (sx > 0 ? x + 1 - ax : ax - x) / Math.abs(dx)
-  let tz = dz === 0 ? Infinity : (sz > 0 ? z + 1 - az : az - z) / Math.abs(dz)
-  for (let i = 0; i < 128; i++) {
-    if (visit(x, z, cellKey(x, z))) return
-    // no boundary left before the end: the segment ends in this cell
-    if (tx > 1 && tz > 1) return
-    if (tx < tz) { x += sx; tx += tdx } else { z += sz; tz += tdz }
-  }
-}
-
-/**
- * The open doors that hang in a doorway, and the heading each stands at.
- *
- * A door is a hole in a wall run, and the run tells the door which way it
- * faces: walls east and west of it and the doorway faces north/south (yaw 0,
- * the heading a billboard stands at when the camera looks down -z), walls
- * north and south and it faces east/west. A door with no run to read — a
- * corner, an opening broken through on both axes — has no plane to stand in
- * and is left to face the eye like any other fixture.
- *
- * A closed door is a solid cell and is built as one; only the open ones are
- * here, as their cell is floor with the door tile standing on it.
- */
-function framedDoors(scene: Scene): Map<CellKey, number> {
-  const solid = (x: number, y: number) => {
-    const c = scene.cells.get(cellKey(x, y))
-    return !c || c.kind === 'unknown' || c.occluder
-  }
-  const out = new Map<CellKey, number>()
-  for (const c of scene.cells.values()) {
-    if (c.feature?.type !== 'door' || c.kind === 'unknown' || c.occluder) continue
-    const alongX = solid(c.x - 1, c.y) && solid(c.x + 1, c.y)
-    const alongZ = solid(c.x, c.y - 1) && solid(c.x, c.y + 1)
-    if (alongX === alongZ) continue
-    out.set(cellKey(c.x, c.y), alongX ? 0 : Math.PI / 2)
-  }
-  return out
-}
-
-/** Triangulate a horizontal polygon given as world points, keeping the polygon's own winding. */
-function triangulateXZ(p: [number, number, number][]): number[][] {
-  const pts = p.map(([px, , pz]) => new THREE.Vector2(px, pz))
-  let area = 0
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) area += (pts[j].x - pts[i].x) * (pts[j].y + pts[i].y)
-  const tris = THREE.ShapeUtils.triangulateShape(pts, [])
-  for (const t of tris) {
-    const [a, b, c] = t.map((i) => pts[i])
-    const ta = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
-    if (ta * area < 0) [t[1], t[2]] = [t[2], t[1]]
-  }
-  return tris
+/** A painted hand: its icon as a texture, its distance field, and where its opaque texels stand. */
+interface Hand {
+  texture: THREE.Texture
+  dist: THREE.DataTexture
+  material: THREE.RawShaderMaterial
+  batch: Batch
+  cell: number
+  /** The quad the icon stands on in the hand's frame (`stand`'s `quad`), and the world size of one of its texels. */
+  quad: [number, number, number, number]
+  scale: number
 }
 
 export class Render3d implements MapRenderer {
-  /** A frame profiler's mark (perf.ts in the app): `render` names the stretch just done, so a late frame says which part was late. Unset when nothing is measuring. */
+  /** A frame profiler's mark (perf.ts in the app): names the stretch just done. Unset when nothing is measuring. */
   mark: ((name: string) => void) | null = null
+  readonly stats: RenderStats = { levelBuilds: 0, levelChunkBuilds: 0, lvlSetMs: 0, lvlChunkMs: 0, crowdSyncs: 0, spriteWrites: 0, fixtureBuilds: 0, fieldUpdates: 0 }
   private renderer: THREE.WebGLRenderer | null = null
   private three = new THREE.Scene()
+  private blitScene = new THREE.Scene()
   private cam = new THREE.PerspectiveCamera(75, 1, 0.05, 200)
   private tiles: TileSource | null = null
   private scene: Scene | null = null
   private camera: Camera | null = null
   private cursor: SceneCursor | null = null
-  private atlases = new Map<string, AtlasEntry>()
-  private levelGroup = new THREE.Group()
-  private billboardGroup = new THREE.Group()
-  private overlayGroup = new THREE.Group()
-  private cursorMesh: THREE.Mesh
-  private cursorRingMat: THREE.MeshBasicMaterial
-  private cursorTileMesh: THREE.Mesh
-  private cursorTileId = -1
-  private cursorTileMats = new Map<string, THREE.MeshBasicMaterial>()
+  private opts: Required<Render3dOptions>
   private width = 1
   private height = 1
-  private opts: Required<Render3dOptions>
+  private alive = true
+  private atlases = new Map<string, AtlasEntry>()
+  private box = unitBox()
+  // ---- the level
+  private mesher = new LevelMesher(() => nowSeconds() * 1000, this.stats)
+  private levelMeshes = new Map<number, THREE.Mesh[]>()
+  private grid: LevelGrid | null = null
   private builtRevision = -1
-  /** The layout revision the level geometry stands for, and the tint it was coloured with (Part IV). */
   private builtLayout = -1
   private builtTint = ''
-  /** Which upright features were standing when the level was built (`occupiedFeatures`). */
-  private builtOccupied = new Set<CellKey>()
-  /** The level's meshes by chunk (`LEVEL_CHUNK`), in the order `buildChunk` made them. */
-  private levelChunks = new Map<number, THREE.Mesh[]>()
-  /**
-   * Chunks a build ran out of budget for (`LEVEL_BUDGET_MS`), nearest the
-   * player first, with the build they belong to. The frames that follow work
-   * through them (`buildPendingChunks`); a fresh build throws the list away,
-   * since its own chunk set supersedes it.
-   */
-  private levelPending: { chunks: number[]; ctx: LevelBuild } | null = null
-  /** The cells the chunks were built from, for the next build's diff, and the range they cover. */
-  private builtCells = new Map<CellKey, SceneCell>()
-  private builtRange: Rect | null = null
-  /** What the chunks were built under that stands on no cell of theirs: the tint, the lid and the sky. */
-  private builtGlobals = ''
-  /** Set when the next level build cannot be a partial one: new tiles, or new options. */
-  private levelFull = true
-  /** The worker that peels an atlas's ink off the frame (`warmAtlases`); null where there can be none. */
-  private peelWorker: Worker | null | undefined = undefined
-  private peelId = 0
-  /** False once `destroy` has run: the warm-up runs off the frame and must not carry on into a renderer that is gone. */
-  private alive = true
-  /** How many ghost sprites the billboards hold: none means no depth pass. */
-  private ghostCount = 0
-  /** One disc under every actor and item, shared. */
-  private shadowGeo = new THREE.CircleGeometry(0.22, 16)
-  private shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false })
-  /**
-   * Every material a standing sprite's mesh may wear, to its `MERGED` twin: the
-   * same shading with the yaw applied in the vertex shader, for the meshes
-   * `bakeStanding` merges a crowd of holders into. A mesh whose material has no
-   * twin here (a cloned translucent one) stays a holder of its own.
-   */
-  private mergedMats = new Map<THREE.Material, THREE.Material>()
-  /** The eye's yaw, read by every merged material to turn its sprites (`STAND_VERT`). */
-  private standUniforms = { standYaw: { value: 0 } }
-  private bufferSize = new THREE.Vector2()
-  /**
-   * Shade map (II.9, Part IV): one texel per cell of the level's bounds, the
-   * brightness `shadeOf` gives it. The level shader multiplies by it, so a
-   * move or a change of sight repaints this small image and leaves the
-   * geometry standing.
-   */
+  private voidMat: THREE.RawShaderMaterial
+  // ---- the fields
   private shadeTex: THREE.DataTexture | null = null
-  /**
-   * Flash field: the same grid again, rgba per cell, the wash the game
-   * lays over everything in the cell. Filtered, not stepped, so the thickening
-   * of a blind view reads as haze rather than as squares.
-   */
   private flashTex: THREE.DataTexture | null = null
-  /** The two cell fields and the grid they share: origin and size in cells. */
   private fieldUniforms = {
     shadeMap: { value: null as THREE.Texture | null },
     flashMap: { value: null as THREE.Texture | null },
     fieldOrigin: { value: new THREE.Vector2(0, 0) },
     fieldSize: { value: new THREE.Vector2(1, 1) },
   }
-  /** The billboards need syncing for a reason other than a new scene revision (the player's bars changed). */
-  private crowdDirty = false
-  /** Every billboard standing, by the key it was built from (`syncBillboards`). */
-  private records = new Map<string, SpriteRecord>()
-  /** The level's tint the records were built under; a new one drops them all. */
-  private recordsTint = ''
-  /**
-   * The monsters mid-step (motion.ts): one that moved a cell is drawn gliding
-   * after it, as the eye glides after the player's feet. A sprite in flight
-   * stands out of the baked crowd for the length of its step, so moving it
-   * every frame costs a holder's transform and nothing of the crowd's
-   * buffers; landing puts it back (`render`).
-   */
-  private movers = new Movers()
-  /** Motion is observed on scene arrival, independently of when geometry is drawn. */
-  private motionRevision = -1
-  /** The baked crowds: the scene's billboards, and the level's upright features (`bakeStanding`). */
-  private billboardCrowd: Crowd
-  private levelCrowd: Crowd
-  /**
-   * The standing fixtures by what they are built from (`fixtureKey`). A layout rebuild
-   * replaces the level's meshes, but a fixture whose key still holds stands as it was:
-   * its holder stays in the crowd, and the chunk's bake finds its slots in place.
-   */
-  private fixtures = new Map<string, THREE.Object3D>()
-  /** The holders wearing the selected shells (`syncSelection`), and the cell they stand on. */
-  private selected: THREE.Object3D[] = []
-  private selectionDirty = false
-  readonly stats: RenderStats = { levelBuilds: 0, levelChunkBuilds: 0, lvlSetMs: 0, lvlChunkMs: 0, lvlFixMs: 0, crowdSyncs: 0, spriteBuilds: 0, spriteDrops: 0, selectionBuilds: 0, fieldUpdates: 0, chunkBakes: 0, chunkAllocs: 0, bakedVertices: 0, keptVertices: 0 }
-  private raycaster = new THREE.Raycaster()
-  private pickMeshes: THREE.Mesh[] = []
-  private voidMat: THREE.MeshBasicMaterial
-  /** Depth image of the level geometry, rendered before each frame for the ghost shaders. */
-  private depthTarget: THREE.WebGLRenderTarget | null = null
+  private standUniforms = { standYaw: { value: 0 } }
+  private spriteUniforms = {
+    shellColor: { value: new THREE.Color(HULL_SEL_COLOUR) },
+    modelInverse: { value: new THREE.Matrix4() },
+    flashOverride: { value: new THREE.Vector4(0, 0, 0, 0) },
+  }
   private ghostUniforms = {
     sceneDepth: { value: null as THREE.Texture | null },
     resolution: { value: new THREE.Vector2(1, 1) },
     cameraNear: { value: 0.05 },
     cameraFar: { value: 200 },
-    fadeStart: { value: GHOST_FADE_START },
-    fadeRange: { value: GHOST_FADE },
   }
-  /** Viewmodel (II.7): the hands, in their own overlay drawn over the frame. */
+  // ---- what stands
+  private fixtures: SpriteInstance[] = []
+  private crowd: SpriteInstance[] = []
+  private shadows: { x: number; y: number; r: number; moverId?: number }[] = []
+  private batches = new Map<string, Batch>()
+  private shadowBatch: Batch
+  private shadowMat: THREE.RawShaderMaterial
+  private crowdRevision = -1
+  private crowdSelection = ''
+  private movers = new Movers()
+  private motionRevision = -1
+  private ghostCount = 0
+  // ---- the frame
+  private target: THREE.WebGLRenderTarget | null = null
+  /** The depth of the level and its fixtures, for the ghost pass. */
+  private depthTarget: THREE.WebGLRenderTarget | null = null
+  private blitMat: THREE.RawShaderMaterial
+  private bufferSize = new THREE.Vector2()
+  // ---- the cursor
+  private cursorMesh: THREE.Mesh
+  private cursorTileMesh: THREE.Mesh
+  private cursorMat: THREE.RawShaderMaterial
+  private cursorTileMat: THREE.RawShaderMaterial
+  // ---- the hands
   private viewmodel: Viewmodel | null = null
   private vmKey = ''
-  private vmBuilt = false
   private vmScene = new THREE.Scene()
   private vmCam = new THREE.PerspectiveCamera(VM_FOV, 1, 0.1, 20)
-  private vmHands = { weapon: new THREE.Group(), offhand: new THREE.Group() }
-  private vmMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })
-  /**
-   * The flash over the cell the player stands in, rgba. The hands are
-   * drawn in a frame of their own, with no world to read the field at, so they
-   * take the one cell that is always under them.
-   */
-  private vmFlash = { value: new THREE.Vector4(0, 0, 0, 0) }
-  /** Extruded icon geometry per item, keyed by its layers. */
-  /** A hand's block and the ink round it (`HullTemplate`), per distinct item; null where the icon paints nothing. */
-  private vmGeos = new Map<string, { block: THREE.BufferGeometry; hull: THREE.BufferGeometry | null } | null>()
-  /** Rim templates of the standing sprites' blocks, by tile and clip height (`rimTemplate`). */
-  private rims = new Map<string, RimTemplate | null>()
-  private hulls = new Map<string, HullTemplate | null>()
-  private rings = new Map<string, RingTemplate | null>()
-  /**
-   * The vertex arrays of the standing sprites, shared by every sprite built
-   * from the same inputs (`sharedAttr`): a crowd of fifty of one tile at one
-   * height stands on one set of positions, uvs, colours and indices, where
-   * each once carried a copy of its own (its cell is under its anchor, or
-   * given to a holder that stands alone: `giveCells`). The arrays are never written after they are built, so a geometry that
-   * holds one can be disposed as before: the renderer's buffers are the
-   * geometry's, and the array stays for the next sprite. Keyed by everything
-   * the array is computed from, and cleared with the templates it derives from.
-   */
-  private spriteAttrs = new Map<string, THREE.BufferAttribute>()
-  /** The ink round a ghost (`RingTemplate`): the ghost material with no map, coloured by the ring's black vertices. */
-  private ghostInkMat!: THREE.ShaderMaterial
-  private ghostVisibleInkMat!: THREE.ShaderMaterial
-  /** The ink round every standing sprite (`HullTemplate`): black, back faces only. */
-  private hullMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide })
-  /**
-   * The ink round the sprite standing on the cursor's cell. WebTiles picks a
-   * cell out with its cursor alone; here the ring under a monster's feet is
-   * covered by the monster, so what is examined or targeted says so in its own
-   * line instead — the hull's black swapped for HULL_SEL_COLOUR.
-   */
-  private hullSelMat = new THREE.MeshBasicMaterial({ color: HULL_SEL_COLOUR, side: THREE.BackSide })
-  /** The ink on a sprite that does not turn to the eye (an open door): a flat ring (`RingTemplate`) in its plane. */
-  private inkMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
-  /** Attack lift start, in seconds on the render clock; NaN when at rest. */
+  private hands: { weapon: Hand | null; offhand: Hand | null } = { weapon: null, offhand: null }
+  private handCache = new Map<string, Hand | null>()
   private vmLift = NaN
-  /** This frame's attack lift, 0..1 (`liftEnvelope`), or NaN with none running: read once per frame in `render`, so the doll and the hands agree on it. */
   private lift = NaN
+  // ---- the peel
+  private peelWorker: Worker | null | undefined = undefined
+  private peelId = 0
+
   constructor(opts: Render3dOptions = {}) {
-    this.ghostInkMat = this.makeGhostMaterial(GHOST_ALPHA)
-    this.ghostVisibleInkMat = this.makeGhostMaterial(GHOST_ALPHA_VISIBLE, undefined, { start: GHOST_FADE_VISIBLE_START, range: GHOST_FADE_VISIBLE })
-    this.twin(this.ghostInkMat, this.makeGhostMaterial(GHOST_ALPHA, undefined, undefined, true))
-    this.twin(this.ghostVisibleInkMat, this.makeGhostMaterial(GHOST_ALPHA_VISIBLE, undefined, { start: GHOST_FADE_VISIBLE_START, range: GHOST_FADE_VISIBLE }, true))
-    this.twin(this.hullMat, this.makeStandingMaterial(this.hullMat))
-    this.twin(this.hullSelMat, this.makeStandingMaterial(this.hullSelMat))
-    this.twin(this.shadowMat, this.makeStandingMaterial(this.shadowMat))
     this.opts = {
       fov: opts.fov ?? 85,
       eyeHeight: opts.eyeHeight ?? EYE,
@@ -1050,145 +313,531 @@ export class Render3d implements MapRenderer {
     }
     this.cam.fov = this.opts.fov
     this.cam.rotation.order = 'YXZ'
-    this.cam.layers.enable(LAYER_NO_DEPTH)
-    const twin = (m: THREE.Material) => this.mergedMats.get(m)
-    this.billboardCrowd = new Crowd(this.billboardGroup, twin, this.stats)
-    this.levelCrowd = new Crowd(this.levelGroup, twin, this.stats)
-    this.three.add(this.levelGroup, this.billboardGroup, this.overlayGroup)
-    this.three.background = new THREE.Color(0x000000)
-    const cur = new THREE.RingGeometry(0.34, 0.46, 4)
-    cur.rotateX(-Math.PI / 2)
-    this.cursorRingMat = new THREE.MeshBasicMaterial({ color: CURSOR_COLOUR, transparent: true, opacity: 0.95, depthTest: false })
-    this.cursorMesh = new THREE.Mesh(cur, this.cursorRingMat)
-    this.cursorMesh.renderOrder = CURSOR_ORDER
+    this.cam.layers.enable(LAYER_STANDING)
+    this.voidMat = this.raw(LEVEL_VERT, VOID_FRAG, {}, { side: THREE.DoubleSide })
+    this.shadowMat = this.raw(SHADOW_VERT, FLAT_FRAG, { color: { value: new THREE.Vector4(0, 0, 0, 0.35) } }, { transparent: true, depthWrite: false })
+    const disc = new THREE.CircleGeometry(0.22, 16)
+    disc.deleteAttribute('normal')
+    disc.deleteAttribute('uv')
+    this.shadowBatch = new Batch(disc, this.shadowMat, [['iAnchor', 3], ['iScale', 1]], 0)
+    this.shadowBatch.mesh.layers.set(LAYER_STANDING)
+    this.three.add(this.shadowBatch.mesh)
+    this.cursorMat = this.raw(CURSOR_VERT, CURSOR_FRAG, { color: { value: new THREE.Vector4(1, 0.53, 0, 0.95) }, uvRect: { value: new THREE.Vector4(0, 0, 1, 1) } }, { transparent: true, depthTest: false, depthWrite: false })
+    this.cursorTileMat = this.raw(
+      CURSOR_VERT,
+      CURSOR_FRAG,
+      { color: { value: new THREE.Vector4(1, 1, 1, 1) }, uvRect: { value: new THREE.Vector4(0, 0, 1, 1) }, map: { value: null } },
+      { transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide },
+      { TILE: '' },
+    )
+    const ring = new THREE.RingGeometry(0.34, 0.46, 4)
+    ring.rotateX(-Math.PI / 2)
+    this.cursorMesh = new THREE.Mesh(ring, this.cursorMat)
+    this.cursorMesh.renderOrder = 0.5
     this.cursorMesh.visible = false
-    this.overlayGroup.add(this.cursorMesh)
-    // the WebTiles cursor icon laid flat on the cell; swapped in for the ring when the gamedata has it
+    this.cursorMesh.layers.set(LAYER_STANDING)
     const cq = new THREE.PlaneGeometry(1, 1)
-    // +90 about X puts v=1 (the image bottom, flipY off) at the south edge, as the floor decals are
     cq.rotateX(Math.PI / 2)
-    this.cursorTileMesh = new THREE.Mesh(cq, this.cursorRingMat)
-    this.cursorTileMesh.renderOrder = CURSOR_ORDER
+    this.cursorTileMesh = new THREE.Mesh(cq, this.cursorTileMat)
+    this.cursorTileMesh.renderOrder = 0.5
     this.cursorTileMesh.visible = false
-    this.overlayGroup.add(this.cursorTileMesh)
-    this.voidMat = new THREE.MeshBasicMaterial({ color: 0x000000 })
-    this.vmMat.onBeforeCompile = (shader) => {
-      shader.uniforms.flash = this.vmFlash
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform vec4 flash;')
-        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, flash.rgb, flash.a);')
-    }
-    this.vmScene.add(this.vmHands.weapon, this.vmHands.offhand)
-    // the overlay frame is two units tall where the hands stand (z = 0)
+    this.cursorTileMesh.layers.set(LAYER_STANDING)
+    this.three.add(this.cursorMesh, this.cursorTileMesh)
+    this.blitMat = new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: BLIT_VERT, fragmentShader: BLIT_FRAG, uniforms: { map: { value: null } }, depthTest: false, depthWrite: false })
+    const tri = new THREE.BufferGeometry()
+    tri.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3))
+    const blit = new THREE.Mesh(tri, this.blitMat)
+    blit.frustumCulled = false
+    this.blitScene.add(blit)
     this.vmCam.position.z = 1 / Math.tan((VM_FOV * Math.PI) / 360)
   }
 
   mount(target: HTMLCanvasElement | OffscreenCanvas): void {
     this.renderer = new THREE.WebGLRenderer({ canvas: target as HTMLCanvasElement, antialias: false, alpha: false })
+    this.renderer.autoClear = false
     this.renderer.setClearColor(0x000000, 1)
   }
 
+  // ------------------------------------------------------------- materials
+
   /**
-   * Level material: the plain textured material, lit by the cell's own entry
-   * in the shade map. Wall faces wind toward their open neighbour, so a
-   * back-facing one is the far side of the wall and never meant to show; it is
-   * culled. Nothing here opens a hole for what stands behind it — a fixture
-   * (statue, tree, plant) hides a monster exactly as masonry does, and the
-   * ghost pass (II.4) is the one rule that shows it again.
+   * A material on the renderer's own shaders. Every one encodes to sRGB as it
+   * writes (`OUT_SRGB`): the frame's target holds encoded values like the
+   * canvas, so the blended things — shadows, decals, clouds, ghosts — blend
+   * exactly as they blend on the canvas, and the blit is a copy.
    */
-  private makeLevelMaterial(tex: THREE.Texture, feature = false, blended = false, merged = false): THREE.MeshBasicMaterial {
-    // Opaque both ways: every fragment is all-or-nothing under the alpha test,
-    // so the level takes the opaque pass (front to back, no blending, the
-    // depth test rejecting what a nearer wall hides before it is shaded) and
-    // writes the depth the ghost pass reads. An upright sprite is seen from
-    // either side, so it keeps both faces and a sprite-sized alpha test.
-    // A blended decal keeps its texels' alpha instead: it is see-through art
-    // laid on geometry already drawn, so it neither needs nor writes depth of its own.
-    const m = blended
-      ? new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.02, depthWrite: false, side: THREE.DoubleSide })
-      : new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, alphaTest: feature ? 0.1 : 0.5, side: THREE.DoubleSide })
-    if (feature) m.defines = { UPRIGHT_SPRITE: '' }
-    if (merged) m.defines = { ...m.defines, MERGED: '' }
+  private raw(vert: string, frag: string, uniforms: Record<string, THREE.IUniform>, extra: THREE.ShaderMaterialParameters = {}, defines: Record<string, string> = {}): THREE.RawShaderMaterial {
+    return new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: vert, fragmentShader: frag, uniforms, defines: { OUT_SRGB: '', ...defines }, ...extra })
+  }
+
+  private atlas(name: string): AtlasEntry | null {
+    let a = this.atlases.get(name)
+    if (a) return a
+    const img = this.tiles?.atlas(name)
+    if (!img) return null
+    const tex = new THREE.Texture(img as HTMLImageElement)
+    tex.magFilter = THREE.NearestFilter
+    tex.minFilter = THREE.NearestFilter
+    tex.generateMipmaps = false
+    tex.colorSpace = THREE.SRGBColorSpace
+    tex.flipY = false
+    tex.needsUpdate = true
+    const w = (img as { width: number }).width
+    const h = (img as { height: number }).height
+    const uniforms = { map: { value: tex }, distMap: { value: null as THREE.Texture | null }, atlasSize: { value: new THREE.Vector2(w, h) } }
     const fu = this.fieldUniforms
-    const su = this.standUniforms
-    m.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, fu, su)
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\nattribute float cut;\nvarying float vCut;${CELL_VERT_PARS}${FLASH_VERT_PARS}${STAND_VERT_PARS}`)
-        .replace('#include <begin_vertex>', `#include <begin_vertex>${STAND_VERT}`)
-        .replace('#include <project_vertex>', `#include <project_vertex>\nvCut = cut;${CELL_VERT}${FLASH_VERT}`)
-      shader.fragmentShader = shader.fragmentShader
-        .replace(
-          '#include <common>',
-          `#include <common>
-uniform sampler2D shadeMap;
-varying float vCut;
-varying vec2 vCell;
-${FLASH_PARS}`,
-        )
-        .replace(
-          '#include <clipping_planes_fragment>',
-          `#include <clipping_planes_fragment>
-#ifndef UPRIGHT_SPRITE
-// Wall faces wind toward their open neighbour, so a back-facing one is the far
-// side of the wall; it is never meant to show. Cull it.
-if (vCut > 0.5 && !gl_FrontFacing) discard;
-#endif`,
-        )
-        // the cell's light comes from the shade map, stepped cell by cell (`vCell`),
-        // and the vertex colour carries the tint and the face's own shade; the flash
-        // over it is a smooth field, read at the fragment's own place in the world
-        .replace(
-          '#include <color_fragment>',
-          `#include <color_fragment>
-diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize).r;${flashApply('diffuseColor')}`,
-        )
+    const level = this.raw(LEVEL_VERT, LEVEL_FRAG, { map: uniforms.map, alphaTest: { value: 0.5 }, opacity: { value: 1 }, ...fu }, { side: THREE.DoubleSide })
+    const decal = this.raw(LEVEL_VERT, LEVEL_FRAG, { map: uniforms.map, alphaTest: { value: 0.02 }, opacity: { value: 1 }, ...fu }, { side: THREE.DoubleSide, transparent: true, depthWrite: false })
+    const su = { ...uniforms, ...fu, ...this.standUniforms, ...this.spriteUniforms }
+    const ghost = (fadeStart: number, fadeRange: number) =>
+      this.raw(SPRITE_VERT, SPRITE_FRAG, { ...su, ...this.ghostUniforms, fadeStart: { value: fadeStart }, fadeRange: { value: fadeRange } }, { transparent: true, depthTest: false, depthWrite: false }, { GHOST: '' })
+    // the crowd is flagged transparent so three draws it after the ghosts (by render order), depth-tested and written as before
+    a = {
+      name,
+      texture: tex,
+      width: w,
+      height: h,
+      dist: null,
+      peeled: false,
+      uniforms,
+      level,
+      decal,
+      sprite: {
+        fixture: this.raw(SPRITE_VERT, SPRITE_FRAG, su),
+        opaque: this.raw(SPRITE_VERT, SPRITE_FRAG, su, { transparent: true, depthWrite: true }),
+        blend: this.raw(SPRITE_VERT, SPRITE_FRAG, su, { transparent: true, depthWrite: false }),
+        ghostVisible: ghost(GHOST_FADE_VISIBLE_START, GHOST_FADE_VISIBLE),
+        ghostRemembered: ghost(GHOST_FADE_START, GHOST_FADE),
+      },
     }
-    return m
+    this.atlases.set(name, a)
+    return a
+  }
+
+  private dropAtlases() {
+    for (const a of this.atlases.values()) {
+      a.texture.dispose()
+      a.dist?.dispose()
+      a.level.dispose()
+      a.decal.dispose()
+      for (const m of Object.values(a.sprite)) m.dispose()
+    }
+    this.atlases.clear()
+    for (const b of this.batches.values()) {
+      b.mesh.parent?.remove(b.mesh)
+      b.dispose()
+    }
+    this.batches.clear()
+    this.ghostCount = 0
+  }
+
+  // ------------------------------------------------------------------ peel
+
+  /**
+   * Peel the ink off the atlas and upload its distance field (peel.ts), in
+   * the frame: the fallback for an atlas `warmAtlases` did not reach. Reading
+   * a whole sheet back is the best part of a second on a Steam Deck, so the
+   * host is expected to warm the sprite atlases while its loading screen is up.
+   */
+  private peelNow(a: AtlasEntry): void {
+    if (a.peeled) return
+    a.peeled = 'failed'
+    const img = a.texture.image as TexImageSource | undefined
+    if (!img) return
+    try {
+      const canvas = makeCanvas(a.width, a.height)
+      if (!canvas) return
+      const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null
+      if (!ctx) return
+      ctx.drawImage(img as CanvasImageSource, 0, 0)
+      const image = ctx.getImageData(0, 0, a.width, a.height)
+      const mask = peelInk(image.data, a.width, a.height, OPAQUE_ALPHA, this.tiles?.spriteRects?.(a.name))
+      ctx.putImageData(image, 0, 0)
+      this.installPeeled(a, canvas, distanceField(mask, a.width, a.height))
+    } catch {
+      /* the pixels cannot be read: the sprites of this atlas stay unbuilt */
+    }
+  }
+
+  private installPeeled(a: AtlasEntry, image: TexImageSource, dist: Uint8Array) {
+    a.texture.image = image
+    a.texture.needsUpdate = true
+    const t = new THREE.DataTexture(dist, a.width, a.height, THREE.RedFormat, THREE.UnsignedByteType)
+    t.magFilter = THREE.NearestFilter
+    t.minFilter = THREE.NearestFilter
+    t.generateMipmaps = false
+    t.unpackAlignment = 1
+    t.flipY = false
+    t.needsUpdate = true
+    a.dist = t
+    a.uniforms.distMap.value = t
+    a.peeled = true
   }
 
   /**
-   * Billboard material: a sprite takes its light from its cell's entry in the
-   * shade map, as the level does (`CELL_VERT`), so a move that relights
-   * the crowd repaints that small image and leaves every sprite's geometry
-   * standing; its vertex colour carries the tint and the face's own shade.
-   * The flash field washes it as it does everything in the cell — a monster
-   * standing in a cell the game has washed blue is washed with it, as it is
-   * in the 2D view. (A cloned copy — a cloud, a translucent sprite — keeps
-   * none of this shader: it is lit by its vertex colour alone.)
+   * Peel every sprite atlas now, in a worker, rather than leaving each to the
+   * frame that first draws a sprite of it. A host calls it while its loading
+   * screen is up, and need not wait for it.
    */
-  private makeBillboardMaterial(tex: THREE.Texture, merged = false): THREE.MeshBasicMaterial {
-    const m = new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide, depthWrite: true })
-    if (merged) m.defines = { MERGED: '' }
-    const fu = this.fieldUniforms
-    const su = this.standUniforms
-    m.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, fu, su)
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>${CELL_VERT_PARS}${FLASH_VERT_PARS}${STAND_VERT_PARS}`)
-        .replace('#include <begin_vertex>', `#include <begin_vertex>${STAND_VERT}`)
-        .replace('#include <project_vertex>', `#include <project_vertex>${CELL_VERT}${FLASH_VERT}`)
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>\nuniform sampler2D shadeMap;\nvarying vec2 vCell;\n${FLASH_PARS}`)
-        .replace(
-          '#include <color_fragment>',
-          `#include <color_fragment>
-diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize).r;${flashApply('diffuseColor')}`,
-        )
+  async warmAtlases(): Promise<void> {
+    const tiles = this.tiles
+    if (!tiles || !this.alive) return
+    for (const name of tiles.spriteAtlases?.() ?? []) {
+      const a = this.atlas(name)
+      if (!a || a.peeled) continue
+      const img = a.texture.image as TexImageSource | undefined
+      if (!img) continue
+      const done = await this.peelInWorker(a, img).catch(() => false)
+      if (this.tiles !== tiles || !this.alive) return
+      if (!done) this.peelNow(a)
     }
-    return m
+  }
+
+  private async peelInWorker(a: AtlasEntry, img: TexImageSource): Promise<boolean> {
+    if (typeof Worker === 'undefined' || typeof createImageBitmap === 'undefined' || typeof OffscreenCanvas === 'undefined') return false
+    const worker = this.peeler()
+    if (!worker) return false
+    const bitmap = await createImageBitmap(img as ImageBitmapSource)
+    const id = ++this.peelId
+    const reply = await new Promise<PeelReply>((resolve) => {
+      const onMessage = (e: MessageEvent<PeelReply>) => {
+        if (e.data.id !== id) return
+        worker.removeEventListener('message', onMessage)
+        resolve(e.data)
+      }
+      worker.addEventListener('message', onMessage)
+      const req: PeelRequest = { id, bitmap, width: a.width, height: a.height, alphaMin: OPAQUE_ALPHA, sprites: this.tiles?.spriteRects?.(a.name) }
+      worker.postMessage(req, [bitmap])
+    })
+    if (!reply.data || !reply.dist) return false
+    if (a.peeled || !this.atlases.has(a.name)) return true
+    const canvas = makeCanvas(a.width, a.height)
+    const ctx = canvas?.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null
+    if (!canvas || !ctx) return false
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(reply.data as ArrayBuffer), a.width, a.height), 0, 0)
+    this.installPeeled(a, canvas as unknown as TexImageSource, new Uint8Array(reply.dist))
+    return true
+  }
+
+  private peeler(): Worker | null {
+    if (this.peelWorker !== undefined) return this.peelWorker
+    try {
+      this.peelWorker = new Worker(new URL('./peel.worker.js', import.meta.url), { type: 'module' })
+    } catch {
+      this.peelWorker = null
+    }
+    return this.peelWorker
+  }
+
+  /** Compile every program before the first frame needs it, so entering a level pays for none of them. */
+  async warmShaders(): Promise<void> {
+    const r = this.renderer
+    if (!r || !this.alive) return
+    const first = this.atlases.values().next().value ?? this.atlas(this.tiles?.atlasNames()[0] ?? '')
+    const warm = new THREE.Scene()
+    const mats: THREE.Material[] = [this.voidMat, this.shadowMat, this.cursorMat, this.cursorTileMat, this.blitMat]
+    if (first) mats.push(first.level, first.decal, ...Object.values(first.sprite))
+    const plain = new THREE.BufferGeometry()
+    plain.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3))
+    plain.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(6), 2))
+    plain.setAttribute('color', new THREE.BufferAttribute(new Float32Array(9), 3))
+    plain.setAttribute('cell', new THREE.BufferAttribute(new Float32Array(6), 2))
+    plain.setAttribute('cut', new THREE.BufferAttribute(new Float32Array(3), 1))
+    for (const m of mats) {
+      const mesh = new THREE.Mesh(plain, m)
+      mesh.visible = false
+      warm.add(mesh)
+    }
+    await r.compileAsync(warm, this.cam)
+    plain.dispose()
+  }
+
+  // ------------------------------------------------------------ the scene
+
+  setOptions(opts: Render3dOptions) {
+    if (opts.motion === false && this.opts.motion) {
+      this.resetMotion()
+      this.vmLift = NaN
+    }
+    Object.assign(this.opts, opts)
+    this.cam.fov = this.opts.fov
+    this.cam.updateProjectionMatrix()
+    this.mesher.invalidate()
+    this.builtRevision = -1
+    this.builtLayout = -1
+  }
+
+  setTiles(tiles: TileSource): void {
+    this.tiles = tiles
+    this.dropAtlases()
+    for (const h of this.handCache.values()) this.dropHand(h)
+    this.handCache.clear()
+    this.hands = { weapon: null, offhand: null }
+    this.vmKey = ''
+    this.clearLevel()
+    this.builtRevision = -1
+    this.builtLayout = -1
+    this.crowdRevision = -1
+  }
+
+  setScene(scene: Scene, now = nowSeconds()): void {
+    this.scene = scene
+    this.trackMotion(now)
+  }
+
+  resetMotion(): void {
+    this.movers.clear()
+    this.motionRevision = -1
+    this.crowdRevision = -1
+  }
+
+  private trackMotion(now: number): void {
+    const scene = this.scene
+    if (!scene || !this.opts.motion || scene.revision === this.motionRevision) return
+    this.movers.track(scene.billboards, now)
+    this.motionRevision = scene.revision
+  }
+
+  /** The same cell-space position the sprite will occupy in render(now). */
+  monsterPosition(b: Billboard, now: number): { x: number; y: number } {
+    const offset = this.opts.motion ? this.movers.offset(monsterId(b), now) : null
+    return { x: b.x + (offset?.x ?? 0), y: b.y + (offset?.y ?? 0) }
+  }
+
+  setCamera(cam: Camera): void {
+    this.camera = cam
+  }
+
+  setCursor(cursor: SceneCursor | null): void {
+    this.cursor = cursor
+  }
+
+  setViewmodel(vm: Viewmodel | null): void {
+    this.viewmodel = vm
+    const key = vm ? JSON.stringify([vm.weapon?.layers, vm.offhand?.layers]) : ''
+    if (key !== this.vmKey) {
+      this.vmKey = key
+      this.hands = { weapon: null, offhand: null }
+    }
+  }
+
+  attack(): void {
+    if (!this.opts.motion) return
+    this.vmLift = nowSeconds()
+  }
+
+  /** True while something is still moving, so the host keeps rendering frames. */
+  get animating(): boolean {
+    return !Number.isNaN(this.vmLift) || this.movers.active || this.mesher.hasPending
+  }
+
+  resize(width: number, height: number, dpr: number): void {
+    this.width = Math.max(1, width)
+    this.height = Math.max(1, height)
+    if (this.renderer) {
+      this.renderer.setPixelRatio(dpr)
+      this.renderer.setSize(this.width, this.height, false)
+    }
+    this.cam.aspect = this.width / this.height
+    this.cam.updateProjectionMatrix()
+    this.vmCam.aspect = this.cam.aspect
+    this.vmCam.updateProjectionMatrix()
+  }
+
+  destroy(): void {
+    this.clearLevel()
+    this.dropAtlases()
+    this.movers.clear()
+    this.motionRevision = -1
+    for (const h of this.handCache.values()) this.dropHand(h)
+    this.handCache.clear()
+    this.hands = { weapon: null, offhand: null }
+    this.shadowBatch.dispose()
+    this.shadowMat.dispose()
+    this.cursorMesh.geometry.dispose()
+    this.cursorTileMesh.geometry.dispose()
+    this.cursorMat.dispose()
+    this.cursorTileMat.dispose()
+    this.voidMat.dispose()
+    this.blitMat.dispose()
+    ;(this.blitScene.children[0] as THREE.Mesh).geometry.dispose()
+    this.box.dispose()
+    this.target?.dispose()
+    this.target = null
+    this.depthTarget?.dispose()
+    this.depthTarget = null
+    this.ghostUniforms.sceneDepth.value = null
+    this.shadeTex?.dispose()
+    this.shadeTex = null
+    this.flashTex?.dispose()
+    this.flashTex = null
+    this.fieldUniforms.shadeMap.value = null
+    this.fieldUniforms.flashMap.value = null
+    this.renderer?.dispose()
+    this.renderer = null
+    this.peelWorker?.terminate()
+    this.peelWorker = undefined
+    this.alive = false
+    this.builtRevision = -1
+    this.builtLayout = -1
+  }
+
+  /** The lens after the last frame, for the HUD's edge pips. */
+  projector(): { tanHalfY: number; aspect: number; height: number; toCamera(x: number, y: number, h: number): { x: number; y: number; z: number } } {
+    const cam = this.cam
+    cam.updateMatrixWorld()
+    const inv = cam.matrixWorld.clone().invert()
+    const v = new THREE.Vector3()
+    return {
+      tanHalfY: Math.tan((cam.fov * Math.PI) / 360),
+      aspect: cam.aspect,
+      height: this.height,
+      toCamera: (x, y, h) => {
+        v.set(x + 0.5, h, y + 0.5).applyMatrix4(inv)
+        return { x: v.x, y: v.y, z: v.z }
+      },
+    }
   }
 
   /**
-   * Repaint the cell fields for this scene: a texel per cell over the bounds
-   * (and one cell around them, for the void columns the level builds there).
-   * The shade map holds `shadeOf` in 8 bits, stepped per cell; a cell outside
-   * the map is full bright, as it was when the shade was a vertex colour. The
-   * flash map holds `flashOf` as rgba, filtered smooth, and carries the flash
-   * colour into every texel — including the unwashed ones, whose alpha is
-   * zero: a texel left black there would filter into a dark fringe around the
-   * edge of the wash.
+   * The cell under a point of the canvas: the view ray walked across the
+   * level's cells until it meets a wall's body, the floor or the lid. Done on
+   * the grid, not on the meshes: the level is the grid's own picture.
    */
+  pick(px: number, py: number): CellKey | null {
+    const scene = this.scene
+    if (!scene) return null
+    this.cam.updateMatrixWorld()
+    const ndc = new THREE.Vector3((px / this.width) * 2 - 1, -(py / this.height) * 2 + 1, 0.5)
+    const o = this.cam.position.clone()
+    const d = ndc.unproject(this.cam).sub(o).normalize()
+    const classAt = this.grid?.classAt ?? sceneClassAt(scene)
+    const fo = { inset: this.opts.wallInset }
+    const hasLid = scene.level.sky === 'none'
+    let x = Math.floor(o.x), z = Math.floor(o.z)
+    const sx = Math.sign(d.x), sz = Math.sign(d.z)
+    let tx = d.x === 0 ? Infinity : ((sx > 0 ? x + 1 : x) - o.x) / d.x
+    let tz = d.z === 0 ? Infinity : ((sz > 0 ? z + 1 : z) - o.z) / d.z
+    const tdx = d.x === 0 ? Infinity : Math.abs(1 / d.x)
+    const tdz = d.z === 0 ? Infinity : Math.abs(1 / d.z)
+    let tIn = 0
+    for (let i = 0; i < 256; i++) {
+      const tOut = Math.min(tx, tz)
+      if (classAt(x, z) !== 'floor') {
+        // a solid cell: does the ray meet its body's box between entering and leaving the cell?
+        const r = bodyRect(classAt, x, z, fo)
+        if (r) {
+          const t0 = slab(o.x, d.x, x + r.x0, x + r.x1), t1 = slab(o.z, d.z, z + r.z0, z + r.z1), t2 = slab(o.y, d.y, 0, 1)
+          const enter = Math.max(t0[0], t1[0], t2[0], tIn), leave = Math.min(t0[1], t1[1], t2[1], tOut)
+          if (enter <= leave) return cellKey(x, z)
+        }
+      } else {
+        // an open cell: the floor or the lid inside it
+        if (d.y < 0) {
+          const t = -o.y / d.y
+          if (t >= tIn && t <= tOut) return cellKey(x, z)
+        } else if (d.y > 0 && hasLid) {
+          const t = (1 - o.y) / d.y
+          if (t >= tIn && t <= tOut) return cellKey(x, z)
+        }
+      }
+      if (!Number.isFinite(tOut)) return null
+      tIn = tOut
+      if (tx < tz) { x += sx; tx += tdx } else { z += sz; tz += tdz }
+    }
+    return null
+  }
+
+  // ------------------------------------------------------------- the level
+
+  private tileDraw(): (id: number) => TileDraw | null {
+    const tiles = this.tiles!
+    const cache = new Map<number, TileDraw | null>()
+    return (id) => {
+      let t = cache.get(id)
+      if (t !== undefined) return t
+      const r = tiles.tile(id)
+      const a = r ? this.atlas(r.atlas) : null
+      t = r && a ? { r, atlas: r.atlas, uv: uvFor(r, a.width, a.height) } : null
+      cache.set(id, t)
+      return t
+    }
+  }
+
+  private clearLevel() {
+    for (const ck of this.mesher.clear().dropped) this.dropChunk(ck)
+    for (const ck of [...this.levelMeshes.keys()]) this.dropChunk(ck)
+    this.grid = null
+    this.fixtures = []
+  }
+
+  private dropChunk(ck: number) {
+    const meshes = this.levelMeshes.get(ck)
+    if (!meshes) return
+    for (const m of meshes) {
+      this.three.remove(m)
+      m.geometry.dispose()
+    }
+    this.levelMeshes.delete(ck)
+  }
+
+  /** Put the chunks the mesher just built up as meshes, in place of what stood. */
+  private placeChunks(built: number[]) {
+    for (const ck of built) {
+      this.dropChunk(ck)
+      const parts = this.mesher.chunks.get(ck)
+      if (!parts) continue
+      const meshes: THREE.Mesh[] = []
+      for (const g of parts) {
+        const mesh = this.chunkMesh(g)
+        if (!mesh) continue
+        this.three.add(mesh)
+        meshes.push(mesh)
+      }
+      if (meshes.length) this.levelMeshes.set(ck, meshes)
+    }
+  }
+
+  private chunkMesh(g: ChunkGeometry): THREE.Mesh | null {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(g.position, 3))
+    geo.setAttribute('uv', new THREE.BufferAttribute(g.uv, 2))
+    geo.setAttribute('color', new THREE.BufferAttribute(g.color, 3))
+    geo.setAttribute('cell', new THREE.BufferAttribute(g.cell, 2))
+    geo.setAttribute('cut', new THREE.BufferAttribute(g.cut, 1))
+    geo.setIndex(new THREE.BufferAttribute(g.index, 1))
+    geo.computeBoundingSphere()
+    let mat: THREE.Material
+    if (g.kind === 'void') mat = this.voidMat
+    else {
+      const a = this.atlas(g.atlas)
+      if (!a) {
+        geo.dispose()
+        return null
+      }
+      mat = g.kind === 'decal' ? a.decal : a.level
+    }
+    const mesh = new THREE.Mesh(geo, mat)
+    if (g.kind === 'decal') mesh.renderOrder = 1
+    return mesh
+  }
+
+  private rebuildLevel(scene: Scene, grid: LevelGrid) {
+    if (!this.tiles) {
+      this.clearLevel()
+      return
+    }
+    const ctx: MeshContext = { tileOf: this.tileDraw(), fo: { inset: this.opts.wallInset }, chamfer: this.opts.chamfer }
+    this.placeChunks(this.mesher.update(grid, ctx, LEVEL_BUDGET_MS))
+    this.mark?.('level')
+    this.stats.fixtureBuilds++
+    const tiles = this.tiles
+    this.fixtures = fixtureInstances(scene, (id) => tiles.tile(id), grid.framed, grid.occupied)
+    this.crowdRevision = -1
+  }
+
+  // ------------------------------------------------------------ the fields
+
   private updateFields(scene: Scene) {
     this.stats.fieldUpdates++
     const b = scene.bounds
@@ -1204,7 +853,6 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       shade.magFilter = THREE.NearestFilter
       shade.minFilter = THREE.NearestFilter
       shade.generateMipmaps = false
-      // one byte per texel: rows are not padded to four
       shade.unpackAlignment = 1
       flash = this.flashTex = new THREE.DataTexture(new Uint8Array(w * h * 4), w, h, THREE.RGBAFormat, THREE.UnsignedByteType)
       flash.magFilter = THREE.LinearFilter
@@ -1217,16 +865,12 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     this.fieldUniforms.fieldOrigin.value.set(ox, oz)
     const sd = shade.image.data as Uint8Array
     const fd = flash.image.data as Uint8Array
-    // the colour the wash is in, for the texels it does not reach: one flash
-    // covers the view, so the first cell wearing one speaks for all of them
     let hue = { r: 0, g: 0, b: 0 }
     for (const cell of scene.cells.values()) {
       if (!cell.flash || cell.flash.a <= 0) continue
       hue = { r: cell.flash.r, g: cell.flash.g, b: cell.flash.b }
       break
     }
-    // every texel starts as a cell the map does not know (full bright, the hue unflashed), and the
-    // cells it does know write over theirs: a walk over the cells, not over the field's every texel
     sd.fill(255)
     for (let i = 0; i < w * h; i++) {
       fd[i * 4] = hue.r
@@ -1251,2103 +895,216 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     flash.needsUpdate = true
   }
 
-  /** Footprint options for the inset walls of II.1. */
-  private fo(): FootprintOptions {
-    return { inset: this.opts.wallInset }
-  }
+  // ------------------------------------------------------------- the crowd
 
-  /** Register `merged` as the `MERGED` twin of `mat` (`mergedMats`), and hand it back. */
-  private twin<M extends THREE.Material>(mat: THREE.Material, merged: M): M {
-    this.mergedMats.set(mat, merged)
-    return merged
+  private batch(a: AtlasEntry, pass: SpritePass): Batch {
+    const key = `${a.name}|${pass}`
+    let b = this.batches.get(key)
+    if (!b) {
+      // among what blends: the ghosts of what is in view, then remembered ghosts, then the crowd over them, then the translucent
+      const order = pass === 'ghostVisible' ? -2 : pass === 'ghostRemembered' ? -1 : pass === 'blend' ? 1 : 0
+      b = new Batch(this.box, a.sprite[pass], SPRITE_ATTRS, order)
+      if (pass !== 'fixture') b.mesh.layers.set(LAYER_STANDING)
+      this.three.add(b.mesh)
+      this.batches.set(key, b)
+    }
+    return b
   }
 
   /**
-   * The `MERGED` twin of a plain material (the hull inks, the shadow disc): the
-   * same colour and faces, with the standing yaw applied in the vertex shader.
+   * Write every standing instance — the fixtures, the crowd, the shadows —
+   * into its batch. Whole lists, every time: a few hundred instances of a
+   * few floats each, which is less than the bookkeeping it would take to
+   * write less. The blended ones go back to front from the eye.
    */
-  private makeStandingMaterial(of: THREE.MeshBasicMaterial): THREE.MeshBasicMaterial {
-    const m = of.clone()
-    m.defines = { MERGED: '' }
-    const su = this.standUniforms
-    m.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, su)
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>${STAND_VERT_PARS}`)
-        .replace('#include <begin_vertex>', `#include <begin_vertex>${STAND_VERT}`)
+  private writeInstances(eye: { x: number; y: number }, now: number) {
+    this.stats.crowdSyncs++
+    for (const b of this.batches.values()) b.begin()
+    this.shadowBatch.begin()
+    const blend: SpriteInstance[] = []
+    const offsetOf = (id: number | undefined) => (this.opts.motion ? this.movers.offset(id, now) : null)
+    const write = (inst: SpriteInstance) => {
+      const a = this.atlas(inst.atlas)
+      if (!a) return
+      if (!a.peeled) this.peelNow(a)
+      if (a.peeled !== true) return
+      const o = offsetOf(inst.moverId)
+      const anchor = o ? [inst.anchor[0] + o.x, inst.anchor[1], inst.anchor[2] + o.y] : inst.anchor
+      this.batch(a, inst.pass).push([anchor, inst.quad, inst.z, inst.texel, inst.color, inst.misc, inst.cell])
+      this.stats.spriteWrites++
     }
-    return m
-  }
-
-  private makeGhostMaterial(opacity: number, map?: THREE.Texture, fade?: { start: number; range: number }, merged = false, shade = false): THREE.ShaderMaterial {
-    // the shared uniforms are the same objects in every ghost material (one depth image, one camera);
-    // a material with its own fade takes uniforms of its own for that alone
-    // the ghost lays the flash over itself like every other material, and reads it from the shared field uniforms
-    const u: Record<string, THREE.IUniform> = { ...this.ghostUniforms, ...this.fieldUniforms, ...this.standUniforms, opacity: { value: opacity } }
-    if (fade) {
-      u.fadeStart = { value: fade.start }
-      u.fadeRange = { value: fade.range }
-    }
-    if (map) u.map = { value: map }
-    const defines: Record<string, string> = {}
-    if (map) defines.GHOST_MAP = ''
-    if (merged) defines.MERGED = ''
-    // a ghost of what is in view is lit as the sprite is, from the shade map; remembered knowledge keeps its own tint unlit
-    if (shade) defines.GHOST_SHADE = ''
-    return new THREE.ShaderMaterial({
-      uniforms: u,
-      defines,
-      vertexShader: GHOST_VERT,
-      fragmentShader: GHOST_FRAG,
-      vertexColors: true,
-      transparent: true,
-      side: THREE.DoubleSide,
-      // the shader is the depth test; it compares against the level's depth image
-      depthTest: false,
-      depthWrite: false,
-    })
-  }
-
-  /**
-   * Render the frame's occluders into the depth image the ghost shaders
-   * sample: the level, and the sprites that stand in it. A plant or a statue
-   * hides a monster as surely as a wall does, so it belongs in this image —
-   * that is what lets one rule (II.4) cover everything the geometry hides.
-   * The overlays (the cursor) are left out, and so are the ghosts
-   * themselves: they sample this very depth texture, and a sprite that reads
-   * the image it is being drawn into is a framebuffer feedback loop, which
-   * GL refuses (`GL_INVALID_OPERATION` on the draw call).
-   */
-  /**
-   * Render the frame's occluders into the depth image the ghost shaders
-   * sample: the level, and the sprites that stand in it. A plant or a statue
-   * hides a monster as surely as a wall does, so it belongs in this image —
-   * that is what lets one rule (II.4) cover everything the geometry hides.
-   * The overlays (the cursor) are left out, and so is everything on
-   * `LAYER_NO_DEPTH`: the ghosts themselves, since a sprite that reads the
-   * image it is being drawn into is a framebuffer feedback loop, which GL
-   * refuses (`GL_INVALID_OPERATION` on the draw call), and the shadows,
-   * decals and translucent sprites, which write no depth and so would only
-   * cost their draw calls here.
-   */
-  /** The depth image the ghost pass reads, made at the frame's size or remade when that changes. */
-  private depthFor(r: THREE.WebGLRenderer): THREE.WebGLRenderTarget {
-    const size = r.getDrawingBufferSize(this.bufferSize)
-    const w = Math.max(1, Math.ceil(size.x * GHOST_DEPTH_SCALE))
-    const h = Math.max(1, Math.ceil(size.y * GHOST_DEPTH_SCALE))
-    let rt = this.depthTarget
-    if (!rt || rt.width !== w || rt.height !== h) {
-      rt?.dispose()
-      const depthTexture = new THREE.DepthTexture(w, h, THREE.UnsignedIntType)
-      rt = this.depthTarget = new THREE.WebGLRenderTarget(w, h, { depthTexture, depthBuffer: true, stencilBuffer: false })
-      this.ghostUniforms.sceneDepth.value = depthTexture
-    }
-    return rt
-  }
-
-  private renderOccluderDepth(r: THREE.WebGLRenderer) {
-    const rt = this.depthFor(r)
-    const size = this.bufferSize
-    // the ghost shader maps its own fragment coordinate, in frame pixels, onto the image
-    this.ghostUniforms.resolution.value.set(Math.max(1, size.x), Math.max(1, size.y))
-    this.ghostUniforms.cameraNear.value = this.cam.near
-    this.ghostUniforms.cameraFar.value = this.cam.far
-    const prevTarget = r.getRenderTarget()
-    const overlaysWere = this.overlayGroup.visible
-    this.overlayGroup.visible = false
-    const layersWere = this.cam.layers.mask
-    this.cam.layers.set(0)
-    r.setRenderTarget(rt)
-    r.clear()
-    r.render(this.three, this.cam)
-    r.setRenderTarget(prevTarget)
-    this.cam.layers.mask = layersWere
-    this.overlayGroup.visible = overlaysWere
-  }
-
-  setOptions(opts: Render3dOptions) {
-    if (opts.motion === false && this.opts.motion) {
-      this.resetMotion()
-      this.vmLift = NaN
-    }
-    Object.assign(this.opts, opts)
-    this.cam.fov = this.opts.fov
-    this.cam.updateProjectionMatrix()
-    // the inset and the chamfer are in every wall's geometry, so nothing carries over
-    this.levelFull = true
-    this.builtRevision = -1
-    this.builtLayout = -1
-  }
-
-  setTiles(tiles: TileSource): void {
-    this.tiles = tiles
-    for (const a of this.atlases.values()) {
-      a.texture.dispose()
-      a.wallMat.dispose()
-      a.featMat.dispose()
-      a.decalMat.dispose()
-      a.ghostMat.dispose()
-      a.ghostVisibleMat.dispose()
-      a.bbMat.dispose()
-      for (const m of a.merged) m.dispose()
-      for (const m of [a.featMat, a.bbMat, a.ghostMat, a.ghostVisibleMat]) this.mergedMats.delete(m)
-    }
-    this.atlases.clear()
-    this.rims.clear()
-    this.hulls.clear()
-    this.rings.clear()
-    this.spriteAttrs.clear()
-    for (const g of this.vmGeos.values()) {
-      g?.block.dispose()
-      g?.hull?.dispose()
-    }
-    this.vmGeos.clear()
-    this.vmBuilt = false
-    // the cursor's icon was a copy of an atlas that is gone
-    for (const m of this.cursorTileMats.values()) {
-      m.map?.dispose()
-      m.dispose()
-    }
-    this.cursorTileMats.clear()
-    this.cursorTileId = -1
-    // every sprite standing, and every fixture, was built from the old atlases
-    this.dropRecords()
-    this.dropFixtures()
-    // the level's chunks still stand, wearing materials that are gone; the next frame's build replaces every one
-    this.levelFull = true
-    this.builtRevision = -1
-    this.builtLayout = -1
-  }
-
-  /** Drop every standing billboard and its selection; the next sync builds the crowd afresh. */
-  private dropRecords() {
-    for (const rec of this.records.values()) this.dropRecord(rec)
-    this.records.clear()
-    // nothing stands: the chunks' meshes and the shells go too, rather than waiting for a bake to find them empty
-    this.billboardCrowd.clear()
-    this.clearSelection()
     this.ghostCount = 0
-    this.selectionDirty = true
-  }
-
-  private atlas(name: string): AtlasEntry | null {
-    let a = this.atlases.get(name)
-    if (a) return a
-    const img = this.tiles?.atlas(name)
-    if (!img) return null
-    const tex = new THREE.Texture(img as HTMLImageElement)
-    tex.magFilter = THREE.NearestFilter
-    tex.minFilter = THREE.NearestFilter
-    tex.generateMipmaps = false
-    tex.colorSpace = THREE.SRGBColorSpace
-    tex.flipY = false
-    tex.needsUpdate = true
-    const w = (img as { width: number }).width
-    const h = (img as { height: number }).height
-    a = {
-      name,
-      texture: tex,
-      width: w,
-      height: h,
-      wallMat: this.makeLevelMaterial(tex),
-      featMat: this.makeLevelMaterial(tex, true),
-      decalMat: this.makeLevelMaterial(tex, false, true),
-      bbMat: this.makeBillboardMaterial(tex),
-      // A fragment draws only where the level's depth image is nearer, i.e.
-      // exactly the part of the sprite the geometry hides, fading with the
-      // depth gap. Fully visible sprites produce nothing.
-      ghostMat: this.makeGhostMaterial(GHOST_ALPHA, tex),
-      ghostVisibleMat: this.makeGhostMaterial(GHOST_ALPHA_VISIBLE, tex, { start: GHOST_FADE_VISIBLE_START, range: GHOST_FADE_VISIBLE }, false, true),
-      merged: [],
+    for (const inst of this.fixtures) write(inst)
+    for (const inst of this.crowd) {
+      if (inst.pass === 'blend') blend.push(inst)
+      else {
+        if (inst.pass === 'ghostVisible' || inst.pass === 'ghostRemembered') this.ghostCount++
+        write(inst)
+      }
     }
-    a.merged = [
-      this.twin(a.featMat, this.makeLevelMaterial(tex, true, false, true)),
-      this.twin(a.bbMat, this.makeBillboardMaterial(tex, true)),
-      this.twin(a.ghostMat, this.makeGhostMaterial(GHOST_ALPHA, tex, undefined, true)),
-      this.twin(a.ghostVisibleMat, this.makeGhostMaterial(GHOST_ALPHA_VISIBLE, tex, { start: GHOST_FADE_VISIBLE_START, range: GHOST_FADE_VISIBLE }, true, true)),
-    ]
-    this.atlases.set(name, a)
-    return a
-  }
-
-  setScene(scene: Scene, now = nowSeconds()): void {
-    this.scene = scene
-    this.trackMotion(now)
-  }
-
-  /** Forget old-level movement, or stop it immediately when reduced motion is enabled. */
-  resetMotion(): void {
-    this.dropMoved([...this.records.values()].flatMap((rec) => rec.moverId !== undefined && this.movers.flying(rec.moverId) ? [rec.moverId] : []))
-    this.movers.clear()
-    this.motionRevision = -1
-  }
-
-  private trackMotion(now: number): void {
-    const scene = this.scene
-    if (!scene || !this.opts.motion || scene.revision === this.motionRevision) return
-    this.movers.track(scene.billboards, now)
-    this.motionRevision = scene.revision
-  }
-
-  /** The same cell-space position the sprite will occupy in render(now). */
-  monsterPosition(b: Billboard, now: number): { x: number; y: number } {
-    const offset = this.opts.motion ? this.movers.offset(monsterId(b), now) : null
-    return { x: b.x + (offset?.x ?? 0), y: b.y + (offset?.y ?? 0) }
-  }
-  setCamera(cam: Camera): void {
-    this.camera = cam
-  }
-  setCursor(cursor: SceneCursor | null): void {
-    // the sprite on the cursor's cell wears the highlight ink (`hullSelMat`): a cursor that
-    // moves between cells rebuilds that shell alone (`syncSelection`), never the crowd
-    const before = this.cursor ? `${this.cursor.x},${this.cursor.y}` : ''
-    this.cursor = cursor
-    if ((cursor ? `${cursor.x},${cursor.y}` : '') !== before) this.selectionDirty = true
-  }
-  /** What the hands hold. The overlay rebuilds only when the items change. */
-  setViewmodel(vm: Viewmodel | null): void {
-    this.viewmodel = vm
-    const key = vm ? JSON.stringify([vm.weapon?.layers, vm.offhand?.layers]) : ''
-    if (key !== this.vmKey) {
-      this.vmKey = key
-      this.vmBuilt = false
+    if (blend.length) {
+      const far = (i: SpriteInstance) => {
+        const o = offsetOf(i.moverId)
+        const dx = i.anchor[0] + (o?.x ?? 0) - (eye.x + 0.5), dz = i.anchor[2] + (o?.y ?? 0) - (eye.y + 0.5)
+        return dx * dx + dz * dz
+      }
+      blend.sort((p, q) => far(q) - far(p))
+      for (const inst of blend) write(inst)
     }
-  }
-  /** A melee attack: the wielded weapon thrusts a touch toward the centre and settles back. */
-  attack(): void {
-    if (!this.opts.motion) return
-    this.vmLift = nowSeconds()
-  }
-  /** True while the attack lift is running, so the host keeps rendering frames. */
-  get animating(): boolean {
-    // a crowd or a level still filling in (`syncBillboards`, `buildPendingChunks`) needs the frames to finish on
-    return !Number.isNaN(this.vmLift) || this.movers.active || this.crowdDirty || !!this.levelPending
-  }
-  resize(width: number, height: number, dpr: number): void {
-    this.width = Math.max(1, width)
-    this.height = Math.max(1, height)
-    if (this.renderer) {
-      this.renderer.setPixelRatio(dpr)
-      this.renderer.setSize(this.width, this.height, false)
+    for (const s of this.shadows) {
+      const o = offsetOf(s.moverId)
+      this.shadowBatch.push([[s.x + 0.5 + (o?.x ?? 0), 0, s.y + 0.5 + (o?.y ?? 0)], [s.r]])
     }
-    this.cam.aspect = this.width / this.height
-    this.cam.updateProjectionMatrix()
-    this.vmCam.aspect = this.cam.aspect
-    this.vmCam.updateProjectionMatrix()
-  }
-  /**
-   * Release everything this renderer owns: the level's and the crowd's
-   * geometry, the atlases and every material made from them, the fields, the
-   * depth image, the cursor's and the bars' materials, the hands. The scene's
-   * `Scene` and the tiles are the caller's and are left alone. Safe to call
-   * again: a second call finds nothing left to release.
-   */
-  destroy(): void {
-    this.dropRecords()
-    // what the monsters were doing goes with the renderer; while it lives, a step under way
-    // outlives a drop of the records (a new tint, a rebuilt level), since a sprite built
-    // again mid-step should carry on where it had got to
-    this.movers.clear()
-    this.motionRevision = -1
-    this.clearSelection()
-    this.billboardCrowd.clear()
-    this.levelCrowd.clear()
-    this.fixtures.clear()
-    this.clearLevel()
-    for (const child of [...this.levelGroup.children]) {
-      this.levelGroup.remove(child)
-      child.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
-    }
-    for (const child of [...this.billboardGroup.children]) this.billboardGroup.remove(child)
-    this.pickMeshes = []
-    for (const g of this.vmGeos.values()) {
-      g?.block.dispose()
-      g?.hull?.dispose()
-    }
-    this.vmGeos.clear()
-    this.vmBuilt = false
-    for (const hand of [this.vmHands.weapon, this.vmHands.offhand]) hand.clear()
-    this.rims.clear()
-    this.hulls.clear()
-    this.rings.clear()
-    this.spriteAttrs.clear()
-    for (const a of this.atlases.values()) {
-      a.texture.dispose()
-      for (const m of [a.wallMat, a.featMat, a.decalMat, a.ghostMat, a.ghostVisibleMat, a.bbMat, ...a.merged]) m.dispose()
-    }
-    this.atlases.clear()
-    for (const m of this.cursorTileMats.values()) {
-      m.map?.dispose()
-      m.dispose()
-    }
-    this.cursorTileMats.clear()
-    this.cursorTileId = -1
-    this.cursorMesh.geometry.dispose()
-    this.cursorTileMesh.geometry.dispose()
-    this.cursorRingMat.dispose()
-    this.vmMat.dispose()
-    this.voidMat.dispose()
-    this.hullMat.dispose()
-    this.hullSelMat.dispose()
-    this.inkMat.dispose()
-    this.ghostInkMat.dispose()
-    this.ghostVisibleInkMat.dispose()
-    for (const m of this.mergedMats.values()) m.dispose()
-    this.mergedMats.clear()
-    this.depthTarget?.dispose()
-    this.depthTarget = null
-    this.ghostUniforms.sceneDepth.value = null
-    this.shadeTex?.dispose()
-    this.shadeTex = null
-    this.flashTex?.dispose()
-    this.flashTex = null
-    this.fieldUniforms.shadeMap.value = null
-    this.fieldUniforms.flashMap.value = null
-    this.shadowGeo.dispose()
-    this.shadowMat.dispose()
-    this.renderer?.dispose()
-    this.renderer = null
-    this.peelWorker?.terminate()
-    this.peelWorker = undefined
-    this.alive = false
-    this.builtRevision = -1
-    this.builtLayout = -1
+    for (const b of this.batches.values()) b.end()
+    this.shadowBatch.end()
   }
 
-  /**
-   * The lens after the last frame, for the HUD's edge pips (apps/orbrun
-   * pips.ts): the vertical half-angle, the aspect, the view's pixel height
-   * (so a pip can be drawn the size the sprite would have been) and cell
-   * centres in the camera's own space, so what the pips call "off screen" is
-   * exactly what this frame did not draw, mid-turn or at rest.
-   */
-  projector(): { tanHalfY: number; aspect: number; height: number; toCamera(x: number, y: number, h: number): { x: number; y: number; z: number } } {
-    const cam = this.cam
-    cam.updateMatrixWorld()
-    const inv = cam.matrixWorld.clone().invert()
-    const v = new THREE.Vector3()
-    return {
-      tanHalfY: Math.tan((cam.fov * Math.PI) / 360),
-      aspect: cam.aspect,
-      height: this.height,
-      toCamera: (x, y, h) => {
-        v.set(x + 0.5, h, y + 0.5).applyMatrix4(inv)
-        return { x: v.x, y: v.y, z: v.z }
-      },
-    }
-  }
-
-  pick(px: number, py: number): CellKey | null {
-    if (!this.renderer || !this.scene) return null
-    const ndc = new THREE.Vector2((px / this.width) * 2 - 1, -(py / this.height) * 2 + 1)
-    this.raycaster.setFromCamera(ndc, this.cam)
-    const hits = this.raycaster.intersectObjects(this.pickMeshes, false)
-    if (!hits.length) return null
-    const p = hits[0].point
-    return cellKey(Math.floor(p.x), Math.floor(p.z))
-  }
-
-  // -------------------------------------------------------------------------
-
-  private uvFor(rect: TileRect, a: AtlasEntry) {
-    const e = UV_INSET
-    return {
-      u0: (rect.sx + e) / a.width,
-      v0: (rect.sy + e) / a.height,
-      u1: (rect.sx + rect.w - e) / a.width,
-      v1: (rect.sy + rect.h - e) / a.height,
-    }
-  }
-
-  /** A billboard's light: baked into its vertex colours, since billboards are rebuilt with every scene anyway. */
-  private shadeFor(cell: SceneCell | undefined, scene: Scene): number {
-    return shadeOf(cell, scene)
-  }
-
-  /** Cursor (WebTiles icon or ring) on its cell. */
   private placeCursor() {
     const cur = this.cursor
     if (!cur) {
       this.cursorMesh.visible = this.cursorTileMesh.visible = false
       return
     }
-    // the cursor marks a cell, not a wall cap: it lies on the ground even when the cell is solid
-    // (its materials skip the depth test, so it shows through the wall at eye level, though a
-    // sprite on the cell still covers it, CURSOR_ORDER)
-    const h = 0
     const rect = cur.tile !== undefined && this.tiles ? this.tiles.tile(cur.tile) : undefined
     const a = rect ? this.atlas(rect.atlas) : null
     if (rect && a) {
-      if (this.cursorTileId !== cur.tile) {
-        this.cursorTileId = cur.tile!
-        let mat = this.cursorTileMats.get(rect.atlas)
-        if (!mat) {
-          mat = new THREE.MeshBasicMaterial({ map: a.texture.clone(), transparent: true, alphaTest: 0.1, depthTest: false, side: THREE.DoubleSide })
-          this.cursorTileMats.set(rect.atlas, mat)
-        }
-        // the icon's rect in the atlas, as a repeat/offset on a copy of the texture
-        const uv = this.uvFor(rect, a)
-        const tex = mat.map!
-        tex.offset.set(uv.u0, uv.v0)
-        tex.repeat.set(uv.u1 - uv.u0, uv.v1 - uv.v0)
-        this.cursorTileMesh.material = mat
-      }
+      const uv = uvFor(rect, a.width, a.height)
+      this.cursorTileMat.uniforms.map.value = a.texture
+      this.cursorTileMat.uniforms.uvRect.value.set(uv.u0, uv.v0, uv.u1, uv.v1)
       this.cursorTileMesh.visible = true
       this.cursorMesh.visible = false
-      this.cursorTileMesh.position.set(cur.x + 0.5, h + 0.012, cur.y + 0.5)
+      this.cursorTileMesh.position.set(cur.x + 0.5, 0.012, cur.y + 0.5)
     } else {
       this.cursorTileMesh.visible = false
       this.cursorMesh.visible = true
-      this.cursorRingMat.color.set(cur.mode === 'map' ? CURSOR_MAP_COLOUR : CURSOR_COLOUR)
-      this.cursorMesh.position.set(cur.x + 0.5, h + 0.012, cur.y + 0.5)
+      const c = new THREE.Color(cur.mode === 'map' ? CURSOR_MAP_COLOUR : CURSOR_COLOUR)
+      this.cursorMat.uniforms.color.value.set(c.r, c.g, c.b, 0.95)
+      this.cursorMesh.position.set(cur.x + 0.5, 0.012, cur.y + 0.5)
     }
   }
+
+  // -------------------------------------------------------------- the frame
 
   /**
-   * The cells with an upright feature that something stands on. A board in
-   * such a cell is a board through whoever stands there: however the two are
-   * ordered in depth, a staircase's steps and its black outline run across a
-   * monster and the pair read as one jumble. Those features lie back down on
-   * the floor instead — the answer first person already gives for the cell
-   * underfoot — and what the player sees is 2D's own order, the feature under
-   * the actor. Clouds and things in flight pass over a cell rather than stand
-   * on it, and leave its feature standing.
-   *
-   * In first person the cell underfoot counts too, whether or not the doll is
-   * among the billboards: the camera sits in the middle of that sprite. A step
-   * onto or off such a cell is the only way a move changes the level's
-   * geometry, so this set is what a move rebuilds on, not the layout revision.
+   * The frame's target and the ghosts' depth image (II.4: the level and its
+   * fixtures), made at the frame's size or remade when that changes.
    */
-  private occupiedFeatures(scene: Scene): Set<CellKey> {
-    const out = new Set<CellKey>()
-    const upright = (k: CellKey) => {
-      const c = scene.cells.get(k)
-      return c?.stance === 'upright' && c.featureTile !== undefined
+  private targetsFor(r: THREE.WebGLRenderer): { frame: THREE.WebGLRenderTarget; depth: THREE.WebGLRenderTarget } {
+    const size = r.getDrawingBufferSize(this.bufferSize)
+    const w = Math.max(1, size.x), h = Math.max(1, size.y)
+    let rt = this.target
+    let dt = this.depthTarget
+    if (!rt || !dt || rt.width !== w || rt.height !== h) {
+      rt?.dispose()
+      dt?.dispose()
+      const opts = { depthBuffer: true, stencilBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false }
+      rt = this.target = new THREE.WebGLRenderTarget(w, h, opts)
+      const depthTexture = new THREE.DepthTexture(w, h, THREE.UnsignedIntType)
+      dt = this.depthTarget = new THREE.WebGLRenderTarget(w, h, { ...opts, depthTexture })
+      this.ghostUniforms.sceneDepth.value = depthTexture
+      this.ghostUniforms.resolution.value.set(w, h)
+      this.blitMat.uniforms.map.value = rt.texture
     }
-    for (const b of scene.billboards) {
-      if (b.kind === 'cloud' || b.kind === 'projectile') continue
-      const k = cellKey(b.x, b.y)
-      if (upright(k)) out.add(k)
-    }
-    if (scene.playerOnLevel) {
-      const k = cellKey(scene.player.x, scene.player.y)
-      if (upright(k)) out.add(k)
-    }
-    return out
+    return { frame: rt, depth: dt }
   }
 
-  /**
-   * Build the level's geometry, one mesh set per chunk of `LEVEL_CHUNK` cells.
-   * Only the chunks the cells changed since the last build reach into are
-   * built again (`LEVEL_REACH`): a step that reveals a handful of cells leaves
-   * the rest of the level's meshes standing, where a whole-level rebuild
-   * every step is the walk's constant hitch (docs/front-end-perf.md). New
-   * tiles, new options, a new tint, lid or sky build every chunk.
-   */
-  private rebuildLevel(scene: Scene, budgetMs = Infinity) {
-    const t0 = nowSeconds() * 1000
-    this.stats.levelBuilds++
-    const tiles = this.tiles
-    if (!tiles) {
-      this.clearLevel()
-      this.dropFixtures()
-      return
-    }
-    const fo = this.fo()
-    const framed = framedDoors(scene)
-    // A framed door's cell counts as wall for the footprint rule: the wall run
-    // it is set into keeps its full thickness up to the doorway instead of
-    // stepping back by the inset on either side, so the opening is exactly the
-    // cell wide and the door's own board fills it. Without this the run recedes
-    // WALL_INSET each way and the door hangs in the middle of a gap wider than
-    // itself. What is left either side is a reveal the corridor's own cells
-    // still chamfer back, so the doorway splays out into the room it opens on.
-    const base = sceneClassAt(scene)
-    const classAt: ClassAt = (x, z) => (framed.has(cellKey(x, z)) ? 'wall' : base(x, z))
-    const tint = scene.level.tint
-    // a tile's rect and uvs are looked up once per rebuild: every floor cell asks for its tile, and a level has far more cells than tiles
-    const tileCache = new Map<number, TileDraw | null>()
-    const tileOf = (id: number) => {
-      let t = tileCache.get(id)
-      if (t !== undefined) return t
-      const r = tiles.tile(id)
-      const a = r ? this.atlas(r.atlas) : null
-      t = r && a ? { r, a, uv: this.uvFor(r, a) } : null
-      tileCache.set(id, t)
-      return t
-    }
-    const levelCeiling = scene.level.ceilingTile !== null ? tileOf(scene.level.ceilingTile) : null
-    const ceilingCache = new Map<number, ReturnType<typeof tileOf>>()
-    /** The lid over an open cell: its own nearby-wall tile, else the level's. */
-    const ceilingOf = (c: SceneCell | undefined) => {
-      if (scene.level.sky !== 'none') return null
-      if (!c || c.ceilingTile === undefined) return levelCeiling
-      let t = ceilingCache.get(c.ceilingTile)
-      if (t === undefined) ceilingCache.set(c.ceilingTile, (t = tileOf(c.ceilingTile)))
-      return t
-    }
-    /**
-     * Whether a cell's feature stands as a billboard here. Upright features do
-     * — except the one underfoot, where the camera sits in the middle of the
-     * sprite, and any a monster or an item stands on:
-     * there the tile lies back down on the floor, so a staircase you or a
-     * centaur are standing on still reads as one.
-     */
-    const occupied = this.occupiedFeatures(scene)
-    const stands = (c: SceneCell) => c.stance === 'upright' && !occupied.has(cellKey(c.x, c.y))
-    const heightOfFeature = (c: SceneCell) => (c.feature?.type === 'stairs' ? STAIR_H : FIXTURE_H)
-    const isSolid = (c: SceneCell | undefined) => !c || c.kind === 'unknown' || c.occluder
-    const isVoidCell = (c: SceneCell | undefined) => !c || c.kind === 'unknown'
-
-    const b = scene.bounds
-    // built over the bounds grown by one, so void columns bordering known space exist
-    const range: Rect = { left: b.left - 1, top: b.top - 1, right: b.right + 1, bottom: b.bottom + 1 }
-    const ctx: LevelBuild = { scene, tint, framed, classAt, fo, tileOf, ceilingOf, stands, isSolid, isVoidCell, range }
-    // what the chunks were built under that stands on no cell of theirs: a change here is every chunk's
-    const globals = `${tint.r},${tint.g},${tint.b}|${scene.level.ceilingTile}|${scene.level.sky}`
-    const full = this.levelFull || !this.builtRange || globals !== this.builtGlobals
-    this.levelFull = false
-    this.builtGlobals = globals
-    /** The chunks to build. */
-    const chunks = new Set<number>()
-    /** Mark every chunk the cells of `r` reach into (`LEVEL_REACH`). */
-    const markRect = (r: Rect) => {
-      if (r.right < r.left || r.bottom < r.top) return
-      for (let cz = Math.floor((r.top - LEVEL_REACH) / LEVEL_CHUNK); cz <= Math.floor((r.bottom + LEVEL_REACH) / LEVEL_CHUNK); cz++)
-        for (let cx = Math.floor((r.left - LEVEL_REACH) / LEVEL_CHUNK); cx <= Math.floor((r.right + LEVEL_REACH) / LEVEL_CHUNK); cx++)
-          chunks.add(cellKey(cx, cz))
-    }
-    const markKey = (k: CellKey) => {
-      const { x, y } = keyToXY(k)
-      markRect({ left: x, right: x, top: y, bottom: y })
-    }
-    /** The cells whose layout changed since the last build, and those the map has forgotten. */
-    const changed: CellKey[] = []
-    const gone: CellKey[] = []
-    if (full) {
-      // every chunk over the range, and every one standing, so a range that shrank leaves nothing behind
-      for (const ck of this.levelChunks.keys()) chunks.add(ck)
-      for (let cz = Math.floor(range.top / LEVEL_CHUNK); cz <= Math.floor(range.bottom / LEVEL_CHUNK); cz++)
-        for (let cx = Math.floor(range.left / LEVEL_CHUNK); cx <= Math.floor(range.right / LEVEL_CHUNK); cx++) chunks.add(cellKey(cx, cz))
-    } else {
-      for (const [k, cell] of scene.cells) {
-        const had = this.builtCells.get(k)
-        if (!had || !cellLayoutEquals(had, cell)) changed.push(k)
-      }
-      for (const k of this.builtCells.keys()) if (!scene.cells.has(k)) gone.push(k)
-      for (const k of changed) markKey(k)
-      for (const k of gone) markKey(k)
-      // a feature that has stood up or lain down since the last build (`occupiedFeatures`)
-      for (const k of occupied) if (!this.builtOccupied.has(k)) markKey(k)
-      for (const k of this.builtOccupied) if (!occupied.has(k)) markKey(k)
-      // the range grew or shrank: the cells that came into it, and those that left
-      for (const r of rectMinus(range, this.builtRange!)) markRect(r)
-      for (const r of rectMinus(this.builtRange!, range)) markRect(r)
-    }
-    this.stats.lvlSetMs += nowSeconds() * 1000 - t0
-    // A step's rebuild is a chunk or two and goes out whole. A whole level is
-    // every chunk at once, which is the frame the player waits on arriving,
-    // so it goes out nearest first and stops at the budget; what is left is
-    // built by the frames after this one, and `animating` keeps them coming.
-    const order = [...chunks]
-    if (order.length > LEVEL_SLICE_MIN) {
-      const pcx = scene.player.x / LEVEL_CHUNK
-      const pcz = scene.player.y / LEVEL_CHUNK
-      const near = new Map<number, number>()
-      for (const ck of order) {
-        const { x, y } = keyToXY(ck as CellKey)
-        near.set(ck, (x - pcx) * (x - pcx) + (y - pcz) * (y - pcz))
-      }
-      order.sort((a, b) => near.get(a)! - near.get(b)!)
-    }
-    const tc = nowSeconds() * 1000
-    const left = this.buildChunks(order, ctx, tc, budgetMs)
-    this.stats.lvlChunkMs += nowSeconds() * 1000 - tc
-    this.levelPending = left.length ? { chunks: left, ctx } : null
-    this.refreshPickMeshes()
-    const tf = nowSeconds() * 1000
-    if (full) {
-      this.builtCells.clear()
-      for (const [k, cell] of scene.cells) this.builtCells.set(k, cell)
-    } else {
-      for (const k of gone) this.builtCells.delete(k)
-      for (const k of changed) this.builtCells.set(k, scene.cells.get(k)!)
-    }
-    this.builtOccupied = occupied
-    this.builtRange = range
-    // Upright features stand as billboards built with the level. One whose key still holds
-    // (the same tile on the same cell, at the same height, heading and tint) is left standing;
-    // the rest are built, and whatever stood that the level no longer asks for comes down.
-    const tintKey = `${tint.r},${tint.g},${tint.b}`
-    const wanted = new Set<string>()
-    for (const cell of scene.cells.values()) {
-      if (cell.kind === 'unknown' || cell.occluder) continue
-      if (cell.featureTile === undefined || !stands(cell)) continue
-      const ft = tileOf(cell.featureTile)
-      if (!ft) continue
-      const doorYaw = framed.get(cellKey(cell.x, cell.y))
-      const key = `${cell.x},${cell.y}|${cell.featureTile}|${doorYaw ?? ''}|${doorYaw !== undefined ? 1 : heightOfFeature(cell)}|${tintKey}`
-      wanted.add(key)
-      if (this.fixtures.has(key)) continue
-      // An open door hangs in its doorway, not on the eye: its cell is a hole
-      // in a wall run, and a board that turns with the camera pulls the leaves
-      // and their arch off the two walls they are set into — from any angle but
-      // head-on the frame floats free of the opening. Squared to the wall it
-      // fills the gap, full height like the closed door's block, and needs no
-      // FIXTURE_BACK: it is in the wall plane, not in the way of what walks
-      // through it.
-      const yaw = doorYaw
-      if (yaw !== undefined) {
-        const door = this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], 1, 1, tint, true, 'none', true, 0, yaw)
-        this.giveCells(door, cell.x, cell.y)
-        this.fixtures.set(key, door)
-        continue
-      }
-      // a fixture takes its light from the shade map (featMat), so its vertex colour is the tint alone;
-      // it stands FIXTURE_BACK back, so whatever stands on the cell reads in front of it rather than through it
-      const h = this.addStanding(this.levelGroup, cell.x, cell.y, [{ ...ft, ox: 0, oy: 0 }], heightOfFeature(cell), 1, tint, true, 'none', true, FIXTURE_BACK)
-      this.fixtures.set(key, h)
-      if (this.levelCrowd.mergeable(h)) this.levelCrowd.add(h, cell.x, cell.y)
-      else this.giveCells(h, cell.x, cell.y)
-    }
-    for (const [key, h] of this.fixtures) {
-      if (wanted.has(key)) continue
-      this.fixtures.delete(key)
-      this.dropFixture(h)
-    }
-    // every chunk is baked again, its holders taken back to front from where the eye stands at this
-    // rebuild, as they always were; a holder whose slot is unchanged costs the bake nothing (crowd.ts `write`)
-    this.levelCrowd.invalidate()
-    this.stats.lvlFixMs += nowSeconds() * 1000 - tf
-  }
-
-  /**
-   * Build chunks off `order` until the budget is spent, and give back the
-   * ones left. Always builds the first, however long it takes, so a frame
-   * never comes away having done nothing. Under `LEVEL_SLICE_MIN`, or with
-   * no budget, the clock is never read and every chunk goes out: a step's
-   * own rebuild is a chunk or two, and a caller that asked for a level
-   * (`rebuildLevel` with no budget, as the tests drive it) gets all of it.
-   */
-  private buildChunks(order: number[], ctx: LevelBuild, t0: number, budgetMs: number): number[] {
-    const slice = Number.isFinite(budgetMs) && order.length > LEVEL_SLICE_MIN
-    for (let i = 0; i < order.length; i++) {
-      if (slice && i > 0 && nowSeconds() * 1000 - t0 > budgetMs) return order.slice(i)
-      this.buildChunk(order[i], ctx)
-    }
-    return []
-  }
-
-  /** The pick meshes of every chunk standing, in chunk order. */
-  private refreshPickMeshes() {
-    this.pickMeshes = []
-    for (const meshes of this.levelChunks.values()) for (const m of meshes) if (m.userData.pick) this.pickMeshes.push(m)
-  }
-
-  /**
-   * Carry on with the chunks a build ran out of budget for. The fixtures and
-   * the cell bookkeeping were all done by the build itself, so this is the
-   * geometry alone; the chunks it stands dirty themselves for the bake that
-   * follows (crowd.ts `add`).
-   */
-  private buildPendingChunks() {
-    const p = this.levelPending
-    if (!p) return
-    const t = nowSeconds() * 1000
-    const left = this.buildChunks(p.chunks, p.ctx, t, LEVEL_BUDGET_MS)
-    this.stats.lvlChunkMs += nowSeconds() * 1000 - t
-    this.levelPending = left.length ? { chunks: left, ctx: p.ctx } : null
-    this.refreshPickMeshes()
-  }
-
-  /**
-   * One chunk of the level, built afresh: its old meshes go, and the cells of
-   * the chunk that lie in the build's range are emitted into one mesh per
-   * atlas, as the whole level once was. A cell's geometry reads its
-   * neighbours out of the scene, not out of the chunk, so a chunk's meshes are
-   * the same faces the whole-level build put there.
-   */
-  private buildChunk(ck: number, ctx: LevelBuild) {
-    this.dropChunk(ck)
-    const { scene, tint, framed, classAt, fo, tileOf, ceilingOf, stands, isSolid, isVoidCell, range } = ctx
-    const c0 = keyToXY(ck)
-    const x0 = Math.max(range.left, c0.x * LEVEL_CHUNK)
-    const x1 = Math.min(range.right, c0.x * LEVEL_CHUNK + LEVEL_CHUNK - 1)
-    const z0 = Math.max(range.top, c0.y * LEVEL_CHUNK)
-    const z1 = Math.min(range.bottom, c0.y * LEVEL_CHUNK + LEVEL_CHUNK - 1)
-    if (x1 < x0 || z1 < z0) return
-    this.stats.levelChunkBuilds++
-    const builders = new Map<string, GeoBuilder>()
-    const decalBuilders = new Map<string, GeoBuilder>()
-    const voids = new GeoBuilder()
-    const get = (name: string) => {
-      let g = builders.get(name)
-      if (!g) builders.set(name, (g = new GeoBuilder()))
-      return g
-    }
-    /** The blended builder for a translucent decal (SceneCell.translucent), else the level's. */
-    const getDecal = (name: string, cell: SceneCell, id: number) => {
-      if (!cell.translucent?.includes(id)) return get(name)
-      let g = decalBuilders.get(name)
-      if (!g) decalBuilders.set(name, (g = new GeoBuilder()))
-      return g
-    }
-    const meshes: THREE.Mesh[] = []
-    for (let y = z0; y <= z1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const k = cellKey(x, y)
-        const cell = scene.cells.get(k)
-        const solid = isSolid(cell)
-        const n = scene.cells.get(cellKey(x, y - 1))
-        const s = scene.cells.get(cellKey(x, y + 1))
-        const w = scene.cells.get(cellKey(x - 1, y))
-        const e = scene.cells.get(cellKey(x + 1, y))
-        if (!solid && cell) {
-          // floor; the cell's light comes from the shade map, the vertex colour is the tint
-          const ft = tileOf(cell.floorTile)
-          if (ft) get(ft.r.atlas).at(x, y).quad([[x, 0, y + 1], [x + 1, 0, y + 1], [x + 1, 0, y], [x, 0, y]], ft.uv, 1, tint)
-          // ground decals, bottom up: underlays, decal feature, overlays, badges.
-          // A decal's rect is trimmed to its opaque texels (shores, blood, badges),
-          // so it covers only its own patch of the cell, at its ox/oy, as in 2D.
-          const decal = (id: number, lift: number) => {
-            const ot = tileOf(id)
-            if (!ot) return
-            const c = ot.r.cell
-            const x0 = x + ot.r.ox / c, x1 = x + (ot.r.ox + ot.r.w) / c
-            const z0 = y + ot.r.oy / c, z1 = y + (ot.r.oy + ot.r.h) / c
-            getDecal(ot.r.atlas, cell, id).at(x, y).quad([[x0, lift, z1], [x1, lift, z1], [x1, lift, z0], [x0, lift, z0]], ot.uv, 1, tint)
-          }
-          if (cell.underlays) for (const o of cell.underlays) decal(o, 0.002)
-          if (cell.featureTile !== undefined && !stands(cell)) decal(cell.featureTile, 0.004)
-          // not the wall shadows: the walls here are geometry, and 2D's shadow
-          // gradient at the cell edge would read as a grout line beside an inset wall.
-          // Not the shorelines either: a one-texel wave line laid flat is a scratch at eye height.
-          if (cell.overlays)
-            for (const o of cell.overlays) if (!cell.wallShadows?.includes(o) && !cell.shorelines?.includes(o)) decal(o, 0.006)
-          if (cell.icons) for (const o of cell.icons) decal(o, 0.008)
-          // ceiling
-          const ceiling = ceilingOf(cell)
-          if (ceiling) get(ceiling.r.atlas).at(x, y).quad([[x, 1, y], [x + 1, 1, y], [x + 1, 1, y + 1], [x, 1, y + 1]], ceiling.uv, 0.75, tint)
-          continue
-        }
-        // solid: wall, door or void. The body is the footprint of II.1
-        // (inset walls): the cell minus the floor grown by the inset, so it
-        // meets every neighbour flush. Faces come from the footprint; corner
-        // chamfers and the patches of floor and lid that continue under and
-        // over the removed parts are added here.
-        const isVoid = isVoidCell(cell)
-        const openN = !isSolid(n)
-        const openS = !isSolid(s)
-        const openW = !isSolid(w)
-        const openE = !isSolid(e)
-        // a void cell with nothing open around it, diagonals included, shows nothing
-        if (isVoid && !(openN || openS || openW || openE) && DIAGONALS.every(([dx, dz]) => isSolid(scene.cells.get(cellKey(x + dx, y + dz))))) continue
-        const fp = insetFootprint(classAt, x, y, fo)
-        const rect = bodyRect(classAt, x, y, fo)
-        if (!rect || fp.poly.length === 0) continue
-        const wt = !isVoid && cell?.wallTile !== undefined ? tileOf(cell.wallTile) : null
-        const black = isVoid || !wt
-        const lerp = (a: number, b: number, t: number) => a + (b - a) * t
-        type Dir = 'n' | 's' | 'w' | 'e'
-        const across: Record<Dir, { other: SceneCell | undefined; ok: CellKey; side: boolean }> = {
-          n: { other: n, ok: cellKey(x, y - 1), side: true },
-          s: { other: s, ok: cellKey(x, y + 1), side: true },
-          w: { other: w, ok: cellKey(x - 1, y), side: false },
-          e: { other: e, ok: cellKey(x + 1, y), side: false },
-        }
-        // A face is parametrised by t0..t1 along its edge (x for N/S, z for
-        // W/E), its depth in from the cell edge it faces away from, and the
-        // height it starts at.
-        const facePoints = (d: Dir, t0: number, t1: number, depth: number, y0: number, y1 = 1): [number, number, number][] => {
-          switch (d) {
-            case 'n': { const z = y + depth; return [[x + t1, y0, z], [x + t0, y0, z], [x + t0, y1, z], [x + t1, y1, z]] }
-            case 's': { const z = y + 1 - depth; return [[x + t0, y0, z], [x + t1, y0, z], [x + t1, y1, z], [x + t0, y1, z]] }
-            case 'w': { const px = x + depth; return [[px, y0, y + t0], [px, y0, y + t1], [px, y1, y + t1], [px, y1, y + t0]] }
-            case 'e': { const px = x + 1 - depth; return [[px, y0, y + t1], [px, y0, y + t0], [px, y1, y + t0], [px, y1, y + t1]] }
-          }
-        }
-        // u range for a face segment: the first quad point takes u0. N and E
-        // faces run against t (the viewer's left is +x for N, +z for E). The
-        // tile stays anchored to the cell, so a run of cells tiles continuously.
-        const faceU = (d: Dir, uv: { u0: number; u1: number }, t0: number, t1: number) =>
-          d === 'n' || d === 'e'
-            ? { u0: lerp(uv.u0, uv.u1, 1 - t1), u1: lerp(uv.u0, uv.u1, 1 - t0) }
-            : { u0: lerp(uv.u0, uv.u1, t0), u1: lerp(uv.u0, uv.u1, t1) }
-        // Convex body corners: both cell sides meeting there are open.
-        // Indexed nw, ne, sw, se (bit 0 east, bit 1 south). Each is chamfered
-        // by the global depth, void in black, clamped to half the shorter
-        // body edge so two on one edge never cross and a post keeps a face.
-        const maxNotch = Math.min(rect.x1 - rect.x0, rect.z1 - rect.z0) / 2
-        const notch = this.opts.chamfer > 0 && maxNotch > 1e-6
-        const cornerOn = [notch && openN && openW, notch && openN && openE, notch && openS && openW, notch && openS && openE]
-        const cornerPt = (i: number): [number, number] => [i & 1 ? rect.x1 : rect.x0, i >> 1 ? rect.z1 : rect.z0]
-        // corner depths (nw, ne, sw, se) in cells, 0 for a square corner
-        const Nv: [number, number, number, number] = [0, 0, 0, 0]
-        for (let i = 0; i < 4; i++) if (cornerOn[i]) Nv[i] = Math.min(this.opts.chamfer, maxNotch)
-        const emitFace = (d: Dir, t0: number, t1: number, depth: number, y0: number) => {
-          const p = facePoints(d, t0, t1, depth, y0)
-          const faceShade = across[d].side ? 1 : SIDE_SHADE
-          if (black) {
-            voids.quad(p, { u0: 0, v0: 0, u1: 1, v1: 1 }, 0, { r: 0, g: 0, b: 0 })
-            return
-          }
-          // the tile stretched from y0..1
-          const uv = { ...wt.uv, ...faceU(d, wt.uv, t0, t1) }
-          uv.v1 = wt.uv.v1 - (wt.uv.v1 - wt.uv.v0) * y0
-          get(wt.r.atlas).at(x, y).quad(p, uv, faceShade, tint, undefined, true)
-          // decals on the face (blood, silence), pushed a hair off the
-          // masonry. A decal's rect is trimmed to its opaque texels and sits
-          // at its ox/oy in the tile, so it covers only that patch of the
-          // face, clipped to this segment; the face's u runs against t on N
-          // and E (see faceU).
-          if (cell?.wallOverlays) {
-            const nx = d === 'w' ? -0.003 : d === 'e' ? 0.003 : 0
-            const nz = d === 'n' ? -0.003 : d === 's' ? 0.003 : 0
-            const flip = d === 'n' || d === 'e'
-            for (const o of cell.wallOverlays) {
-              const ot = tileOf(o)
-              if (!ot) continue
-              const c = ot.r.cell
-              const fx0 = ot.r.ox / c, fx1 = (ot.r.ox + ot.r.w) / c
-              const fy0 = 1 - (ot.r.oy + ot.r.h) / c, fy1 = 1 - ot.r.oy / c
-              const tA = Math.max(t0, flip ? 1 - fx1 : fx0), tB = Math.min(t1, flip ? 1 - fx0 : fx1)
-              const yA = Math.max(y0, fy0), yB = Math.min(1, fy1)
-              if (tB - tA < 1e-6 || yB - yA < 1e-6) continue
-              const fu = (tx: number) => lerp(ot.uv.u0, ot.uv.u1, (tx - fx0) / (fx1 - fx0))
-              const fv = (wy: number) => lerp(ot.uv.v0, ot.uv.v1, (1 - wy - ot.r.oy / c) / (ot.r.h / c))
-              const ouv = { u0: fu(flip ? 1 - tB : tA), u1: fu(flip ? 1 - tA : tB), v0: fv(yB), v1: fv(yA) }
-              const pd = facePoints(d, tA, tB, depth, yA, yB).map(([px, py, pz]) => [px + nx, py, pz + nz] as [number, number, number])
-              getDecal(ot.r.atlas, cell, o).at(x, y).quad(pd, ouv, faceShade, tint, undefined, true)
-            }
-          }
-        }
-        for (const f of fp.faces) {
-          const d: Dir = f.nz < -0.5 ? 'n' : f.nz > 0.5 ? 's' : f.nx < -0.5 ? 'w' : 'e'
-          const horizontal = d === 'n' || d === 's'
-          let t0 = horizontal ? Math.min(f.a[0], f.b[0]) : Math.min(f.a[1], f.b[1])
-          let t1 = horizontal ? Math.max(f.a[0], f.b[0]) : Math.max(f.a[1], f.b[1])
-          const depth = d === 'n' ? f.a[1] : d === 's' ? 1 - f.a[1] : d === 'w' ? f.a[0] : 1 - f.a[0]
-          // A boundary the neighbour's body covers shows nothing between two walls of one height. Across a
-          // framed door it is the reveal: the door's cell counts as wall for the footprint rule (`classAt`)
-          // so the run keeps its thickness up to the doorway, but the cell is floor, and the run's cut end
-          // stands open to it from the floor up, on either side of the board that hangs in the middle.
-          if (f.covered && !framed.has(across[d].ok)) continue
-          const y0 = 0
-          // a notched corner at either end of the face shortens it
-          for (let i = 0; i < 4; i++) {
-            if (!cornerOn[i] || Nv[i] === 0) continue
-            const [cx, cz] = cornerPt(i)
-            if (horizontal ? Math.abs(cz - f.a[1]) > 1e-9 : Math.abs(cx - f.a[0]) > 1e-9) continue
-            const at = horizontal ? cx : cz
-            if (Math.abs(at - t0) < 1e-9) t0 = Math.min(t1, t0 + Nv[i])
-            else if (Math.abs(at - t1) < 1e-9) t1 = Math.max(t0, t1 - Nv[i])
-          }
-          emitFace(d, t0, t1, depth, y0)
-        }
-        // Horizontal patches of the cell in local [0,1]^2 (fx along x, fz
-        // along z): the floor of the open cell across the edge continues
-        // under what the inset removed, its lid over it.
-        const floorUV = (uv: { u0: number; v0: number; u1: number; v1: number }, fx: number, fz: number): [number, number] => [lerp(uv.u0, uv.u1, fx), lerp(uv.v0, uv.v1, fz)]
-        const ceilUV = (uv: { u0: number; v0: number; u1: number; v1: number }, fx: number, fz: number): [number, number] => [lerp(uv.u0, uv.u1, fx), lerp(uv.v1, uv.v0, fz)]
-        // horizontal polygon at height py; `pts` wound to face up (counter-clockwise on the map), reversed for a lid
-        const flat = (gb: GeoBuilder, py: number, pts: [number, number][], uvOf: (fx: number, fz: number) => [number, number], up: boolean, sh: number) => {
-          const q = up ? pts : [...pts].reverse()
-          gb.poly(
-            q.map(([fx, fz]) => [x + fx, py, y + fz] as [number, number, number]),
-            q.map(([fx, fz]) => uvOf(fx, fz)),
-            sh,
-            tint,
-          )
-        }
-        const patch = (pts: [number, number][], other: SceneCell | undefined) => {
-          // lit as the cell the floor continues from
-          const lx = other ? other.x : x, lz = other ? other.y : y
-          const ft = other && other.floorTile !== undefined ? tileOf(other.floorTile) : null
-          if (ft) flat(get(ft.r.atlas).at(lx, lz), 0, pts, (fx, fz) => floorUV(ft.uv, fx, fz), true, 1)
-          const ceiling = ceilingOf(other)
-          if (ceiling) flat(get(ceiling.r.atlas).at(lx, lz), 1, pts, (fx, fz) => ceilUV(ceiling.uv, fx, fz), false, 0.75)
-        }
-        const { x0, x1, z0, z1, t } = rect
-        if (openN) patch([[0, z0], [1, z0], [1, 0], [0, 0]], n)
-        if (openS) patch([[0, 1], [1, 1], [1, z1], [0, z1]], s)
-        if (openW) patch([[0, z1], [x0, z1], [x0, z0], [0, z0]], w)
-        if (openE) patch([[x1, z1], [1, z1], [1, z0], [x1, z0]], e)
-        // corner cuts: the diagonal cell's floor continues in
-        const diag = (i: number) => scene.cells.get(cellKey(x + (i & 1 ? 1 : -1), y + (i >> 1 ? 1 : -1)))
-        if (rect.cut[0]) patch([[0, t], [t, t], [t, 0], [0, 0]], diag(0))
-        if (rect.cut[1]) patch([[1 - t, t], [1, t], [1, 0], [1 - t, 0]], diag(1))
-        if (rect.cut[2]) patch([[0, 1], [t, 1], [t, 1 - t], [0, 1 - t]], diag(2))
-        if (rect.cut[3]) patch([[1 - t, 1], [1, 1], [1, 1 - t], [1 - t, 1 - t]], diag(3))
-        // notched corners: the chamfer face and the triangle it frees
-        for (let i = 0; i < 4; i++) {
-          if (!cornerOn[i] || Nv[i] === 0) continue
-          const N = Nv[i]
-          const [cx, cz] = cornerPt(i)
-          const sx = i & 1 ? -1 : 1, sz = i >> 1 ? -1 : 1
-          // A on the N/S edge, B on the W/E edge, C the cut-off corner
-          const A: [number, number] = [cx + sx * N, cz]
-          const Bp: [number, number] = [cx, cz + sz * N]
-          const C: [number, number] = [cx, cz]
-          // chamfer face: normal points out of the corner
-          const [p0, p1] = (i & 1) === i >> 1 ? [A, Bp] : [Bp, A]
-          const ch: [number, number, number][] = [
-            [x + p0[0], 0, y + p0[1]],
-            [x + p1[0], 0, y + p1[1]],
-            [x + p1[0], 1, y + p1[1]],
-            [x + p0[0], 1, y + p0[1]],
-          ]
-          const chShade = (1 + SIDE_SHADE) / 2
-          const nsDir: Dir = i >> 1 ? 's' : 'n'
-          const u = black ? null : faceU(nsDir, wt.uv, Math.min(C[0], A[0]), Math.max(C[0], A[0]))
-          if (black || !u) {
-            voids.quad(ch, { u0: 0, v0: 0, u1: 1, v1: 1 }, 0, { r: 0, g: 0, b: 0 })
-          } else {
-            get(wt.r.atlas).at(x, y).quad(ch, { ...wt.uv, ...u }, chShade, tint, undefined, true)
-          }
-          // the cut-off triangle: floor continues in from the cell across the N/S edge, the lid covers it
-          const tri: [number, number][] = (i & 1) === i >> 1 ? [C, A, Bp, Bp] : [C, Bp, A, A]
-          patch(tri, i >> 1 ? s : n)
-        }
-      }
-    }
-    for (const [name, gb] of builders) {
-      const geo = gb.build()
-      if (!geo) continue
-      const a = this.atlas(name)
-      if (!a) continue
-      const mesh = new THREE.Mesh(geo, a.wallMat)
-      mesh.userData.pick = true
-      this.levelGroup.add(mesh)
-      meshes.push(mesh)
-    }
-    // translucent decals after the level, blended over the faces they mark
-    for (const [name, gb] of decalBuilders) {
-      const geo = gb.build()
-      if (!geo) continue
-      const a = this.atlas(name)
-      if (!a) continue
-      const mesh = new THREE.Mesh(geo, a.decalMat)
-      mesh.renderOrder = 1
-      mesh.layers.set(LAYER_NO_DEPTH)
-      this.levelGroup.add(mesh)
-      meshes.push(mesh)
-    }
-    const vg = voids.build()
-    if (vg) {
-      const mesh = new THREE.Mesh(vg, this.voidMat)
-      this.levelGroup.add(mesh)
-      meshes.push(mesh)
-    }
-    if (meshes.length) this.levelChunks.set(ck, meshes)
-  }
-
-  /** One chunk's meshes out of the level group, their geometry released. */
-  private dropChunk(ck: number) {
-    const meshes = this.levelChunks.get(ck)
-    if (!meshes) return
-    for (const m of meshes) {
-      this.levelGroup.remove(m)
-      m.geometry.dispose()
-    }
-    this.levelChunks.delete(ck)
-  }
-
-  /** Every chunk down and what they were built from forgotten: the next build is a whole one. */
-  private clearLevel() {
-    // whatever was left to build belonged to the level coming down
-    this.levelPending = null
-    for (const ck of [...this.levelChunks.keys()]) this.dropChunk(ck)
-    this.pickMeshes = []
-    this.builtCells.clear()
-    this.builtOccupied = new Set()
-    this.builtRange = null
-    this.levelFull = true
-  }
-
-  /** Take a fixture down: out of the crowd or the group, its geometry released. */
-  private dropFixture(h: THREE.Object3D) {
-    this.levelCrowd.remove(h)
-    if (h.parent === this.levelGroup) this.levelGroup.remove(h)
-    h.traverse((o) => (o as THREE.Mesh).geometry?.dispose())
-  }
-
-  /** Every fixture down and the crowd's meshes with them: the next rebuild builds them afresh. */
-  private dropFixtures() {
-    for (const h of this.fixtures.values()) this.dropFixture(h)
-    this.fixtures.clear()
-    this.levelCrowd.clear()
-  }
-
-  private addStanding(
-    group: THREE.Group,
-    x: number,
-    y: number,
-    layers: SpriteLayer[],
-    height: number,
-    shade: number,
-    tint: { r: number; g: number; b: number },
-    fixed: boolean,
-    ghost: GhostKind = 'none',
-    thick = ghost === 'none',
-    /** How far the whole sprite stands back from the cell's middle, away from the eye (FIXTURE_BACK). */
-    back = 0,
-    /** A heading to stand at instead of turning with the camera (an open door in its wall run). */
-    yaw?: number,
-    /** Filled with what each layer's selected shell (`SEL_GROW`) is built from, for when the cursor lands on the sprite. */
-    shells?: ShellSource[],
-  ): THREE.Object3D {
-    const holder = new THREE.Group()
-    holder.position.set(x + 0.5, 0, y + 0.5)
-    const scale = height
-    let i = 0
-    for (const l of layers) {
-      const cell = l.r.cell
-      let hTex = l.r.h
-      let v1 = l.uv.v1
-      if (l.ymax !== undefined && l.ymax < l.r.oy + l.r.h) {
-        hTex = Math.max(0, l.ymax - l.r.oy)
-        v1 = (l.r.sy + hTex - 0.25) / l.a.height
-      }
-      if (hTex <= 0) continue
-      const wq = (l.r.w / cell) * scale
-      const hq = (hTex / cell) * scale
-      const cx = ((l.r.ox + (l.ox || 0) + l.r.w / 2 - cell / 2) / cell) * scale
-      const bottom = ((cell - (l.r.oy + (l.oy || 0) + hTex)) / cell) * scale
-      const lt = l.tint || tint
-      const solid = thick && !l.flat
-      const geo = this.standingGeometry(l, hTex, v1, wq, hq, scale / cell, { r: shade * lt.r, g: shade * lt.g, b: shade * lt.b }, solid, yaw !== undefined)
-      const mesh = new THREE.Mesh(geo, ghost === 'visible' ? l.a.ghostVisibleMat : ghost === 'remembered' ? l.a.ghostMat : fixed ? l.a.featMat : l.a.bbMat)
-      mesh.position.set(cx, bottom + hq / 2, i * 0.002 - back)
-      // ghosts draw before every sprite so a nearer billboard paints over them
-      mesh.renderOrder = ghost === 'none' ? 1 + i : GHOST_ORDER[ghost].body
-      if (ghost !== 'none') mesh.layers.set(LAYER_NO_DEPTH)
-      // a ghost's ink is a flat ring in its plane (`RingTemplate`), drawn before the bodies of its kind (GHOST_ORDER)
-      // so that no ring of that kind lies over a body of it, whatever chunk (crowd.ts) either stands in
-      const ring = ghost !== 'none' && !l.flat ? this.ringGeometry(l, hTex, wq, hq, scale / cell) : null
-      if (ring) {
-        const ink = new THREE.Mesh(ring, ghost === 'visible' ? this.ghostVisibleInkMat : this.ghostInkMat)
-        ink.position.copy(mesh.position)
-        ink.renderOrder = GHOST_ORDER[ghost as Exclude<GhostKind, 'none'>].ink
-        ink.layers.set(LAYER_NO_DEPTH)
-        ink.userData.hull = true
-        holder.add(ink)
-      }
-      holder.add(mesh)
-      // The ink round the block (`HullTemplate`), in the block's own frame; a badge or a bar has no block and no
-      // line. A sprite that stands at a heading instead of turning to the eye (an open door in its wall run) is
-      // seen from every angle, edge-on as the player walks through it, and there a hull is no line but a band:
-      // its back face swings out from the board by the block's depth in parallax, and a texel wider than the
-      // cell it pokes into the masonry either side and is cut to ribbons against it. Its ink is the flat ring
-      // instead — the art's own line, in the board's plane, drawn on it from any side.
-      // The board is stretched a wall inset each way into the run, so the tile's edge columns lie on the reveal
-      // faces either side of the doorway: ink there straddles the masonry and shows as a torn black strip up
-      // the wall. The door's ring keeps off those columns.
-      const hull = !solid ? null : yaw === undefined ? this.hullGeometry(l, hTex, wq, hq, scale / cell) : this.ringGeometry(l, hTex, wq, hq, scale / cell, true)
-      if (hull) {
-        const ink = new THREE.Mesh(hull, yaw === undefined ? this.hullMat : this.inkMat)
-        ink.position.copy(mesh.position)
-        ink.renderOrder = mesh.renderOrder
-        ink.userData.hull = true
-        holder.add(ink)
-      }
-      // The shell round the sprite the cursor stands on (`syncSelection`): the same hull grown SEL_GROW
-      // texels instead of one, so what shows outside the black is a second line of ink beside it —
-      // the sprite picked out where the ring on the cell is hidden under the sprite itself.
-      // A sprite that stands at a heading is inked with a flat ring, which has no shell.
-      // the shell may only grow below the art as far as the sprite stands off the ground: `bottom` is
-      // where the tile's last row sits, and below that is the floor
-      if (shells && solid && yaw === undefined) {
-        const room = Math.max(0, Math.min(SEL_GROW - 1, Math.round((bottom / scale) * cell)))
-        shells.push({ l, hTex, wq, hq, k: scale / cell, room, position: mesh.position.clone(), renderOrder: mesh.renderOrder })
-      }
-      i++
-    }
-    if (yaw !== undefined) holder.rotation.y = yaw
-    holder.userData.billboard = yaw === undefined
-    holder.userData.fixedFacing = fixed
-    group.add(holder)
-    return holder
-  }
-
-  /**
-   * One standing layer's geometry: the front quad (the four corners first, in
-   * PlaneGeometry's order, with the tile's uvs), and behind it, where the
-   * atlas's pixels can be read, the rim of a block `BB_DEPTH` texels deep.
-   * The vertex colour carries the sprite's light and tint times the face's
-   * shade. The cell the sprite stands in, which the shade-map shaders light it
-   * by, is not here: a baked sprite's is under its anchor (`CELL_VERT`), and a
-   * holder that stands on its own is given one (`giveCells`). `k` is the world
-   * size of a texel.
-   */
-  private standingGeometry(
-    l: SpriteLayer,
-    hTex: number,
-    v1: number,
-    wq: number,
-    hq: number,
-    k: number,
-    c: { r: number; g: number; b: number },
-    thick: boolean,
-    /** Leave out the rim faces on the tile's own boundary (a board set into a wall run, see `rimTemplate`). */
-    offEdges = false,
-  ): THREE.BufferGeometry {
-    const rim = thick ? this.rimTemplate(l, hTex, offEdges) : null
-    const nRim = rim ? rim.pos.length / 3 : 0
-    const n = 4 + nRim
-    const hw = wq / 2, hh = hq / 2
-    // The uvs are inset a quarter texel (`uvFor`), so the quad they are mapped across is inset by the same:
-    // stretched over the whole tile instead, the art is drawn a shade larger than the tile it came from and
-    // every texel boundary drifts outward, away from the rim, which stands on the texel grid itself. On a
-    // sprite two texels wide — a tail, a chain — that drift is a quarter of its width and it comes off its block.
-    const e = UV_INSET * k
-    const qw = hw - e, qh = hh - e
-    // what the arrays are computed from: the block's shape (the rim's key, or a flat quad), and per array its own inputs
-    const shape = rim ? this.rimKey(l, hTex, offEdges) : 'flat'
-    const pos = this.sharedAttr(`sp|${shape}|${wq},${hq},${k}`, 3, () => {
-      const pos = new Float32Array(n * 3)
-      pos.set([-qw, qh, 0, qw, qh, 0, -qw, -qh, 0, qw, -qh, 0])
-      if (rim) {
-        for (let i = 0; i < nRim; i++) {
-          pos[(4 + i) * 3] = -hw + rim.pos[i * 3] * k
-          pos[(4 + i) * 3 + 1] = hh + rim.pos[i * 3 + 1] * k
-          pos[(4 + i) * 3 + 2] = rim.pos[i * 3 + 2] * k
-        }
-      }
-      return pos
-    })
-    const uv = this.sharedAttr(`su|${shape}|${l.uv.u0},${l.uv.v0},${l.uv.u1},${v1}`, 2, () => {
-      const uv = new Float32Array(n * 2)
-      uv.set([l.uv.u0, l.uv.v0, l.uv.u1, l.uv.v0, l.uv.u0, v1, l.uv.u1, v1])
-      if (rim) uv.set(rim.uv, 8)
-      return uv
-    })
-    const col = this.sharedAttr(`sc|${shape}|${c.r},${c.g},${c.b}`, 3, () => {
-      const col = new Float32Array(n * 3)
-      for (let j = 0; j < n; j++) {
-        const f = j < 4 ? BLOCK_SHADE.front : rim!.shade[j - 4]
-        col[j * 3] = c.r * f
-        col[j * 3 + 1] = c.g * f
-        col[j * 3 + 2] = c.b * f
-      }
-      return col
-    })
-    const index = this.sharedIndex(`si|${shape}`, () => {
-      const index = [0, 2, 1, 2, 3, 1]
-      if (rim) for (const i of rim.index) index.push(4 + i)
-      return index
-    })
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', pos)
-    geo.setAttribute('uv', uv)
-    geo.setAttribute('color', col)
-    geo.setIndex(index)
-    return geo
-  }
-
-  /**
-   * Give a holder that stands on its own — the doll, an open door in its wall
-   * run, a sprite wearing a material of its own — the `cell` attribute its
-   * shade-map shaders read (`CELL_VERT`): every vertex of each of its layers
-   * is on cell (x, y). A baked holder needs none, its cell is under its
-   * anchor, and the crowd's buffers carry none. The layers are the meshes with
-   * uvs; the inks and the shared shadow disc have no cell to read.
-   */
-  private giveCells(h: THREE.Object3D, x: number, y: number): void {
-    for (const c of h.children) {
-      const m = c as THREE.Mesh
-      if (m.userData.shared || !m.geometry || !m.geometry.getAttribute('uv')) continue
-      const n = m.geometry.getAttribute('position').count
-      const cells = new Float32Array(n * 2)
-      for (let j = 0; j < n; j++) {
-        cells[j * 2] = x
-        cells[j * 2 + 1] = y
-      }
-      m.geometry.setAttribute('cell', new THREE.BufferAttribute(cells, 2))
-    }
-  }
-
-  /** The shared vertex array under `key` (`spriteAttrs`), built by `make` the first time it is asked for. */
-  private sharedAttr(key: string, itemSize: number, make: () => Float32Array): THREE.BufferAttribute {
-    let a = this.spriteAttrs.get(key)
-    if (!a) this.spriteAttrs.set(key, (a = new THREE.BufferAttribute(make(), itemSize)))
-    return a
-  }
-
-  /** The shared index under `key`: 16-bit while every index fits, as `setIndex` picks for a number array. */
-  private sharedIndex(key: string, make: () => number[]): THREE.BufferAttribute {
-    let a = this.spriteAttrs.get(key)
-    if (!a) {
-      const index = make()
-      let wide = false
-      for (let i = 0; i < index.length; i++) if (index[i] >= 65535) { wide = true; break }
-      this.spriteAttrs.set(key, (a = new THREE.BufferAttribute(wide ? new Uint32Array(index) : new Uint16Array(index), 1)))
-    }
-    return a
-  }
-
-  /**
-   * The hull's geometry placed on the same quad the rim is (`standingGeometry`); null where
-   * there is no rim to line. `grow` wider than a texel is the selected sprite's shell, which
-   * also sits SEL_BACK deeper so the hull inside it paints over the part they share.
-   */
-  private hullGeometry(l: SpriteLayer, hTex: number, wq: number, hq: number, k: number, grow = 1, down = grow - 1): THREE.BufferGeometry | null {
-    const t = this.hullTemplate(l, hTex, grow, down)
-    if (!t) return null
-    const shape = this.hullKey(l, hTex, grow, down)
-    const pos = this.sharedAttr(`hp|${shape}|${wq},${hq},${k}`, 3, () => {
-      const n = t.pos.length / 3
-      const pos = new Float32Array(n * 3)
-      const hw = wq / 2, hh = hq / 2
-      for (let i = 0; i < n; i++) {
-        pos[i * 3] = -hw + t.pos[i * 3] * k
-        pos[i * 3 + 1] = hh + t.pos[i * 3 + 1] * k
-        pos[i * 3 + 2] = (t.pos[i * 3 + 2] - (grow > 1 ? SEL_BACK : 0)) * k
-      }
-      return pos
-    })
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', pos)
-    geo.setIndex(this.sharedIndex(`hi|${shape}`, () => t.index))
-    return geo
-  }
-
-  /** The ring's geometry placed on the same quad the ghost is; null where the atlas's pixels cannot be read. */
-  private ringGeometry(l: SpriteLayer, hTex: number, wq: number, hq: number, k: number, offEdges = false): THREE.BufferGeometry | null {
-    const t = this.ringTemplate(l, hTex, offEdges)
-    if (!t) return null
-    const n = t.pos.length / 3
-    const shape = this.rimKey(l, hTex, offEdges)
-    const pos = this.sharedAttr(`rp|${shape}|${wq},${hq},${k}`, 3, () => {
-      const pos = new Float32Array(n * 3)
-      const hw = wq / 2, hh = hq / 2
-      for (let i = 0; i < n; i++) {
-        pos[i * 3] = -hw + t.pos[i * 3] * k
-        pos[i * 3 + 1] = hh + t.pos[i * 3 + 1] * k
-        pos[i * 3 + 2] = 0
-      }
-      return pos
-    })
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', pos)
-    // the ghost shader reads its colour from the vertices: the ink is black
-    geo.setAttribute('color', this.sharedAttr(`rc|${n}`, 3, () => new Float32Array(n * 3)))
-    geo.setIndex(this.sharedIndex(`ri|${shape}`, () => t.index))
-    return geo
-  }
-
-  /** What a rim and a ring are built from: the tile's rect in its atlas, the clip height, and whether the edge faces are left out. */
-  private rimKey(l: SpriteLayer, hTex: number, offEdges: boolean): string {
-    return `${l.r.atlas}:${l.r.sx},${l.r.sy},${l.r.w},${hTex}${offEdges ? ':off' : ''}`
-  }
-
-  /** What a hull is built from: the rim's inputs, and how far out and down it grows. */
-  private hullKey(l: SpriteLayer, hTex: number, grow: number, down: number): string {
-    return `${l.r.atlas}:${l.r.sx},${l.r.sy},${l.r.w},${hTex},${grow},${down}`
-  }
-
-  /**
-   * The ring of texels round this tile's body (`RingTemplate`), from the
-   * cache: the hull's footprint less the body, flat. `offEdges` leaves the
-   * tile's first and last columns out of it (a board set into a wall run).
-   */
-  private ringTemplate(l: SpriteLayer, hTex: number, offEdges = false): RingTemplate | null {
-    const mask = this.atlasMask(l.a)
-    if (!mask) return null
-    const { sx, sy, w } = l.r
-    const key = this.rimKey(l, hTex, offEdges)
-    let t = this.rings.get(key)
-    if (t !== undefined) return t
-    const aw = l.a.width
-    const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && mask[(sy + ty) * aw + sx + tx] === 1
-    const tx0 = offEdges ? 1 : 0, tx1 = offEdges ? w - 1 : w
-    const ring = (tx: number, ty: number) => !body(tx, ty) && (body(tx - 1, ty) || body(tx + 1, ty) || body(tx, ty - 1) || body(tx, ty + 1))
-    // one flat face per run of ring texels rather than one per texel (mesh.ts): the same black, the same coverage
-    const pos: number[] = []
-    const index: number[] = []
-    for (const f of extrudeFaces(ring, tx0, tx1, 0, hTex, 0, 0, { back: false, front: true }, false)) {
-      const base = pos.length / 3
-      pos.push(...f)
-      index.push(base, base + 1, base + 2, base, base + 2, base + 3)
-    }
-    t = index.length ? { pos: new Float32Array(pos), index } : null
-    this.rings.set(key, t)
-    return t
-  }
-
-  /**
-   * The hull round this tile's block (`HullTemplate`), from the cache. The
-   * body grown a texel on each of its four sides, kept inside the tile — the
-   * art's own line never left it — and built like the rim: the back at
-   * BB_DEPTH and a side wherever a texel of the hull borders one outside it,
-   * every face wound outward. No front: from the front it would be culled
-   * anyway, and from behind (an open door, which stands in its wall and can
-   * be walked round) it would paint over the art at the same depth.
-   * `grow` is how many texels out it reaches — one for the ink, SEL_GROW for
-   * the shell round the sprite the cursor stands on — and `down` how many of
-   * those it may take below the tile, which is the sprite's own base: a
-   * standing sprite's art runs to the bottom of its rect, so a shell that grew
-   * there would lie under the floor and come back as a torn fringe where it
-   * fights the floor for the same depth.
-   */
-  private hullTemplate(l: SpriteLayer, hTex: number, grow = 1, down = grow - 1): HullTemplate | null {
-    const mask = this.atlasMask(l.a)
-    if (!mask) return null
-    const { sx, sy, w } = l.r
-    const key = this.hullKey(l, hTex, grow, down)
-    let t = this.hulls.get(key)
-    if (t !== undefined) return t
-    const aw = l.a.width
-    const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && mask[(sy + ty) * aw + sx + tx] === 1
-    // a texel of the hull is one within `grow` steps of the body, counted along the axes as the ink is
-    const near = (tx: number, ty: number, d: number): boolean =>
-      body(tx, ty) || (d > 0 && (near(tx - 1, ty, d - 1) || near(tx + 1, ty, d - 1) || near(tx, ty - 1, d - 1) || near(tx, ty + 1, d - 1)))
-    // The ink is kept inside the tile: the art's own line never left it, and a sprite whose art
-    // reaches the edge is inked along it. The shell has no such bound — it carries no texels of
-    // the atlas, only its own colour — and a clipped one would break off wherever the art came
-    // near the edge, so it is allowed the texels it needs outside, `down` of them below.
-    const pad = grow - 1
-    const inked = (tx: number, ty: number) => tx >= -pad && ty >= -pad && tx < w + pad && ty < hTex + down && near(tx, ty, grow)
-    // The faces are merged exactly (mesh.ts): the back is one black plane however many texels it covers, and each
-    // run of exposed texel edges is one side. What the eye sees is the same silhouette, line and depth.
-    const pos: number[] = []
-    const index: number[] = []
-    for (const f of extrudeFaces(inked, -pad, w + pad, -pad, hTex + down, -BB_DEPTH, 0, { back: true, front: false })) {
-      const base = pos.length / 3
-      pos.push(...f)
-      index.push(base, base + 1, base + 2, base, base + 2, base + 3)
-    }
-    t = index.length ? { pos: new Float32Array(pos), index } : null
-    this.hulls.set(key, t)
-    return t
-  }
-
-  /**
-   * The rim of this tile's block, clipped to `hTex` rows, from the cache; null
-   * where the atlas's pixels cannot be read. `offEdges` leaves out the faces
-   * that lie on the tile's own boundary: a board set into a wall run fills its
-   * cell, so where its art reaches the tile's edge those faces lie in the
-   * planes of the reveals either side, the ceiling and the floor, and tear
-   * against them.
-   */
-  private rimTemplate(l: SpriteLayer, hTex: number, offEdges = false): RimTemplate | null {
-    const mask = this.atlasMask(l.a)
-    if (!mask) return null
-    const { sx, sy, w } = l.r
-    const key = this.rimKey(l, hTex, offEdges)
-    let t = this.rims.get(key)
-    if (t !== undefined) return t
-    const aw = l.a.width, ah = l.a.height
-    /** The block is exactly what the sprite draws: `atlasMask` has already peeled the art's outline off both. */
-    const body = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < hTex && mask[(sy + ty) * aw + sx + tx] === 1
-    const pos: number[] = []
-    const uv: number[] = []
-    const shade: number[] = []
-    const index: number[] = []
-    const face = (p: number[], u: number, v: number, f: number) => {
-      const base = pos.length / 3
-      pos.push(...p)
-      for (let i = 0; i < 4; i++) {
-        uv.push(u, v)
-        shade.push(f)
-      }
-      index.push(base, base + 1, base + 2, base, base + 2, base + 3)
-    }
-    const z0 = -BB_DEPTH, z1 = 0
-    // every face wears its own texel: the block is body all through, so there is no line to step off.
-    // Neighbouring faces along an edge whose texels hold the very same colour sample the very same thing,
-    // so they are built as one face wearing the first's texel (mesh.ts `runs`); where the colours cannot
-    // be read, every texel keeps its own face. Equality is transitive, so a run is all one colour exactly
-    // when each texel is like the one before it, which is what the atlas's same-colour bits hold
-    // (peel.ts `sameColours`): no pixel is read here.
-    const same = l.a.same
-    /** Whether texel (tx, ty) holds the colour of the one to its left. */
-    const sameAsLeft = (tx: number, ty: number) => !!same && (same[(sy + ty) * aw + sx + tx - 1] & SAME_RIGHT) !== 0
-    /** Whether texel (tx, ty) holds the colour of the one above it. */
-    const sameAsAbove = (tx: number, ty: number) => !!same && (same[(sy + ty - 1) * aw + sx + tx] & SAME_DOWN) !== 0
-    const edge = (on: boolean) => offEdges && on
-    const uvAt = (tx: number, ty: number): [number, number] => [(sx + tx + 0.5) / aw, (sy + ty + 0.5) / ah]
-    /** The runs along `a0..a1` of texels `on` (a face here) that share their colour with the run's first: `alike(t)` says texel t is like texel t - 1. */
-    const sameRuns = (on: (t: number) => boolean, alike: (t: number) => boolean, a0: number, a1: number): [number, number][] => {
-      const out: [number, number][] = []
-      for (const [r0, r1] of runs(on, a0, a1)) {
-        let start = r0
-        for (let t = r0 + 1; t <= r1; t++) {
-          if (t < r1 && alike(t)) continue
-          out.push([start, t])
-          start = t
-        }
-      }
-      return out
-    }
-    for (let ty = 0; ty < hTex; ty++) {
-      const y1 = -ty, y0 = y1 - 1
-      const row = (tx: number) => sameAsLeft(tx, ty)
-      if (!edge(ty === 0)) for (const [a, b] of sameRuns((tx) => body(tx, ty) && !body(tx, ty - 1), row, 0, w)) face([a, y1, z1, b, y1, z1, b, y1, z0, a, y1, z0], ...uvAt(a, ty), BLOCK_SHADE.top)
-      if (!edge(ty === hTex - 1)) for (const [a, b] of sameRuns((tx) => body(tx, ty) && !body(tx, ty + 1), row, 0, w)) face([a, y0, z0, b, y0, z0, b, y0, z1, a, y0, z1], ...uvAt(a, ty), BLOCK_SHADE.bottom)
-    }
-    for (let tx = 0; tx < w; tx++) {
-      const x0 = tx, x1 = tx + 1
-      const col = (ty: number) => sameAsAbove(tx, ty)
-      if (!edge(tx === 0)) for (const [a, b] of sameRuns((ty) => body(tx, ty) && !body(tx - 1, ty), col, 0, hTex)) face([x0, -b, z0, x0, -b, z1, x0, -a, z1, x0, -a, z0], ...uvAt(tx, a), BLOCK_SHADE.side)
-      if (!edge(tx === w - 1)) for (const [a, b] of sameRuns((ty) => body(tx, ty) && !body(tx + 1, ty), col, 0, hTex)) face([x1, -b, z1, x1, -b, z0, x1, -a, z0, x1, -a, z1], ...uvAt(tx, a), BLOCK_SHADE.side)
-    }
-    t = index.length ? { pos: new Float32Array(pos), uv: new Float32Array(uv), shade: new Float32Array(shade), index } : null
-    this.rims.set(key, t)
-    return t
-  }
-
-  /**
-   * The atlas's opacity, one byte per texel, read once; null where its pixels
-   * cannot be read. Reading the pixels is also where the art's outline comes
-   * off: the ink reachable from outside a sprite is cleared (`INK_PEEL`), the
-   * cleaned image becomes what the atlas draws, and the mask is the opacity of
-   * what is left — so the sprite, its block and its silhouette are all the one
-   * shape.
-   */
-  private atlasMask(a: AtlasEntry): Uint8Array | null {
-    if (a.mask !== undefined) return a.mask
-    a.mask = null
-    const img = a.texture.image as TexImageSource | undefined
-    if (!img) return null
-    try {
-      const made = this.atlasCanvas(a)
-      if (!made) return null
-      made.ctx.drawImage(img as CanvasImageSource, 0, 0)
-      const image = made.ctx.getImageData(0, 0, a.width, a.height)
-      const mask = peelInk(image.data, a.width, a.height, OPAQUE_ALPHA, this.tiles?.spriteRects?.(a.name))
-      this.installPeeled(a, made, image, mask, sameColours(image.data, a.width, a.height))
-    } catch {
-      a.mask = null
-    }
-    return a.mask
-  }
-
-  /** A canvas of the atlas's size to hold its cleaned pixels; null where there is none to be had. */
-  private atlasCanvas(a: AtlasEntry): AtlasCanvas | null {
-    let canvas: HTMLCanvasElement | OffscreenCanvas
-    if (typeof OffscreenCanvas !== 'undefined') canvas = new OffscreenCanvas(a.width, a.height)
-    else if (typeof document !== 'undefined') {
-      canvas = document.createElement('canvas')
-      canvas.width = a.width
-      canvas.height = a.height
-    } else return null
-    const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null
-    return ctx ? { canvas, ctx } : null
-  }
-
-  /** The peeled image becomes what the atlas draws, and its opacity the atlas's mask. */
-  private installPeeled(a: AtlasEntry, made: AtlasCanvas, image: ImageData, mask: Uint8Array, same: Uint8Array) {
-    const { canvas, ctx } = made
-    ctx.putImageData(image, 0, 0)
-    a.texture.image = canvas as unknown as TexImageSource
-    a.texture.needsUpdate = true
-    a.mask = mask
-    a.same = same
-  }
-
-  /**
-   * Peel the ink off every atlas of the tile source now, in a worker, rather
-   * than leaving each to the frame that first draws a sprite of it. Reading a
-   * whole atlas and walking its ink in (peel.ts) is the best part of a second
-   * on a Steam Deck, and in the frame it is the stall on entering a level
-   * (docs/front-end-perf.md); here the frame pays only for putting the
-   * finished pixels on a canvas. A host calls it while its loading screen is
-   * up, and need not wait for it: an atlas this does not reach is peeled in
-   * the frame as before (`atlasMask`), so nothing depends on it having run.
-   */
-  async warmAtlases(): Promise<void> {
-    const tiles = this.tiles
-    if (!tiles || !this.alive) return
-    // Only the atlases whose art stands in the world. The others are never read back at all
-    // (`atlasMask` is asked for by the standing sprites alone), and peeling a floor or wall
-    // atlas would clear the dark edge of every tile that touches a gap or the image's border.
-    // A source that does not say which is which is left to the frame, as it always was.
-    for (const name of tiles.spriteAtlases?.() ?? []) {
-      const a = this.atlas(name)
-      if (!a || a.mask !== undefined) continue
-      const img = a.texture.image as TexImageSource | undefined
-      if (!img) continue
-      const done = await this.peelInWorker(a, img).catch(() => false)
-      if (!done) this.atlasMask(a)
-      // the tiles may have been swapped out, or the renderer torn down, while that one was peeled
-      if (this.tiles !== tiles || !this.alive) return
-    }
-  }
-
-  /**
-   * One atlas peeled in the worker, on a copy of its image, and the result
-   * installed. False when there is no worker to be had (no `Worker`, no
-   * `createImageBitmap`, a worker that failed to start), so the caller falls
-   * back to peeling in place.
-   */
-  private async peelInWorker(a: AtlasEntry, img: TexImageSource): Promise<boolean> {
-    if (typeof Worker === 'undefined' || typeof createImageBitmap === 'undefined' || typeof OffscreenCanvas === 'undefined') return false
-    const worker = this.peeler()
-    if (!worker) return false
-    const bitmap = await createImageBitmap(img as ImageBitmapSource)
-    const id = ++this.peelId
-    const reply = await new Promise<PeelReply>((resolve) => {
-      const onMessage = (e: MessageEvent<PeelReply>) => {
-        if (e.data.id !== id) return
-        worker.removeEventListener('message', onMessage)
-        resolve(e.data)
-      }
-      worker.addEventListener('message', onMessage)
-      const req: PeelRequest = { id, bitmap, width: a.width, height: a.height, alphaMin: OPAQUE_ALPHA, sprites: this.tiles?.spriteRects?.(a.name) }
-      worker.postMessage(req, [bitmap])
-    })
-    if (!reply.data || !reply.mask || !reply.same) return false
-    // the atlas may have gone while the worker was at it
-    if (this.atlases.get(a.name) !== a || a.mask !== undefined) return true
-    const made = this.atlasCanvas(a)
-    if (!made) return false
-    this.installPeeled(a, made, new ImageData(new Uint8ClampedArray(reply.data as ArrayBuffer), a.width, a.height), new Uint8Array(reply.mask as ArrayBuffer), new Uint8Array(reply.same as ArrayBuffer))
-    return true
-  }
-
-  /**
-   * Compile the level's, the crowd's and the viewmodel's shaders now rather
-   * than in the frame that first draws with one. Compiling a program is tens
-   * of milliseconds on a Steam Deck, and the ghost pass doubles it: its depth
-   * image is a render target, whose output is linear where the canvas's is
-   * sRGB, and three keeps a program of its own for each — which is why the
-   * first frame of a level spends its time in `place` (docs/front-end-perf.md).
-   * The materials are warmed on a throwaway mesh apiece, so this wants only a
-   * mounted renderer and the atlases, not a level: a host calls it with its
-   * loading screen up, and need not wait for it. Safe to call again.
-   */
-  async warmShaders(): Promise<void> {
-    const r = this.renderer
-    if (!r || !this.alive) return
-    const mats = new Set<THREE.Material>([this.voidMat, this.shadowMat, this.hullMat, this.hullSelMat, this.inkMat, this.vmMat, this.cursorRingMat, this.ghostInkMat, this.ghostVisibleInkMat])
-    // One atlas is enough for the atlas materials: three keys a program on what the material is
-    // and what the geometry carries, not on which texture hangs off it, so the programs the first
-    // atlas asks for are the ones the rest ask for. Whichever atlases already exist are used;
-    // failing that one is made, rather than all of them for the sake of their materials.
-    const first = this.atlases.values().next().value ?? this.atlas(this.tiles?.atlasNames()[0] ?? '')
-    for (const a of first ? [first] : []) {
-      for (const m of [a.wallMat, a.featMat, a.decalMat, a.bbMat, a.ghostMat, a.ghostVisibleMat]) mats.add(m)
-    }
-    // and every `MERGED` twin the crowd bakes with, the atlases' and the hull inks' and the shadow's alike
-    for (const [plainMat, mergedMat] of this.mergedMats) {
-      mats.add(plainMat)
-      mats.add(mergedMat)
-    }
-    // One triangle per material, carrying what the real geometry does. Past the material, the
-    // only thing three keys a program on here is whether the geometry has normals (`vertexNormals`);
-    // the level's and the crowd's own attributes (`cell`, `cut`, `anchor`) are not in the key, and
-    // no colour of theirs carries alpha. Nothing but the shadow disc has normals (crowd.ts).
-    const plain = warmGeometry(false)
-    const normals = warmGeometry(true)
-    const warm = new THREE.Group()
-    // never drawn: `compile` walks the scene for materials whether or not they are visible
-    warm.visible = false
-    for (const m of mats) warm.add(new THREE.Mesh(plain, m))
-    for (const m of [this.shadowMat, this.mergedMats.get(this.shadowMat)]) if (m) warm.add(new THREE.Mesh(normals, m))
-    this.three.add(warm)
-    // Both passes are set up in one go, before anything is awaited: `compileAsync` walks the scene
-    // and asks for its programs there and then, and only the driver's link is waited on. A frame
-    // drawn in that wait must not find the ghost pass's render target still bound, or it would
-    // draw into it instead of the canvas.
-    const prev = r.getRenderTarget()
-    let passes: Promise<unknown>[] = []
-    try {
-      r.setRenderTarget(null)
-      passes.push(r.compileAsync(this.three, this.cam))
-      // the ghost pass's depth image is a render target, whose output is linear where the canvas's
-      // is sRGB: three keeps a program of its own for every material for it
-      r.setRenderTarget(this.depthFor(r))
-      passes.push(r.compileAsync(this.three, this.cam))
-    } catch {
-      // a driver that will not compile ahead of time still compiles in the frame
-      passes = []
-    } finally {
-      r.setRenderTarget(prev)
-      this.three.remove(warm)
-      plain.dispose()
-      normals.dispose()
-    }
-    await Promise.all(passes).catch(() => {})
-  }
-
-  /** The peel worker, started on first use; null where one cannot be. */
-  private peeler(): Worker | null {
-    if (this.peelWorker === undefined) {
-      try {
-        this.peelWorker = new Worker(new URL('./peel.worker.ts', import.meta.url), { type: 'module' })
-      } catch {
-        this.peelWorker = null
-      }
-    }
-    return this.peelWorker
-  }
-
-  /**
-   * The key of everything a billboard's holders are built from: the sprite
-   * itself, where it stands, how it is lit where its light is baked (a cloud
-   * or a translucent sprite wears a material of its own that reads no shade
-   * map), whether its cell is in view (its ghost's strength and tint), and for
-   * whether its cell is in view. Two scenes that give the same key give the
-   * same holders, so the ones standing are kept.
-   */
-  private spriteKey(b: Billboard, shade: number, ghostKind: GhostKind): string {
-    const layers = b.layers ? b.layers.map((l) => `${l.tile},${l.ox || 0},${l.oy || 0},${l.ymax ?? ''}`).join(';') : ''
-    const icons = b.statusIcons ? b.statusIcons.map((i) => `${i.tile},${i.ox},${i.oy},${i.at || ''}`).join(';') : ''
-    const own = b.kind === 'cloud' || (b.alpha !== undefined && b.alpha < 1)
-    return `${b.kind}|${b.x},${b.y}|${b.tile}|${b.height}|${b.alpha ?? ''}|${b.scenery ? 1 : 0}|${layers}|${icons}|${ghostKind}|${own ? shade : ''}`
-  }
-
-  /**
-   * Stand the scene's billboards: every one the scene carries that is not
-   * standing yet is built, and every one standing that the scene no longer
-   * carries is dropped. A scene that carries the same billboards as the last
-   * — a new revision for a message that moved nothing, a cursor, a step that
-   * only relit the crowd — leaves every holder and every baked chunk as it
-   * is. Whatever a billboard's holders are built from is in its key
-   * (`spriteKey`); a change to any of it is a drop and a build.
-   */
-  private syncBillboards(scene: Scene): boolean {
-    this.stats.crowdSyncs++
-    this.crowdDirty = false
-    const tiles = this.tiles
-    if (!tiles) {
-      const had = this.records.size > 0
-      this.dropRecords()
-      return had
-    }
-    const t = scene.level.tint
-    const tintKey = `${t.r},${t.g},${t.b}`
-    if (tintKey !== this.recordsTint) {
-      this.recordsTint = tintKey
-      this.dropRecords()
-    }
-    const wanted = new Map<string, { b: Billboard; cell: SceneCell | undefined; shade: number; ghostKind: GhostKind }>()
-    for (const b of scene.billboards) {
-      // the player is the camera, and the cell underfoot is behind it
-      if (b.kind === 'player') continue
-      if (b.x === scene.player.x && b.y === scene.player.y && scene.playerOnLevel && b.kind !== 'cloud') continue
-      const cell = scene.cells.get(cellKey(b.x, b.y))
-      const shade = this.shadeFor(cell, scene)
-      const ghostKind: GhostKind = cell?.visibility === 'visible' ? 'visible' : 'remembered'
-      let key = this.spriteKey(b, shade, ghostKind)
-      // two of a kind on one cell (a scene may carry them): each keeps a record of its own
-      while (wanted.has(key)) key += '#'
-      wanted.set(key, { b, cell, shade, ghostKind })
-    }
-    let changed = false
-    for (const [key, rec] of this.records) {
-      const spec = wanted.get(key)
-      const id = spec?.b.kind === 'monster' ? monsterId(spec.b) : undefined
-      // Several arrivals before a draw can leave a monster back on the same
-      // cell, but mid-walk. Its old baked holder must still come out to move.
-      if (spec && rec.moverId === id && !!rec.moving === this.movers.flying(id)) continue
-      this.dropRecord(rec)
-      this.records.delete(key)
-      changed = true
-    }
-    const pending: string[] = []
-    for (const key of wanted.keys()) if (!this.records.has(key)) pending.push(key)
-    // A whole crowd at once is the stall entering a level; a handful is not
-    // worth the clock. Over the threshold the nearest sprites are stood
-    // first, so what the player is looking at is what fills in first.
-    const slice = pending.length > CROWD_SLICE_MIN
-    if (slice) {
-      const px = scene.player.x
-      const py = scene.player.y
-      const near = new Map<string, number>()
-      for (const key of pending) {
-        const b = wanted.get(key)!.b
-        near.set(key, (b.x - px) * (b.x - px) + (b.y - py) * (b.y - py))
-      }
-      pending.sort((a, b) => near.get(a)! - near.get(b)!)
-    }
-    const t0 = slice ? nowSeconds() * 1000 : 0
-    for (let i = 0; i < pending.length; i++) {
-      // after the first, so a frame always stands at least one however long it takes
-      if (slice && i > 0 && nowSeconds() * 1000 - t0 > CROWD_BUDGET_MS) {
-        // the rest next frame: `animating` keeps the host drawing until they are all up
-        this.crowdDirty = true
-        break
-      }
-      const key = pending[i]
-      const spec = wanted.get(key)!
-      const rec = this.buildRecord(scene, key, spec.b, spec.cell, spec.shade, spec.ghostKind)
-      if (rec) this.records.set(key, rec)
-      changed = true
-    }
-    if (changed) this.selectionDirty = true
-    return changed
-  }
-
-  /** Take a billboard down: its holders out of the crowd or the group, their geometry and any material of their own released. */
-  private dropRecord(rec: SpriteRecord) {
-    this.stats.spriteDrops++
-    for (const h of rec.holders) {
-      this.billboardCrowd.remove(h)
-      if (h.parent) h.parent.remove(h)
-      h.traverse((o) => {
-        const m = o as THREE.Mesh
-        if (m.userData.shared) return
-        if (m.geometry) m.geometry.dispose()
-        if (m.userData.ownMaterial) (m.material as THREE.Material).dispose()
-      })
-    }
-    if (rec.ghost) this.ghostCount--
-  }
-
-  /** Stand one billboard: its holder, its ghost where it has one (II.4), its shadow. */
-  private buildRecord(scene: Scene, key: string, b: Billboard, cell: SceneCell | undefined, shade: number, ghostKind: GhostKind): SpriteRecord | null {
-    const tiles = this.tiles!
-    const tint = scene.level.tint
-    const tileOf = (id: number) => {
-      const r = tiles.tile(id)
-      if (!r) return null
-      const a = this.atlas(r.atlas)
-      if (!a) return null
-      return { r, a, uv: this.uvFor(r, a) }
-    }
-    const group = this.billboardGroup
-    // a monster mid-step is moved every frame, so it stays a holder of its own: the crowd bakes its
-    // place into chunk buffers, and rewriting those each frame is what the bake exists to avoid
-    const id = b.kind === 'monster' ? monsterId(b) : undefined
-    const flying = this.movers.flying(id)
-    /** A holder into the crowd where it can be baked; a holder of its own (its own material, or a step under way) stays in the group. */
-    const stand = (h: THREE.Object3D, bake: boolean) => {
-      if (bake && !flying && this.billboardCrowd.mergeable(h)) this.billboardCrowd.add(h, b.x, b.y)
-      else this.giveCells(h, b.x, b.y)
-    }
-    if (b.kind === 'cloud') {
-      const t = tileOf(b.tile)
-      if (!t) return null
-      // a cloud wears a material of its own, so its light is in its vertex colour
-      const h = this.addStanding(group, b.x, b.y, [{ ...t, ox: 0, oy: 0 }], b.height, shade, tint, false, 'none', false)
-      h.traverse((o) => {
-        const m = o as THREE.Mesh
-        if (m.material) {
-          m.material = (m.material as THREE.Material).clone()
-          m.userData.ownMaterial = true
-          ;(m.material as THREE.MeshBasicMaterial).opacity = 0.55
-          ;(m.material as THREE.MeshBasicMaterial).depthWrite = false
-          m.layers.set(LAYER_NO_DEPTH)
-        }
-      })
-      h.userData.kind = b.kind
-      this.stats.spriteBuilds++
-      return { key, x: b.x, y: b.y, holders: [h], shells: [], position: h.position.clone(), ghost: false }
-    }
-    const layers: SpriteLayer[] = []
-    if (b.layers && b.layers.length) {
-      for (const l of b.layers) {
-        const t = tileOf(l.tile)
-        if (t) layers.push({ ...t, ox: l.ox || 0, oy: l.oy || 0, ymax: l.ymax })
-      }
-    } else {
-      const t = tileOf(b.tile)
-      if (t) layers.push({ ...t, ox: 0, oy: 0 })
-    }
-    if (!layers.length) return null
-    const nSprite = layers.length
-    // status badges sit in the sprite's own frame, at the offsets the builder resolved;
-    // one pinned to the top edge (the damage bar) starts its opaque texels on row 0
-    if (b.statusIcons) {
-      for (const i of b.statusIcons) {
-        const t = tileOf(i.tile)
-        if (t) layers.push({ ...t, ox: i.ox, oy: i.at === 'top' ? -t.r.oy : i.oy, flat: true })
-      }
-    }
-    const bh = b.height
-    // scenery monsters (plants, bushes) are fixtures: they stand square like statues and take their light from the shade map
-    const translucent = b.alpha !== undefined && b.alpha < 1
-    // a sprite's light comes from the shade map (`makeBillboardMaterial`); only a translucent one,
-    // which wears a cloned material that reads no map, carries it in its vertex colour
-    const shells: ShellSource[] = []
-    const holder = this.addStanding(group, b.x, b.y, layers, bh, translucent ? shade : 1, tint, !!b.scenery, 'none', !translucent, 0, undefined, shells)
-    holder.userData.kind = b.kind
-    const holders = [holder]
-    // whatever the 2D map shows on the cell shows through walls here (II.4):
-    // the sprite and its status badges, so a sleeping or fleeing monster
-    // reads the same behind a wall as in the open.
-    // Scenery is the exception: a plant, a bush or a tree is a fixture, not
-    // news. The ghost pass exists so the geometry never hides something the
-    // server is telling you about, and a plant behind a wall tells you
-    // nothing — showing it only puts foliage through the masonry.
-    let ghost = false
-    if (!b.scenery) {
-      // what the server shows right now keeps a strong ghost at any depth; remembered knowledge stays a faint hint that fades with the gap
-      // A ghost of something in view wears the sprite's own colours and light.
-      // A wall's edge cuts a sprite in two — the near half lit, the far half a
-      // ghost — and a tint there is a seam down the middle of a monster: the
-      // same rat brown one side and red the other. Only what the server is not
-      // showing takes a tint, where nothing lit stands beside it to clash and
-      // the tint is all that says how it is known.
-      const gt =
-        ghostKind === 'visible'
-          ? tint
-          : b.kind === 'monster'
-            ? GHOST_TINT.remembered
-            : b.kind === 'projectile'
-              ? GHOST_TINT.projectile
-              : GHOST_TINT.item
-      // the badges keep their own colours so a damage bar or a "zzz" reads the same through a wall as in the open
-      const ghostLayers = layers.map((l, i) => (i < nSprite ? l : { ...l, tint: BADGE_TINT }))
-      // a visible ghost's light comes from the shade map too (`GHOST_SHADE`); a remembered one is its tint alone
-      const g = this.addStanding(group, b.x, b.y, ghostLayers, bh, 1, gt, false, ghostKind)
-      ghost = true
-      this.ghostCount++
-      if (b.kind === 'projectile') g.position.y = PROJECTILE_LIFT
-      g.userData.kind = 'ghost'
-      holders.push(g)
-    }
-    if (b.kind === 'projectile') holder.position.y = PROJECTILE_LIFT
-    if (translucent) {
-      let k = 0
-      holder.traverse((o) => {
-        const m = o as THREE.Mesh
-        if (!m.material || !m.geometry) return
-        if (k++ >= nSprite) return
-        m.material = (m.material as THREE.Material).clone()
-        m.userData.ownMaterial = true
-        ;(m.material as THREE.MeshBasicMaterial).opacity = b.alpha as number
-        ;(m.material as THREE.MeshBasicMaterial).depthWrite = false
-        m.layers.set(LAYER_NO_DEPTH)
-      })
-    }
-    // ground shadow: one shared disc, scaled to the sprite
-    const sh = new THREE.Mesh(this.shadowGeo, this.shadowMat)
-    sh.userData.shared = true
-    sh.layers.set(LAYER_NO_DEPTH)
-    const sr = Math.max(0.6, bh)
-    sh.scale.set(sr, sr, 1)
-    sh.rotation.x = -Math.PI / 2
-    sh.position.set(0, 0.003, 0)
-    holder.add(sh)
-    for (const h of holders) stand(h, true)
-    this.stats.spriteBuilds++
-    return { key, x: b.x, y: b.y, holders, shells, position: holder.position.clone(), ghost, moverId: id, moving: flying }
-  }
-
-  /**
-   * The shell round the sprite the cursor stands on (`SEL_GROW`, `hullSelMat`):
-   * built from what its record kept (`ShellSource`) as a holder of its own
-   * beside the crowd, turned to the eye as every holder is, so the cursor
-   * moving between cells builds a shell or takes one down and touches
-   * nothing else. A cell can stand more than one sprite (a projectile over a
-   * monster); each gets its shell.
-   */
-  private syncSelection() {
-    this.selectionDirty = false
-    this.clearSelection()
-    const cur = this.cursor
-    if (!cur) return
-    for (const rec of this.records.values()) {
-      if (rec.x !== cur.x || rec.y !== cur.y || !rec.shells.length) continue
-      const holder = new THREE.Group()
-      holder.position.copy(rec.position)
-      holder.userData.billboard = true
-      holder.userData.selection = true
-      holder.userData.kind = 'selection'
-      // the shell goes with the sprite while it steps (`placeMovers`)
-      holder.userData.moverId = rec.moverId
-      for (const s of rec.shells) {
-        const shell = this.hullGeometry(s.l, s.hTex, s.wq, s.hq, s.k, SEL_GROW, s.room)
-        if (!shell) continue
-        const sel = new THREE.Mesh(shell, this.hullSelMat)
-        sel.position.copy(s.position)
-        sel.renderOrder = s.renderOrder
-        sel.userData.hull = true
-        sel.userData.shell = true
-        holder.add(sel)
-      }
-      if (!holder.children.length) continue
-      this.billboardGroup.add(holder)
-      this.selected.push(holder)
-      this.stats.selectionBuilds++
-    }
-  }
-
-  /**
-   * Stand every sprite mid-step where its glide has reached, its ghost and
-   * its selected shell with it: the cell's place plus the offset motion.ts
-   * gives, across the ground only (a projectile's lift, and every other
-   * height, is the holder's own). The sprite keeps the light and the ghost of
-   * the cell it is bound for the whole way over, as the scene already lit it
-   * there.
-   */
-  private placeMovers(now: number) {
-    const at = (h: THREE.Object3D, x: number, y: number, o: { x: number; y: number }) => {
-      h.position.x = x + 0.5 + o.x
-      h.position.z = y + 0.5 + o.y
-    }
-    for (const rec of this.records.values()) {
-      const o = this.movers.offset(rec.moverId, now)
-      if (!o) continue
-      for (const h of rec.holders) at(h, rec.x, rec.y, o)
-      for (const h of this.selected) {
-        if (h.userData.moverId === rec.moverId) at(h, rec.x, rec.y, o)
-      }
-    }
-  }
-
-  /**
-   * The sprites of the monsters whose step is over go: the next sync builds
-   * them again standing on their cells, back among the crowd's baked chunks
-   * (`buildRecord`). Nothing else is touched — the rest of the crowd never
-   * left it.
-   */
-  private dropMoved(ids: readonly number[]) {
-    const gone = new Set(ids)
-    for (const [key, rec] of this.records) {
-      if (rec.moverId === undefined || !gone.has(rec.moverId)) continue
-      this.dropRecord(rec)
-      this.records.delete(key)
-      this.crowdDirty = true
-    }
-  }
-
-  private clearSelection() {
-    for (const h of this.selected) {
-      this.billboardGroup.remove(h)
-      for (const c of h.children) (c as THREE.Mesh).geometry.dispose()
-    }
-    this.selected = []
-  }
-
-  /**
-   * Bake the group's standing holders into the crowd's chunk meshes
-   * (crowd.ts): every chunk a holder joined or left since the last bake is
-   * written again, its holders taken back to front from the eye; the rest
-   * stand as they are. Left as holders: a sprite standing at a heading of its
-   * own (an open door), the selected shells, and anything wearing a material
-   * of its own (a translucent sprite, a cloud).
-   */
-  private bakeStanding(group: THREE.Group, eye: { x: number; y: number }) {
-    const crowd = group === this.levelGroup ? this.levelCrowd : this.billboardCrowd
-    crowd.bake(eye)
-  }
   render(now = nowSeconds()): void {
     const r = this.renderer
     const scene = this.scene
     const cam = this.camera
     if (!r || !scene || !cam) return
-    // the attack lift runs on the clock, not on what shows it: it is over when its time is, whether the hands
-    // are drawn or not (no viewmodel, empty hands), so `animating` cannot stick and keep the host rendering
     this.lift = Number.isNaN(this.vmLift) ? NaN : this.liftEnvelope(now - this.vmLift)
     if (Number.isNaN(this.lift)) this.vmLift = NaN
-    // A monster's step is read off the scene before the crowd is synced against it, so a sprite
-    // that is about to glide is built out of the crowd; one whose step is over is dropped, and the
-    // sync below builds it again, back in the crowd and standing on its cell.
+    // a step that ends this frame leaves the crowd standing where the last frame drew it: it is written once more, on its cell
+    let landed = false
     if (this.opts.motion) {
       this.trackMotion(now)
-      const landed = this.movers.landed(now)
-      if (landed.length) this.dropMoved(landed)
+      landed = this.movers.landed(now).length > 0
     }
-    /** This frame started a level build, so it has spent its budget already. */
     let builtLevel = false
     if (scene.revision !== this.builtRevision) {
       this.builtRevision = scene.revision
-      const bg = scene.level.sky === 'open' ? 0x0b1220 : scene.level.sky === 'dark' ? 0x120818 : 0x000000
-      ;(this.three.background as THREE.Color).set(bg)
-      // the geometry stands until the layout changes (Part IV); a move, a
-      // change of sight or a monster's step repaint the shade map and the
-      // billboards, which is cheap, and leave the level's meshes alone
+      const grid = new LevelGrid(scene)
       const t = scene.level.tint
       const tintKey = `${t.r},${t.g},${t.b}`
-      // a step onto or off a staircase, the player's or a monster's, changes which features stand and which
-      // lie flat (`occupiedFeatures`), which is part of the geometry; it is as rare as a layout change, and the
-      // rest of a walk still leaves the level's meshes alone
-      const occ = this.occupiedFeatures(scene)
-      if (scene.layoutRevision !== this.builtLayout || tintKey !== this.builtTint || !sameKeys(occ, this.builtOccupied)) {
+      if (scene.layoutRevision !== this.builtLayout || tintKey !== this.builtTint || !this.grid || this.mesher.occupiedChanged(grid)) {
         this.builtLayout = scene.layoutRevision
         this.builtTint = tintKey
         builtLevel = true
-        this.rebuildLevel(scene, LEVEL_BUDGET_MS)
-        this.mark?.('level')
-        this.bakeStanding(this.levelGroup, { x: cam.eyeX, y: cam.eyeY })
-        this.mark?.('bake')
+        this.grid = grid
+        this.rebuildLevel(scene, grid)
       }
       this.updateFields(scene)
       this.mark?.('fields')
-      // the crowd is synced against the scene, not rebuilt: what still stands is left standing
-      if (this.syncBillboards(scene)) this.bakeStanding(this.billboardGroup, { x: cam.eyeX, y: cam.eyeY })
-      this.mark?.('crowd')
-    } else if (this.crowdDirty) {
-      if (this.syncBillboards(scene)) this.bakeStanding(this.billboardGroup, { x: cam.eyeX, y: cam.eyeY })
-      this.mark?.('crowd')
     }
-    // A level left half built for its budget is finished by the frames after
-    // it, whether the scene moved on or not. Never in the frame that started
-    // it: that one has spent its budget already.
-    if (this.levelPending && !builtLevel) {
-      this.buildPendingChunks()
+    if (this.mesher.hasPending && !builtLevel) {
+      this.placeChunks(this.mesher.continue_(LEVEL_BUDGET_MS))
       this.mark?.('level')
-      this.bakeStanding(this.levelGroup, { x: cam.eyeX, y: cam.eyeY })
-      this.mark?.('bake')
     }
-    // the selected shell follows the cursor and the sprites, on its own
-    if (this.selectionDirty) this.syncSelection()
-    // the monsters mid-step stand between their cells this frame
-    if (this.movers.active) this.placeMovers(now)
-    // camera: the eased eye (camera.ts `walkTo`), not the cell: mid-glide it is between the two
+    // the crowd's instances are worked out again for a new scene or a new selection; written every frame something moves
+    const selKey = this.cursor ? `${this.cursor.x},${this.cursor.y}` : ''
+    if (scene.revision !== this.crowdRevision || selKey !== this.crowdSelection) {
+      this.crowdRevision = scene.revision
+      this.crowdSelection = selKey
+      const tiles = this.tiles
+      const { sprites, shadows } = tiles ? crowdInstances(scene, (id) => tiles.tile(id), this.cursor) : { sprites: [], shadows: [] }
+      this.crowd = sprites
+      this.shadows = shadows
+      this.writeInstances({ x: cam.eyeX, y: cam.eyeY }, now)
+    } else if (this.movers.active || landed) this.writeInstances({ x: cam.eyeX, y: cam.eyeY }, now)
+    this.mark?.('crowd')
     this.cam.position.set(cam.eyeX + 0.5, Math.max(EYE_MIN, Math.min(EYE_MAX, this.opts.eyeHeight)), cam.eyeY + 0.5)
     this.cam.rotation.set(cam.pitch, -cam.yaw, 0)
-    // Billboards face the camera (yaw only), and it is the camera's own yaw
-    // that counts, not the facing: mid-turn the two differ, and a billboard
-    // squared to the facing would stand visibly turned.
-    // Squared to the view plane a sprite is never foreshortened, so its
-    // texture is sampled head-on and stays as sharp as the art allows.
-    // The baked crowd (`bakeStanding`) turns in the shader; the holders left standing turn here.
-    const camYaw = this.cam.rotation.y
-    this.standUniforms.standYaw.value = camYaw
-    for (const h of this.billboardGroup.children) if (h.userData.billboard) h.rotation.y = camYaw
-    for (const h of this.levelGroup.children) if (h.userData.billboard) h.rotation.y = camYaw
-    // the crowd's blended chunks draw back to front from where the eye stands this frame
-    this.billboardCrowd.order({ x: cam.eyeX, y: cam.eyeY })
-    this.levelCrowd.order({ x: cam.eyeX, y: cam.eyeY })
+    this.cam.updateMatrixWorld()
+    this.standUniforms.standYaw.value = this.cam.rotation.y
     this.placeCursor()
-    // the ghost pass needs the depth image only when there is a ghost to test against it
-    if (this.ghostCount > 0) this.renderOccluderDepth(r)
     this.mark?.('place')
+    const bg = scene.level.sky === 'open' ? 0x0b1220 : scene.level.sky === 'dark' ? 0x120818 : 0x000000
+    const { frame, depth } = this.targetsFor(r)
+    // the target holds encoded values, and three would clear it in linear: hand it the encoded colour as if linear
+    r.setClearColor(new THREE.Color().setRGB(((bg >> 16) & 255) / 255, ((bg >> 8) & 255) / 255, (bg & 255) / 255, THREE.LinearSRGBColorSpace), 1)
+    if (this.ghostCount > 0) {
+      // the level and its fixtures alone, for their depth: what the ghosts show through
+      this.ghostUniforms.cameraNear.value = this.cam.near
+      this.ghostUniforms.cameraFar.value = this.cam.far
+      const layers = this.cam.layers.mask
+      this.cam.layers.set(0)
+      r.setRenderTarget(depth)
+      r.clear(true, true, false)
+      r.render(this.three, this.cam)
+      this.cam.layers.mask = layers
+    }
+    r.setRenderTarget(frame)
+    r.clear(true, true, false)
     r.render(this.three, this.cam)
+    r.setRenderTarget(null)
+    r.render(this.blitScene, this.cam)
     this.mark?.('draw')
     this.renderViewmodel(r, scene)
   }
 
   // ------------------------------------------------------------- viewmodel
 
-  /** Where the hands are drawn, as fractions of the canvas (II.7), so the HUD keeps its corner clear of them; empty when no hand is. */
+  /** Where the hands are drawn, as fractions of the canvas, so the HUD keeps its corner clear of them. */
   handsFootprint(): HandRect[] {
     if (!this.vmVisible) return []
     const vm = this.viewmodel!
-    return handsFootprint({ weapon: !!vm.weapon, offhand: vm.offhand ? (vm.offhand.name?.startsWith('HAND2_') ? 'shield' : 'weapon') : 'none' }, this.vmCam.aspect)
+    return handsFootprint({ weapon: !!vm.weapon, offhand: !vm.offhand ? 'none' : vm.offhand.name?.startsWith('HAND2_') ? 'shield' : 'weapon' }, this.cam.aspect)
   }
 
   private get vmVisible(): boolean {
     return this.opts.viewmodel && !!this.viewmodel && (!!this.viewmodel.weapon || !!this.viewmodel.offhand)
   }
 
-  /**
-   * Lift envelope at time `t` since the attack: up fast, back on an ease.
-   * Returns 0..1, or NaN once it is over.
-   */
   private liftEnvelope(t: number): number {
-    const p = t / VM_LIFT_S
-    if (!(p >= 0) || p >= 1) return NaN
-    if (p < 0.3) return p / 0.3
-    const q = (p - 0.3) / 0.7
-    return 1 - q * q * (3 - 2 * q)
+    if (t < 0 || t >= VM_LIFT_S) return NaN
+    const u = t / VM_LIFT_S
+    return u < 0.3 ? u / 0.3 : 1 - (u - 0.3) / 0.7
   }
 
-  /**
-   * The item's icon layers painted into one cell-sized pixel grid, in order,
-   * as WebTiles composes an inventory icon. Null where pixels cannot be read
-   * (no 2D canvas, an atlas that is not an image).
-   */
-  private paintIcon(item: HandItem): { w: number; h: number; data: Uint8ClampedArray } | null {
+  /** The item's icon layers painted into one cell-sized pixel grid, as WebTiles composes an inventory icon. */
+  private paintIcon(item: HandItem): { canvas: HTMLCanvasElement | OffscreenCanvas; cell: number; data: Uint8ClampedArray } | null {
     if (!this.tiles) return null
-    let canvas: HTMLCanvasElement | OffscreenCanvas
-    if (typeof OffscreenCanvas !== 'undefined') canvas = new OffscreenCanvas(1, 1)
-    else if (typeof document !== 'undefined') canvas = document.createElement('canvas')
-    else return null
     let cell = 32
     const rects: { r: TileRect; h: number; img: TexImageSource }[] = []
     for (const l of item.layers) {
@@ -3362,167 +1119,151 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       rects.push({ r, h, img })
     }
     if (!rects.length) return null
-    canvas.width = cell
-    canvas.height = cell
-    const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null
-    if (!ctx) return null
+    const canvas = makeCanvas(cell, cell)
+    const ctx = canvas?.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null
+    if (!canvas || !ctx) return null
     ctx.imageSmoothingEnabled = false
     try {
       for (const { r, h, img } of rects) ctx.drawImage(img as CanvasImageSource, r.sx, r.sy, r.w, h, r.ox, r.oy, r.w, h)
-      return { w: cell, h: cell, data: ctx.getImageData(0, 0, cell, cell).data }
+      const image = ctx.getImageData(0, 0, cell, cell)
+      // the hands are the same art as the world's sprites, so they lose the same outline
+      peelInk(image.data, cell, cell, 128)
+      ctx.putImageData(image, 0, 0)
+      return { canvas, cell, data: image.data }
     } catch {
       return null
     }
   }
 
   /**
-   * The icon extruded into a block: every opaque texel becomes a VM_DEPTH-texel
-   * deep column, coloured by the texel, with only the faces that border a
-   * transparent texel (or the front and back) emitted, shaded per direction so
-   * the thickness reads. The origin is the bottom centre of the opaque texels'
-   * bounding box (not the cell's), so an icon drawn off-centre in its cell,
-   * such as a paperdoll part, still hangs from the hand; the block spans z in
-   * [-depth, 0]. With it comes the hull that lines it, the standing sprites'
-   * (`hullTemplate`) at the hand's own scale: the block grown a texel each
-   * way and closed, for the black material to draw back faces only.
+   * One hand: the icon as a texture of its own, its distance field, and one
+   * instance of the sprite box VM_DEPTH texels thick, its hull closed both
+   * sides (a hand is posed with its back to the eye as often as its front),
+   * hanging from the bottom centre of its opaque texels.
    */
-  private extrudeIcon(item: HandItem): { block: THREE.BufferGeometry; hull: THREE.BufferGeometry | null } | null {
+  private buildHand(item: HandItem): Hand | null {
     const px = this.paintIcon(item)
     if (!px) return null
-    const { w, h, data } = px
-    // the hands are the same art as the world's sprites, so they lose the same outline (`peelInk`):
-    // the icon is measured and extruded from what is left, and the block is the whole of what it draws
-    peelInk(data, w, h, 128)
-    const opaque = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && data[(y * w + x) * 4 + 3] >= 128
-    let bx0 = w, bx1 = -1, by0 = h, by1 = -1
-    for (let y = 0; y < h; y++)
-      for (let x = 0; x < w; x++)
-        if (opaque(x, y)) {
+    const { canvas, cell, data } = px
+    const mask = new Uint8Array(cell * cell)
+    let bx0 = cell, bx1 = -1, by0 = cell, by1 = -1
+    for (let y = 0; y < cell; y++)
+      for (let x = 0; x < cell; x++)
+        if (data[(y * cell + x) * 4 + 3] >= 128) {
+          mask[y * cell + x] = 1
           if (x < bx0) bx0 = x
           if (x > bx1) bx1 = x
           if (y < by0) by0 = y
           if (y > by1) by1 = y
         }
     if (bx1 < 0) return null
-    const cx = (bx0 + bx1 + 1) / 2
+    const texture = new THREE.Texture(canvas as unknown as HTMLImageElement)
+    texture.magFilter = texture.minFilter = THREE.NearestFilter
+    texture.generateMipmaps = false
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.flipY = false
+    texture.needsUpdate = true
+    const dist = new THREE.DataTexture(distanceField(mask, cell, cell), cell, cell, THREE.RedFormat, THREE.UnsignedByteType)
+    dist.magFilter = dist.minFilter = THREE.NearestFilter
+    dist.generateMipmaps = false
+    dist.unpackAlignment = 1
+    dist.needsUpdate = true
+    const material = this.raw(
+      SPRITE_VERT,
+      SPRITE_FRAG,
+      { map: { value: texture }, distMap: { value: dist }, atlasSize: { value: new THREE.Vector2(cell, cell) }, ...this.fieldUniforms, ...this.standUniforms, ...this.spriteUniforms, modelInverse: { value: new THREE.Matrix4() } },
+      {},
+      { OUT_SRGB: '' },
+    )
+    const batch = new Batch(this.box, material, SPRITE_ATTRS, 0)
+    // the origin is the bottom centre of the opaque texels, so an icon drawn off-centre in its cell still hangs from the hand
+    const cxb = (bx0 + bx1 + 1) / 2
     const bottom = by1 + 1
-    // world size per texel: the opaque extent fills VM_FILL of the hand's height
     const s = (VM_SIZE * VM_FILL) / Math.max(bx1 - bx0 + 1, by1 - by0 + 1)
-    const depth = VM_DEPTH * s
-    const pos: number[] = []
-    const col: number[] = []
-    const idx: number[] = []
-    const face = (p: [number, number, number][], r: number, g: number, b: number, shade: number) => {
-      const base = pos.length / 3
-      for (const [x, y, z] of p) pos.push(x, y, z)
-      for (let i = 0; i < 4; i++) col.push(r * shade, g * shade, b * shade)
-      idx.push(base, base + 1, base + 2, base, base + 2, base + 3)
-    }
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        if (!opaque(x, y)) continue
-        const o = (y * w + x) * 4
-        // texel colours are sRGB; the material's vertex colours are read as linear
-        const c = new THREE.Color(data[o] / 255, data[o + 1] / 255, data[o + 2] / 255).convertSRGBToLinear()
-        const x0 = (x - cx) * s, x1 = x0 + s
-        const y1 = (bottom - y) * s, y0 = y1 - s
-        const z0 = -depth, z1 = 0
-        face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], c.r, c.g, c.b, BLOCK_SHADE.front)
-        face([[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]], c.r, c.g, c.b, BLOCK_SHADE.front)
-        if (!opaque(x, y - 1)) face([[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]], c.r, c.g, c.b, BLOCK_SHADE.top)
-        if (!opaque(x, y + 1)) face([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], c.r, c.g, c.b, BLOCK_SHADE.bottom)
-        if (!opaque(x - 1, y)) face([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], c.r, c.g, c.b, BLOCK_SHADE.side)
-        if (!opaque(x + 1, y)) face([[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]], c.r, c.g, c.b, BLOCK_SHADE.side)
-      }
-    }
-    if (!idx.length) return null
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
-    g.setIndex(idx)
-    // the ink: the hull round the block, kept inside the icon's canvas as the art's own line was. Closed on both
-    // sides, unlike a standing sprite's: a hand is posed with its back to the eye as often as its front (the
-    // weapon's rest yaw is a half turn), and the block's own front and back keep either hull face off the art
-    const inked = (x: number, y: number) =>
-      x >= 0 && y >= 0 && x < w && y < h &&
-      (opaque(x, y) || opaque(x - 1, y) || opaque(x + 1, y) || opaque(x, y - 1) || opaque(x, y + 1))
-    const hpos: number[] = []
-    const hidx: number[] = []
-    // in texel units, then to the hand's scale: x across from the icon's centre, y up from its base (mesh.ts merges the faces exactly)
-    for (const f of extrudeFaces(inked, 0, w, 0, h, -depth, 0, { back: true, front: true })) {
-      const base = hpos.length / 3
-      for (let i = 0; i < 12; i += 3) hpos.push((f[i] - cx) * s, (f[i + 1] + bottom) * s, f[i + 2])
-      hidx.push(base, base + 1, base + 2, base, base + 2, base + 3)
-    }
-    let hull: THREE.BufferGeometry | null = null
-    if (hidx.length) {
-      hull = new THREE.BufferGeometry()
-      hull.setAttribute('position', new THREE.Float32BufferAttribute(hpos, 3))
-      hull.setIndex(hidx)
-    }
-    return { block: g, hull }
+    this.vmScene.add(batch.mesh)
+    return { texture, dist, material, batch, cell, quad: [(cell / 2 - cxb) * s, (bottom - cell / 2) * s, (cell / 2) * s, (cell / 2) * s], scale: s }
   }
 
-  /** One hand: the extruded icon and the ink round it, built once per distinct item. */
-  private buildHand(group: THREE.Group, item: HandItem | null) {
-    group.clear()
-    if (!item) return
+  private dropHand(h: Hand | null) {
+    if (!h) return
+    this.vmScene.remove(h.batch.mesh)
+    h.batch.dispose()
+    h.material.dispose()
+    h.texture.dispose()
+    h.dist.dispose()
+  }
+
+  private hand(item: HandItem | null): Hand | null {
+    if (!item) return null
     const key = JSON.stringify(item.layers)
-    let geo = this.vmGeos.get(key)
-    if (geo === undefined) {
-      geo = this.extrudeIcon(item)
-      this.vmGeos.set(key, geo)
+    let h = this.handCache.get(key)
+    if (h === undefined) {
+      h = this.buildHand(item)
+      this.handCache.set(key, h)
     }
-    if (!geo) return
-    group.add(new THREE.Mesh(geo.block, this.vmMat))
-    if (geo.hull) {
-      const ink = new THREE.Mesh(geo.hull, this.hullMat)
-      ink.userData.hull = true
-      group.add(ink)
-    }
+    return h
   }
 
   private renderViewmodel(r: THREE.WebGLRenderer, scene: Scene) {
-    if (!this.vmVisible) return
+    if (!this.vmVisible || !this.tiles) return
     const vm = this.viewmodel!
-    if (!this.vmBuilt && this.tiles) {
-      this.vmBuilt = true
-      this.buildHand(this.vmHands.weapon, vm.weapon)
-      this.buildHand(this.vmHands.offhand, vm.offhand)
-    }
+    if (!this.hands.weapon && vm.weapon) this.hands.weapon = this.hand(vm.weapon)
+    if (!this.hands.offhand && vm.offhand) this.hands.offhand = this.hand(vm.offhand)
+    for (const h of this.handCache.values()) if (h) h.batch.mesh.visible = false
     const asp = this.vmCam.aspect
     const lift = this.lift
-    // `push` slides the hand from its rest toward the centre of the view, by that fraction of the distance
-    const pose = (g: THREE.Group, p: HandPose, push = 0) => {
-      const len = Math.hypot(p.x * asp, p.y) || 1
-      g.position.set(p.x * asp * (1 - push / len), p.y * (1 - push / len), 0)
-      // roll first, then pitch, then yaw: Euler 'YXZ' applies Z, then X, then Y
-      g.rotation.set(p.pitch, p.yaw, p.roll, 'YXZ')
-    }
-    const w = this.vmHands.weapon
-    w.visible = !!vm.weapon
-    pose(w, VM_WEAPON_REST, (lift || 0) * VM_LIFT)
-    const o = this.vmHands.offhand
-    o.visible = !!vm.offhand
-    pose(o, vm.offhand?.name?.startsWith('HAND2_') ? VM_SHIELD_REST : VM_OFFWEAPON_REST)
-    // hands take the level's light like everything else in the view, and the
-    // flash over the cell the player stands in washes over them
     const tint = scene.level.tint
-    this.vmMat.color.setRGB(tint.r, tint.g, tint.b)
     const flash = flashOf(getCell(scene, scene.player.x, scene.player.y))
-    this.vmFlash.value.set(flash.r, flash.g, flash.b, flash.a)
-    const prevAutoClear = r.autoClear
-    r.autoClear = false
+    const pose = (h: Hand | null, p: HandPose, push = 0) => {
+      if (!h) return
+      const m = h.batch.mesh
+      m.visible = true
+      const len = Math.hypot(p.x * asp, p.y) || 1
+      m.position.set(p.x * asp * (1 - push / len), p.y * (1 - push / len), 0)
+      m.rotation.set(p.pitch, p.yaw, p.roll, 'YXZ')
+      m.updateMatrixWorld()
+      ;(h.material.uniforms.modelInverse.value as THREE.Matrix4).copy(m.matrixWorld).invert()
+      // the hands take the level's light and the flash over the cell the player stands in
+      h.batch.begin()
+      h.batch.push([[0, 0, 0], h.quad, [0, VM_DEPTH * h.scale], [0, 0, h.cell, h.cell], [tint.r, tint.g, tint.b, 1], [MODE_THICK | MODE_HULL_FRONT | MODE_FLASH_OVERRIDE, 1, h.scale, 0], [0, 0]])
+      h.batch.end()
+    }
+    this.spriteUniforms.flashOverride.value.set(flash.r, flash.g, flash.b, flash.a)
+    pose(this.hands.weapon, VM_WEAPON_REST, (lift || 0) * VM_LIFT)
+    pose(this.hands.offhand, vm.offhand?.name?.startsWith('HAND2_') ? VM_SHIELD_REST : VM_OFFWEAPON_REST)
     r.clearDepth()
     r.render(this.vmScene, this.vmCam)
-    r.autoClear = prevAutoClear
   }
+
+}
+
+/** The parameter range over which `o + t·d` lies within [lo, hi]; empty (a > b) when it never does. */
+function slab(o: number, d: number, lo: number, hi: number): [number, number] {
+  if (d === 0) return o >= lo && o <= hi ? [-Infinity, Infinity] : [Infinity, -Infinity]
+  const a = (lo - o) / d, b = (hi - o) / d
+  return a < b ? [a, b] : [b, a]
+}
+
+function makeCanvas(w: number, h: number): HTMLCanvasElement | OffscreenCanvas | null {
+  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h)
+  if (typeof document !== 'undefined') {
+    const c = document.createElement('canvas')
+    c.width = w
+    c.height = h
+    return c
+  }
+  return null
 }
 
 function nowSeconds(): number {
   return (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000
 }
 
+export { BLOCK_SHADE }
 export type { Billboard, Viewmodel }
 export * from './footprint.js'
-export { peelInk } from './peel.js'
+export { gridWalk } from './gridwalk.js'
+export { peelInk, distanceField } from './peel.js'
+export { LevelGrid, framedDoors, occupiedFeatures } from './grid.js'
+export { LevelMesher, LEVEL_CHUNK, LEVEL_REACH, type ChunkGeometry, type MeshContext } from './level-mesh.js'
+export * from './sprites.js'
