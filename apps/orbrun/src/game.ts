@@ -23,6 +23,8 @@ import { gamepadHints, type PadHintEvidence } from './gamepad-hints'
 import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INSET, type Settings } from './servers'
 import { type SettingGroup } from './settings-rows'
 import { PerfOverlay, type LogContext } from './perf'
+import type { Relink, RelinkInput } from './relink'
+import { glyph } from './glyphs'
 
 /** The most drawn pixels per CSS pixel the game view gets (Part IV of rendering-3d.md): the display's density, capped here. */
 const VIEW_MAX_DPR = 1
@@ -56,6 +58,8 @@ export interface GameHooks {
   onSystem(op: 'disconnect'): void
   gamepad: GamepadInput
   initialInput?: InputDevice
+  /** getting the game back after its connection went (relink.ts): the screen veils itself while it is busy */
+  relink?: Relink
 }
 
 /**
@@ -158,6 +162,8 @@ export class GameScreen {
   /** a turn a warning or newcomer earned while the server was not taking commands (a --more--), paid when it does */
   private owedTurn: { names: string[]; newcomer: boolean } | null = null
   private loading = h('div', { class: 'loading' })
+  /** the veil over a game whose connection is being made again (`drawRelink`) */
+  private relinkVeil = h('div', { class: 'relink' })
   private pressTimes = new Map<string, number>()
   /** A tap-or-hold button down and short of HOLD_MS: its corner prompt fills its hold ring (hud.ts showHold). */
   private holding: { button: Button; fraction: number } | null = null
@@ -221,7 +227,7 @@ export class GameScreen {
     this.hooks = hooks
     this.root = h('div', { class: 'screen game' })
     host.append(this.root)
-    this.root.append(this.canvas, this.loading)
+    this.root.append(this.canvas, this.loading, this.relinkVeil)
     const st = hooks.settings()
     this.is3d = st.renderer === '3d'
     this.perf = new PerfOverlay(this.root, () => this.perfContext())
@@ -314,6 +320,15 @@ export class GameScreen {
       this.warmRenderer(this.renderer)
       this.hideLoading()
     } else this.showLoading('Loading game data…')
+    if (hooks.relink) {
+      const relink = hooks.relink
+      this.unsub.push(relink.on(() => {
+        // a key sequence waiting on the server's prompt is over: that game is being started again
+        if (relink.busy) this.runner.abortSequence()
+        this.drawRelink()
+      }))
+      this.drawRelink()
+    }
     this.onKeyDown = this.onKeyDown.bind(this)
     window.addEventListener('keydown', this.onKeyDown, true)
     this.onResize = this.onResize.bind(this)
@@ -579,6 +594,13 @@ export class GameScreen {
   // ------------------------------------------------------------- frame loop
 
   private loop(now: number) {
+    const relink = this.hooks.relink
+    if (relink?.busy && relink.phase.kind !== 'checking') {
+      // the game is being got back, and the session starts it from nothing (Session.reconnect): the screen holds
+      // the game as it last stood under the veil, and the loop picks up when the game is back (`drawRelink`)
+      this.raf = 0
+      return
+    }
     this.raf = requestAnimationFrame(this.loop)
     const dt = Math.min(0.1, (now - this.lastFrame) / 1000)
     this.lastFrame = now
@@ -1171,6 +1193,10 @@ export class GameScreen {
     this.wake()
     // a press, a stick or the d-pad is the pad speaking; a stick settling back to centre is not
     if (isPadActivity(ev)) this.inputFrom('pad')
+    if (this.hooks.relink?.busy) {
+      if (ev.type === 'press') this.hooks.relink.input(ev.button === 'A' ? 'confirm' : ev.button === 'B' ? 'cancel' : 'other')
+      return
+    }
     if (this.chat.capturing) {
       this.chat.pad(ev)
       return
@@ -1298,6 +1324,14 @@ export class GameScreen {
     const target = ev.target as HTMLElement | null
     // a key typed into a field is still the keyboard speaking (a server prompt's on-screen keyboard goes away for it)
     this.inputFrom('keyboard')
+    if (this.hooks.relink?.busy) {
+      // nothing reaches a game that is not there; a modifier alone is not a press
+      if (!['Shift', 'Control', 'Alt', 'Meta'].includes(ev.key)) {
+        ev.preventDefault()
+        if (!ev.repeat) this.hooks.relink.input(ev.key === 'Enter' || ev.key === ' ' ? 'confirm' : ev.key === 'Escape' ? 'cancel' : 'other')
+      }
+      return
+    }
     if (target && isTextEntry(target)) return
     // F2 is Orbrun's own: the player's commands. A bare F1 goes on to Crawl (keys.ts CODES), which binds it
     // to CMD_GAME_MENU alongside `~`, so it opens the usual WebTiles game menu.
@@ -1679,6 +1713,92 @@ export class GameScreen {
         this.overlays.oskOp('shift')
         break
     }
+  }
+
+  /**
+   * Whether the game is resting at its prompt, with nothing of the player's
+   * open: no menu, no popup, no screen of Orbrun's, no chat being typed. Only
+   * then is it closed for the player being away (main.ts `IDLE_MS`), so a
+   * half-made choice is never undone under them.
+   */
+  atRest(): boolean {
+    return this.ctx.mode === 'command' && !this.overlays.hasClientOverlay && !this.chat.capturing
+  }
+
+  /** The veil for where getting the game back stands (relink.ts), with its one or two choices. */
+  private drawRelink() {
+    const relink = this.hooks.relink
+    const p = relink?.phase
+    if (!relink || !p || p.kind === 'live') {
+      this.relinkVeil.style.display = 'none'
+      this.relinkVeil.replaceChildren()
+      // the loop held still while the game was away: everything that came meanwhile is drawn now
+      this.needsRender = true
+      this.wake()
+      return
+    }
+    const host = this.session.server.name || this.session.server.host
+    const secs = (at: number) => Math.max(0, Math.ceil((at - Date.now()) / 1000))
+    let title: string
+    let detail = ''
+    let confirm: string | null = null
+    let cancel: string | null = 'Leave game'
+    switch (p.kind) {
+      case 'checking':
+        title = 'Checking the connection…'
+        cancel = null
+        break
+      case 'paused':
+        title = 'Paused'
+        detail = 'Your game was saved while you were away.'
+        confirm = 'Carry on'
+        break
+      case 'waiting':
+        title = 'Connection lost'
+        detail = p.offline
+          ? 'Your game is saved. It comes back when the network does.'
+          : p.at === null
+            ? 'Your game is saved.'
+            : `Your game is saved. Trying again in ${secs(p.at)} s.`
+        if (!p.offline) confirm = 'Try now'
+        break
+      case 'connecting':
+        title = `Reconnecting to ${host}…`
+        break
+      case 'stale': {
+        const n = secs(p.until)
+        title = 'Closing your previous session…'
+        detail = n > 0 ? `${host} holds a dropped game for a few seconds before it lets go: ${n}` : 'Almost there…'
+        break
+      }
+      case 'force':
+        title = 'Your previous session will not close'
+        detail = 'Force it closed? Anything since its last save is lost.'
+        confirm = 'Force it closed'
+        break
+      case 'elsewhere':
+        title = 'This game is being played somewhere else'
+        detail = 'Take it over here? The other session is saved and closed.'
+        confirm = 'Take it over'
+        break
+      case 'failed':
+        title = `Can't reach ${host}`
+        detail = 'Your game is saved.'
+        confirm = 'Try again'
+        break
+    }
+    const pad = this.lastInput === 'pad'
+    const kind = this.hooks.gamepad.kind
+    const choice = (label: string, button: 'A' | 'B', key: string, input: RelinkInput) =>
+      h('button', { type: 'button', class: 'relink-choice', onclick: () => relink.input(input) }, pad ? glyph(button, kind) : h('kbd', null, key), h('span', null, label))
+    const actions = h('div', { class: 'relink-actions' })
+    if (confirm) actions.append(choice(confirm, 'A', 'Enter', 'confirm'))
+    if (cancel) actions.append(choice(cancel, 'B', 'Esc', 'cancel'))
+    this.relinkVeil.className = 'relink' + (p.kind === 'checking' ? ' soft' : '')
+    this.relinkVeil.replaceChildren(
+      h('div', { class: 'relink-card' }, h('div', { class: 'relink-title' }, title), detail ? h('div', { class: 'relink-detail' }, detail) : '', actions),
+    )
+    this.relinkVeil.style.display = ''
   }
 
   private systemAction(op: string) {

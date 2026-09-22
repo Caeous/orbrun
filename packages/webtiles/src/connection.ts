@@ -27,6 +27,11 @@ export interface Connection {
   onClose(handler: (reason: CloseReason) => void): Unsubscribe
   onOpen(handler: () => void): Unsubscribe
   close(): void
+  /**
+   * Open the socket again after it closed, keeping every handler. Absent on a
+   * connection that cannot be reopened.
+   */
+  reopen?(): void
   readonly open: boolean
   /** Set to watch the wire; nothing is measured while it is unset. */
   onTraffic?: ((e: TrafficEvent) => void) | null
@@ -62,13 +67,15 @@ export class RemoteConnection implements Connection {
   readonly kind = 'remote' as const
   readonly gamedataBase: string
   private ws: WebSocketLike | null = null
+  /** Which socket is the current one: a socket this connection has moved on from reports nothing (an old one closing late). */
+  private gen = 0
   private messageHandlers = new Set<(msg: ServerMessage) => void>()
   private closeHandlers = new Set<(reason: CloseReason) => void>()
   private openHandlers = new Set<() => void>()
   private decoder = typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8') : null
   private opts: RemoteConnectionOptions
   open = false
-  /** The socket has closed for good: this class never reconnects, so nothing sent from now on can go out. */
+  /** The socket has closed: nothing sent can go out until `reopen` makes another. */
   closed = false
   /** Set by a profiler to watch the wire (perf.ts); unset, nothing is measured. */
   onTraffic: ((e: TrafficEvent) => void) | null = null
@@ -83,16 +90,20 @@ export class RemoteConnection implements Connection {
 
   private connect() {
     const { url, WebSocket } = this.opts
+    const gen = ++this.gen
+    const mine = () => gen === this.gen
     const ws = (this.ws =
       this.opts.noCompression === false ? new WebSocket(url) : new WebSocket(url, ['no-compression']))
     ws.binaryType = 'arraybuffer'
     ws.onopen = () => {
+      if (!mine()) return
       this.open = true
       for (const s of this.queue) ws.send(s)
       this.queue = []
       for (const h of this.openHandlers) h()
     }
     ws.onmessage = (ev) => {
+      if (!mine()) return
       let text: string
       if (typeof ev.data === 'string') text = ev.data
       else if (ev.data instanceof ArrayBuffer && this.decoder) text = this.decoder.decode(ev.data)
@@ -104,6 +115,7 @@ export class RemoteConnection implements Connection {
       this.dispatchText(text, ev.data instanceof ArrayBuffer ? ev.data.byteLength : text.length)
     }
     ws.onclose = (ev) => {
+      if (!mine()) return
       this.open = false
       this.closed = true
       // whatever was waiting for the socket to open never will now
@@ -111,6 +123,7 @@ export class RemoteConnection implements Connection {
       for (const h of this.closeHandlers) h({ code: ev.code, reason: ev.reason, clean: ev.wasClean })
     }
     ws.onerror = (ev) => {
+      if (!mine()) return
       this.opts.onDiagnostic?.('websocket error', ev)
     }
   }
@@ -172,6 +185,21 @@ export class RemoteConnection implements Connection {
 
   close(): void {
     this.ws?.close()
+  }
+
+  /**
+   * Open a socket again after this one closed: same URL, same handlers, so
+   * everything watching this connection keeps watching. Nothing of the old
+   * socket carries over, here or on the server, which stops the game whose
+   * socket went (ws_handler.py `on_close`): what follows is a login on a
+   * fresh connection. Ignored while a socket is still up or on its way.
+   */
+  reopen(): void {
+    if (!this.closed) return
+    this.closed = false
+    this.open = false
+    this.queue = []
+    this.connect()
   }
 }
 

@@ -9,6 +9,7 @@ import { findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getS
 import { gamedataUrls } from '@orbrun/gamedata'
 import { morgueDirOf } from './whereis'
 import { settingsPanel } from './settings-panel'
+import { Relink, playedElsewhere as otherPlayed } from './relink'
 
 const app = document.getElementById('app')!
 const gamepad = new GamepadInput()
@@ -38,6 +39,65 @@ let retries = 0
 /** the wait before a retry doubles from RETRY_MS up to RETRY_MAX_MS while the server stays out of reach */
 const RETRY_MS = 1000
 const RETRY_MAX_MS = 30_000
+/**
+ * A once-a-second beat that comes this late, on a page that is showing, was
+ * held up by a sleep: a Steam Deck's power button, a laptop's lid. A kiosk
+ * browser never hides the page it shows, so this is the one sign a sleep
+ * leaves there. The socket is then asked whether it lived through it
+ * (`suspect`).
+ */
+const GAP_MS = 5000
+/** a page hidden this long has its socket asked on its return, as after a sleep */
+const AWAY_MS = 5000
+/** how long the socket has to answer (`Session.probe`); a network still coming back after a wake needs a few seconds */
+const PROBE_MS = 6000
+/**
+ * No input for this long, at the command prompt: the game is closed cleanly
+ * (`Relink.pause`), and the next press brings it back in a second or so.
+ * A device put down is often slept, or sleeps on its own, later; a game
+ * closed first is saved and let go at once, where one slept on is held by
+ * the server for up to twenty minutes and made to wait out a stale-process
+ * purge on the way back (relink.ts).
+ */
+const IDLE_MS = 5 * 60_000
+/** the wall clock at the last beat, which a sleep leaves behind */
+let lastBeat = Date.now()
+/** when the page was last hidden */
+let hiddenAt = 0
+/** the wall clock at the player's last key, click or button */
+let lastInputAt = Date.now()
+/**
+ * Getting the game back after its connection went (relink.ts): the game
+ * screen stays up under its veil, and the address bar says what to go back
+ * to. Front-end screens have no game to get back and retry quietly instead
+ * (`scheduleRetry`).
+ */
+const relink = new Relink({
+  now: () => Date.now(),
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
+  hidden: () => document.hidden,
+  online: () => navigator.onLine,
+  connect: () => {
+    if (session) reconnect(session)
+  },
+  open: () => !!session?.conn.open,
+  closed: () => !session || session.closed,
+  resume: () => {
+    const s = session
+    const r = parseRoute()
+    if (!s) return
+    if (r.kind === 'play') play(s, r.gameId)
+    else if (r.kind === 'watch') s.send(cm.watch(r.username))
+  },
+  close: () => session?.close(),
+  forceTerminate: (yes) => session?.send(cm.forceTerminate(yes)),
+  home: () => {
+    const s = session
+    if (s) leaveFor(s)
+    else showHome()
+  },
+})
 document.documentElement.style.setProperty('--ui-scale', String(getSettings().uiScale))
 /** The tab's title as the page loaded, restored once out of a game. */
 const BASE_TITLE = document.title || 'Orbrun'
@@ -163,6 +223,17 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
   intent = i ?? null
   const s = (session = new Session(server, username))
   s.on((e) => {
+    if (e.type === 'open' && relink.resuming && s === session) {
+      const r = parseRoute()
+      if (r.kind === 'watch') relink.ready(false)
+      else if (!s.loggingIn && !s.state.lobby.username) {
+        // a game picked up on a fresh socket with nothing to log in with: a token is used once, and the drop may
+        // have come before the next one arrived. The login form, which the intent then waits on, as a refused
+        // token does
+        intent = resumeIntent()
+        frontEnd().showLogin()
+      }
+    }
     if (e.type === 'open' && intent?.kind === 'watch') {
       // spectating needs no account: go as soon as the socket is up
       s.send(cm.watch(intent.username))
@@ -170,6 +241,9 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
     }
     if (e.type === 'state') {
       const m = e.msg.msg
+      if (m === 'login_success' && relink.resuming && s === session && parseRoute().kind === 'play') relink.ready(playedElsewhere(s))
+      if (m === 'stale_processes' && relink.resuming) relink.stale(Number(e.msg.timeout))
+      if (m === 'force_terminate?' && relink.resuming) relink.force()
       if (m === 'login_success' && intent?.kind === 'play') {
         // the server refuses `play` before login; the token login (or a manual one) just finished
         play(s, intent.gameId)
@@ -197,9 +271,10 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
         if (r.kind === 'watch' || r.kind === 'lobby') showWatchFor(s)
         else showLobbyFor(s)
       }
-      if (m === 'login_fail' && intent?.kind === 'play' && !game) {
-        // a Continue/Play (or a reload) whose token was refused: the login form comes up, as the official page's does
-        // (client.js login_failed), and the intent waits for it
+      if (m === 'login_fail' && relink.resuming) intent = resumeIntent()
+      if (m === 'login_fail' && intent?.kind === 'play') {
+        // a Continue/Play (or a reload, or a game being picked up after a drop) whose token was refused: the login
+        // form comes up, as the official page's does (client.js login_failed), and the intent waits for it
         frontEnd().showLogin()
       } else if (m === 'login_success' || m === 'login_fail') lobby?.refresh()
       if (m === 'set_game_links') {
@@ -208,25 +283,51 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
         lobby?.refresh()
       }
     }
+    if (relink.resuming && s === session && (s.playing || s.watching)) {
+      // back in the game: drawn, or asking the player something on its way in (a trunk save's "Transfer your save
+      // to the latest version?"), which the veil must not sit over. The server's notices on the way in were the
+      // resume's, not the lobby's to show later
+      const drawn = e.type === 'scene' && !!s.gamedata && !s.loading
+      // the same test the loading veil steps aside for (game.ts `loop`)
+      const st = s.state
+      const asks = e.type === 'state' && !!(st.dialog || st.menus.length || st.ui.length || st.textInput)
+      if (drawn || asks) {
+        s.state.lobby.staleProcesses = null
+        s.state.lobby.forceTerminate = false
+        relink.drawn()
+      }
+    }
     if (e.type === 'open') retries = 0
-    // the front end's connection dropped (the network went, the laptop slept, the server restarted): open it again,
-    // waiting longer each time the server does not answer, so Play and the roster come back without a reload
-    if (e.type === 'closed' && !game && !boot && s === session) scheduleRetry(s)
+    // the connection dropped (the network went, the device slept, the server restarted): open it again, waiting
+    // longer each time the server does not answer, so the game, Play and the roster come back without a reload
+    if (e.type === 'closed' && s === session) scheduleRetry(s)
     if (e.type === 'open' || e.type === 'closed') lobby?.refresh()
-    // a drop mid-game keeps the play route, so a refresh rejoins the saved game
-    if (e.type === 'closed' && (game || boot) && s === session) leaveGame()
   })
   return s
 }
 
 /**
- * The warm connection dropped while a front-end screen was up: a fresh one
- * for the same account, with the same intent, after a wait that doubles for
- * each try the server has not answered. Only the chosen account's connection
- * is retried (a logout closes its own and forgets it first, so that one is
- * never reopened); a network back up (`online`) tries at once.
+ * The connection dropped. Under a game, `relink` gets it back. On a
+ * front-end screen, the same connection again, after a wait that doubles for
+ * each try the server has not answered; only the chosen account's is retried
+ * (a logout closes its own and forgets it first, so that one is never
+ * reopened). A network back up tries at once.
  */
 function scheduleRetry(s: Session) {
+  if (game) {
+    // a game the player has already finished is not started over — `play` on a game that ended rolls a new
+    // character — and a drop with nothing in the address bar to go back to has nowhere to resume either
+    if (s.state.phase === 'ended' || !resumeIntent()) {
+      relink.reset()
+      leaveGame()
+    } else relink.dropped()
+    return
+  }
+  if (boot) {
+    // still on the way in: the front end, which retries its own connection
+    leaveGame()
+    return
+  }
   const account = accountOf(s)
   const chosen = getChosenAccount()
   if (!account || !chosen || chosen.serverId !== account.serverId || chosen.username !== account.username) return
@@ -244,29 +345,110 @@ function clearRetry() {
   retry = null
 }
 
-/** Open the connection `s` stood for again, unless something else has taken its place meanwhile. */
+/**
+ * Open the connection `s` stood for again, unless something else has taken
+ * its place meanwhile. The session itself comes back rather than a new one,
+ * so whatever follows it — the game screen, the front end — stays attached
+ * across the drop and picks up where it left off.
+ */
 function reconnect(s: Session) {
-  if (s !== session || game || boot) return
-  const account = accountOf(s)
-  if (!account) return
-  const server = findServer(account.serverId)
-  if (!server) return
-  openSession(server, account.username, intent ?? undefined)
+  if (s !== session) return
+  if (!s.reconnect()) return
   lobby?.refresh()
 }
 
-/** whether a dropped front-end connection will be tried again on its own */
+/**
+ * What a connection made again should do to put the player back where the
+ * drop found them. The address bar is the record, and it stands through a
+ * drop: `#play-<game>` is the saved game (the server stops, and so saves, a
+ * game whose socket goes), `#watch-<who>` the spectate. None on a front-end
+ * screen, which wants no intent.
+ */
+function resumeIntent(): Intent | null {
+  const r = parseRoute()
+  if (r.kind === 'play') return { kind: 'play', gameId: r.gameId }
+  if (r.kind === 'watch') return { kind: 'watch', username: r.username }
+  return null
+}
+
+/** Whether the game the address bar names is being played somewhere else (relink.ts `playedElsewhere`). */
+function playedElsewhere(s: Session): boolean {
+  const r = parseRoute()
+  const me = s.state.lobby.username
+  if (r.kind !== 'play' || !me) return false
+  return otherPlayed(s.state.lobby.entries.values(), me, r.gameId, s.lastGameAt, Date.now())
+}
+
+/**
+ * The socket may not have lived through what just happened: a sleep, a tab
+ * away, a network that changed. The browser can take many minutes to notice
+ * one that is gone, so it is asked (`Session.probe`); an answer keeps it, and
+ * nothing is lost, while silence closes it, and the close gets the game back
+ * (`relink`) or the front end's connection (`scheduleRetry`). Under a game
+ * its input waits for the answer, so no key goes into a socket that is gone.
+ * `slept`: the page itself was stopped (a late beat), not merely looked away from.
+ */
+function suspect(slept: boolean) {
+  const s = session
+  if (!s || s.closed || !s.conn.open) return
+  // a try already under way is its own check; a pause has nothing open to ask
+  if (relink.busy) return
+  if (!s.state.lobby.username) {
+    // with no login there is nothing to ask with. A front end can wait for its own close; a spectate after a sleep
+    // is redone, which is cheap and holds nobody's game, and after anything less is left be
+    if (game && slept) s.close()
+    return
+  }
+  const r = parseRoute()
+  const gameId = r.kind === 'play' ? r.gameId : (s.state.lobby.games[0]?.id ?? getLast()?.gameId ?? null)
+  if (game) relink.checking()
+  void s.probe(gameId, PROBE_MS).then((ok) => {
+    if (s !== session) return
+    if (game) relink.checked(ok)
+    if (!ok && !s.closed) s.close()
+  })
+}
+
+/**
+ * Every second: a beat that comes late was held up by a sleep (`GAP_MS`);
+ * and a player who has left the game at its prompt long enough has it
+ * closed cleanly (`IDLE_MS`). Timers are slowed in a hidden page, so a late
+ * beat there says nothing.
+ */
+setInterval(() => {
+  const now = Date.now()
+  const late = now - lastBeat >= GAP_MS
+  lastBeat = now
+  if (late && !document.hidden) suspect(true)
+  const s = session
+  if (game && s && s.playing && !s.watching && s.conn.open && !relink.busy && now - lastInputAt >= IDLE_MS && game.atRest()) relink.pause()
+}, 1000)
+
+window.addEventListener('online', () => {
+  // the network is back: a try waiting on it goes now; a socket that spanned the outage is asked
+  if (relink.busy) relink.wake()
+  else if (retry && session) {
+    clearRetry()
+    reconnect(session)
+  } else suspect(false)
+})
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    hiddenAt = Date.now()
+    return
+  }
+  const away = hiddenAt ? Date.now() - hiddenAt : 0
+  hiddenAt = 0
+  lastBeat = Date.now()
+  if (relink.busy) relink.wake()
+  else if (away >= AWAY_MS) suspect(false)
+})
+
+/** whether a dropped connection will be tried again on its own */
 function retrying(): boolean {
   return retry !== null
 }
-
-window.addEventListener('online', () => {
-  // the network is back: no point waiting out the rest of the backoff
-  if (retry && session) {
-    clearRetry()
-    reconnect(session)
-  }
-})
 
 /**
  * Connect as the chosen account while the front end is up, so its token login
@@ -308,6 +490,8 @@ function frontEnd(): FrontEnd {
   hideBoot()
   game?.destroy()
   game = null
+  // no game left to get back
+  relink.reset()
   if (!lobby) {
     lobby = new FrontEnd(app, {
       padConnected: () => gamepad.connected,
@@ -441,14 +625,23 @@ function makeGame(GameScreen: typeof import('./game').GameScreen, s: Session): G
         applyRoute({ kind: 'lobby', account })
         return
       }
-      // Leave game: drop the connection; a save is not needed (crawl keeps the game across a dropped socket). The
-      // account's lobby comes up and its token logs in again on the fresh connection, so Continue is there at once.
-      if (session === s) session = null
-      s.close()
-      if (account) frontEnd().connectTo(account)
-      else showHome()
+      leaveFor(s)
     },
+    relink,
   })
+}
+
+/**
+ * Leave the game `s` is for: drop the connection; a save is not needed (crawl
+ * keeps the game across a dropped socket). The account's lobby comes up and
+ * its token logs in again on a fresh connection, so Continue is there at once.
+ */
+function leaveFor(s: Session) {
+  const account = accountOf(s)
+  if (session === s) session = null
+  s.close()
+  if (account) frontEnd().connectTo(account)
+  else showHome()
 }
 
 // keyboard routing
@@ -457,9 +650,13 @@ function makeGame(GameScreen: typeof import('./game').GameScreen, s: Session): G
 // game's key handlers see the key.
 installPadKeys(gamepad)
 
-window.addEventListener('pointerdown', () => { lastInput = 'pointer' }, true)
+window.addEventListener('pointerdown', () => {
+  lastInput = 'pointer'
+  lastInputAt = Date.now()
+}, true)
 window.addEventListener('keydown', (ev) => {
   lastInput = 'keyboard'
+  lastInputAt = Date.now()
   if (lobby && !game) {
     if (lobby.key(ev)) ev.stopImmediatePropagation()
   }
@@ -484,7 +681,10 @@ window.addEventListener('gamepadconnected', () => {
   pollFrame = requestAnimationFrame(tick)
 })
 gamepad.on((e) => {
-  if (isPadActivity(e)) lastInput = 'pad'
+  if (isPadActivity(e)) {
+    lastInput = 'pad'
+    lastInputAt = Date.now()
+  }
   if (game) game.pad(e)
   else lobby?.pad(e)
 })

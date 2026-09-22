@@ -24,7 +24,7 @@ function harness() {
   renderer.setScene(scene, 1)
   const session = { state, scene, flushScene: vi.fn(() => false) }
   const screen = Object.assign(Object.create(GameScreen.prototype), {
-    session, cam, renderer, lastFrame: 1000,
+    session, cam, renderer, lastFrame: 1000, hooks: {},
     awake: () => false, wake: vi.fn(), idleTick: vi.fn(), sceneTime: undefined,
   }) as {
     loop(now: number): void

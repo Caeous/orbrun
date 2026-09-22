@@ -2190,6 +2190,66 @@ canvas.minimap.hidden {
   z-index: 40;
 }
 
+/* getting the game back after its connection went (game.ts drawRelink): over the
+   game as it last stood, and over the loading veil, until the game is drawn again */
+.relink {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+}
+/* a check of the connection is over in tens of milliseconds when the socket is fine:
+   the veil only shows if it is not */
+.relink.soft {
+  animation: relink-in 0.2s 0.6s both;
+}
+@keyframes relink-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.relink-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: min(36rem, calc(100% - 2rem));
+  text-align: center;
+}
+.relink-title {
+  font-size: 1.3rem;
+}
+.relink-detail {
+  opacity: 0.8;
+}
+.relink-actions {
+  display: flex;
+  gap: 1.2rem;
+  margin-top: 0.4rem;
+}
+.relink-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.relink-choice svg {
+  width: 1.4em;
+  height: 1.4em;
+}
+
 /* something of the server's is up under the veil (the launcher's save-transfer
    question): the veil drops below the overlay stack and stops taking clicks,
    and its line steps aside, out of the dialog's way (game.ts loop) */

@@ -305,6 +305,10 @@ export class NetProfile {
     this.open = false
   }
 
+  opened() {
+    this.open = true
+  }
+
   reset() {
     this.rtts = []
     this.ttds = []
@@ -893,6 +897,8 @@ export class PerfOverlay {
     const off = session.on((e) => {
       if (e.type === 'state') this.net.applied()
       if (e.type === 'closed') this.net.closed()
+      // the same session, back on a fresh socket after a drop
+      if (e.type === 'open') this.net.opened()
     })
     return () => {
       conn.onTraffic = null

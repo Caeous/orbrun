@@ -42,7 +42,7 @@ describe('RemoteConnection.send', () => {
     expect(ws.sent).toHaveLength(3)
   })
 
-  it('keeps nothing once the socket has closed: this connection never reconnects, so it could never go out', () => {
+  it('keeps nothing once the socket has closed: there is no socket left for it to go out on', () => {
     const diag = vi.fn()
     const c = make(diag)
     const ws = FakeSocket.last!
@@ -58,5 +58,50 @@ describe('RemoteConnection.send', () => {
     expect((c as unknown as { queue: string[] }).queue).toEqual([])
     expect(ws.sent).toEqual([])
     expect(diag).toHaveBeenCalledWith('message dropped: the connection is closed', 'go_lobby')
+  })
+})
+
+describe('RemoteConnection.reopen', () => {
+  it('makes another socket for the same handlers, and stops listening to the old one', () => {
+    const c = make()
+    const opened = vi.fn()
+    const closed = vi.fn()
+    const msgs: string[] = []
+    c.onOpen(opened)
+    c.onClose(closed)
+    c.onMessage((m) => msgs.push(m.msg))
+    const first = FakeSocket.last!
+    first.opens()
+    first.close()
+    expect(closed).toHaveBeenCalledTimes(1)
+
+    c.reopen()
+    expect(c.closed).toBe(false)
+    const second = FakeSocket.last!
+    expect(second).not.toBe(first)
+    // sent while it connects, out once it is up, as on the first socket
+    c.send({ msg: 'go_lobby' })
+    second.opens()
+    expect(opened).toHaveBeenCalledTimes(2)
+    expect(second.sent.map((s) => JSON.parse(s).msg)).toEqual(['go_lobby'])
+    second.onmessage?.({ data: '{"msg":"ping"}' })
+    expect(second.sent.map((s) => JSON.parse(s).msg)).toEqual(['go_lobby', 'pong'])
+
+    // the socket left behind: whatever it says now is nobody's
+    first.onmessage?.({ data: '{"msg":"go_lobby"}' })
+    first.close()
+    expect(msgs).toEqual([])
+    expect(closed).toHaveBeenCalledTimes(1)
+    expect(c.open).toBe(true)
+  })
+
+  it('does nothing while a socket is up or on its way', () => {
+    const c = make()
+    const first = FakeSocket.last!
+    c.reopen()
+    expect(FakeSocket.last).toBe(first)
+    first.opens()
+    c.reopen()
+    expect(FakeSocket.last).toBe(first)
   })
 })
