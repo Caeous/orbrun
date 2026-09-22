@@ -156,60 +156,67 @@ export function ctrl(letter: string): number {
 // ---------------------------------------------------------------------------
 // Client messages
 
+/**
+ * The official client serializes through `comm.js send_message`, which sets
+ * `data["msg"] = msg` *after* the caller's fields, so `msg` is the last key
+ * on the wire. Only `key` and byte `input` escape it: client.js hand-builds
+ * those two as strings with `msg` first. The order carries no meaning to any
+ * parser, but it is what the server is sent, so it is what these build.
+ */
 export const cm = {
-  login: (username: string, password: string): ClientMessage => ({ msg: 'login', username, password }),
-  tokenLogin: (cookie: string): ClientMessage => ({ msg: 'token_login', cookie }),
+  login: (username: string, password: string): ClientMessage => ({ username, password, msg: 'login' }),
+  tokenLogin: (cookie: string): ClientMessage => ({ cookie, msg: 'token_login' }),
   setLoginCookie: (): ClientMessage => ({ msg: 'set_login_cookie' }),
-  forgetLoginCookie: (cookie: string): ClientMessage => ({ msg: 'forget_login_cookie', cookie }),
+  forgetLoginCookie: (cookie: string): ClientMessage => ({ cookie, msg: 'forget_login_cookie' }),
   register: (username: string, password: string, email: string): ClientMessage => ({
-    msg: 'register',
     username,
     password,
     email,
+    msg: 'register',
   }),
-  play: (gameId: string): ClientMessage => ({ msg: 'play', game_id: gameId }),
-  watch: (username: string): ClientMessage => ({ msg: 'watch', username }),
+  play: (gameId: string): ClientMessage => ({ game_id: gameId, msg: 'play' }),
+  watch: (username: string): ClientMessage => ({ username, msg: 'watch' }),
   goLobby: (): ClientMessage => ({ msg: 'go_lobby' }),
-  forceTerminate: (answer: boolean): ClientMessage => ({ msg: 'force_terminate', answer }),
-  chat: (text: string): ClientMessage => ({ msg: 'chat_msg', text }),
+  forceTerminate: (answer: boolean): ClientMessage => ({ answer, msg: 'force_terminate' }),
+  chat: (text: string): ClientMessage => ({ text, msg: 'chat_msg' }),
   pong: (): ClientMessage => ({ msg: 'pong' }),
   /** Lobby: ask for the rc file of a game (answered by `rcfile_contents`), and save it back. */
-  getRc: (gameId: string): ClientMessage => ({ msg: 'get_rc', game_id: gameId }),
-  setRc: (gameId: string, contents: string): ClientMessage => ({ msg: 'set_rc', game_id: gameId, contents }),
+  getRc: (gameId: string): ClientMessage => ({ game_id: gameId, msg: 'get_rc' }),
+  setRc: (gameId: string, contents: string): ClientMessage => ({ game_id: gameId, contents, msg: 'set_rc' }),
   /** Any key while the `stale_processes` notice shows: keep the stale games alive. */
   stopStaleProcessPurge: (): ClientMessage => ({ msg: 'stop_stale_process_purge' }),
   /** Admin panel: a server-wide announcement. */
-  adminAnnounce: (text: string): ClientMessage => ({ msg: 'admin_announce', text }),
+  adminAnnounce: (text: string): ClientMessage => ({ text, msg: 'admin_announce' }),
   /** Consumables action panel (action_panel.js): use or describe the item in `slot`, or open the game menu. */
-  invItemAction: (slot: number): ClientMessage => ({ msg: 'inv_item_action', slot }),
-  invItemDescribe: (slot: number): ClientMessage => ({ msg: 'inv_item_describe', slot }),
+  invItemAction: (slot: number): ClientMessage => ({ slot, msg: 'inv_item_action' }),
+  invItemDescribe: (slot: number): ClientMessage => ({ slot, msg: 'inv_item_describe' }),
   mainMenuAction: (): ClientMessage => ({ msg: 'main_menu_action' }),
   /** options.js send_option: an rc line the client changed (the action panel's own settings). */
-  setOption: (name: string, value: unknown): ClientMessage => ({ msg: 'set_option', line: `${name} = ${value}` }),
+  setOption: (name: string, value: unknown): ClientMessage => ({ line: `${name} = ${value}`, msg: 'set_option' }),
   /** Printable text, written to the input buffer atomically. */
-  input: (text: string): ClientMessage => ({ msg: 'input', text }),
-  /** Raw bytes into the input buffer (used for `{` and alt sequences). */
+  input: (text: string): ClientMessage => ({ text, msg: 'input' }),
+  /** Raw bytes into the input buffer (used for `{` and alt sequences); client.js `send_bytes`, so `msg` leads. */
   inputBytes: (data: number[]): ClientMessage => ({ msg: 'input', data }),
-  /** Control characters and CK_* codes. */
+  /** Control characters and CK_* codes; client.js `send_keycode`, so `msg` leads. */
   key: (keycode: number): ClientMessage => ({ msg: 'key', keycode }),
   /** Text-with-terminator used by line readers and menu filters. */
-  textInput: (text: string): ClientMessage => ({ msg: 'text_input', text }),
-  clickCell: (x: number, y: number, button: number): ClientMessage => ({ msg: 'click_cell', x, y, button }),
+  textInput: (text: string): ClientMessage => ({ text, msg: 'text_input' }),
+  clickCell: (x: number, y: number, button: number): ClientMessage => ({ x, y, button, msg: 'click_cell' }),
   /** Pointer over a cell while targeting: the server moves the targeting cursor there. */
-  targetCursor: (x: number, y: number): ClientMessage => ({ msg: 'target_cursor', x, y }),
-  menuHover: (hover: number, mouse = false): ClientMessage => ({ msg: 'menu_hover', hover, mouse }),
+  targetCursor: (x: number, y: number): ClientMessage => ({ x, y, msg: 'target_cursor' }),
+  menuHover: (hover: number, mouse = false): ClientMessage => ({ hover, mouse, msg: 'menu_hover' }),
   menuScroll: (first: number, last: number, hover: number): ClientMessage => ({
-    msg: 'menu_scroll',
     first,
     last,
     hover,
+    msg: 'menu_scroll',
   }),
-  formattedScrollerScroll: (scroll: number): ClientMessage => ({ msg: 'formatted_scroller_scroll', scroll }),
-  uiStateSync: (state: Record<string, unknown>): ClientMessage => ({ msg: 'ui_state_sync', ...state }),
+  formattedScrollerScroll: (scroll: number): ClientMessage => ({ scroll, msg: 'formatted_scroller_scroll' }),
+  uiStateSync: (state: Record<string, unknown>): ClientMessage => ({ ...state, msg: 'ui_state_sync' }),
   outerMenuFocus: (hotkey: number, menuId: string): ClientMessage => ({
-    msg: 'outer_menu_focus',
     hotkey,
     menu_id: menuId,
+    msg: 'outer_menu_focus',
   }),
 }
 

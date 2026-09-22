@@ -3,6 +3,21 @@ import type { ClientMessage, ServerMessage } from './protocol.js'
 export type Unsubscribe = () => void
 export type CloseReason = { code: number; reason: string; clean: boolean }
 
+/**
+ * A frame on the wire, for a profiler in the app (perf.ts there). The
+ * connection is the only layer that sees bytes and batches: above it a
+ * message has already been unpacked from whatever arrived with it, and a
+ * burst of twenty in one frame is indistinguishable from twenty frames.
+ */
+export interface TrafficEvent {
+  dir: 'in' | 'out'
+  bytes: number
+  /** messages the frame unpacked to; 1 going out */
+  msgs: number
+  /** the client message's name, going out */
+  name?: string
+}
+
 export interface Connection {
   readonly kind: 'remote' | 'local-native' | 'local-wasm'
   /** Where tileinfo/enums/atlases are served from, without the version segment. */
@@ -13,6 +28,8 @@ export interface Connection {
   onOpen(handler: () => void): Unsubscribe
   close(): void
   readonly open: boolean
+  /** Set to watch the wire; nothing is measured while it is unset. */
+  onTraffic?: ((e: TrafficEvent) => void) | null
 }
 
 export interface WebSocketLike {
@@ -53,6 +70,8 @@ export class RemoteConnection implements Connection {
   open = false
   /** The socket has closed for good: this class never reconnects, so nothing sent from now on can go out. */
   closed = false
+  /** Set by a profiler to watch the wire (perf.ts); unset, nothing is measured. */
+  onTraffic: ((e: TrafficEvent) => void) | null = null
   /** What was sent before the socket opened, to go out in order once it has. Only while connecting: a closed socket keeps nothing. */
   private queue: string[] = []
 
@@ -81,7 +100,8 @@ export class RemoteConnection implements Connection {
         this.opts.onDiagnostic?.('binary frame received; compression is not supported', ev.data)
         return
       }
-      this.dispatchText(text)
+      // the bytes as they arrived, not as they decode: a UTF-8 frame is longer than its characters
+      this.dispatchText(text, ev.data instanceof ArrayBuffer ? ev.data.byteLength : text.length)
     }
     ws.onclose = (ev) => {
       this.open = false
@@ -95,7 +115,7 @@ export class RemoteConnection implements Connection {
     }
   }
 
-  private dispatchText(text: string) {
+  private dispatchText(text: string, bytes: number) {
     if (!text.startsWith('{')) {
       this.opts.onDiagnostic?.('non-JSON message ignored', text.slice(0, 200))
       return
@@ -108,6 +128,8 @@ export class RemoteConnection implements Connection {
       return
     }
     const msgs: ServerMessage[] = Array.isArray(obj.msgs) ? obj.msgs : [obj]
+    // before the handlers run: what arrived is the network's, what they then cost is the frame's
+    this.onTraffic?.({ dir: 'in', bytes, msgs: msgs.length })
     for (const m of msgs) this.dispatch(m)
   }
 
@@ -127,6 +149,7 @@ export class RemoteConnection implements Connection {
 
   send(msg: ClientMessage): void {
     const s = JSON.stringify(msg)
+    this.onTraffic?.({ dir: 'out', bytes: s.length, msgs: 1, name: msg.msg })
     if (this.ws && this.open && this.ws.readyState === 1) this.ws.send(s)
     else if (this.closed) this.opts.onDiagnostic?.('message dropped: the connection is closed', msg.msg)
     else this.queue.push(s)

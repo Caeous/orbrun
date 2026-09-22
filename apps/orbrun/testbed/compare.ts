@@ -199,13 +199,25 @@ function frame(p: Pose) {
   return { ms: performance.now() - t0, draws }
 }
 
+/**
+ * Frames a pose may take to settle. A pose that rebuilt the level needs a
+ * second frame, and one that stood a crowd needs as many as its budget takes
+ * (`CROWD_BUDGET_MS`); this is the cap that keeps a renderer stuck reporting
+ * work from hanging the capture.
+ */
+const SETTLE_MAX = 240
+
 async function capture(): Promise<string[]> {
   fit()
   const out: string[] = []
   for (const p of POSES) {
+    // Every pose is captured settled, as the game would show it once it has
+    // stopped working: at least twice, since a pose that rebuilt the level
+    // reads right only on the second, and then for as long as the renderer
+    // says it still has work — the crowd fills in over several frames.
     frame(p)
-    // twice: a pose that rebuilt the level (third person) is captured settled, as the game would show it
     frame(p)
+    for (let i = 0; i < SETTLE_MAX && r.animating; i++) frame(p)
     out.push(canvas.toDataURL('image/png'))
   }
   return out

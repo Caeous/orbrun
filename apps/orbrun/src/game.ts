@@ -22,7 +22,7 @@ import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './
 import { gamepadHints, type PadHintEvidence } from './gamepad-hints'
 import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INSET, type Settings } from './servers'
 import { type SettingGroup } from './settings-rows'
-import { PerfOverlay } from './perf'
+import { PerfOverlay, type LogContext } from './perf'
 
 /** The most drawn pixels per CSS pixel the game view gets (Part IV of rendering-3d.md): the display's density, capped here. */
 const VIEW_MAX_DPR = 1
@@ -222,9 +222,10 @@ export class GameScreen {
     this.root = h('div', { class: 'screen game' })
     host.append(this.root)
     this.root.append(this.canvas, this.loading)
-    this.perf = new PerfOverlay(this.root)
     const st = hooks.settings()
     this.is3d = st.renderer === '3d'
+    this.perf = new PerfOverlay(this.root, () => this.perfContext())
+    this.unsub.push(this.perf.watch(session))
     this.grid = new GridHost(this.root, this.textPx())
     this.grid.onfit = () => this.relayout(true)
     this.renderer = this.makeRenderer()
@@ -690,11 +691,36 @@ export class GameScreen {
       if (r3d) r3d.mark = perf ? (n) => perf.mark(n) : null
       this.renderer.render(now / 1000)
       perf?.mark('render')
+      // a frame that drew: the key whose answer it put on the screen stops waiting (perf.ts `drew`)
+      if (perf) this.perf.net.drew()
       // edge pips follow the frame just drawn: only a 3D frame has a lens to be out of
       this.hud.renderPips(this.session.scene, st, this.session.gamedata, r3d ? r3d.projector() : null, nearby === 'pips' ? 'all' : 'off')
       perf?.mark('pips')
     }
     perf?.end()
+  }
+
+  /**
+   * What was on the screen when a perf sample was taken (perf.ts
+   * `LogContext`). A timing says what was slow; this says what it was slow
+   * on, and the renderer's own counters say how much of it was work the
+   * frame chose to do — a `level` of 28 ms with the chunk counter stepping
+   * once is the chunk rebuild working, and the same 28 ms with it stepping
+   * forty times is not.
+   */
+  private perfContext(): LogContext {
+    // the log's header is written while this screen is still being built, before the first frame
+    // derived either of them: nothing here may assume the loop has run
+    const ctx = this.ctx as Context | undefined
+    const r3d = this.renderer instanceof Render3d ? this.renderer : null
+    return {
+      mode: ctx?.mode,
+      place: this.session.state.player.place ? `${this.session.state.player.place}:${this.session.state.player.depth}` : undefined,
+      cells: this.session.scene.cells.size,
+      crowd: this.session.scene.billboards.length,
+      counters: r3d ? { ...r3d.stats } : undefined,
+      loading: this.session.loading,
+    }
   }
 
   /** One timestamp for the camera's movement and the sprites rendered this frame. */
@@ -1525,6 +1551,8 @@ export class GameScreen {
     if (!this.popupUp()) return
     const t = ev.target instanceof Element ? ev.target : null
     if (t && this.chat.root.contains(t)) return
+    // the perf pane takes its own taps (it saves the log); a tap on it is not a tap outside the popup
+    if (t?.closest('.perf')) return
     const inside = !!t?.closest('.popup')
     if (inside && ev.button !== 2) return
     ev.preventDefault()

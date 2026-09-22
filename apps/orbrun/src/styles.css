@@ -1524,8 +1524,35 @@ img.room-poster.up {
   font: 11px/1.3 monospace;
   color: #0f0;
   background: rgba(0, 0, 0, 0.6);
-  pointer-events: none;
+  /* the pane takes a tap, and is the only way to save the log on a device with no console */
+  pointer-events: auto;
+  cursor: pointer;
   white-space: pre;
+}
+
+/* the line that says the pane can be tapped, and says what happened when it was */
+.game pre.perf .hint {
+  color: #8a8;
+}
+.game pre.perf .hint.saved {
+  color: #0f0;
+}
+
+/* the verdict line: the one thing to read from across the room */
+.game pre.perf .verdict {
+  font-weight: bold;
+}
+.game pre.perf .verdict.good {
+  color: #6f6;
+}
+.game pre.perf .verdict.fair {
+  color: #fd6;
+}
+.game pre.perf .verdict.bad {
+  color: #f66;
+}
+.game pre.perf .verdict.idle {
+  color: #999;
 }
 
 .game canvas.view {

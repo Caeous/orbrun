@@ -163,6 +163,38 @@ const LEVEL_CHUNK = 16
  * changed dirties every chunk within this much of it.
  */
 const LEVEL_REACH = 3
+/**
+ * How long one frame may spend standing new billboards (`syncBillboards`),
+ * in milliseconds. Entering a level stands the whole crowd at once — 84
+ * monsters on Lair:2 cost 183ms of a 308ms frame (docs/front-end-perf.md) —
+ * and a stall that long on the frame the level first draws is the one the
+ * player sees. Past this much the rest is left for the next frame, nearest
+ * cells first, so the crowd fills in over a few frames instead of holding
+ * the first one. Small enough to leave room for the level and the draw
+ * inside a 120Hz frame; the bake that follows is per chunk (crowd.ts) and
+ * only touches the chunks the frame's own holders landed in.
+ */
+const CROWD_BUDGET_MS = 4
+/**
+ * Builds below this many are never sliced: the common sync stands one or two
+ * sprites for a monster that stepped, where reading the clock and ordering
+ * the work would cost more than the work does.
+ */
+const CROWD_SLICE_MIN = 16
+/**
+ * How long one frame may spend building level chunks (`rebuildLevel`), in
+ * milliseconds. A step that reveals a few cells builds one or two chunks and
+ * never reaches this; arriving on a level builds every one of them, which is
+ * 62 ms on Lair:3 (docs/front-end-perf.md) and the frame the player waits on.
+ * Past this the rest are left for the next frame, nearest the player first,
+ * so the ground underfoot is there before the far corners are.
+ */
+const LEVEL_BUDGET_MS = 4
+/**
+ * Chunks below this many are never sliced: a step's own rebuild is one or two
+ * of them, where reading the clock would cost more than the build does.
+ */
+const LEVEL_SLICE_MIN = 4
 // Ghost pass (rendering-3d.md II.4): anything the 2D client would show on the
 // map but the geometry hides shows through as its own sprite, dimmed and
 // tinted by what it is, so the 3D view never hides what the server reports.
@@ -538,6 +570,16 @@ export interface RenderStats extends CrowdStats {
   levelBuilds: number
   /** Chunks of level geometry built (`buildChunk`): what a level build really costs. */
   levelChunkBuilds: number
+  /**
+   * Milliseconds inside `rebuildLevel`, split three ways: what it works out
+   * before building (`framedDoors` and the cell diff), the chunk loop itself,
+   * and the fixtures pass that follows. The `level` section of the readout is
+   * their sum; which of the three it is decides what is worth budgeting, and
+   * the compare bed's room is too unlike a real floor to say.
+   */
+  lvlSetMs: number
+  lvlChunkMs: number
+  lvlFixMs: number
   /** Billboard syncs against a scene: the diff itself, whatever it found. */
   crowdSyncs: number
   /** Sprites built (a sprite and its ghost count once). */
@@ -844,6 +886,13 @@ export class Render3d implements MapRenderer {
   private builtOccupied = new Set<CellKey>()
   /** The level's meshes by chunk (`LEVEL_CHUNK`), in the order `buildChunk` made them. */
   private levelChunks = new Map<number, THREE.Mesh[]>()
+  /**
+   * Chunks a build ran out of budget for (`LEVEL_BUDGET_MS`), nearest the
+   * player first, with the build they belong to. The frames that follow work
+   * through them (`buildPendingChunks`); a fresh build throws the list away,
+   * since its own chunk set supersedes it.
+   */
+  private levelPending: { chunks: number[]; ctx: LevelBuild } | null = null
   /** The cells the chunks were built from, for the next build's diff, and the range they cover. */
   private builtCells = new Map<CellKey, SceneCell>()
   private builtRange: Rect | null = null
@@ -919,7 +968,7 @@ export class Render3d implements MapRenderer {
   /** The holders wearing the selected shells (`syncSelection`), and the cell they stand on. */
   private selected: THREE.Object3D[] = []
   private selectionDirty = false
-  readonly stats: RenderStats = { levelBuilds: 0, levelChunkBuilds: 0, crowdSyncs: 0, spriteBuilds: 0, spriteDrops: 0, selectionBuilds: 0, fieldUpdates: 0, chunkBakes: 0, chunkAllocs: 0, bakedVertices: 0, keptVertices: 0 }
+  readonly stats: RenderStats = { levelBuilds: 0, levelChunkBuilds: 0, lvlSetMs: 0, lvlChunkMs: 0, lvlFixMs: 0, crowdSyncs: 0, spriteBuilds: 0, spriteDrops: 0, selectionBuilds: 0, fieldUpdates: 0, chunkBakes: 0, chunkAllocs: 0, bakedVertices: 0, keptVertices: 0 }
   private raycaster = new THREE.Raycaster()
   private pickMeshes: THREE.Mesh[] = []
   private voidMat: THREE.MeshBasicMaterial
@@ -1471,7 +1520,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
   }
   /** True while the attack lift is running, so the host keeps rendering frames. */
   get animating(): boolean {
-    return !Number.isNaN(this.vmLift) || this.movers.active
+    // a crowd or a level still filling in (`syncBillboards`, `buildPendingChunks`) needs the frames to finish on
+    return !Number.isNaN(this.vmLift) || this.movers.active || this.crowdDirty || !!this.levelPending
   }
   resize(width: number, height: number, dpr: number): void {
     this.width = Math.max(1, width)
@@ -1694,7 +1744,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
    * every step is the walk's constant hitch (docs/front-end-perf.md). New
    * tiles, new options, a new tint, lid or sky build every chunk.
    */
-  private rebuildLevel(scene: Scene) {
+  private rebuildLevel(scene: Scene, budgetMs = Infinity) {
+    const t0 = nowSeconds() * 1000
     this.stats.levelBuilds++
     const tiles = this.tiles
     if (!tiles) {
@@ -1793,9 +1844,28 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       for (const r of rectMinus(range, this.builtRange!)) markRect(r)
       for (const r of rectMinus(this.builtRange!, range)) markRect(r)
     }
-    for (const ck of chunks) this.buildChunk(ck, ctx)
-    this.pickMeshes = []
-    for (const meshes of this.levelChunks.values()) for (const m of meshes) if (m.userData.pick) this.pickMeshes.push(m)
+    this.stats.lvlSetMs += nowSeconds() * 1000 - t0
+    // A step's rebuild is a chunk or two and goes out whole. A whole level is
+    // every chunk at once, which is the frame the player waits on arriving,
+    // so it goes out nearest first and stops at the budget; what is left is
+    // built by the frames after this one, and `animating` keeps them coming.
+    const order = [...chunks]
+    if (order.length > LEVEL_SLICE_MIN) {
+      const pcx = scene.player.x / LEVEL_CHUNK
+      const pcz = scene.player.y / LEVEL_CHUNK
+      const near = new Map<number, number>()
+      for (const ck of order) {
+        const { x, y } = keyToXY(ck as CellKey)
+        near.set(ck, (x - pcx) * (x - pcx) + (y - pcz) * (y - pcz))
+      }
+      order.sort((a, b) => near.get(a)! - near.get(b)!)
+    }
+    const tc = nowSeconds() * 1000
+    const left = this.buildChunks(order, ctx, tc, budgetMs)
+    this.stats.lvlChunkMs += nowSeconds() * 1000 - tc
+    this.levelPending = left.length ? { chunks: left, ctx } : null
+    this.refreshPickMeshes()
+    const tf = nowSeconds() * 1000
     if (full) {
       this.builtCells.clear()
       for (const [k, cell] of scene.cells) this.builtCells.set(k, cell)
@@ -1848,6 +1918,46 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     // every chunk is baked again, its holders taken back to front from where the eye stands at this
     // rebuild, as they always were; a holder whose slot is unchanged costs the bake nothing (crowd.ts `write`)
     this.levelCrowd.invalidate()
+    this.stats.lvlFixMs += nowSeconds() * 1000 - tf
+  }
+
+  /**
+   * Build chunks off `order` until the budget is spent, and give back the
+   * ones left. Always builds the first, however long it takes, so a frame
+   * never comes away having done nothing. Under `LEVEL_SLICE_MIN`, or with
+   * no budget, the clock is never read and every chunk goes out: a step's
+   * own rebuild is a chunk or two, and a caller that asked for a level
+   * (`rebuildLevel` with no budget, as the tests drive it) gets all of it.
+   */
+  private buildChunks(order: number[], ctx: LevelBuild, t0: number, budgetMs: number): number[] {
+    const slice = Number.isFinite(budgetMs) && order.length > LEVEL_SLICE_MIN
+    for (let i = 0; i < order.length; i++) {
+      if (slice && i > 0 && nowSeconds() * 1000 - t0 > budgetMs) return order.slice(i)
+      this.buildChunk(order[i], ctx)
+    }
+    return []
+  }
+
+  /** The pick meshes of every chunk standing, in chunk order. */
+  private refreshPickMeshes() {
+    this.pickMeshes = []
+    for (const meshes of this.levelChunks.values()) for (const m of meshes) if (m.userData.pick) this.pickMeshes.push(m)
+  }
+
+  /**
+   * Carry on with the chunks a build ran out of budget for. The fixtures and
+   * the cell bookkeeping were all done by the build itself, so this is the
+   * geometry alone; the chunks it stands dirty themselves for the bake that
+   * follows (crowd.ts `add`).
+   */
+  private buildPendingChunks() {
+    const p = this.levelPending
+    if (!p) return
+    const t = nowSeconds() * 1000
+    const left = this.buildChunks(p.chunks, p.ctx, t, LEVEL_BUDGET_MS)
+    this.stats.lvlChunkMs += nowSeconds() * 1000 - t
+    this.levelPending = left.length ? { chunks: left, ctx: p.ctx } : null
+    this.refreshPickMeshes()
   }
 
   /**
@@ -2144,6 +2254,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
 
   /** Every chunk down and what they were built from forgotten: the next build is a whole one. */
   private clearLevel() {
+    // whatever was left to build belonged to the level coming down
+    this.levelPending = null
     for (const ck of [...this.levelChunks.keys()]) this.dropChunk(ck)
     this.pickMeshes = []
     this.builtCells.clear()
@@ -2837,8 +2949,32 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       this.records.delete(key)
       changed = true
     }
-    for (const [key, spec] of wanted) {
-      if (this.records.has(key)) continue
+    const pending: string[] = []
+    for (const key of wanted.keys()) if (!this.records.has(key)) pending.push(key)
+    // A whole crowd at once is the stall entering a level; a handful is not
+    // worth the clock. Over the threshold the nearest sprites are stood
+    // first, so what the player is looking at is what fills in first.
+    const slice = pending.length > CROWD_SLICE_MIN
+    if (slice) {
+      const px = scene.player.x
+      const py = scene.player.y
+      const near = new Map<string, number>()
+      for (const key of pending) {
+        const b = wanted.get(key)!.b
+        near.set(key, (b.x - px) * (b.x - px) + (b.y - py) * (b.y - py))
+      }
+      pending.sort((a, b) => near.get(a)! - near.get(b)!)
+    }
+    const t0 = slice ? nowSeconds() * 1000 : 0
+    for (let i = 0; i < pending.length; i++) {
+      // after the first, so a frame always stands at least one however long it takes
+      if (slice && i > 0 && nowSeconds() * 1000 - t0 > CROWD_BUDGET_MS) {
+        // the rest next frame: `animating` keeps the host drawing until they are all up
+        this.crowdDirty = true
+        break
+      }
+      const key = pending[i]
+      const spec = wanted.get(key)!
       const rec = this.buildRecord(scene, key, spec.b, spec.cell, spec.shade, spec.ghostKind)
       if (rec) this.records.set(key, rec)
       changed = true
@@ -3109,6 +3245,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       const landed = this.movers.landed(now)
       if (landed.length) this.dropMoved(landed)
     }
+    /** This frame started a level build, so it has spent its budget already. */
+    let builtLevel = false
     if (scene.revision !== this.builtRevision) {
       this.builtRevision = scene.revision
       const bg = scene.level.sky === 'open' ? 0x0b1220 : scene.level.sky === 'dark' ? 0x120818 : 0x000000
@@ -3125,7 +3263,8 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
       if (scene.layoutRevision !== this.builtLayout || tintKey !== this.builtTint || !sameKeys(occ, this.builtOccupied)) {
         this.builtLayout = scene.layoutRevision
         this.builtTint = tintKey
-        this.rebuildLevel(scene)
+        builtLevel = true
+        this.rebuildLevel(scene, LEVEL_BUDGET_MS)
         this.mark?.('level')
         this.bakeStanding(this.levelGroup, { x: cam.eyeX, y: cam.eyeY })
         this.mark?.('bake')
@@ -3138,6 +3277,15 @@ diffuseColor.rgb *= texture2D(shadeMap, (vCell - fieldOrigin + 0.5) / fieldSize)
     } else if (this.crowdDirty) {
       if (this.syncBillboards(scene)) this.bakeStanding(this.billboardGroup, { x: cam.eyeX, y: cam.eyeY })
       this.mark?.('crowd')
+    }
+    // A level left half built for its budget is finished by the frames after
+    // it, whether the scene moved on or not. Never in the frame that started
+    // it: that one has spent its budget already.
+    if (this.levelPending && !builtLevel) {
+      this.buildPendingChunks()
+      this.mark?.('level')
+      this.bakeStanding(this.levelGroup, { x: cam.eyeX, y: cam.eyeY })
+      this.mark?.('bake')
     }
     // the selected shell follows the cursor and the sprites, on its own
     if (this.selectionDirty) this.syncSelection()
