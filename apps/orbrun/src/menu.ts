@@ -1088,6 +1088,8 @@ export class FrontEnd {
       if (!r || r.sig !== sig) {
         const [tr, dt] = this.rosterRow(e, s)
         if (r) {
+          // the row may be the very place the walk stands on: stand on its replacement, not a detached node
+          if (before === r.tr) before = tr
           r.tr.replaceWith(tr)
           r.dt.replaceWith(dt)
         }
