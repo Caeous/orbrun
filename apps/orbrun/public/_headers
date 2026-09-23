@@ -2,7 +2,7 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
-# the wordmark's face is named by a fixed path (styles.css @font-face) and changes only with a deploy that
-# renames it, so a return visit never asks for it again
+# the self-hosted faces are named by fixed paths (styles.css @font-face) and change only with a deploy that
+# renames them, so a return visit never asks for them again
 /fonts/*
   Cache-Control: public, max-age=31536000, immutable

@@ -38,10 +38,14 @@ export class GridHost {
       this.ro = new ResizeObserver(this.fit)
       this.ro.observe(host)
     }
+    // the grid face is a web font (styles.css): measured before it landed, the cells were cut to the fallback's advance
+    this.refont = this.refont.bind(this)
+    document.fonts?.addEventListener('loadingdone', this.refont)
   }
 
   destroy() {
     this.ro?.disconnect()
+    document.fonts?.removeEventListener('loadingdone', this.refont)
   }
 
   /** the text size: the font's px at which a cell is measured */
@@ -66,7 +70,7 @@ export class GridHost {
     return this.advance
   }
 
-  /** the font was changed (the rc's family arrived): measure again */
+  /** the font was changed (the rc's family arrived, a web font landed): measure again */
   refont() {
     this.advance = 0
     this.fit()

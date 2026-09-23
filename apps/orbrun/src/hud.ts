@@ -177,10 +177,16 @@ function gridTextColour(): string {
   return v || '#babdb6'
 }
 
-/** The hud's own font (styles.css `--mono`), for the same reason as `gridTextColour`. */
+/** The hud's own font (styles.css `--mono`), for the same reason as `gridTextColour`; nothing sets it at run time, so it is read once. */
+let monoFace = ''
 function gridFont(): string {
-  const v = getComputedStyle(document.documentElement).getPropertyValue('--mono').trim()
-  return v || 'monospace'
+  if (!monoFace) monoFace = getComputedStyle(document.documentElement).getPropertyValue('--mono').trim()
+  return monoFace || 'monospace'
+}
+
+/** A face the rc names for canvas text (glyph_mode_font, action_panel_font_family): WebTiles' default "monospace" is ours, as game.ts maps it for the page's text. */
+export function rcFont(v: unknown): string {
+  return typeof v === 'string' && v && v !== 'monospace' ? v : gridFont()
 }
 
 /** How much of the map's radius the north tick takes, and the floor and ceiling it keeps in css px on any map size. */
@@ -611,7 +617,7 @@ export class Hud {
     if (!changed(this.portraitPre, pre)) return
     this.portraitPre = pre
     const px = this.portraitPx
-    this.portrait.setOptions({ cellSize: px, mode, filterScaling: o.tile_filter_scaling === true, glyphFont: typeof o.glyph_mode_font === 'string' && o.glyph_mode_font ? o.glyph_mode_font : 'monospace' })
+    this.portrait.setOptions({ cellSize: px, mode, filterScaling: o.tile_filter_scaling === true, glyphFont: rcFont(o.glyph_mode_font) })
     if (gd) this.portrait.setTiles(gd)
     this.portrait.setScene(scene)
     this.portrait.clear(true)
@@ -743,7 +749,7 @@ export class Hud {
     const scale = (typeof o.action_panel_scale === 'number' && o.action_panel_scale > 0 ? o.action_panel_scale : 100) / 100
     const horizontal = o.action_panel_orientation !== 'vertical'
     const glyphs = o.action_panel_glyphs === true
-    const fontFamily = typeof o.action_panel_font_family === 'string' && o.action_panel_font_family ? o.action_panel_font_family : 'monospace'
+    const fontFamily = rcFont(o.action_panel_font_family)
     const fontSize = typeof o.action_panel_font_size === 'number' && o.action_panel_font_size > 0 ? o.action_panel_font_size : 16
     const box = this.panelBox
     const key = JSON.stringify([disabled, minimized, scale, horizontal, glyphs, fontFamily, fontSize, o.glyph_mode_font, o.tile_filter_scaling, this.panelSelected, gd?.version, box.width, box.height, items.map((i) => [i.slot, i.name, i.quantity, i.tile, i.useless])])
@@ -778,7 +784,7 @@ export class Hud {
     this.panelR2d.resize(width, height, dpr)
     this.panelCanvas.style.width = width + 'px'
     this.panelCanvas.style.height = height + 'px'
-    this.panelR2d.setOptions({ cellSize: cell, filterScaling: o.tile_filter_scaling === true, glyphFont: typeof o.glyph_mode_font === 'string' && o.glyph_mode_font ? o.glyph_mode_font : 'monospace' })
+    this.panelR2d.setOptions({ cellSize: cell, filterScaling: o.tile_filter_scaling === true, glyphFont: rcFont(o.glyph_mode_font) })
     if (gd) this.panelR2d.setTiles(gd)
     this.panelR2d.clear(true)
     if (!gd) return
@@ -816,7 +822,7 @@ export class Hud {
         // action_panel.js draw_action: the item's glyph in its colour instead of the tile
         ctx.save()
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-        ctx.font = `${Math.floor(cell * 0.8)}px ${typeof o.glyph_mode_font === 'string' && o.glyph_mode_font ? o.glyph_mode_font : 'monospace'}`
+        ctx.font = `${Math.floor(cell * 0.8)}px ${rcFont(o.glyph_mode_font)}`
         ctx.fillStyle = TERM16[(item.col ?? 7) & 15]
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
@@ -1051,7 +1057,7 @@ export class Hud {
       }
       const shown = Math.min(group.length, MONSTER_LIST_MAX_SPRITES)
       this.sizeRow(row, w, shown)
-      row.r2d.setOptions({ cellSize: w, mode, filterScaling: o.tile_filter_scaling === true, glyphFont: typeof o.glyph_mode_font === 'string' && o.glyph_mode_font ? o.glyph_mode_font : 'monospace' })
+      row.r2d.setOptions({ cellSize: w, mode, filterScaling: o.tile_filter_scaling === true, glyphFont: rcFont(o.glyph_mode_font) })
       if (gd) row.r2d.setTiles(gd)
       row.r2d.setScene(scene)
       row.r2d.clear()
@@ -1173,7 +1179,7 @@ export class Hud {
           pn.canvas.style.width = w + 'px'
           pn.canvas.style.height = w + 'px'
         }
-        pn.r2d.setOptions({ cellSize: w, mode: dmode, filterScaling: o.tile_filter_scaling === true, glyphFont: typeof o.glyph_mode_font === 'string' && o.glyph_mode_font ? o.glyph_mode_font : 'monospace' })
+        pn.r2d.setOptions({ cellSize: w, mode: dmode, filterScaling: o.tile_filter_scaling === true, glyphFont: rcFont(o.glyph_mode_font) })
         if (gd) pn.r2d.setTiles(gd)
         pn.r2d.setScene(scene)
         pn.r2d.clear(true)
@@ -1234,7 +1240,7 @@ export class Hud {
       uprightYaw: this.minimapUpright,
       mfColours,
       filterScaling: opts.tile_filter_scaling === true,
-      glyphFont: typeof opts.glyph_mode_font === 'string' && opts.glyph_mode_font ? opts.glyph_mode_font : 'monospace',
+      glyphFont: rcFont(opts.glyph_mode_font),
       minimapColours: {
         floor: c('tile_floor_col'),
         wall: c('tile_wall_col'),

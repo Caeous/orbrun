@@ -12,7 +12,7 @@ import { deriveContext, deriveMode, isFocusMode, type Context } from './context'
 import type { FocusOp } from './focus'
 import { HOLD_MS, LEVEL_MAP, barLabels, contextualLabel, armsTapOrHold, holdAction, resolve, type Action, type CommandCategory, type RelDir } from './bindings'
 import { Runner, type LastStep } from './runner'
-import { Hud } from './hud'
+import { Hud, rcFont } from './hud'
 import { GridHost } from './grid/host'
 import { gameSplit, levelMapSplit } from './grid/console'
 import { Chat } from './chat'
@@ -915,7 +915,7 @@ export class GameScreen {
         cellSize: this.cellPixels(Math.max(8, Math.round((px * scale) / 100)), mode),
         mode,
         filterScaling: o.tile_filter_scaling === true,
-        glyphFont: typeof o.glyph_mode_font === 'string' && o.glyph_mode_font ? o.glyph_mode_font : 'monospace',
+        glyphFont: rcFont(o.glyph_mode_font),
         minibars,
       })
     }

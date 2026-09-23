@@ -2,6 +2,14 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.1.8 — 2026-09-23
+
+- Menus now use the same font as the game, and it comes with Orbrun, so it looks the same on every device.
+- Small text in the menus is bigger and easier to read, especially on a Steam Deck.
+- If your connection drops mid-game, Orbrun gets you back into your game.
+- The Watch list no longer skips players as you scroll through it.
+- The gamepad controls sheet now lives under Settings > Controls, in two columns.
+
 ## 0.1.7 — 2026-09-22
 
 - Smoke and the other clouds now drift over the monsters standing in them, instead of disappearing behind whoever is in the cell.

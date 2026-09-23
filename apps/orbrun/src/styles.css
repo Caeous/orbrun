@@ -1,6 +1,24 @@
+/* The one face for every word but the wordmark, as WebTiles serves it (webserver/static/fonts), plus the bold it
+   leaves the browser to fake: DejaVu Sans Mono 2.37 whole, self-hosted (public/fonts, DEJAVU-LICENSE.txt), so a Deck
+   and a Mac draw the same letters instead of whatever each has installed. Both weights are preloaded from index.html;
+   `swap` shows the fallback for the moment either is late, and the grid measures again when it lands (grid/host.ts). */
+@font-face {
+  font-family: 'DejaVu Sans Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/dejavu-sans-mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'DejaVu Sans Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/dejavu-sans-mono-700.woff2') format('woff2');
+}
+
 :root {
   --ui-scale: 1;
-  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
   --mono: 'DejaVu Sans Mono', Menlo, Consolas, monospace;
   /* how far a glyph of grid text hangs out of its cell, top and bottom (below, "Every line of grid text") */
   --lip: 0.15em;
@@ -53,7 +71,7 @@ body {
   height: 100%;
   background: #000;
   color: #ddd;
-  font-family: var(--font);
+  font-family: var(--mono);
   font-size: calc(15px * var(--ui-scale));
   overflow: hidden;
 }
@@ -487,7 +505,9 @@ img.room-poster.up {
 
 .frame.menu-frame {
   --menu-action-size: 1.35rem;
-  --menu-note-size: 0.95rem;
+  /* the smallest words a menu says (hints, values, the help line): no smaller than the game's own 16px text,
+     since a handheld's 1280x800 packs the same pixels into about half the width of a laptop's */
+  --menu-note-size: 1.1rem;
   --menu-row-height: 3.4rem;
   --menu-label-inset: 2.5rem;
   --menu-cursor-inset: 0.9rem;
@@ -608,7 +628,7 @@ img.room-poster.up {
 .frame.home-list .brand .head .lede {
   margin-top: 0.75rem;
   max-width: 40ch;
-  font-family: var(--font);
+  font-family: var(--mono);
   font-size: 1.15rem;
   line-height: 1.5;
   color: var(--ink-dim);
@@ -617,7 +637,7 @@ img.room-poster.up {
 .frame.home-list .brand .head .splash {
   margin-top: 0.35rem;
   max-width: 40ch;
-  font-family: var(--font);
+  font-family: var(--mono);
   font-size: 1rem;
   font-style: italic;
   line-height: 1.5;
@@ -653,7 +673,7 @@ img.room-poster.up {
   font-size: var(--menu-action-size);
 }
 .frame.menu-frame .item .sub {
-  font-family: var(--font);
+  font-family: var(--mono);
   color: var(--ink-dim);
   font-size: var(--menu-note-size);
   text-align: left;
@@ -819,8 +839,8 @@ img.room-poster.up {
 .frame.home-list .menu-msg {
   min-height: 3em;
   line-height: 1.5;
-  font-family: var(--font);
-  font-size: 0.95rem;
+  font-family: var(--mono);
+  font-size: var(--menu-note-size);
   margin-top: 0.35rem;
 }
 .frame.menu-frame .legend {
@@ -864,11 +884,11 @@ img.room-poster.up {
 }
 .frame.home-list .home-utilities .item .label,
 .frame.home-list .home-utilities .item .sub {
-  font-size: 0.9rem;
+  font-size: var(--menu-note-size);
 }
 .frame.home-list .home-utilities .item .marker {
   left: 0.3rem;
-  font-size: 0.9rem;
+  font-size: var(--menu-note-size);
 }
 .about-copy {
   max-width: 46ch;
@@ -915,7 +935,7 @@ img.room-poster.up {
 .doc-scroll .doc-text {
   margin: 0;
   font-family: var(--mono);
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   color: var(--color-14);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1268,7 +1288,7 @@ img.room-poster.up {
   min-height: 1.5em;
   margin-top: 0.8rem;
   font-family: var(--mono);
-  font-size: 1rem;
+  font-size: var(--menu-note-size);
   color: var(--ink-dim);
   max-width: 60ch;
 }
@@ -1278,7 +1298,7 @@ img.room-poster.up {
 .frame.menu-frame .legend {
   margin-top: 1.2rem;
   font-family: var(--mono);
-  font-size: 0.85rem;
+  font-size: var(--menu-note-size);
   color: var(--color-8);
 }
 .frame.menu-frame .notice {
@@ -1407,7 +1427,7 @@ img.room-poster.up {
   padding-top: 0;
   white-space: normal;
   color: var(--color-8);
-  font-size: 0.9rem;
+  font-size: 1rem;
 }
 /* a middling width: who watches, the time played and the idle time fold into the details */
 @media (max-width: 1200px) {
@@ -3094,7 +3114,7 @@ canvas.minimap.hidden {
  * Server popups (menus, describe, CRT screens) keep the `.popup` look.
  */
 .popup.ours {
-  font-family: var(--font);
+  font-family: var(--mono);
   font-size: 1em;
   color: var(--ink);
   background: linear-gradient(180deg, rgba(14, 12, 20, 0.96), rgba(7, 6, 11, 0.97));
