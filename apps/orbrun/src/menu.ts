@@ -437,7 +437,8 @@ export class FrontEnd {
       this.settingsFrom = null
       if (from) from()
       else this.showHome()
-    } else if (v === 'controls' || v === 'settings-group') this.showSettings(this.settingsFrom ?? undefined)
+    } else if (v === 'controls') this.showSettingsGroup('Controls')
+    else if (v === 'settings-group') this.showSettings(this.settingsFrom ?? undefined)
     else if (v === 'doc') {
       const from = this.docFrom
       this.docFrom = null
@@ -1173,8 +1174,8 @@ export class FrontEnd {
 
   /**
    * Orbrun's settings: a row per group (settings-rows.ts), each opening its
-   * own page under a Back, as Gamepad — the sheet of what every button does —
-   * has always opened from here. The pause menu opens the same pages over the
+   * own page under a Back; the Controls page leads on to the Gamepad controls
+   * sheet, what every button does. The pause menu opens the same pages over the
    * game (overlays.ts), so a setting is in the same place in both.
    */
   showSettings(from?: () => void) {
@@ -1185,14 +1186,13 @@ export class FrontEnd {
     const rows: Row[] = [
       { id: BACK, label: 'Back', marker: '<', hint: 'Back to where you were.', fn: () => this.back() },
       ...settingGroups().map((g) => ({ id: 'settings:' + g.group, label: g.group, sub: g.hint, marker: '>', hint: g.hint, fn: () => this.showSettingsGroup(g.group) })),
-      { id: 'controls', label: 'Gamepad', sub: 'what every button does', marker: '?', hint: 'The pad’s buttons on each layer.', fn: () => this.showControls() },
     ]
     this.list({ cls: 'settings-list', title: 'Settings', lede: 'They are kept on this device.', rows })
   }
 
   /**
    * One group's settings (settings-panel.ts), the page the group's row opens:
-   * its rows under a Back, as the Gamepad sheet stands under one. Left and
+   * its rows under a Back, as the Gamepad controls sheet stands under one. Left and
    * right turn a setting (A turns it on), the message line says what it does.
    */
   private showSettingsGroup(group: SettingGroup) {
@@ -1200,7 +1200,7 @@ export class FrontEnd {
     this.settingsGroup = group
     this.setView('settings-group', 'settings')
     // a change shows on the room behind the panel at once: the camera rows are the room's camera too
-    const panel = settingsPanel(group, { onchange: () => this.roomView.applySettings() })
+    const panel = settingsPanel(group, { onchange: () => this.roomView.applySettings(), controls: () => this.showControls() })
     // Only the front-end instance gets the title-screen treatment; the pause
     // menu keeps its compact in-game rows and hotkeys.
     for (const el of panel.rows) {
@@ -1224,13 +1224,13 @@ export class FrontEnd {
     this.list({ cls: 'settings-list', title: group, lede: hint, rows, below: [scroller], extra })
   }
 
-  /** The gamepad sheet (controls-sheet.ts), as the pause menu shows it; a row of the settings. */
+  /** The gamepad sheet (controls-sheet.ts), as the pause menu shows it; a row of the Controls page. */
   private showControls() {
     if (this._view === 'controls') return
     this.setView('controls', 'controls')
     const sheet = h('div', { class: 'bindings-sheet ours' }, controlsSheet(this.hooks.padKind?.() ?? 'generic'))
-    const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back to the settings.', fn: () => this.back() }]
-    this.list({ cls: 'controls-list', title: 'Gamepad', lede: 'What every button does, on each layer.', rows, below: [sheet] })
+    const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back to the controls.', fn: () => this.back() }]
+    this.list({ cls: 'controls-list', title: 'Gamepad controls', lede: 'What every button does, on each layer.', rows, below: [sheet] })
   }
 
   // ------------------------------------------------------------------ accounts, servers, login

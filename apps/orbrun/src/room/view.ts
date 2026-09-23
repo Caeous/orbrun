@@ -41,7 +41,7 @@ const DRAG_SLOP = 6
  * a second; it is under way as the room comes in, holds still for IDLE_DELAY
  * seconds after any look and eases (back) up to speed over DRIFT_RAMP
  * seconds, so a hand on the scenery is never fought. Off under
- * prefers-reduced-motion.
+ * prefers-reduced-motion, or when the player turns it off (`roomTurn`).
  */
 const DRIFT_RATE = (Math.PI / 180) * 0.35
 const IDLE_DELAY = 4
@@ -63,6 +63,8 @@ export class RoomView {
   readonly poster: HTMLImageElement
   onfit: (() => void) | null = null
   private reducedMotion = false
+  /** the Menu room turn setting */
+  private turnOn = true
   private host: HTMLElement
   private ro: ResizeObserver | null = null
   private grid = { cw: 16, ch: 23 }
@@ -98,6 +100,7 @@ export class RoomView {
     host.prepend(this.el)
     host.prepend(this.poster)
     this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+    this.turnOn = getSettings().roomTurn
     this.fit = this.fit.bind(this)
     this.tick = this.tick.bind(this)
     this.onVisibility = this.onVisibility.bind(this)
@@ -185,6 +188,11 @@ export class RoomView {
     const st = getSettings()
     this.cam.setRestPitch(radians(st.restPitch))
     this.cam.camera.pitch = clampPitch(this.cam.camera.pitch)
+    if (st.roomTurn !== this.turnOn) {
+      this.turnOn = st.roomTurn
+      // turned back on, it comes up to speed from still, as after a look
+      this.driftEnv = 0
+    }
     this.room?.applySettings(st)
     this.invalidate()
   }
@@ -229,6 +237,11 @@ export class RoomView {
     this.driftEnv = 0
   }
 
+  /** Whether the idle turn runs at all. */
+  private get turns(): boolean {
+    return this.turnOn && !this.reducedMotion
+  }
+
   /** Whether the eye is left alone: no stick, no drag. */
   private get atRest(): boolean {
     return !this.cam.steering && !this.drag
@@ -239,7 +252,7 @@ export class RoomView {
    * Returns whether the camera moved.
    */
   private drift(dt: number): boolean {
-    if (this.reducedMotion || !this.room || !this.atRest || !this.el.classList.contains('in')) return false
+    if (!this.turns || !this.room || !this.atRest || !this.el.classList.contains('in')) return false
     this.idle += dt
     if (this.idle < IDLE_DELAY) return false
     this.driftEnv = Math.min(1, this.driftEnv + dt / DRIFT_RAMP)
@@ -269,7 +282,7 @@ export class RoomView {
       this.room!.render(this.cam.camera)
       this.el.classList.add('in')
     }
-    const turning = !this.reducedMotion && live && this.el.classList.contains('in')
+    const turning = this.turns && live && this.el.classList.contains('in')
     // with no room to draw (none yet, none at all, or a context lost) a pending render waits without frames: the
     // room's arrival and the context's return each invalidate, and that wakes the loop
     if (this.cam.steering || (this.needsRender && live) || eased) this.raf = requestAnimationFrame(this.tick)

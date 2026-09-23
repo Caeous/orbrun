@@ -613,7 +613,7 @@ function startGame() {
 function makeGame(GameScreen: typeof import('./game').GameScreen, s: Session): GameScreen {
   return new GameScreen(app, s, {
     settings: getSettings,
-    settingsPanel: (group, back) => settingsPanel(group, { onchange: () => game?.applySettings(), back }),
+    settingsPanel: (group, back, controls) => settingsPanel(group, { onchange: () => game?.applySettings(), back, controls }),
     gamepad,
     initialInput: lastInput,
     onSystem() {

@@ -677,10 +677,11 @@ describe('the front end: the home screen', () => {
     expect(screen.view).toBe('home')
     pad(screen, 'X')
     expect(screen.view).toBe('settings')
-    pick(screen, 'Gamepad')
+    pick(screen, 'Controls')
+    pick(screen, 'Gamepad controls')
     expect(screen.view).toBe('controls')
     pad(screen, 'B')
-    expect(screen.view).toBe('settings')
+    expect(screen.view).toBe('settings-group')
   })
 
   it('never announces the controller in the footer', () => {
@@ -1089,8 +1090,8 @@ describe('the front end: settings and marks', () => {
     const { screen } = make()
     pick(screen, 'Settings')
     expect(screen.view).toBe('settings')
-    // a row per group, each its own page, then the Gamepad sheet
-    expect(labels(screen)).toEqual(['Back', 'Camera', 'Controls', 'Interface', 'Gamepad'])
+    // a row per group, each its own page; the Gamepad controls sheet is on the Controls page
+    expect(labels(screen)).toEqual(['Back', 'Camera', 'Controls', 'Interface'])
     expect(focused(screen)).toBe('settings:Camera')
     pick(screen, 'Camera')
     expect(screen.view).toBe('settings-group')
@@ -1108,12 +1109,14 @@ describe('the front end: settings and marks', () => {
     pad(screen, 'B')
     expect(screen.view).toBe('settings')
     expect(focused(screen)).toBe('settings:Camera')
-    pick(screen, 'Gamepad')
+    pick(screen, 'Controls')
+    pick(screen, 'Gamepad controls')
     expect(screen.view).toBe('controls')
-    expect(screen.root.querySelector('.bindings-sheet table')).toBeTruthy()
+    // the pad in two halves, left and right
+    expect(screen.root.querySelectorAll('.bindings-sheet .sides table')).toHaveLength(2)
     pad(screen, 'B')
-    expect(screen.view).toBe('settings')
-    expect(focused(screen)).toBe('controls')
+    expect(screen.view).toBe('settings-group')
+    expect(focused(screen)).toBe('gamepad-controls')
   })
 
   it('leaves the letters to a text field, and reads the four vim keys as directions and nothing else', () => {

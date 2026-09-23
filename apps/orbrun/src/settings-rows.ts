@@ -132,6 +132,7 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   row('Camera', 'Camera height', 'eyeHeight', EYE_HEIGHTS, 'How high your eyes stand, from the floor to the ceiling.', (v) => (v as number).toFixed(2) + ' cells'),
   row('Camera', 'Camera angle', 'restPitch', CAM_ANGLES, 'Where the view points at rest: level with the horizon, or tipped down toward the floor ahead.', (v) => ((v as number) === 0 ? 'Level' : Math.abs(v as number) + '° ' + ((v as number) < 0 ? 'down' : 'up'))),
   row('Camera', 'Field of view', 'fov', [60, 70, 75, 85, 95], 'How wide the first-person view opens.', (v) => v + '°'),
+  row('Camera', 'Menu room turn', 'roomTurn', [true, false], 'Behind the menus, the room slowly turns on its own while you leave it be.', (v) => (v ? 'On' : 'Off')),
   row('Camera', 'Hands', 'viewmodel', [true, false], 'The wielded weapon and off-hand item, drawn in view.', (v) => (v ? 'Weapon and shield shown' : 'Hidden')),
   // Controls
   ...leftRightRows,

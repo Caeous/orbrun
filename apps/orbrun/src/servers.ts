@@ -441,6 +441,8 @@ export interface Settings {
   leftRightKeys: LeftRight
   /** Gamepad (d-pad and left stick): what left and right do. */
   leftRightPad: LeftRight
+  /** The front room's idle turn behind the menus (room/view.ts DRIFT_RATE). */
+  roomTurn: boolean
 }
 
 const HINT_MODES: readonly string[] = ['adaptive', 'contextual', 'off']
@@ -510,6 +512,7 @@ export const defaultSettings: Settings = {
   hints: 'adaptive',
   leftRightKeys: 'turn',
   leftRightPad: 'turn',
+  roomTurn: true,
 }
 
 export function getSettings(): Settings {

@@ -11,8 +11,9 @@ import { adjustSetting, rowHint, rowOff, settingGroups, settingValue, type Setti
  *
  * One group to a panel (settings-rows.ts `SETTING_GROUPS`): the settings
  * screen lists the groups as rows, each opening its own page under a Back,
- * the way the Gamepad sheet has always opened from it, so every page of the
- * settings is reached and left the same way. The pause menu opens the same
+ * so every page of the settings is reached and left the same way. The
+ * Controls page also carries the Gamepad controls sheet, a page to read
+ * rather than a group of settings, which is why it is not a group itself. The pause menu opens the same
  * pages over the game (overlays.ts), the front end on its settings screen
  * (menu.ts), and both read `settings-rows.ts`, so the two never disagree.
  *
@@ -21,7 +22,7 @@ import { adjustSetting, rowHint, rowOff, settingGroups, settingValue, type Setti
  * row does anything), and a row that is off is dark grey, as the game's
  * menus draw an item that cannot be taken, and left and right leave it.
  */
-export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void; back?: () => void } = {}): { el: HTMLElement; rows: HTMLElement[] } {
+export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void; back?: () => void; controls?: () => void } = {}): { el: HTMLElement; rows: HTMLElement[] } {
   const panel = h('div', { class: 'settings menu game' })
   panel.append(h('div', { class: 'title' }, group))
   const ol = h('ol')
@@ -82,6 +83,14 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
     })
     rows.push(replay)
     ol.append(replay)
+    if (opts.controls) {
+      const k = hotkey()
+      const sheet = h('li', { class: 'row level2 selectable fg7 action', dataset: { hotkey: k, focus: 'gamepad-controls', hint: 'What every button on the pad does, on each layer.' } },
+        h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, 'Gamepad controls'))
+      sheet.addEventListener('click', () => opts.controls!())
+      rows.push(sheet)
+      ol.append(sheet)
+    }
   }
   redraw()
   // every page leaves the same way: Back at its foot, where the group's row was taken from

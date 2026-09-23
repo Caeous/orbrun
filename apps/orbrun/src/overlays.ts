@@ -70,8 +70,8 @@ export interface OverlayHooks {
   /** client-side overlay closed (palette, system menu) */
   onClientOverlayChange(): void
   onSystemAction(op: string): void
-  /** one group's settings page, with what its Back does (settings-panel.ts) */
-  settingsPanel(group: SettingGroup, back: () => void): { el: HTMLElement; rows: HTMLElement[] }
+  /** one group's settings page, with what its Back does and what opens the Gamepad controls sheet (settings-panel.ts) */
+  settingsPanel(group: SettingGroup, back: () => void, controls: () => void): { el: HTMLElement; rows: HTMLElement[] }
 }
 
 export interface TileRef {
@@ -2812,7 +2812,7 @@ export class Overlays {
     if (opts.inGame) add('Chat (F12)', 'talk to whoever is watching', () => this.hooks.onSystemAction('chat'))
     // 2D is out for now (VIEW_OPTIONS in servers.ts)
     if (playing && VIEW_OPTIONS) add('Toggle 2D / 3D view', 'the floor laid flat, or stood up around you', () => this.hooks.onSystemAction('toggleRenderer'))
-    add('Gamepad', 'what each button does, and how to change it', () => this.showBindings(this.hooks.padKind?.() ?? 'generic', again), true)
+    add('Gamepad controls', 'what each button does, and how to change it', () => this.showBindings(this.hooks.padKind?.() ?? 'generic', again), true)
     add('Settings', "Orbrun's own options: the camera, the controls, the HUD", () => this.showSettings(again))
     // a player saves (crawl's S, which asks first, then go_lobby brings the front end back); a spectator has nothing to
     // save and goes back to the Watch screen (`#lobby`) the game was picked from
@@ -2844,8 +2844,8 @@ export class Overlays {
 
   /**
    * Orbrun's settings over the game: the groups as rows, each opening its own
-   * page (settings-panel.ts) under a Back, the way the Gamepad sheet opens
-   * from the same menu. `back` is where the last Back lands, the pause menu
+   * page (settings-panel.ts) under a Back, the way the Gamepad controls sheet
+   * opens from the same menu (and from the Controls page). `back` is where the last Back lands, the pause menu
    * this was reached from.
    */
   showSettings(back?: () => void) {
@@ -2880,10 +2880,17 @@ export class Overlays {
   /** One group's settings (settings-panel.ts): its rows, then the Back to the group list. */
   private showSettingsGroup(group: SettingGroup, back: () => void) {
     this.settingsAt = group
-    const panel = this.hooks.settingsPanel(group, () => {
-      this.closeClientOverlay()
-      back()
-    })
+    const panel = this.hooks.settingsPanel(
+      group,
+      () => {
+        this.closeClientOverlay()
+        back()
+      },
+      () => {
+        this.closeClientOverlay()
+        this.showBindings(this.hooks.padKind?.() ?? 'generic', () => this.showSettingsGroup(group, back))
+      },
+    )
     panel.el.classList.add('popup', 'settings')
     this.openClientOverlay('settings', panel.el, panel.rows, back)
   }
@@ -2901,7 +2908,7 @@ export class Overlays {
 
   showBindings(padKind: PadKind = 'generic', back?: () => void) {
     const el = h('div', { class: 'popup bindings-sheet ours' })
-    el.append(h('div', { class: 'header' }, 'Gamepad'))
+    el.append(h('div', { class: 'header' }, 'Gamepad controls'))
     el.append(controlsSheet(padKind))
     const close = h('div', { class: 'row action' }, h('span', { class: 'marker' }), h('span', { class: 'label' }, 'Close'))
     close.addEventListener('click', () => {

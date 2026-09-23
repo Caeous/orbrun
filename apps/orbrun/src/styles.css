@@ -2837,6 +2837,17 @@ canvas.minimap.hidden {
   flex: 1 1 auto;
 }
 
+/* the pad's two halves side by side, stacked once there is no room for both */
+.bindings-sheet .sides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.5rem;
+  align-items: flex-start;
+}
+.bindings-sheet .sides table {
+  flex: 1 1 18rem;
+  width: auto;
+}
 .bindings-sheet table {
   border-collapse: collapse;
   width: 100%;

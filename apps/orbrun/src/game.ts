@@ -53,8 +53,8 @@ export type InputDevice = 'pad' | 'keyboard' | 'pointer'
 
 export interface GameHooks {
   settings(): Settings
-  /** one group's settings page, with what its Back does (settings-panel.ts) */
-  settingsPanel(group: SettingGroup, back: () => void): { el: HTMLElement; rows: HTMLElement[] }
+  /** one group's settings page, with what its Back does and what opens the Gamepad controls sheet (settings-panel.ts) */
+  settingsPanel(group: SettingGroup, back: () => void, controls: () => void): { el: HTMLElement; rows: HTMLElement[] }
   onSystem(op: 'disconnect'): void
   gamepad: GamepadInput
   initialInput?: InputDevice
@@ -271,7 +271,7 @@ export class GameScreen {
         this.needsRender = true
       },
       onSystemAction: (op) => this.systemAction(op),
-      settingsPanel: (group, back) => this.hooks.settingsPanel(group, back),
+      settingsPanel: (group, back, controls) => this.hooks.settingsPanel(group, back, controls),
     })
     this.runner = new Runner(session, this.cam, {
       context: () => this.ctx,

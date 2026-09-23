@@ -534,7 +534,7 @@ export function buttonGroup(b: BindingLabel['button']): 'face' | 'dpad' | 'shoul
 }
 
 /** One cell of the controls sheet: the tap and, when there is one, the hold. */
-interface SheetCell {
+export interface SheetCell {
   tap: string
   hold?: string
 }
