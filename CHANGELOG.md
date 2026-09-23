@@ -6,7 +6,8 @@ Notable changes to Orbrun, newest first.
 
 - Menus now use the same font as the game, and it comes with Orbrun, so it looks the same on every device.
 - Small text in the menus is bigger and easier to read, especially on a Steam Deck.
-- If your connection drops mid-game, Orbrun gets you back into your game.
+- If your connection drops mid-game, Orbrun puts you straight back into your game, with nothing to press. If the network stays down, you land on the menu with your game saved.
+- A button pressed while the server closes your last session no longer stops your game from starting.
 - The Watch list no longer skips players as you scroll through it.
 - The gamepad controls sheet now lives under Settings > Controls, in two columns.
 

@@ -2,11 +2,9 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import type { ServerMessage } from '@orbrun/webtiles'
 
 /**
- * A dropped connection comes back as the same session (relink.ts, for a
- * device that slept mid-game): the account is the
- * same, so the token login goes out again on the fresh socket, but the game
- * is not — the server stops, and so saves, a game whose socket goes, and what
- * comes back is a blank state for the `play` that picks the save up.
+ * A dropped front-end connection comes back as the same session (main.ts
+ * `scheduleRetry`): the account is the same, so the token login goes out
+ * again on the fresh socket, and what comes back is a blank state.
  */
 vi.mock('@orbrun/gamedata', () => ({
   browserIo: () => ({}),
@@ -173,20 +171,5 @@ describe('asking whether a socket is still there', () => {
     handle({ msg: 'rcfile_contents', game_id: 'dcss-0.34', contents: '' })
     await expect(Promise.all([a, b])).resolves.toEqual([true, true])
     expect(sock.msgs.filter((m) => m === 'get_rc')).toHaveLength(1)
-  })
-
-  it('knows when the game last spoke, apart from the server’s own traffic', async () => {
-    const { s, handle } = await make()
-    FakeSocket.made[0].opens()
-    s.state.phase = 'playing'
-    const before = Date.now()
-    handle({ msg: 'input_mode', mode: 1 })
-    const spoke = s.lastGameAt
-    expect(spoke).toBeGreaterThanOrEqual(before)
-    s.lastGameAt = 1
-    handle({ msg: 'ping' })
-    handle({ msg: 'lobby_entry', id: 1, username: 'x' })
-    handle({ msg: 'chat', content: 'hi' })
-    expect(s.lastGameAt).toBe(1)
   })
 })

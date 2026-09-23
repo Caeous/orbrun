@@ -20,13 +20,6 @@ import { gamedataBaseFor, getToken, setToken } from './servers'
  * browser reports 1005 when the close frame carried no status and 1006 when
  * there was no close frame at all (the network went, or the server did).
  */
-/**
- * What the WebTiles server itself sends, as against the game it runs: the
- * lobby, pings, chat and the login's traffic come from ws_handler.py, and
- * say nothing about whether the game is being played (`lastGameAt`).
- */
-const SERVER_MSGS = new Set(['ping', 'lobby_clear', 'lobby_entry', 'lobby_remove', 'lobby_complete', 'chat', 'update_spectators', 'html', 'set_game_links', 'login_success', 'login_fail', 'login_cookie', 'rcfile_contents', 'server_announcement', 'stale_processes', 'force_terminate?', 'game_started', 'watching_started', 'go_lobby', 'game_ended'])
-
 function closeWord(code: number): string {
   switch (code) {
     case 1000: return 'closed by the server'
@@ -87,17 +80,6 @@ export class Session {
   private lastSceneRev = { map: -1, player: -1, ui: -1 }
   diagnostics: string[] = []
   closed = false
-  /** A token login went out as the socket opened and has not been answered yet: this connection needs no form. */
-  loggingIn = false
-  /**
-   * The wall clock when the game itself last said anything: its own
-   * messages, not the server's lobby traffic or pings. Crawl only speaks when
-   * it is played, and the server counts exactly that as the game's activity
-   * (process_handler.py `note_activity`, which a lobby entry's `idle_time`
-   * reads), so it is what a lobby entry is weighed against to tell this
-   * connection's own game from one played since somewhere else.
-   */
-  lastGameAt = 0
   /** a `probe` waiting on its answer */
   private probing: { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> } | null = null
 
@@ -117,7 +99,6 @@ export class Session {
       const who = this.username
       const token = who ? getToken(server.id, who) : null
       if (token) {
-        this.loggingIn = true
         this.send(cm.tokenLogin(token))
         // the server forgets a token as it is used (ws_handler.py `token_login`), so it is forgotten here too, as
         // client.js `start_login` does; `login_cookie` brings the next one
@@ -127,7 +108,6 @@ export class Session {
     })
     this.conn.onClose((r) => {
       this.closed = true
-      this.loggingIn = false
       this.endProbe(false)
       // a load for a connection that is gone: stop it, and let the messages it was holding go with it
       this.loadAbort?.abort()
@@ -180,7 +160,6 @@ export class Session {
    */
   reconnect(): boolean {
     if (!this.closed || !this.conn.reopen) return false
-    // what the game last said is kept: the lobby's word on it is weighed against that once logged in again
     this.state = initialState()
     this.scene = emptyScene()
     this.lastSceneRev = { map: -1, player: -1, ui: -1 }
@@ -233,8 +212,6 @@ export class Session {
       this.endProbe(true)
       return
     }
-    if (this.state.phase === 'playing' && !SERVER_MSGS.has(m.msg)) this.lastGameAt = Date.now()
-    if (m.msg === 'login_success' || m.msg === 'login_fail') this.loggingIn = false
     if (m.msg === 'login_success') {
       // the name the server answered with: an account just added had none on this connection until now
       this.username = (m.username as string) || this.username

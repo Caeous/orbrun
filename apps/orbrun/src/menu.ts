@@ -229,10 +229,6 @@ export class FrontEnd {
       else this.roomView.look(ev.dx, ev.dy)
       return
     }
-    if (ev.type === 'press' && this.session?.state.lobby.staleProcesses) {
-      this.stopStalePurge()
-      return
-    }
     if (this.osk.visible) {
       if ((ev.type === 'dir' || ev.type === 'dirRepeat') && ev.dir !== null) this.osk.op('move', ev.dir)
       else if (ev.type === 'press') {
@@ -317,12 +313,6 @@ export class FrontEnd {
     }
     // Browser shortcuts (including modified Enter on a link) belong to the browser.
     if (ev.ctrlKey || ev.altKey || ev.metaKey || ev.key === 'Tab') return false
-    // client.js handle_keydown: any key while the stale-processes notice shows keeps the old game alive
-    if (this.session?.state.lobby.staleProcesses) {
-      this.stopStalePurge()
-      ev.preventDefault()
-      return true
-    }
     const target = ev.target as HTMLElement | null
     const inInput = target instanceof HTMLInputElement
     const dir = navDir(ev, inInput)
@@ -721,6 +711,8 @@ export class FrontEnd {
    * without waiting for a reload, and dropped outright on the way back from a game (`attach`).
    */
   private whereis = new Map<string, Whereis | null>()
+  /** a game's connection dropped and brought the player here (main.ts `scheduleRetry`): said until the next game */
+  private lost = false
   private asked = new Map<string, number>()
   private static readonly WHEREIS_MS = 60_000
 
@@ -753,7 +745,9 @@ export class FrontEnd {
         if (!r.ok) continue
         text = await r.text()
       } catch {
-        continue
+        // no network (the line that just dropped a game, say) is no answer: the next redraw asks again
+        this.asked.delete(key)
+        return
       }
       // landed for a screen that is gone (the abort came between the bytes and here): it is nobody's news
       if (this.destroyed) return
@@ -848,7 +842,10 @@ export class FrontEnd {
       rows.push({ id: 'watch', label: 'Watch', sub: open ? (lobby?.complete ? `${n} playing` : 'loading…') : 'connecting…', marker: '{', hint: `Look into the pool: who is playing on ${server.host} right now, and watch them.`, fn: () => this.showWatch() })
       // the server's notices (client.html #account_restricted, #stale_processes_message, #force_terminate)
       if (lobby?.accountHold) notices.push(h('div', { class: 'notice' }, 'This account is being held for administrator approval. Until approved, community features and some game modes may be restricted, and games will not be visible to other players.'))
-      if (lobby?.staleProcesses) notices.push(h('div', { class: 'notice dialog' }, `There are some stale ${lobby.staleProcesses.game} processes. They'll be stopped in ${lobby.staleProcesses.timeout} seconds. Press a key now if you don't want this to happen!`))
+      // client.js lets any key cancel the purge and keep the old game; here the old game is nearly always this
+      // player's own dropped one, and a stray press would leave Continue stuck, so no key cancels it
+      if (lobby?.staleProcesses) notices.push(h('div', { class: 'notice' }, `Closing your last session on ${server.host}. Your game starts in about ${lobby.staleProcesses.timeout || 10} seconds.`))
+      else if (this.lost) notices.push(h('div', { class: 'notice' }, 'Connection lost. Your game is saved: Continue picks it up.'))
       if (s && lobby?.forceTerminate) {
         const answer = (yes: boolean) => {
           s.send(cm.forceTerminate(yes))
@@ -1351,6 +1348,7 @@ export class FrontEnd {
    * through, and the screen stays up meanwhile.
    */
   connectTo(account: Account, intent?: Intent) {
+    if (intent) this.lost = false
     const server = findServer(account.serverId)
     if (!server) return this.showHome()
     const session = this.hooks.connect(server, account.username, intent)
@@ -1361,6 +1359,13 @@ export class FrontEnd {
     // being torn down and slid in again as a new one
     if (session === this.session && this._view === 'home') return this.showHome()
     this.attach(session)
+  }
+
+  /** A game's connection dropped on its way here: the home screen says so, and that the game is saved. */
+  dropped() {
+    this.lost = true
+    this.shape.delete('home')
+    if (this._view === 'home') this.showHome()
   }
 
   /** Follow an already open session and show the home screen: after a death, a save, or a reload. */
@@ -1445,15 +1450,6 @@ export class FrontEnd {
     else this.goHome()
   }
 
-  /** client.js: a key while the stale-processes notice shows sends `stop_stale_process_purge`. */
-  private stopStalePurge() {
-    const s = this.session
-    if (!s) return
-    s.send(cm.stopStaleProcessPurge())
-    s.state.lobby.staleProcesses = null
-    this.shape.delete('home')
-    if (this._view === 'home') this.showHome()
-  }
 
   /**
    * The lobby page's login form (client.html #login_form): adding an

@@ -365,16 +365,15 @@ describe('the front end: the home screen', () => {
     }
   })
 
-  it('cancels the stale-process purge on any key, as client.js handle_keydown does', () => {
+  it('lets the stale-process purge run whatever is pressed, so Continue after a drop is never stuck', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
     localStorage.setItem('orbrun.account', JSON.stringify(caeo))
     const s = fakeSession(cdi, 'caeo', { username: 'caeo', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }], staleProcesses: { game: 'DCSS 0.34', timeout: 10 } })
     const { screen } = make(() => s)
-    expect(screen.root.querySelector('.notice.dialog')?.textContent).toContain('There are some stale DCSS 0.34 processes.')
-    expect(press(screen, 'ArrowDown')).toBe(true)
-    expect(s.send).toHaveBeenCalledWith({ msg: 'stop_stale_process_purge' })
-    expect(s.state.lobby.staleProcesses).toBeNull()
-    expect(screen.root.querySelector('.notice.dialog')).toBeNull()
+    expect(screen.root.querySelector('.notice')?.textContent).toContain('Your game starts in about 10 seconds.')
+    press(screen, 'ArrowDown')
+    expect(s.send).not.toHaveBeenCalledWith({ msg: 'stop_stale_process_purge' })
+    expect(s.state.lobby.staleProcesses).not.toBeNull()
   })
 
   it('names the account’s own game from the roster when the server’s links keep the save to themselves', () => {
