@@ -176,6 +176,8 @@ class Batch {
       attr.setUsage(THREE.DynamicDrawUsage)
       this.geometry.setAttribute(name, attr)
     }
+    // three caps an instanced draw at the first instance buffer it bound and never looks again: forget it, or a grown batch draws its first 16
+    delete (this.geometry as { _maxInstanceCount?: number })._maxInstanceCount
     this.capacity = cap
   }
   begin() {
