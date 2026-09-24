@@ -634,7 +634,10 @@ export class GameScreen {
     // the server reports targeting alone; the runner knows whether its `x` opened it
     if (this.runner.examining(this.ctx.mode)) this.ctx.examining = true
     this.viewHeld = this.runner.holdingView(this.ctx.mode)
-    if (this.ctx.mode === 'popup') this.ctx.popupActions = this.overlays.popupActions()
+    if (this.ctx.mode === 'popup') {
+      this.ctx.popupActions = this.overlays.popupActions()
+      this.ctx.popupEnter = this.overlays.popupEnter()
+    }
     this.overlays.updatePrompt(this.ctx.mode, this.ctx.prompt, this.lastInput)
     this.overlays.syncFocus(this.ctx)
     const fi = this.overlays.focusInfo(this.ctx)

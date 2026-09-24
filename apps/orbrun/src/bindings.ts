@@ -367,8 +367,12 @@ export function bindingTable(ctx: Context): Partial<Record<Button, Action>> {
         return ctx.prompt ? promptTable(ctx.prompt) : { ...FOCUS, X: k('*', 'List'), Y: k('?', 'Help') }
       case 'dialog':
         return { A: FOCUS.A, B: FOCUS.B, START: ENTER }
-      case 'popup':
-        return ctx.popupActions?.length ? { ...FOCUS, X: POPUP_ACTION } : FOCUS
+      case 'popup': {
+        const t = ctx.popupActions?.length ? { ...FOCUS, X: POPUP_ACTION } : { ...FOCUS }
+        // Enter that does something of its own (joining at an altar) is Start's, and the bar names it
+        if (ctx.popupEnter) t.START = situational(kc(Keys.ENTER, ctx.popupEnter))
+        return t
+      }
       default:
         // the focused item's second action (a skill row's "Set target") sits on Y while the cursor rests on one
         return ctx.focus?.altLabel ? { ...FOCUS, Y: focus('altSelect') } : FOCUS

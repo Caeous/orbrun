@@ -168,3 +168,11 @@ describe('the pad menu strip', () => {
     expect(inner.actionbar.style.getPropertyValue('--foot')).toBe('0px')
   })
 })
+
+describe('a god at an altar', () => {
+  it('shows Start as the join, and no X', () => {
+    const pad = bar(ctx({ mode: 'popup', popupType: 'describe-god', popupActions: [], popupEnter: 'Join religion', focus: { label: 'Overview', count: 4 } as never }))
+    expect(pad.querySelector('.chip.START .label')?.textContent).toBe('Join religion')
+    expect(pad.querySelector('.chip.X')).toBeNull()
+  })
+})

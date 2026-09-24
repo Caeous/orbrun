@@ -84,6 +84,9 @@ export interface TileRef {
   oy?: number
 }
 
+/** Joining a god from its description at an altar: its footer stop, and Start's chip. */
+const GOD_JOIN = 'Join religion'
+
 /** An action a popup offers, in the order the pad's face buttons take them. */
 export interface PopupAction {
   /** the key the official client would send for it */
@@ -1543,12 +1546,17 @@ export class Overlays {
         const cur = Math.min(pane, panes.length - 1)
         if (p.type === 'describe-god') el.append(godPane(d, cur))
         else describeBody(panes[cur] || '', cur === 0 ? spellsOf(d.spellset) : [])
+        const prompt = typeof p.state.prompt === 'string' ? '<br>' + formattedStringToHtml(p.state.prompt as string) : ''
+        if (p.type === 'describe-god') {
+          el.append(this.godFooter(names, cur, d.is_altar ? str('service_fee') : null, items, row++, prompt))
+          actions(str('actions'))
+          break
+        }
         // official templates: the pane names sit behind the key that cycles them, in cyan
-        const key = p.type === 'describe-god' ? '<b class="fg3">!</b>/<b class="fg3">^</b>:&nbsp;' : '[<b class="fg3">!</b>]:&nbsp;'
-        const foot = key + names.map((n, i) => (i === cur ? `<b class="fg15">${n}</b>` : n)).join(' | ') + (d.is_altar ? '&nbsp;&nbsp;<b class="fg3">J</b>/<b class="fg3">Enter</b>: join religion' + escapeHtml(str('service_fee')) : '')
-        const footEl = h('div', { class: 'footer', html: foot + (typeof p.state.prompt === 'string' ? '<br>' + formattedStringToHtml(p.state.prompt as string) : '') })
+        const foot = '[<b class="fg3">!</b>]:&nbsp;' + names.map((n, i) => (i === cur ? `<b class="fg15">${n}</b>` : n)).join(' | ')
+        const footEl = h('div', { class: 'footer', html: foot + prompt })
         el.append(footEl)
-        // '!' cycles panes in both (ui-layouts.js; '^' too for gods)
+        // '!' cycles panes (ui-layouts.js)
         paneAction('!', names, footEl)
         actions(str('actions'))
         break
@@ -1645,6 +1653,44 @@ export class Overlays {
       else this.registerFocus('popup:' + p.type, items, {})
     }
     return el
+  }
+
+  /**
+   * A god's footer (ui-layouts.js describe_god: "!/^: Overview | Powers |
+   * Wrath", and at an altar "J/Enter: join religion"). Each pane name is a
+   * stop of its own, and so is joining, so the cursor walks the footer and A
+   * picks one; the official footer is keys only, and `!` / `^` only cycle
+   * forward, so a pane further on is that many presses. `fee` is null away
+   * from an altar.
+   */
+  private godFooter(names: string[], cur: number, fee: string | null, items: Focusable[], row: number, prompt: string): HTMLElement {
+    const foot = h('div', { class: 'footer', html: '<b class="fg3">!</b>/<b class="fg3">^</b>:&nbsp;' })
+    names.forEach((n, i) => {
+      if (i) foot.append(' | ')
+      const sp = i === cur ? h('b', { class: 'fg15' }, n) : h('span', null, n)
+      const send = () => {
+        for (let k = (i - cur + names.length) % names.length; k > 0; k--) this.hooks.send(cm.input('!'))
+      }
+      sp.addEventListener('click', send)
+      foot.append(sp)
+      items.push({ label: n, el: sp, activate: send, row, col: i, id: 'pane:' + n })
+    })
+    if (fee !== null) {
+      foot.append('\u00a0\u00a0')
+      const join = h('span', { html: '<b class="fg3">J</b>/<b class="fg3">Enter</b>: join religion' + escapeHtml(fee) })
+      const send = () => this.hooks.send(cm.key(Keys.ENTER))
+      join.addEventListener('click', send)
+      foot.append(join)
+      items.push({ label: GOD_JOIN, el: join, activate: send, row, col: names.length, id: 'join' })
+    }
+    if (prompt) foot.insertAdjacentHTML('beforeend', prompt)
+    return foot
+  }
+
+  /** What Enter does on the top popup when it is more than a confirm (joining at an altar), for Start's chip. */
+  popupEnter(): string | undefined {
+    const p = this.popupTop
+    return p?.type === 'describe-god' && (p.data as Record<string, unknown>).is_altar ? GOD_JOIN : undefined
   }
 
   private spellset(books: SpellBook[], items: Focusable[], nextRow: () => number, colour = false): HTMLElement {

@@ -35,7 +35,10 @@ function setup() {
     ov.setDevice(device)
     ov.update(st)
     const ctx = deriveContext(st, scene, cam, 'micro')
-    if (ctx.mode === 'popup') ctx.popupActions = ov.popupActions()
+    if (ctx.mode === 'popup') {
+      ctx.popupActions = ov.popupActions()
+      ctx.popupEnter = ov.popupEnter()
+    }
     ov.updatePrompt(ctx.mode, ctx.prompt, device)
     ov.syncFocus(ctx)
     const fi = ov.focusInfo(ctx)
@@ -868,24 +871,38 @@ describe('scroller popups with unprinted keys', () => {
     ctx = frame()
     expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('(!) Annotate')
   })
-  it("a god's description at an altar: the keyboard's Enter joins (raw to the server) until an arrow has taken the cursor; J stays raw too", () => {
+  it("a god's description at an altar: the footer's panes and joining are stops of their own; Enter stays raw until an arrow walks", () => {
     const { ov, st, sent, frame, host } = setup()
     // ui-layouts.js describe_god: the pane names sit behind ! and ^; at an altar the footer adds "J/Enter: join religion"
     reduce(st, { msg: 'ui-push', type: 'describe-god', name: 'Okawaru', colour: 14, description: 'Okawaru is a dangerous god.', title: 'the Fighter', favour: '', powers_list: '', powers: '', wrath: 'w', extra: '', is_altar: true, service_fee: '' })
-    const ctx = frame('keyboard')
+    let ctx = frame('keyboard')
     expect(ctx.mode).toBe('popup')
     expect(host.querySelector('.popup .footer')?.textContent).toContain('J/Enter: join religion')
-    // the cursor rests on the pane switch, but Enter is not its until the keyboard walked there
-    expect(ctx.focus?.label).toBe('Overview | Powers | Wrath')
+    expect(ctx.focus).toMatchObject({ label: 'Overview', count: 4 })
+    // no pane switch on X; Start names the join
+    const t = bindingTable(ctx)
+    expect(t.X).toBeUndefined()
+    expect(t.START).toMatchObject({ kind: 'keys', seq: [{ key: Keys.ENTER }], label: 'Join religion', contextual: true })
+    // Enter is the server's (a join) until the keyboard walked the cursor
     expect(ov.focusKey(st, ctx, 'select')).toBe(false)
     expect(sent).toEqual([])
-    // an arrow the cursor cannot take (one item) is not a walk either: it scrolls the text, Enter stays raw
-    expect(ov.focusKey(st, ctx, 'next')).toBe(false)
-    expect(ov.focusKey(st, ctx, 'select')).toBe(false)
-    expect(sent).toEqual([])
-    // the pad's A fires the focused switch as before
+    // Wrath is two presses of ! on from Overview
+    expect(ov.focusKey(st, ctx, 'right')).toBe(true)
+    expect(ov.focusKey(st, ctx, 'right')).toBe(true)
+    expect(ov.focusKey(st, ctx, 'select')).toBe(true)
+    expect(sent).toEqual([{ msg: 'input', text: '!' }, { msg: 'input', text: '!' }])
+    sent.length = 0
+    // the pad walks to the join and A sends Enter
+    ov.focusOp(st, ctx, 'right')
+    expect(frame().focus?.label).toBe('Join religion')
     ov.focusOp(st, ctx, 'select')
-    expect(sent).toEqual([{ msg: 'input', text: '!' }])
+    expect(sent).toEqual([{ msg: 'key', keycode: Keys.ENTER }])
+    // away from an altar there is no join, and Start is a plain Enter again
+    reduce(st, { msg: 'ui-pop' })
+    reduce(st, { msg: 'ui-push', type: 'describe-god', name: 'Okawaru', colour: 14, description: 'd', title: 't', favour: '', powers_list: '', powers: '', wrath: 'w', extra: '' })
+    ctx = frame()
+    expect(ctx.focus?.count).toBe(3)
+    expect(bindingTable(ctx).START).toMatchObject({ label: 'Confirm' })
   })
   it('a popup whose row the keyboard can walk: an arrow that moves the cursor arms Enter, which then fires the focused key', () => {
     const { ov, st, sent, frame } = setup()

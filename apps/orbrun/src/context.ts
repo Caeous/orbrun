@@ -106,6 +106,8 @@ export interface Context {
   popupType?: string
   /** Actions the top popup offers (describe-item verbs, pane switches), in pad order. Filled by the app from the overlays. */
   popupActions?: { key: string; label: string }[]
+  /** What Enter does on the top popup when it is more than a confirm (joining at an altar). Filled by the app from the overlays. */
+  popupEnter?: string
   /**
    * The focus layer's cursor over the top overlay (popup, prompt, CRT screen,
    * dialog): what A and B would do. Filled by the app from the overlays; absent
