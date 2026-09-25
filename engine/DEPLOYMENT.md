@@ -112,6 +112,6 @@ before the first deploy that carries the consumer:
 npx wrangler email routing enable orbrun.app
 npx wrangler queues create orbrun-engine-builds
 npx wrangler queues subscription create orbrun-engine-builds --source workersBuilds.worker --worker-name orbrun-engine \
-  --events cf.workersBuilds.worker.build.succeeded,cf.workersBuilds.worker.build.failed,cf.workersBuilds.worker.build.canceled
+  --events build.succeeded,build.failed,build.canceled
 npx wrangler secret put NOTIFY_EMAIL -c engine/wrangler.jsonc
 ```

@@ -11,6 +11,7 @@ Notable changes to Orbrun, newest first.
 - Doors, statues and items no longer go missing on busy levels deeper in the game.
 - Pressing up at the top of the title screen goes to your account; About & credits is one step right of it.
 - Cleaner addresses you can share, like orbrun.app/watch/cdi/bob.
+- Each server's own site is a click away beside it when you add an account, for its rules, code of conduct and donations.
 
 ## 0.1.8 — 2026-09-23
 

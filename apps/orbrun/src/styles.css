@@ -574,6 +574,10 @@ img.room-poster.up {
 .frame.menu-frame .item.beside::before {
   border-left: 0;
 }
+/* a link out beside a row (a server's own site) reads as its buttons do */
+a.item.beside {
+  text-decoration: none;
+}
 .frame.menu-frame .item.beside.focused,
 .frame.menu-frame .item.beside:hover {
   color: var(--color-15);

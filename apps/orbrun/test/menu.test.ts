@@ -785,7 +785,7 @@ describe('the front end: accounts and servers', () => {
     const { screen } = make()
     pick(screen, 'Play')
     expect(screen.view).toBe('servers')
-    expect(labels(screen)).toEqual(['Back', 'CDI', 'CBR2', 'CKO', 'CAO', 'CUE', 'CXC', 'CWZ', 'Add a server'])
+    expect(labels(screen)).toEqual(['Back', ...['CDI', 'CBR2', 'CKO', 'CAO', 'CUE', 'CXC', 'CWZ'].flatMap((n) => [n, '(site ↗)']), 'Add a server'])
     expect(screen.root.querySelector('.head .place')?.textContent).toBe('Add an account')
     pick(screen, 'CKO')
     expect(screen.view).toBe('login')
@@ -903,6 +903,17 @@ describe('the front end: accounts and servers', () => {
     expect(screen.view).toBe('home')
     expect(labels(screen)[0]).toBe('Log in')
     expect(conn(screen)).toBe('orbrun · CKO · Not logged in')
+  })
+
+  it("a server's site stands beside its row when adding an account, a link out in a new tab", () => {
+    const { screen } = make()
+    pick(screen, 'Play')
+    expect(screen.view).toBe('servers')
+    const site = screen.root.querySelector<HTMLAnchorElement>('[data-focus="site:cdi"]')!
+    expect(site.href).toBe('https://crawl.dcss.io/')
+    expect(site.target).toBe('_blank')
+    expect(site.rel).toBe('noopener noreferrer')
+    expect(screen.root.querySelector<HTMLAnchorElement>('[data-focus="site:cao"]')!.href).toBe('https://crawl.akrasiac.org:8443/')
   })
 
   it('logging out forgets the account and comes back to the front without it', () => {

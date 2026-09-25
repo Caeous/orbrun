@@ -104,8 +104,8 @@ interface Row {
   marker?: string
   hint?: string
   fn?: () => void
-  /** things standing beside the row, reached with left and right (an account's log out beside its name) */
-  also?: { id: string; label: string; title?: string; fn: () => void }[]
+  /** things standing beside the row, reached with left and right (an account's log out beside its name); one with an `href` is a link out, in a new tab */
+  also?: { id: string; label: string; title?: string; fn?: () => void; href?: string }[]
   /** a text field: the row is the prompt, X (or a click) types into it */
   input?: HTMLInputElement
   /** the way in: where the cursor starts on this screen. It reads like every other row — the cursor is the only thing that lights up. */
@@ -647,12 +647,14 @@ export class FrontEnd {
         return
       }
       const el = this.item(r)
-      const line = h('div', { class: 'line' }, el, ...(r.also ?? []).map((a) => h('button', { type: 'button', class: 'item beside', title: a.title ?? '', dataset: { focus: a.id }, onclick: a.fn }, h('span', { class: 'label' }, a.label))))
+      const line = h('div', { class: 'line' }, el, ...(r.also ?? []).map((a) => a.href
+        ? h('a', { class: 'item beside', href: a.href, target: '_blank', rel: 'noopener noreferrer', title: a.title ?? '', dataset: { focus: a.id } }, h('span', { class: 'label' }, a.label))
+        : h('button', { type: 'button', class: 'item beside', title: a.title ?? '', dataset: { focus: a.id }, onclick: a.fn }, h('span', { class: 'label' }, a.label))))
       list.append(line)
       items.push({ id: r.id, label: r.label, el, row: i, col: 0, activate: () => r.fn?.(), onFocus: () => this.onRow(r, el) })
       r.also?.forEach((a, k) => {
         const bel = line.children[k + 1] as HTMLElement
-        items.push({ id: a.id, label: a.label, el: bel, row: i, col: k + 1, activate: a.fn, onFocus: () => this.say(a.title) })
+        items.push({ id: a.id, label: a.label, el: bel, row: i, col: k + 1, activate: a.href ? () => bel.click() : () => a.fn?.(), onFocus: () => this.say(a.title) })
       })
     })
     const body = opts.wrap ? opts.wrap(list) : list
@@ -1453,6 +1455,7 @@ export class FrontEnd {
         late: this.pingNote(sv),
         marker: '\\',
         hint: mode === 'watch' ? `Watch who is playing on ${sv.host}.` : `An account on ${sv.host}.` + (mine.length ? ` ${mine.join(' and ')} ${mine.length === 1 ? 'is' : 'are'} already here.` : ''),
+        also: mode === 'add' ? [siteLink(sv)] : undefined,
         fn: () => {
           if (mode === 'watch') {
             this.watchOn = sv
@@ -1887,6 +1890,15 @@ function exitTitle(reason: string, watched: string | null): string {
  * Where a server is, as the server list and the accounts both say it: its region and host, or for this device
  * that no connection is needed. Whether a server is up is the dot's to say, never this line's.
  */
+/**
+ * A server's own lobby page, beside its row, in a new tab: where it keeps what
+ * only its admins say (its news, code of conduct, donations, other games),
+ * which the socket never carries.
+ */
+function siteLink(sv: ServerInfo): NonNullable<Row['also']>[number] {
+  return { id: 'site:' + sv.id, label: '(site ↗)', title: `Open ${sv.host} in a new tab: the server's own page, with its news, rules and how to support it. Your game stays here.`, href: sv.http + '/' }
+}
+
 function serverWhere(sv: ServerInfo): string {
   return sv.offline ? 'no connection needed' : [sv.region, sv.host].filter(Boolean).join(' · ')
 }
