@@ -694,7 +694,7 @@ describe('the front end: the home screen', () => {
     expect(retrying.root.querySelector('.error')?.textContent).toBe('Connection lost. Reconnecting…')
   })
 
-  it('the dot before the account is green logged in, gray logged out, gold on the way and red when the line is down', () => {
+  it('the dot before the account is green logged in, gone logged out, gold on the way and red when the line is down', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
@@ -702,7 +702,7 @@ describe('the front end: the home screen', () => {
     expect(dot(screen)).toBe('up')
     s.state.lobby.username = ''
     screen.refresh()
-    expect(dot(screen)).toBe('off')
+    expect(dot(screen)).toBe(null)
     ;(s.conn as { open: boolean }).open = false
     screen.refresh()
     expect(dot(screen)).toBe('wait')

@@ -42,6 +42,9 @@ const ABOUT_DOCS = {
 /** the way off a screen (`data-focus`) */
 const BACK = 'back'
 
+/** the margin glyph for a player on this device, where a server account has `\`: a wall, a place of its own */
+const DEVICE_MARKER = '#'
+
 /** A text file read through the shell's proxy; a status that is not success is the failure's words. */
 async function fetchText(url: string): Promise<string> {
   const r = await fetch(url)
@@ -599,7 +602,7 @@ export class FrontEnd {
       { type: 'button', class: 'item' + (r.main ? ' main' : '') + (r.off ? ' off' : '') + (r.gap && !r.chip ? ' gap' : '') + (r.chip ? ' chip' : '') + (r.conn ? ' conn conn-' + r.conn : ''), dataset: { focus: r.id, marker: r.marker ?? '' }, onclick: () => this.click(r) },
       h('span', { class: 'marker' }),
       // in the label, so it stands before the name however the row is laid out (a grid, beside a Log out)
-      h('span', { class: 'label' }, r.conn ? h('span', { class: 'dot', 'aria-hidden': 'true' }) : null, r.label),
+      h('span', { class: 'label' }, r.conn && r.conn !== 'off' ? h('span', { class: 'dot', 'aria-hidden': 'true' }) : null, r.label),
       r.sub ? h('span', { class: 'sub' }, r.sub, r.late ?? null) : null,
     )
   }
@@ -876,7 +879,7 @@ export class FrontEnd {
       const login = loginState(account, loggedIn, !!s?.loggingIn)
       const problem = s?.closed ? 'Disconnected' : open && login === 'out' ? 'Not logged in' : null
       const conn = accountConn(s, account, true)
-      rows.push({ id: 'account', label: server.offline ? account.username : `${loggedIn ?? account.username} · ${server.name}`, sub: problem, conn, hint: 'Manage accounts, check your connection, or log out.', fn: () => this.showAccounts() })
+      rows.push({ id: 'account', label: server.offline ? account.username : `${loggedIn ?? account.username} · ${server.name}`, sub: problem, conn, marker: server.offline ? DEVICE_MARKER : '\\', hint: 'Manage accounts, check your connection, or log out.', fn: () => this.showAccounts() })
       const games = this.games(server, s)
       const links = games?.length ? gameLinkRows(games) : null
       // each row with the version it belongs to, as `gameLinkRows` grouped them: what a `.where` line answers for
@@ -954,7 +957,7 @@ export class FrontEnd {
     // Only game actions in the main list; identity and information share a quiet footer.
     const accountRow = chosen ? rows.shift() : undefined
     const utilities: Row[] = accountRow ? [accountRow] : []
-    utilities.push({ id: 'about', label: 'About & credits', hint: 'About Orbrun, what’s new, and the people behind the game.', fn: () => this.showAbout() })
+    utilities.push({ id: 'about', label: 'About & credits', marker: '?', hint: 'About Orbrun, what’s new, and the people behind the game.', fn: () => this.showAbout() })
     const onPad = !!this.hooks.padConnected?.()
     rows.push({ id: 'settings', label: 'Settings', marker: '?', hint: 'Camera, controls, the HUD: kept on this device.' + (onPad ? ' (X)' : ''), fn: () => this.showSettings(() => this.showHome()) })
     // straight under Settings, and only where the browser left no way out of its own: a kiosk window on a
@@ -1062,7 +1065,8 @@ export class FrontEnd {
     if (opts.links?.length && opts.failed) {
       const links = h('nav', { class: 'about-links', 'aria-label': opts.title })
       opts.links.forEach(({ label, href }, i) => {
-        const el = h('a', { class: 'item', href, target: '_blank', rel: 'noopener noreferrer', dataset: { focus: 'link:' + i } }, h('span', { class: 'marker', 'aria-hidden': 'true' }), h('span', { class: 'label' }, label), h('span', { class: 'sub', 'aria-hidden': 'true' }, '↗'))
+        // a door out of the room: `+`, as the game marks one
+        const el = h('a', { class: 'item', href, target: '_blank', rel: 'noopener noreferrer', dataset: { focus: 'link:' + i, marker: '+' } }, h('span', { class: 'marker', 'aria-hidden': 'true' }), h('span', { class: 'label' }, label), h('span', { class: 'sub', 'aria-hidden': 'true' }, '↗'))
         links.append(el)
         extra.push({ id: 'link:' + i, label, el, row: i + 1, activate: () => el.click(), onFocus: () => this.say('Opens in a new tab. Your game stays here.') })
       })
@@ -1094,7 +1098,7 @@ export class FrontEnd {
       ['PocketZot', 'https://pocketzot.app/'],
     ]
     destinations.forEach(([label, href], i) => {
-      const el = h('a', { class: 'item', href, target: '_blank', rel: 'noopener noreferrer', dataset: { focus: 'link:' + i } }, h('span', { class: 'marker', 'aria-hidden': 'true' }), h('span', { class: 'label' }, label), h('span', { class: 'sub', 'aria-hidden': 'true' }, '↗'))
+      const el = h('a', { class: 'item', href, target: '_blank', rel: 'noopener noreferrer', dataset: { focus: 'link:' + i, marker: '+' } }, h('span', { class: 'marker', 'aria-hidden': 'true' }), h('span', { class: 'label' }, label), h('span', { class: 'sub', 'aria-hidden': 'true' }, '↗'))
       links.append(el)
       extra.push({ id: 'link:' + i, label, el, row: rows.length + i, activate: () => el.click(), onFocus: () => this.say('Opens in a new tab. Your game stays here.') })
     })
@@ -1349,7 +1353,7 @@ export class FrontEnd {
         label: server.offline ? a.username : `${a.username} · ${server.name}`,
         sub: server.offline ? 'on this device' : [serverWhere(server), state].filter(Boolean).join(' · '),
         conn: accountConn(s, a, sameAccount(a, chosen)),
-        marker: '\\',
+        marker: server.offline ? DEVICE_MARKER : '\\',
         main: sameAccount(a, chosen),
         hint: `Play as ${a.username} on ${server.host}.`,
         fn: () => {
@@ -1439,7 +1443,7 @@ export class FrontEnd {
         id: 'server:' + OFFLINE_SERVER.id,
         label: OFFLINE_SERVER.name,
         sub: serverWhere(OFFLINE_SERVER),
-        marker: '\\',
+        marker: DEVICE_MARKER,
         hint: 'Play with no server: a player on this device, with saved characters of its own.',
         fn: () => {
           this.adding = OFFLINE_SERVER
@@ -1922,7 +1926,7 @@ function engineHint(note: EngineNote | null): string {
 
 /**
  * The dot before an account's name: green once its server knows it, gold on the way, red when the line is
- * down, gray when it is not logged in or not connected at all (an account other than the chosen one).
+ * down, and none when it is not logged in or not connected at all (an account other than the chosen one).
  */
 export function accountConn(s: Session | null | undefined, account: Account, chosen: boolean): NonNullable<Row['conn']> {
   const open = !!s?.conn.open

@@ -770,12 +770,12 @@ a.item.beside {
 .frame.menu-frame .item:focus-visible::after {
   opacity: 0;
 }
-/* an account row (home, Accounts): a dot before the name says where the login stands (conn-off is not .off, a row that cannot be taken) */
+/* an account row (home, Accounts): a dot before the name says where the login stands; none when logged out (conn-off is not .off, a row that cannot be taken) */
 .frame:is(.home-list, .accounts-list) .item.conn .dot {
   display: inline-block;
   width: 0.5rem;
   height: 0.5rem;
-  margin-right: 0.5rem;
+  margin-right: 0.7rem;
   border-radius: 50%;
   vertical-align: middle;
   background: currentColor;
@@ -787,10 +787,6 @@ a.item.beside {
 .frame:is(.home-list, .accounts-list) .item.conn-wait .dot {
   color: var(--gold);
   animation: conn-wait 1.4s ease-in-out infinite;
-}
-.frame:is(.home-list, .accounts-list) .item.conn-off .dot {
-  color: var(--ink-dim);
-  box-shadow: none;
 }
 .frame:is(.home-list, .accounts-list) .item.conn-down .dot {
   color: var(--color-12);
@@ -890,7 +886,8 @@ a.item.beside {
 .frame.home-list .home-utilities .item .sub {
   font-size: var(--menu-note-size);
 }
-.frame.home-list .home-utilities .item .marker {
+.frame.home-list .home-utilities .item .marker,
+.frame.home-list .home-utilities .item[data-marker]::after {
   left: 0.3rem;
   font-size: var(--menu-note-size);
 }
