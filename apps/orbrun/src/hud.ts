@@ -1267,7 +1267,8 @@ export class Hud {
     this.minimap.setCamera(cam)
     this.minimap.render()
     this.cutMinimapDisc()
-    this.drawMinimapNorth()
+    // no level yet (the character is still being picked): a north mark round an empty disc points at nothing
+    if (scene.cells.size) this.drawMinimapNorth()
   }
 
   /**

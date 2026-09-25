@@ -107,6 +107,10 @@ export class GameScreen {
   private ctxKey = ''
   /** the revisions a frame was last drawn for: only a change to what is drawn (the map, the player, the UI stack) asks for a frame */
   private drawnRev = { map: -1, player: -1, ui: -1 }
+  /** A game on this device has no one watching and no one to talk to: no chat box, no Chat row, F12 does nothing. */
+  private get chatOn(): boolean {
+    return !this.session.server.offline
+  }
   /** A frame is needed; setting it also wakes the loop. */
   private get needsRender(): boolean {
     return this._needsRender
@@ -676,7 +680,7 @@ export class GameScreen {
     this.hud.minimapUp = this.cam.mapYaw
     this.hud.minimapUpright = this.cam.mapUprightYaw
     this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing)
-    this.chat.update(st, st.phase === 'playing' || st.phase === 'watching', !!st.lobby.username)
+    this.chat.update(st, this.chatOn && (st.phase === 'playing' || st.phase === 'watching'), !!st.lobby.username)
     this.syncTarget()
     perf?.mark('ui')
     if (this.needsRender) {
@@ -1335,7 +1339,7 @@ export class GameScreen {
     }
     if (ev.key === 'F12' || ev.code === 'F12') {
       // client.js: F12 focuses chat
-      this.chat.focus()
+      if (this.chatOn) this.chat.focus()
       ev.preventDefault()
       return
     }
@@ -1657,7 +1661,7 @@ export class GameScreen {
         this.overlays.triggerPopupAction(arg ?? 0)
         break
       case 'system':
-        this.overlays.showSystem({ spectating: this.session.watching, inGame: true, run: (a) => this.runner.execute(a) })
+        this.overlays.showSystem({ spectating: this.session.watching, inGame: true, chat: this.chatOn, run: (a) => this.runner.execute(a) })
         break
       case 'bindings':
         this.overlays.showBindings(this.hooks.gamepad.kind)
@@ -1686,7 +1690,7 @@ export class GameScreen {
 
   private systemAction(op: string) {
     if (op === 'toggleRenderer') this.userToggleRenderer()
-    else if (op === 'chat') this.chat.padFocus()
+    else if (op === 'chat' && this.chatOn) this.chat.padFocus()
     else if (op === 'disconnect') this.hooks.onSystem('disconnect')
   }
 }

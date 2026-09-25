@@ -2838,7 +2838,7 @@ export class Overlays {
    * manage the character, and System, the game's own options and the way out.
    * A spectator has no character to read, so the System rows stand alone.
    */
-  showSystem(opts: { spectating: boolean; inGame: boolean; run?: (action: Action) => void }) {
+  showSystem(opts: { spectating: boolean; inGame: boolean; chat?: boolean; run?: (action: Action) => void }) {
     const again = () => this.showSystem(opts)
     const el = h('div', { class: 'popup menu game sysmenu' })
     el.append(h('div', { class: 'title' }, 'Orbrun'))
@@ -2870,7 +2870,7 @@ export class Overlays {
       add('Game menu (F1)', "crawl's own menu: saving, options, the lot", () => this.hooks.send(cm.input('~')))
       add(`${HELP_COMMAND.label} (${HELP_COMMAND.key})`, 'the manual, and what every key does', () => this.hooks.send(cm.input(HELP_COMMAND.key)))
     }
-    if (opts.inGame) add('Chat (F12)', 'talk to whoever is watching', () => this.hooks.onSystemAction('chat'))
+    if (opts.inGame && opts.chat !== false) add('Chat (F12)', 'talk to whoever is watching', () => this.hooks.onSystemAction('chat'))
     // 2D is out for now (VIEW_OPTIONS in servers.ts)
     if (playing && VIEW_OPTIONS) add('Toggle 2D / 3D view', 'the floor laid flat, or stood up around you', () => this.hooks.onSystemAction('toggleRenderer'))
     add('Gamepad controls', 'what each button does, and how to change it', () => this.showBindings(this.hooks.padKind?.() ?? 'generic', again), true)
