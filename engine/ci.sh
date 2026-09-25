@@ -8,7 +8,8 @@
 #
 # Runs anywhere with a C++ toolchain, python3, git and curl: what it lacks
 # of the build's needs (emsdk, node 25 for JSPI, PyYAML) it installs under
-# .work/ci. ENGINE_CHANNEL names a channel instead of asking plan.mjs.
+# .work/ci. ENGINE_CHANNEL names a channel instead of asking plan.mjs;
+# ENGINE_DRY_RUN=1 checks the deploy without publishing.
 set -eu
 
 ENGINE=$(cd "$(dirname "$0")" && pwd)
@@ -46,7 +47,16 @@ if [ ! -x "$TOOLS/emsdk/emsdk" ]; then
     "$TOOLS/emsdk/emsdk" install "$EMSDK_VERSION" >/dev/null
 fi
 "$TOOLS/emsdk/emsdk" activate "$EMSDK_VERSION" >/dev/null
-. "$TOOLS/emsdk/emsdk_env.sh" >/dev/null 2>&1
+# from inside its directory: sourced by a shell other than bash (dash is sh
+# on the builds image), emsdk_env.sh cannot tell where it is and sets nothing
+# emsdk_env also points SSL_CERT_FILE at its own python's bundle (on a Mac),
+# which node then trusts instead of the machine's; the build needs neither
+ssl=${SSL_CERT_FILE-}
+cd "$TOOLS/emsdk"
+. ./emsdk_env.sh >/dev/null
+cd "$ENGINE"
+if [ -n "$ssl" ]; then export SSL_CERT_FILE="$ssl"; else unset SSL_CERT_FILE; fi
+command -v em++ >/dev/null || { echo "ci: emsdk $EMSDK_VERSION did not put em++ on PATH" >&2; exit 1; }
 # emsdk_env puts its own node first, which is older than JSPI needs
 PATH=$NODE_BIN:$PATH
 
@@ -64,5 +74,5 @@ step "smoke"
 node "$ENGINE/smoke.mjs" "$ENGINE/dist/$channel"
 
 step "publish"
-node "$ENGINE/publish.mjs"
+node "$ENGINE/publish.mjs" ${ENGINE_DRY_RUN:+--dry-run}
 step "done"
