@@ -7,11 +7,13 @@
 #
 # upstream's own `make WEBTILES=y` gets all of these too, but only after it
 # has compiled and linked the native game, which the wasm build never uses:
-# about half of a build's compile time.
+# about a quarter of a clean build.
 include Makefile
 
 .DEFAULT_GOAL := wasm-generated
 .PHONY: wasm-generated
+# levcomp.tab.h comes with levcomp.tab.cc: from bison, or with no bison (the
+# Workers Builds image) copied from prebuilt/, where it has no rule of its own
 wasm-generated: $(GENERATED_FILES) $(TILEDEFSRCS) $(TILEDEFHDRS) \
-    $(UTIL)levcomp.tab.cc $(UTIL)levcomp.tab.h $(UTIL)levcomp.lex.cc \
+    $(UTIL)levcomp.tab.cc $(UTIL)levcomp.lex.cc \
     docs webserver
