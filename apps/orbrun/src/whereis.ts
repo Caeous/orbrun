@@ -78,7 +78,7 @@ export function saveWaiting(w: Whereis): boolean {
 
 /**
  * Where a server keeps a player's morgue directory, as `game_ended`'s `dump` spells it: the path less the
- * file, e.g. "/crawl/morgue/caeo/". Null when the dump is not a path on the server.
+ * file, e.g. "/crawl/morgue/orbrun/". Null when the dump is not a path on the server.
  */
 export function morgueDirOf(server: ServerInfo, dump: string): string | null {
   let u: URL

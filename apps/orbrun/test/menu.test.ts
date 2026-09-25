@@ -21,8 +21,8 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 const cdi = findServer('cdi')!
 const cko = findServer('cko')!
-const caeo: Account = { serverId: 'cdi', username: 'caeo' }
-const kelbi: Account = { serverId: 'cko', username: 'caeo' }
+const orbrun: Account = { serverId: 'cdi', username: 'orbrun' }
+const kelbi: Account = { serverId: 'cko', username: 'orbrun' }
 
 /** A connection that says what a lobby says, without a socket. */
 function fakeSession(server: ServerInfo, username: string | null, lobby: Partial<GameState['lobby']> = {}, open = true): Session {
@@ -191,23 +191,23 @@ describe('the front end: the home screen', () => {
   })
 
   it('with an account: the way in first, the utilities under it, and Log in in Play’s place before the login', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     const { screen } = make()
-    expect(labels(screen)).toEqual(['Log in', 'Watch', 'Settings', 'caeo · CDI', 'About & credits'])
-    expect(conn(screen)).toBe('caeo · CDI')
+    expect(labels(screen)).toEqual(['Log in', 'Watch', 'Settings', 'orbrun · CDI', 'About & credits'])
+    expect(conn(screen)).toBe('orbrun · CDI')
     expect(focused(screen)).toBe('login')
   })
 
   it('Play on the home screen leaves the screen standing until the game comes, rather than sliding it in again', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    const s = fakeSession(cdi, 'caeo', { username: 'caeo', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
     const { screen, connect } = make(() => s)
     const frame = screen.root.querySelector('.frame')
     const menu = screen.root.querySelector('.menu')
     pick(screen, 'Play DCSS 0.34')
-    expect(connect).toHaveBeenCalledWith(cdi, 'caeo', { kind: 'play', gameId: 'dcss-web-0.34' })
+    expect(connect).toHaveBeenCalledWith(cdi, 'orbrun', { kind: 'play', gameId: 'dcss-web-0.34' })
     expect(screen.view).toBe('home')
     expect(screen.root.querySelector('.frame')).toBe(frame)
     expect(screen.root.querySelector('.menu')).toBe(menu)
@@ -220,9 +220,9 @@ describe('the front end: the home screen', () => {
   })
 
   it('the roster count changing under the cursor keeps the hint standing, not fading in again', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    const s = fakeSession(cdi, 'caeo', { username: 'caeo', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
     const { screen } = make(() => s)
     const msg = () => screen.root.querySelector('.menu-msg')!
     const hint = msg().textContent
@@ -243,26 +243,26 @@ describe('the front end: the home screen', () => {
   })
 
   it('once logged in: versions are on home in the lobby’s order, Watch counts players', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    localStorage.setItem('orbrun.last', JSON.stringify({ serverId: 'cdi', username: 'caeo', gameId: 'dcss-web-trunk' }))
-    const s = fakeSession(cdi, 'caeo', {
-      username: 'caeo',
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    localStorage.setItem('orbrun.last', JSON.stringify({ serverId: 'cdi', username: 'orbrun', gameId: 'dcss-web-trunk' }))
+    const s = fakeSession(cdi, 'orbrun', {
+      username: 'orbrun',
       complete: true,
       games: [
         { id: 'dcss-web-0.34', label: 'DCSS 0.34' },
-        { id: 'dcss-web-trunk', label: 'DCSS trunk', save: 'caeo, a level 9 Minotaur Berserker of Trog' },
+        { id: 'dcss-web-trunk', label: 'DCSS trunk', save: 'orbrun, a level 9 Minotaur Berserker of Trog' },
       ],
       entries: new Map([[1, playing('alice')]]),
     })
     const { screen } = make(() => s)
     // the latest release leads whatever was played last and whatever has a game waiting: the cursor is on the
     // same row every time the screen comes up
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Settings', 'caeo · CDI', 'About & credits'])
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Settings', 'orbrun · CDI', 'About & credits'])
     expect(sub(screen, 'Continue DCSS trunk')).toBe('a level 9 Minotaur Berserker of Trog')
     expect(sub(screen, 'Play DCSS 0.34')).toBeNull()
     expect(sub(screen, 'Watch')).toBe('1 playing')
-    expect(conn(screen)).toBe('caeo · CDI')
+    expect(conn(screen)).toBe('orbrun · CDI')
     expect(focused(screen)).toBe('play:dcss-web-0.34')
     const lines = Array.from(screen.root.querySelectorAll('.home-actions > .line'))
     expect(lines.map((line) => line.firstElementChild?.getAttribute('data-focus'))).toEqual(['play:dcss-web-0.34', 'play:dcss-web-trunk', 'watch', 'settings'])
@@ -280,10 +280,10 @@ describe('the front end: the home screen', () => {
 
   it('shows how the last game ended in a dialog over the front, as the official lobby’s exit dialog, until closed', () => {
     // another client took over the account: the server hung this game up, crawl saved, and game_ended said so
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    const s = fakeSession(cdi, 'caeo', { username: 'caeo', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
-    s.state.exit = { reason: 'disconnect', message: 'Game saved, see you later!\n', dump: 'https://crawl.dcss.io/morgue/caeo/caeo' }
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
+    s.state.exit = { reason: 'disconnect', message: 'Game saved, see you later!\n', dump: 'https://crawl.dcss.io/morgue/orbrun/orbrun' }
     const { screen } = make(() => s)
     // the report is a dialog laid over the front, which stands behind it with its rows and its cursor put by
     expect(screen.view).toBe('exit')
@@ -308,7 +308,7 @@ describe('the front end: the home screen', () => {
     expect(screen.root.querySelector('.exit-report')).toBeNull()
     expect(labels(screen)).toContain('Play DCSS 0.34')
     // Close does the same
-    s.state.exit = { reason: 'crash', dump: 'https://crawl.dcss.io/morgue/caeo/crash' }
+    s.state.exit = { reason: 'crash', dump: 'https://crawl.dcss.io/morgue/orbrun/crash' }
     screen.showHome()
     expect(screen.view).toBe('exit')
     expect(screen.root.querySelector('.dialog-over h1')?.textContent).toBe('Your game crashed')
@@ -325,12 +325,12 @@ describe('the front end: the home screen', () => {
   })
 
   it('reads the morgue file here through the shell’s proxy, and falls back to a link when it cannot', async () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    const s = fakeSession(cdi, 'caeo', { username: 'caeo', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
     // the server hands the file as a path of its own, less the `.txt`, as CDI does
-    s.state.exit = { reason: 'dead', message: 'You die...\n', dump: '/crawl/morgue/caeo/morgue-caeo-20260910-120000' }
-    const fetched = vi.fn(async (_url: string) => new Response(' Dungeon Crawl Stone Soup version 0.34\n\n123 caeo the Vexing (level 1, 0/12 HPs)\n', { status: 200 }))
+    s.state.exit = { reason: 'dead', message: 'You die...\n', dump: '/crawl/morgue/orbrun/morgue-orbrun-20260910-120000' }
+    const fetched = vi.fn(async (_url: string) => new Response(' Dungeon Crawl Stone Soup version 0.34\n\n123 orbrun the Vexing (level 1, 0/12 HPs)\n', { status: 200 }))
     vi.stubGlobal('fetch', fetched)
     try {
       const { screen } = make(() => s)
@@ -338,9 +338,9 @@ describe('the front end: the home screen', () => {
       pick(screen, 'Morgue file')
       expect(screen.view).toBe('doc')
       expect(screen.root.querySelector('.head .place')?.textContent).toBe('Morgue file')
-      expect(fetched).toHaveBeenCalledWith('/morgue-proxy/crawl.dcss.io/crawl/morgue/caeo/morgue-caeo-20260910-120000.txt')
+      expect(fetched).toHaveBeenCalledWith('/morgue-proxy/crawl.dcss.io/crawl/morgue/orbrun/morgue-orbrun-20260910-120000.txt')
       expect(screen.root.querySelector('.doc-scroll')?.textContent).toBe('Loading…')
-      await vi.waitFor(() => expect(screen.root.querySelector('.doc-scroll .doc-text')?.textContent).toContain('caeo the Vexing'))
+      await vi.waitFor(() => expect(screen.root.querySelector('.doc-scroll .doc-text')?.textContent).toContain('orbrun the Vexing'))
       // no link out while it reads here
       expect(screen.root.querySelector('.about-links')).toBeNull()
       // Back returns to the report, with the game's end still on show
@@ -355,7 +355,7 @@ describe('the front end: the home screen', () => {
       expect(screen.view).toBe('doc')
       await vi.waitFor(() => expect(screen.root.querySelector('.doc-scroll .doc-failed')?.textContent).toBe('Could not read it here (HTTP 404).'))
       const link = screen.root.querySelector<HTMLAnchorElement>('.about-links a')!
-      expect(link.href).toBe('https://crawl.dcss.io/crawl/morgue/caeo/morgue-caeo-20260910-120000.txt')
+      expect(link.href).toBe('https://crawl.dcss.io/crawl/morgue/orbrun/morgue-orbrun-20260910-120000.txt')
       expect(link.target).toBe('_blank')
       expect(focused(screen)).toBe('link:0')
       press(screen, 'Escape')
@@ -366,9 +366,9 @@ describe('the front end: the home screen', () => {
   })
 
   it('lets the stale-process purge run whatever is pressed, so Continue after a drop is never stuck', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    const s = fakeSession(cdi, 'caeo', { username: 'caeo', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }], staleProcesses: { game: 'DCSS 0.34', timeout: 10 } })
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }], staleProcesses: { game: 'DCSS 0.34', timeout: 10 } })
     const { screen } = make(() => s)
     expect(screen.root.querySelector('.notice')?.textContent).toContain('Your game starts in about 10 seconds.')
     press(screen, 'ArrowDown')
@@ -379,21 +379,21 @@ describe('the front end: the home screen', () => {
   it('names the account’s own game from the roster when the server’s links keep the save to themselves', () => {
     // CDI (2026-09-09) sends plain links for every game even with a save waiting; the roster still lists a game of
     // yours that is open on the server, with the character, so that version reads Continue and says who
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    const s = fakeSession(cdi, 'caeo', {
-      username: 'caeo',
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const s = fakeSession(cdi, 'orbrun', {
+      username: 'orbrun',
       complete: true,
       games: [
         { id: 'dcss-0.34', label: 'DCSS 0.34' },
         { id: 'dcss-git', label: 'DCSS trunk' },
       ],
-      entries: new Map([[1, playing('alice')], [2, playing('Caeo', { game_id: 'dcss-git', char: 'VSIE', xl: '2', place: 'D:2', title: 'Chiller' })]]),
+      entries: new Map([[1, playing('alice')], [2, playing('Orbrun', { game_id: 'dcss-git', char: 'VSIE', xl: '2', place: 'D:2', title: 'Chiller' })]]),
     })
     const { screen } = make(() => s)
     // trunk is the one with a game waiting, and it still sits under 0.34 rather than jumping the list
     expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk'])
-    expect(sub(screen, 'Continue DCSS trunk')).toBe('Caeo the Chiller, VSIE XL2')
+    expect(sub(screen, 'Continue DCSS trunk')).toBe('Orbrun the Chiller, VSIE XL2')
     // Play on such a server is not surely a new game, and its hint does not promise one
     expect(focused(screen)).toBe('play:dcss-0.34')
     expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('A new game of DCSS 0.34 on crawl.dcss.io.')
@@ -411,15 +411,15 @@ describe('the front end: the home screen', () => {
     // crawl.dcss.io publishes no save info over the socket, but crawl writes <player>.where into the morgue
     // directory on every save and every death (chardump.cc whereis_record). This is the real file, for a trunk
     // game saved in D:2 — so trunk continues and 0.34, which the file says nothing about, does not pretend to.
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     const where =
-      'v=0.35-a0:vlong=0.35-a0-1015-gbe08bfc2e8:tiles=1:name=caeo:race=Minotaur:cls=Fighter:char=MiFi:xl=3:' +
+      'v=0.35-a0:vlong=0.35-a0-1015-gbe08bfc2e8:tiles=1:name=orbrun:race=Minotaur:cls=Fighter:char=MiFi:xl=3:' +
       'title=Covered:place=D::2:br=D:lvl=2:hp=30:mhp=33:turn=1084:status=saved\n'
-    const fetched = vi.fn(async (url: string) => new Response(url.endsWith('/crawl/morgue/caeo/caeo.where') ? where : '', { status: url.endsWith('/crawl/morgue/caeo/caeo.where') ? 200 : 404 }))
+    const fetched = vi.fn(async (url: string) => new Response(url.endsWith('/crawl/morgue/orbrun/orbrun.where') ? where : '', { status: url.endsWith('/crawl/morgue/orbrun/orbrun.where') ? 200 : 404 }))
     vi.stubGlobal('fetch', fetched)
-    const s = fakeSession(cdi, 'caeo', {
-      username: 'caeo',
+    const s = fakeSession(cdi, 'orbrun', {
+      username: 'orbrun',
       complete: true,
       games: [
         { id: 'dcss-0.34', label: 'DCSS 0.34' },
@@ -431,8 +431,8 @@ describe('the front end: the home screen', () => {
     // drawn before the file lands, and redrawn when it does
     expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk'])
     await vi.waitFor(() => expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk']))
-    expect(fetched).toHaveBeenCalledWith('/morgue-proxy/crawl.dcss.io/crawl/morgue/caeo/caeo.where', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(sub(screen, 'Continue DCSS trunk')).toBe('caeo the Covered, Minotaur Fighter XL3')
+    expect(fetched).toHaveBeenCalledWith('/morgue-proxy/crawl.dcss.io/crawl/morgue/orbrun/orbrun.where', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(sub(screen, 'Continue DCSS trunk')).toBe('orbrun the Covered, Minotaur Fighter XL3')
     expect(sub(screen, 'Play DCSS 0.34')).toBeNull()
     press(screen, 'ArrowDown')
     expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('Down the stairs to your game. D:2 lies below.')
@@ -445,8 +445,8 @@ describe('the front end: the home screen', () => {
 
   it('comes up on another account with its Continue already there: the accounts screen asks ahead, and a switch keeps the answer', async () => {
     const sam: Account = { serverId: 'cdi', username: 'sam' }
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo, sam]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, sam]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     const where = (name: string) =>
       `v=0.35-a0:vlong=0.35-a0-1015-gbe08bfc2e8:tiles=1:name=${name}:race=Minotaur:cls=Fighter:char=MiFi:xl=3:` +
       'title=Covered:place=D::2:br=D:lvl=2:hp=30:mhp=33:turn=1084:status=saved\n'
@@ -469,16 +469,16 @@ describe('the front end: the home screen', () => {
     pick(screen, 'sam · ' + cdi.name)
     expect(labels(screen)[0]).toBe('Continue DCSS trunk')
     screen.showAccounts()
-    pick(screen, 'caeo · ' + cdi.name)
+    pick(screen, 'orbrun · ' + cdi.name)
     expect(labels(screen)[0]).toBe('Continue DCSS trunk')
   })
 
   it('reads a token login still on its way as on its way, not as logged out', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     // the token went out with the open socket and was forgotten as it went (session.ts); no answer yet
-    setToken('cdi', 'caeo', null)
-    const s = fakeSession(cdi, 'caeo', { games: [{ id: 'dcss-git', label: 'DCSS trunk' }] })
+    setToken('cdi', 'orbrun', null)
+    const s = fakeSession(cdi, 'orbrun', { games: [{ id: 'dcss-git', label: 'DCSS trunk' }] })
     ;(s as { loggingIn: boolean }).loggingIn = true
     const { screen } = make(() => s)
     expect(labels(screen)).not.toContain('Log in')
@@ -488,16 +488,16 @@ describe('the front end: the home screen', () => {
   })
 
   it('lets a `.where` that lands after destroy go: no redraw, and no session followed on behalf of a screen that is gone', async () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    const where = 'v=0.35-a0:vlong=0.35-a0-1015-gbe08bfc2e8:tiles=1:name=caeo:race=Minotaur:cls=Fighter:char=MiFi:xl=3:title=Covered:place=D::2:br=D:lvl=2:hp=30:mhp=33:turn=1084:status=saved\n'
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const where = 'v=0.35-a0:vlong=0.35-a0-1015-gbe08bfc2e8:tiles=1:name=orbrun:race=Minotaur:cls=Fighter:char=MiFi:xl=3:title=Covered:place=D::2:br=D:lvl=2:hp=30:mhp=33:turn=1084:status=saved\n'
     let land: (() => void) | null = null
     const fetched = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
       land = () => resolve(new Response(where, { status: 200 }))
       init?.signal?.addEventListener('abort', () => reject(new DOMException('gone', 'AbortError')))
     }))
     vi.stubGlobal('fetch', fetched)
-    const s = fakeSession(cdi, 'caeo', { username: 'caeo', complete: true, games: [{ id: 'dcss-git', label: 'DCSS trunk' }] })
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, games: [{ id: 'dcss-git', label: 'DCSS trunk' }] })
     const sessions = vi.fn(() => s)
     const { screen } = make(sessions)
     await vi.waitFor(() => expect(fetched).toHaveBeenCalled())
@@ -520,12 +520,12 @@ describe('the front end: the home screen', () => {
   it('never speaks a save this device only remembers: the same account plays from any browser', () => {
     // a character can be walked into a hobgoblin from another browser at any moment; the server publishes no
     // save info to contradict it, so a Continue built from this device's memory would name someone dead
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    localStorage.setItem('orbrun.last', JSON.stringify({ serverId: 'cdi', gameId: 'dcss-git', username: 'caeo' }))
-    localStorage.setItem('orbrun.characters', JSON.stringify({ cdi: { 'dcss-git': { name: 'caeo', title: 'the Chiller', species: 'Vine Stalker', xl: 2, place: 'Dungeon', depth: 2 } } }))
-    const s = fakeSession(cdi, 'caeo', {
-      username: 'caeo',
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    localStorage.setItem('orbrun.last', JSON.stringify({ serverId: 'cdi', gameId: 'dcss-git', username: 'orbrun' }))
+    localStorage.setItem('orbrun.characters', JSON.stringify({ cdi: { 'dcss-git': { name: 'orbrun', title: 'the Chiller', species: 'Vine Stalker', xl: 2, place: 'Dungeon', depth: 2 } } }))
+    const s = fakeSession(cdi, 'orbrun', {
+      username: 'orbrun',
       complete: true,
       games: [
         { id: 'dcss-0.34', label: 'DCSS 0.34' },
@@ -541,9 +541,9 @@ describe('the front end: the home screen', () => {
   })
 
   it('keeps the footer in keyboard and pad order, and restores its cursor after Back', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    const s = fakeSession(cdi, 'caeo', { username: 'caeo', games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
     const { screen } = make(() => s)
     expect(Array.from(screen.root.querySelectorAll('.brand > .menu .label'), (el) => el.textContent)).toEqual(['Play DCSS 0.34', 'Watch', 'Settings'])
     press(screen, 'ArrowDown')
@@ -552,8 +552,8 @@ describe('the front end: the home screen', () => {
     expect(focused(screen)).toBe('account')
     pad(screen, 'A')
     expect(screen.view).toBe('accounts')
-    expect(sub(screen, 'caeo · CDI')).toContain('crawl.dcss.io')
-    expect(sub(screen, 'caeo · CDI')).toContain('logged in')
+    expect(sub(screen, 'orbrun · CDI')).toContain('crawl.dcss.io')
+    expect(sub(screen, 'orbrun · CDI')).toContain('logged in')
     pad(screen, 'B')
     expect(focused(screen)).toBe('account')
     press(screen, 'ArrowRight')
@@ -655,33 +655,33 @@ describe('the front end: the home screen', () => {
   })
 
   it('shows connection problems without moving the footer cursor, then clears them after login', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    const s = fakeSession(cdi, 'caeo', { username: 'caeo' })
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
     const { screen } = make(() => s)
     screen.root.querySelector<HTMLElement>('[data-focus="account"]')!.focus()
     Object.defineProperty(s, 'closed', { value: true, configurable: true })
     ;(s.conn as { open: boolean }).open = false
     screen.refresh()
-    expect(conn(screen)).toBe('caeo · CDI · Disconnected')
+    expect(conn(screen)).toBe('orbrun · CDI · Disconnected')
     expect(focused(screen)).toBe('account')
     Object.defineProperty(s, 'closed', { value: false })
     ;(s.conn as { open: boolean }).open = true
     s.state.lobby.username = ''
     screen.refresh()
-    expect(conn(screen)).toBe('caeo · CDI · Not logged in')
+    expect(conn(screen)).toBe('orbrun · CDI · Not logged in')
     expect(focused(screen)).toBe('account')
-    s.state.lobby.username = 'caeo'
+    s.state.lobby.username = 'orbrun'
     screen.refresh()
-    expect(conn(screen)).toBe('caeo · CDI')
+    expect(conn(screen)).toBe('orbrun · CDI')
     expect(focused(screen)).toBe('account')
     expect(dot(screen)).toBe('up')
   })
 
   it('a dropped connection the app is retrying says so, one it is not says why it closed', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    const s = fakeSession(cdi, 'caeo', { username: 'caeo' })
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
     const { screen } = make(() => s)
     ;(s as unknown as { emit(e: unknown): void }).emit({ type: 'closed', reason: 'the connection dropped' })
     expect(screen.root.querySelector('.error')?.textContent).toBe('Connection closed: the connection dropped')
@@ -695,9 +695,9 @@ describe('the front end: the home screen', () => {
   })
 
   it('the dot before the account is green logged in, gray logged out, gold on the way and red when the line is down', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    const s = fakeSession(cdi, 'caeo', { username: 'caeo' })
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
     const { screen } = make(() => s)
     expect(dot(screen)).toBe('up')
     s.state.lobby.username = ''
@@ -732,9 +732,9 @@ describe('the front end: the home screen', () => {
   })
 
   it('leaves the screen alone while it would read the same, and keeps the cursor where it stands on a redraw', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    const s = fakeSession(cdi, 'caeo', {}, false)
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const s = fakeSession(cdi, 'orbrun', {}, false)
     const { screen } = make(() => s)
     const before = screen.root.querySelector('.menu')
     while (focused(screen) !== 'settings') press(screen, 'ArrowDown')
@@ -742,19 +742,19 @@ describe('the front end: the home screen', () => {
     expect(screen.root.querySelector('.menu')).toBe(before)
     // the login lands: the line changes, the screen is drawn again in place, the cursor stays on Settings
     ;(s.conn as { open: boolean }).open = true
-    s.state.lobby.username = 'caeo'
+    s.state.lobby.username = 'orbrun'
     screen.refresh()
     expect(screen.root.querySelector('.menu')).not.toBe(before)
-    expect(conn(screen)).toBe('caeo · CDI')
+    expect(conn(screen)).toBe('orbrun · CDI')
     expect(focused(screen)).toBe('settings')
     expect(screen.root.querySelector('.frame')?.classList.contains('still')).toBe(true)
   })
 
   it('sets every word of a login in the same room, so the line never changes length', () => {
-    const open = fakeSession(cdi, 'caeo', { username: 'caeo' })
-    const failed = fakeSession(cdi, 'caeo', { loginFailed: 'no' })
-    const pending = fakeSession(cdi, 'caeo')
-    const closed = fakeSession(cdi, 'caeo', {}, false)
+    const open = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
+    const failed = fakeSession(cdi, 'orbrun', { loginFailed: 'no' })
+    const pending = fakeSession(cdi, 'orbrun')
+    const closed = fakeSession(cdi, 'orbrun', {}, false)
     const words = [loginWord(open, true), loginWord(failed, true), loginWord(pending, true), loginWord(closed, true), loginWord(null, true)]
     expect(words.map((w) => w.trim())).toEqual(['logged in', 'not logged in', 'logging in…', 'connecting…', 'connecting…'])
     expect(new Set(words.map((w) => w.length)).size).toBe(1)
@@ -821,7 +821,7 @@ describe('the front end: accounts and servers', () => {
     expect(screen.view).toBe('servers')
     pick(screen, 'CKO')
     const name = screen.root.querySelector<HTMLInputElement>('input[name=username]')!
-    name.value = 'caeo'
+    name.value = 'orbrun'
     screen.root.querySelector<HTMLInputElement>('input[name=password]')!.value = 'pw'
     name.focus()
     const submit = vi.spyOn(name.form!, 'requestSubmit').mockImplementation(() => {})
@@ -831,10 +831,10 @@ describe('the front end: accounts and servers', () => {
   })
 
   it('the account row leads to the accounts, and adding one there is a server then its login', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     const { screen } = make()
-    pick(screen, 'caeo · CDI')
+    pick(screen, 'orbrun · CDI')
     expect(screen.view).toBe('accounts')
     pick(screen, 'Add an account')
     expect(screen.view).toBe('servers')
@@ -845,26 +845,26 @@ describe('the front end: accounts and servers', () => {
   })
 
   it('lights the account that is logged in with the home screen’s dot, and says where each is as the server list does', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo, kelbi]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/caeo': 'tok' }))
-    const s = fakeSession(cdi, 'caeo')
-    const { screen } = make((sv, u) => (sv.id === 'cdi' && u === 'caeo' ? s : null))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
+    const s = fakeSession(cdi, 'orbrun')
+    const { screen } = make((sv, u) => (sv.id === 'cdi' && u === 'orbrun' ? s : null))
     screen.showAccounts()
     const dots = () => Array.from(screen.root.querySelectorAll('.menu .item.conn')).map((el) => [el.querySelector('.label')?.textContent, ['up', 'wait', 'off', 'down'].find((c) => el.classList.contains('conn-' + c))])
-    expect(dots()).toEqual([['caeo · CDI', 'wait'], ['caeo · CKO', 'off']])
+    expect(dots()).toEqual([['orbrun · CDI', 'wait'], ['orbrun · CKO', 'off']])
     // a gray dot is an account not in use, not a row that cannot be taken
     expect(screen.root.querySelectorAll('.menu .item.off').length).toBe(0)
     // as the server list says where a server is, never whether it is up: that is the dot's
-    expect(sub(screen, 'caeo · CDI')).toMatch(/^us · crawl\.dcss\.io · logging in…/)
+    expect(sub(screen, 'orbrun · CDI')).toMatch(/^us · crawl\.dcss\.io · logging in…/)
     const before = screen.root.querySelector('.menu')
     while (focused(screen) !== 'add') press(screen, 'ArrowDown')
     // the login lands: the row goes green, in place, the cursor where it was
-    s.state.lobby.username = 'caeo'
+    s.state.lobby.username = 'orbrun'
     screen.refresh()
     expect(screen.root.querySelector('.menu')).not.toBe(before)
-    expect(dots()).toEqual([['caeo · CDI', 'up'], ['caeo · CKO', 'off']])
-    expect(sub(screen, 'caeo · CDI')).toMatch(/· logged in/)
+    expect(dots()).toEqual([['orbrun · CDI', 'up'], ['orbrun · CKO', 'off']])
+    expect(sub(screen, 'orbrun · CDI')).toMatch(/· logged in/)
     expect(focused(screen)).toBe('add')
     const again = screen.root.querySelector('.menu')
     screen.refresh()
@@ -876,10 +876,10 @@ describe('the front end: accounts and servers', () => {
     vi.stubEnv('DEV', true)
     try {
       const marc: Account = { serverId: 'offline', username: 'Marc' }
-      localStorage.setItem('orbrun.accounts', JSON.stringify([marc, caeo]))
+      localStorage.setItem('orbrun.accounts', JSON.stringify([marc, orbrun]))
       const { screen } = make()
       screen.showAccounts()
-      expect(labels(screen)).toEqual(['Back', 'Marc', '(delete)', 'caeo · CDI', '(log out)', 'Add an account'])
+      expect(labels(screen)).toEqual(['Back', 'Marc', '(delete)', 'orbrun · CDI', '(log out)', 'Add an account'])
       expect(sub(screen, 'Marc')).toBe('on this device')
       // and the home screen's account row names it as the account list does: the name alone
       localStorage.setItem('orbrun.account', JSON.stringify(marc))
@@ -891,29 +891,29 @@ describe('the front end: accounts and servers', () => {
   })
 
   it('an account picked is chosen, opens its own connection, and the home screen is its', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo, kelbi]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     const { screen, connect } = make()
-    pick(screen, 'caeo · CDI')
+    pick(screen, 'orbrun · CDI')
     expect(screen.view).toBe('accounts')
-    expect(labels(screen)).toEqual(['Back', 'caeo · CDI', '(log out)', 'caeo · CKO', '(log out)', 'Add an account'])
-    expect(sub(screen, 'caeo · CDI')).toContain('crawl.dcss.io')
-    screen.root.querySelector<HTMLElement>('[data-focus="account:cko/caeo"]')!.click()
-    expect(connect).toHaveBeenCalledWith(cko, 'caeo', undefined)
+    expect(labels(screen)).toEqual(['Back', 'orbrun · CDI', '(log out)', 'orbrun · CKO', '(log out)', 'Add an account'])
+    expect(sub(screen, 'orbrun · CDI')).toContain('crawl.dcss.io')
+    screen.root.querySelector<HTMLElement>('[data-focus="account:cko/orbrun"]')!.click()
+    expect(connect).toHaveBeenCalledWith(cko, 'orbrun', undefined)
     expect(JSON.parse(localStorage.getItem('orbrun.account')!)).toEqual(kelbi)
     expect(screen.view).toBe('home')
     expect(labels(screen)[0]).toBe('Log in')
-    expect(conn(screen)).toBe('caeo · CKO · Not logged in')
+    expect(conn(screen)).toBe('orbrun · CKO · Not logged in')
   })
 
   it('logging out forgets the account and comes back to the front without it', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/caeo': 'tok' }))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
     const { screen, logout } = make()
-    pick(screen, 'caeo · CDI')
-    ;(screen.root.querySelector('[data-focus="logout:cdi/caeo"]') as HTMLElement).click()
-    expect(logout).toHaveBeenCalledWith(caeo)
+    pick(screen, 'orbrun · CDI')
+    ;(screen.root.querySelector('[data-focus="logout:cdi/orbrun"]') as HTMLElement).click()
+    expect(logout).toHaveBeenCalledWith(orbrun)
     expect(localStorage.getItem('orbrun.account')).toBe('null')
     expect(JSON.parse(localStorage.getItem('orbrun.accounts')!)).toEqual([])
     expect(screen.view).toBe('home')
@@ -935,18 +935,18 @@ describe('the front end: accounts and servers', () => {
     const { screen } = make()
     pick(screen, 'Play')
     pick(screen, 'CKO')
-    ;(screen.root.querySelector('input[name=username]') as HTMLInputElement).value = 'Caeo'
+    ;(screen.root.querySelector('input[name=username]') as HTMLInputElement).value = 'Orbrun'
     ;(screen.root.querySelector('input[name=password]') as HTMLInputElement).value = 'pw'
     ;(screen.root.querySelector('form') as HTMLFormElement).requestSubmit()
     // the connection the form used answers
     const sess = (screen as unknown as { session: Session }).session
-    expect(sess.send).toHaveBeenCalledWith({ msg: 'login', username: 'Caeo', password: 'pw' })
-    sess.state.lobby.username = 'Caeo'
+    expect(sess.send).toHaveBeenCalledWith({ msg: 'login', username: 'Orbrun', password: 'pw' })
+    sess.state.lobby.username = 'Orbrun'
     ;(sess as unknown as { emit(e: unknown): void }).emit({ type: 'state', msg: { msg: 'login_success' } })
-    expect(JSON.parse(localStorage.getItem('orbrun.accounts')!)).toEqual([{ serverId: 'cko', username: 'Caeo' }])
+    expect(JSON.parse(localStorage.getItem('orbrun.accounts')!)).toEqual([{ serverId: 'cko', username: 'Orbrun' }])
     expect(screen.view).toBe('home')
     expect(labels(screen)[0]).toBe('Log in')
-    expect(conn(screen)).toBe('Caeo · CKO')
+    expect(conn(screen)).toBe('Orbrun · CKO')
     void s
   })
 })
@@ -955,17 +955,17 @@ describe('the front end: Play and Watch', () => {
   beforeEach(() => {
     store.clear()
     document.body.replaceChildren()
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
   })
 
   function loggedIn(entries: LobbyEntry[] = [playing('alice')]): Session {
-    return fakeSession(cdi, 'caeo', {
-      username: 'caeo',
+    return fakeSession(cdi, 'orbrun', {
+      username: 'orbrun',
       complete: true,
       games: [
         { id: 'dcss-web-0.34', label: 'DCSS 0.34' },
-        { id: 'dcss-web-trunk', label: 'DCSS trunk', save: 'caeo, a level 9 Minotaur Berserker of Trog' },
+        { id: 'dcss-web-trunk', label: 'DCSS trunk', save: 'orbrun, a level 9 Minotaur Berserker of Trog' },
       ],
       entries: new Map(entries.map((e) => [e.id, e])),
     })
@@ -975,16 +975,16 @@ describe('the front end: Play and Watch', () => {
     const s = loggedIn()
     const { screen, connect } = make(() => s)
     expect(screen.view).toBe('home')
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Settings', 'caeo · CDI', 'About & credits'])
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Settings', 'orbrun · CDI', 'About & credits'])
     expect(focused(screen)).toBe('play:dcss-web-0.34')
     press(screen, 'ArrowDown')
     expect(focused(screen)).toBe('play:dcss-web-trunk')
     press(screen, 'ArrowRight')
     expect(focused(screen)).toBe('play:dcss-web-trunk')
     pad(screen, 'A')
-    expect(connect).toHaveBeenLastCalledWith(cdi, 'caeo', { kind: 'play', gameId: 'dcss-web-trunk' })
+    expect(connect).toHaveBeenLastCalledWith(cdi, 'orbrun', { kind: 'play', gameId: 'dcss-web-trunk' })
     pick(screen, 'Play DCSS 0.34')
-    expect(connect).toHaveBeenLastCalledWith(cdi, 'caeo', { kind: 'play', gameId: 'dcss-web-0.34' })
+    expect(connect).toHaveBeenLastCalledWith(cdi, 'orbrun', { kind: 'play', gameId: 'dcss-web-0.34' })
   })
 
   it('tells the address bar where it stands: lobby is the Watch screen, home is home', () => {
@@ -998,7 +998,7 @@ describe('the front end: Play and Watch', () => {
     expect(at).not.toHaveBeenCalled()
     pick(screen, 'Watch')
     expect(screen.view).toBe('watch')
-    expect(at).toHaveBeenLastCalledWith({ kind: 'lobby', serverId: 'cdi', account: caeo })
+    expect(at).toHaveBeenLastCalledWith({ kind: 'lobby', serverId: 'cdi', account: orbrun })
     // redraws of the roster do not say it again
     at.mockClear()
     screen.refresh()
@@ -1009,7 +1009,7 @@ describe('the front end: Play and Watch', () => {
     // after a spectate: the roster; after a game: home
     screen.watchFor(s)
     expect(screen.view).toBe('watch')
-    expect(at).toHaveBeenLastCalledWith({ kind: 'lobby', serverId: 'cdi', account: caeo })
+    expect(at).toHaveBeenLastCalledWith({ kind: 'lobby', serverId: 'cdi', account: orbrun })
     screen.attach(s)
     expect(screen.view).toBe('home')
     expect(at).toHaveBeenLastCalledWith({ kind: 'home' })
@@ -1027,7 +1027,7 @@ describe('the front end: Play and Watch', () => {
       ['settings/camera', 'settings-group', () => pick(screen, 'Camera')],
       ['about', 'about', () => (press(screen, 'Escape'), press(screen, 'Escape'), pick(screen, 'About & credits'))],
       ['about/new', 'doc', () => pick(screen, 'What’s new')],
-      ['accounts', 'accounts', () => (press(screen, 'Escape'), press(screen, 'Escape'), pick(screen, 'caeo · CDI'))],
+      ['accounts', 'accounts', () => (press(screen, 'Escape'), press(screen, 'Escape'), pick(screen, 'orbrun · CDI'))],
       ['accounts/add', 'servers', () => pick(screen, 'Add an account')],
     ]
     for (const [path, view, go] of walk) {
@@ -1062,10 +1062,10 @@ describe('the front end: Play and Watch', () => {
   })
 
   it('adds arriving versions on home without stealing focus', async () => {
-    const s = fakeSession(cdi, 'caeo', { username: 'caeo' })
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
     const { screen } = make(() => s)
     expect(screen.view).toBe('home')
-    expect(labels(screen)).toEqual(['Watch', 'Settings', 'caeo · CDI', 'About & credits'])
+    expect(labels(screen)).toEqual(['Watch', 'Settings', 'orbrun · CDI', 'About & credits'])
     expect(screen.root.textContent).toContain('Loading game versions…')
     expect(focused(screen)).toBe('watch')
     s.state.lobby.complete = true
@@ -1075,7 +1075,7 @@ describe('the front end: Play and Watch', () => {
     ]
     ;(s as unknown as { emit(e: unknown): void }).emit({ type: 'state', msg: { msg: 'set_game_links' } })
     await new Promise((r) => requestAnimationFrame(r))
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk', 'Watch', 'Settings', 'caeo · CDI', 'About & credits'])
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk', 'Watch', 'Settings', 'orbrun · CDI', 'About & credits'])
     expect(focused(screen)).toBe('watch')
     expect(screen.root.textContent).not.toContain('Loading game versions…')
   })
@@ -1084,7 +1084,7 @@ describe('the front end: Play and Watch', () => {
     const s = loggedIn()
     localStorage.setItem('orbrun.last', JSON.stringify({ serverId: 'cdi', gameId: 'dcss-web-0.33' }))
     s.state.lobby.games.push(
-      { id: 'dcss-web-0.33', label: 'DCSS 0.33', save: 'caeo, a level 5 Gargoyle Fighter' },
+      { id: 'dcss-web-0.33', label: 'DCSS 0.33', save: 'orbrun, a level 5 Gargoyle Fighter' },
       { id: 'other-game', label: 'Other game', save: 'slot full', disabled: true },
     )
     const { screen } = make(() => s)
@@ -1209,7 +1209,7 @@ describe('the front end: Play and Watch', () => {
     pad(screen, 'B')
     expect(screen.view).toBe('home')
     // not from a flow
-    pick(screen, 'caeo · CDI')
+    pick(screen, 'orbrun · CDI')
     pad(screen, 'RB')
     expect(screen.view).toBe('accounts')
   })
@@ -1303,9 +1303,9 @@ describe('the front end: settings and marks', () => {
   })
 
   it('comes back to the Watch row it left when the settings are opened from the roster', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
-    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
-    const s = fakeSession(cdi, 'caeo', { username: 'caeo', complete: true, entries: new Map([[1, playing('alice')], [2, playing('bob')]]) })
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, entries: new Map([[1, playing('alice')], [2, playing('bob')]]) })
     const { screen } = make(() => s)
     pick(screen, 'Watch')
     press(screen, 'ArrowDown')

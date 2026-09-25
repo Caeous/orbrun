@@ -27,7 +27,7 @@ describe('what a press on the front screen takes hold of', () => {
     expect(on('<button class="item"><span class="label">Play</span></button>', '.label')).toBe(false)
     expect(on('<a class="item" href="#">About</a>', 'a')).toBe(false)
     expect(on('<label class="item field-item"><input /></label>', 'input')).toBe(false)
-    expect(on('<table class="roster"><tbody><tr class="game"><td>caeo</td></tr></tbody></table>', 'td')).toBe(false)
+    expect(on('<table class="roster"><tbody><tr class="game"><td>orbrun</td></tr></tbody></table>', 'td')).toBe(false)
     expect(on('<div class="doc-scroll"><pre class="doc-text">…</pre></div>', 'pre')).toBe(false)
     expect(on('<div class="settings-scroll"><div class="row">Camera</div></div>', '.row')).toBe(false)
   })

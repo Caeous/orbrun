@@ -67,7 +67,7 @@ let hiddenAt = 0
 document.documentElement.style.setProperty('--ui-scale', String(getSettings().uiScale))
 /** The tab's title as the page loaded, restored once out of a game. */
 const BASE_TITLE = document.title || 'Orbrun'
-/** What a character's tab title ends in: the site title's first words, so a game in progress reads as "caeo the Chiller | Vine Stalker - Orbrun". */
+/** What a character's tab title ends in: the site title's first words, so a game in progress reads as "orbrun the Chiller | Vine Stalker - Orbrun". */
 const SHORT_TITLE = BASE_TITLE.split(/\s[—–-]\s/)[0] || 'Orbrun'
 
 /**
@@ -236,7 +236,7 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
       }
       if (m === 'player') updateTitle(s)
       if (m === 'game_ended') {
-        // the dump handed back names the morgue directory this server keeps for the account ("/crawl/morgue/caeo/"),
+        // the dump handed back names the morgue directory this server keeps for the account ("/crawl/morgue/orbrun/"),
         // which is where the home screen reads `<player>.where` from (whereis.ts) instead of guessing the layout
         const who = s.state.lobby.username || s.username
         const dir = who && e.msg.dump ? morgueDirOf(server, String(e.msg.dump)) : null

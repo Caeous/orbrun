@@ -566,14 +566,14 @@ describe('set_game_links', () => {
       { id: 'dcss-web-0.34', label: 'DCSS 0.34' },
       { id: 'seeded-web-0.34', label: 'Seeded 0.34' },
       { id: 'sprint-web-0.34', label: 'Sprint 0.34' },
-      { id: 'dcss-web-trunk', label: 'DCSS trunk', save: 'caeo, a level 9 Gnoll Fighter of Okawaru' },
+      { id: 'dcss-web-trunk', label: 'DCSS trunk', save: 'orbrun, a level 9 Gnoll Fighter of Okawaru' },
       { id: 'sprint-web-trunk', label: 'Sprint trunk' },
       { id: 'dcss-web-0.33', label: 'DCSS 0.33' },
     ])
     const rows = gameLinkRows(st.lobby.games)
     expect(rows.latestVersion).toBe('0.34')
     expect(rows.latest.map((g) => g.label)).toEqual(['DCSS 0.34'])
-    expect(rows.trunk.map((g) => g.save)).toEqual(['caeo, a level 9 Gnoll Fighter of Okawaru'])
+    expect(rows.trunk.map((g) => g.save)).toEqual(['orbrun, a level 9 Gnoll Fighter of Okawaru'])
   })
 
   it('keeps a slot-full game whose id the (edit rc) link carries, unlinked', () => {

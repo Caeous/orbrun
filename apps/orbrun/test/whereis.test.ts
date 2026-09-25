@@ -7,7 +7,7 @@ const cdi = findServer('cdi')!
 /** The real file crawl.dcss.io published for the test account on 2026-09-12, a trunk game saved mid-dungeon. */
 const SAVED =
   'v=0.35-a0:vlong=0.35-a0-1015-gbe08bfc2e8:lv=0.1:vsavrv=Git::0.35-a0-1015-gbe08bfc2e8:vsav=34.339:tiles=1:' +
-  'name=caeo:race=Minotaur:cls=Fighter:char=MiFi:xl=3:sk=Armour:sklev=4:title=Covered:place=D::2:br=D:lvl=2:' +
+  'name=orbrun:race=Minotaur:cls=Fighter:char=MiFi:xl=3:sk=Armour:sklev=4:title=Covered:place=D::2:br=D:lvl=2:' +
   'absdepth=2:hp=30:mhp=33:mmhp=33:mp=2:mmp=2:bmmp=2:str=22:int=5:dex=9:ac=7:ev=13:sh=4:start=20260813013806S:' +
   'dur=616:turn=1084:aut=10976:kills=32:gold=78:goldfound=78:goldspent=0:scrollsused=0:potionsused=0:' +
   'time=20260813020600S:status=saved\n'
@@ -15,7 +15,7 @@ const SAVED =
 describe('parseXlog', () => {
   it('reads a doubled colon as the colon it stands for, so a place arrives whole', () => {
     // hiscores.cc xlog_fields::xlog_line escapes a colon in a value by doubling it: place=D::2 is "D:2"
-    expect(parseXlog('name=caeo:place=D::2:status=saved')).toEqual({ name: 'caeo', place: 'D:2', status: 'saved' })
+    expect(parseXlog('name=orbrun:place=D::2:status=saved')).toEqual({ name: 'orbrun', place: 'D:2', status: 'saved' })
     expect(parseXlog('a=1:b=:c=x')).toEqual({ a: '1', b: '', c: 'x' })
   })
 })
@@ -37,7 +37,7 @@ describe('parseWhereis', () => {
     expect(w.version).toBe('trunk')
     expect(w.status).toBe('saved')
     expect(saveWaiting(w)).toBe(true)
-    expect(describeCharacter(w.character)).toBe('caeo the Covered, Minotaur Fighter XL3')
+    expect(describeCharacter(w.character)).toBe('orbrun the Covered, Minotaur Fighter XL3')
     expect(describePlace(w.character)).toBe('D:2')
   })
 
@@ -61,18 +61,18 @@ describe('parseWhereis', () => {
 
 describe('morgue directories', () => {
   it('takes the directory from the dump the server handed back', () => {
-    expect(morgueDirOf(cdi, '/crawl/morgue/caeo/morgue-caeo-20260910-120000')).toBe('/crawl/morgue/caeo/')
-    expect(morgueDirOf(cdi, 'https://crawl.dcss.io/crawl/morgue/caeo/caeo')).toBe('/crawl/morgue/caeo/')
+    expect(morgueDirOf(cdi, '/crawl/morgue/orbrun/morgue-orbrun-20260910-120000')).toBe('/crawl/morgue/orbrun/')
+    expect(morgueDirOf(cdi, 'https://crawl.dcss.io/crawl/morgue/orbrun/orbrun')).toBe('/crawl/morgue/orbrun/')
     // never off the server the account belongs to
-    expect(morgueDirOf(cdi, 'https://example.com/morgue/caeo/x')).toBeNull()
+    expect(morgueDirOf(cdi, 'https://example.com/morgue/orbrun/x')).toBeNull()
   })
 
   it('guesses the layouts dgamelaunch-config ships with, CDI’s first', () => {
-    expect(morgueDirGuesses('caeo')).toEqual(['/crawl/morgue/caeo/', '/morgue/caeo/', '/rawdata/caeo/'])
+    expect(morgueDirGuesses('orbrun')).toEqual(['/crawl/morgue/orbrun/', '/morgue/orbrun/', '/rawdata/orbrun/'])
   })
 
   it('names the file after the directory, so the server’s own spelling of the account is kept', () => {
-    expect(whereisUrl(cdi, '/crawl/morgue/caeo/')).toBe('/morgue-proxy/crawl.dcss.io/crawl/morgue/caeo/caeo.where')
+    expect(whereisUrl(cdi, '/crawl/morgue/orbrun/')).toBe('/morgue-proxy/crawl.dcss.io/crawl/morgue/orbrun/orbrun.where')
     expect(whereisUrl(cdi, '/rawdata/Dwarfsong/')).toBe('/morgue-proxy/crawl.dcss.io/rawdata/Dwarfsong/Dwarfsong.where')
     expect(whereisUrl(cdi, '/')).toBeNull()
   })

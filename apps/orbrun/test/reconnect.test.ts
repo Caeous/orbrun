@@ -52,8 +52,8 @@ async function make() {
   ;(globalThis as { localStorage?: unknown }).localStorage = storage
   const { Session } = await import('../src/session')
   const { setToken } = await import('../src/servers')
-  setToken('x', 'caeo', 'tok1')
-  const s = new Session({ id: 'x', name: 'x', host: 'x', ws: 'ws://x', http: 'http://x' } as never, 'caeo')
+  setToken('x', 'orbrun', 'tok1')
+  const s = new Session({ id: 'x', name: 'x', host: 'x', ws: 'ws://x', http: 'http://x' } as never, 'orbrun')
   const events: string[] = []
   s.on((e) => events.push(e.type))
   const handle = (m: ServerMessage) => (s as unknown as { handle(m: ServerMessage): void }).handle(m)
@@ -72,11 +72,11 @@ describe('a session that dropped', () => {
     first.opens()
     expect(first.msgs).toEqual(['token_login'])
     // logged in, playing, with the next token in hand
-    handle({ msg: 'login_success', username: 'caeo' })
+    handle({ msg: 'login_success', username: 'orbrun' })
     handle({ msg: 'login_cookie', cookie: 'tok2', expires: 7 })
     s.gamedata = { version: '0.33' } as never
     s.state.phase = 'playing'
-    setToken('x', 'caeo', 'tok2')
+    setToken('x', 'orbrun', 'tok2')
 
     first.close()
     expect(s.closed).toBe(true)
@@ -118,7 +118,7 @@ describe('asking whether a socket is still there', () => {
     const { s, handle } = await make()
     const sock = FakeSocket.made[0]
     sock.opens()
-    handle({ msg: 'login_success', username: 'caeo' })
+    handle({ msg: 'login_success', username: 'orbrun' })
     const answer = s.probe('dcss-0.34', 5000)
     expect(sock.msgs.at(-1)).toBe('get_rc')
     expect(JSON.parse(sock.sent.at(-1)!).game_id).toBe('dcss-0.34')
@@ -132,7 +132,7 @@ describe('asking whether a socket is still there', () => {
     try {
       const { s, handle } = await make()
       FakeSocket.made[0].opens()
-      handle({ msg: 'login_success', username: 'caeo' })
+      handle({ msg: 'login_success', username: 'orbrun' })
       const answer = s.probe('dcss-0.34', 5000)
       vi.advanceTimersByTime(5000)
       await expect(answer).resolves.toBe(false)
@@ -145,7 +145,7 @@ describe('asking whether a socket is still there', () => {
     const { s, handle } = await make()
     const sock = FakeSocket.made[0]
     sock.opens()
-    handle({ msg: 'login_success', username: 'caeo' })
+    handle({ msg: 'login_success', username: 'orbrun' })
     const answer = s.probe('dcss-0.34', 5000)
     sock.close()
     await expect(answer).resolves.toBe(false)
@@ -156,7 +156,7 @@ describe('asking whether a socket is still there', () => {
     const sock = FakeSocket.made[0]
     sock.opens()
     await expect(s.probe('dcss-0.34', 5000)).resolves.toBe(false)
-    handle({ msg: 'login_success', username: 'caeo' })
+    handle({ msg: 'login_success', username: 'orbrun' })
     await expect(s.probe(null, 5000)).resolves.toBe(false)
     expect(sock.msgs).not.toContain('get_rc')
   })
@@ -165,7 +165,7 @@ describe('asking whether a socket is still there', () => {
     const { s, handle } = await make()
     const sock = FakeSocket.made[0]
     sock.opens()
-    handle({ msg: 'login_success', username: 'caeo' })
+    handle({ msg: 'login_success', username: 'orbrun' })
     const a = s.probe('dcss-0.34', 5000)
     const b = s.probe('dcss-0.34', 5000)
     handle({ msg: 'rcfile_contents', game_id: 'dcss-0.34', contents: '' })

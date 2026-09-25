@@ -353,7 +353,7 @@ export function describePlace(c: LastCharacter): string {
 }
 
 /**
- * "caeo the Chiller | Vine Stalker of Vehumet - Orbrun": the browser tab's
+ * "orbrun the Chiller | Vine Stalker of Vehumet - Orbrun": the browser tab's
  * title while in a game, so a tab (or a window in a taskbar) says whose game
  * it is. The species and god read as the HUD's second line does, and the site
  * follows a dash, as the page's own title has it.
@@ -369,7 +369,7 @@ export function gameTitle(c: LastCharacter, base: string): string {
 const MORGUE_KEY = 'orbrun.morgue'
 
 /**
- * Where a server keeps an account's morgue directory ("/crawl/morgue/caeo/"), once something has said: a
+ * Where a server keeps an account's morgue directory ("/crawl/morgue/orbrun/"), once something has said: a
  * `game_ended` `dump` names the real one, and before that the home screen tries the layouts
  * dgamelaunch-config ships with (whereis.ts `morgueDirGuesses`) and keeps whichever answered. '' is a
  * server that answered none of them, kept so the tries are not made again on every redraw.
@@ -644,7 +644,7 @@ export function findServer(idOrHost: string): ServerInfo | null {
 /**
  * What the URL says we should be doing. The game hashes follow the official
  * webtiles client (`lobby`, `play-<game_id>`, `watch-<username>`), scoped
- * by who is doing it: `caeo@cdi/play-dcss-0.34`, or a server alone for
+ * by who is doing it: `orbrun@cdi/play-dcss-0.34`, or a server alone for
  * what needs no account (`cdi/lobby`, `cdi/watch-bob`), so a link opens the
  * same thing on another device. The official client's bare hashes still
  * read, as the account chosen on the home screen. The front end's own
@@ -727,7 +727,7 @@ export function parseRoute(href: string = window.location.href): Route {
   return { kind: 'home' }
 }
 
-/** who a route is as, in its address: `caeo@cdi`, or the server alone */
+/** who a route is as, in its address: `orbrun@cdi`, or the server alone */
 function scope(serverId: string, username?: string | null): string {
   return (username ? encodeURIComponent(username) + '@' : '') + encodeURIComponent(serverId)
 }
