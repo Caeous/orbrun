@@ -45,6 +45,9 @@ const BACK = 'back'
 /** the margin glyph for a player on this device, where a server account has `\`: a wall, a place of its own */
 const DEVICE_MARKER = '#'
 
+/** the margin glyph for an account that is connected or on the way, in its line's colour */
+export const CONN_MARKER = '●'
+
 /** A text file read through the shell's proxy; a status that is not success is the failure's words. */
 async function fetchText(url: string): Promise<string> {
   const r = await fetch(url)
@@ -597,12 +600,13 @@ export class FrontEnd {
 
   /** A row as a button: the marker in the margin, the label, the note on the right. */
   private item(r: Row): HTMLElement {
+    // an account's dot is its glyph while it is connected: one mark before the name, not two
+    const dot = !!r.conn && r.conn !== 'off'
     return h(
       'button',
-      { type: 'button', class: 'item' + (r.main ? ' main' : '') + (r.off ? ' off' : '') + (r.gap && !r.chip ? ' gap' : '') + (r.chip ? ' chip' : '') + (r.conn ? ' conn conn-' + r.conn : ''), dataset: { focus: r.id, marker: r.marker ?? '' }, onclick: () => this.click(r) },
+      { type: 'button', class: 'item' + (r.main ? ' main' : '') + (r.off ? ' off' : '') + (r.gap && !r.chip ? ' gap' : '') + (r.chip ? ' chip' : '') + (r.conn ? ' conn conn-' + r.conn : ''), dataset: { focus: r.id, marker: dot ? CONN_MARKER : (r.marker ?? '') }, onclick: () => this.click(r) },
       h('span', { class: 'marker' }),
-      // in the label, so it stands before the name however the row is laid out (a grid, beside a Log out)
-      h('span', { class: 'label' }, r.conn && r.conn !== 'off' ? h('span', { class: 'dot', 'aria-hidden': 'true' }) : null, r.label),
+      h('span', { class: 'label' }, r.label),
       r.sub ? h('span', { class: 'sub' }, r.sub, r.late ?? null) : null,
     )
   }
@@ -1925,7 +1929,7 @@ function engineHint(note: EngineNote | null): string {
 }
 
 /**
- * The dot before an account's name: green once its server knows it, gold on the way, red when the line is
+ * The dot in an account's margin, where its glyph would stand: green once its server knows it, gold on the way, red when the line is
  * down, and none when it is not logged in or not connected at all (an account other than the chosen one).
  */
 export function accountConn(s: Session | null | undefined, account: Account, chosen: boolean): NonNullable<Row['conn']> {

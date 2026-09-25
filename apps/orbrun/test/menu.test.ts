@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { initialState, type GameState, type LobbyEntry } from '@orbrun/webtiles'
-import { FrontEnd, navDir, loginWord, exitReasonMessage, type Intent } from '../src/menu'
+import { CONN_MARKER, FrontEnd, navDir, loginWord, exitReasonMessage, type Intent } from '../src/menu'
 import { settingsPanel } from '../src/settings-panel'
 import type { Session } from '../src/session'
 import { XOM_SPLASHES } from '../src/splash'
@@ -110,7 +110,7 @@ function conn(screen: FrontEnd): string | null {
 /** The colour of the dot before the account: up, wait, off or down, or null without one. */
 function dot(screen: FrontEnd): string | null {
   const item = screen.root.querySelector('.home-utilities .item[data-focus="account"]')
-  if (!item?.querySelector('.dot')) return null
+  if ((item as HTMLElement | null)?.dataset.marker !== CONN_MARKER) return null
   return ['up', 'wait', 'off', 'down'].find((c) => item.classList.contains('conn-' + c)) ?? null
 }
 
@@ -694,15 +694,17 @@ describe('the front end: the home screen', () => {
     expect(retrying.root.querySelector('.error')?.textContent).toBe('Connection lost. Reconnecting…')
   })
 
-  it('the dot before the account is green logged in, gone logged out, gold on the way and red when the line is down', () => {
+  it('the dot in the account\'s margin is green logged in, the glyph again logged out, gold on the way and red when the line is down', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
     const { screen } = make(() => s)
+    const glyph = () => screen.root.querySelector<HTMLElement>('.home-utilities .item[data-focus="account"]')?.dataset.marker
     expect(dot(screen)).toBe('up')
     s.state.lobby.username = ''
     screen.refresh()
     expect(dot(screen)).toBe(null)
+    expect(glyph()).toBe('\\')
     ;(s.conn as { open: boolean }).open = false
     screen.refresh()
     expect(dot(screen)).toBe('wait')

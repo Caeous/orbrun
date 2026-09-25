@@ -770,25 +770,21 @@ a.item.beside {
 .frame.menu-frame .item:focus-visible::after {
   opacity: 0;
 }
-/* an account row (home, Accounts): a dot before the name says where the login stands; none when logged out (conn-off is not .off, a row that cannot be taken) */
-.frame:is(.home-list, .accounts-list) .item.conn .dot {
-  display: inline-block;
-  width: 0.5rem;
-  height: 0.5rem;
-  margin-right: 0.7rem;
-  border-radius: 50%;
-  vertical-align: middle;
-  background: currentColor;
-  box-shadow: 0 0 8px currentColor;
+/* an account row (home, Accounts): its glyph is a dot that says where the login stands; the usual glyph again when logged out (conn-off is not .off, a row that cannot be taken) */
+.frame.menu-frame:is(.home-list, .accounts-list) .item.conn:not(.conn-off)::after {
+  text-shadow: 0 0 8px currentColor;
 }
-.frame:is(.home-list, .accounts-list) .item.conn-up .dot {
+.frame.menu-frame:is(.home-list, .accounts-list) .item.conn:is(.focused, :focus-visible)::after {
+  animation: none;
+}
+.frame.menu-frame:is(.home-list, .accounts-list) .item.conn-up::after {
   color: #6fbf73;
 }
-.frame:is(.home-list, .accounts-list) .item.conn-wait .dot {
+.frame.menu-frame:is(.home-list, .accounts-list) .item.conn-wait::after {
   color: var(--gold);
   animation: conn-wait 1.4s ease-in-out infinite;
 }
-.frame:is(.home-list, .accounts-list) .item.conn-down .dot {
+.frame.menu-frame:is(.home-list, .accounts-list) .item.conn-down::after {
   color: var(--color-12);
 }
 @keyframes conn-wait {
