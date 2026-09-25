@@ -2,6 +2,7 @@ import type { HintMode } from './gamepad-hints'
 import type { GameLink } from '@orbrun/webtiles'
 import bundled from '../data/servers.json'
 import { canQuit } from './quit'
+import { DEFAULT_PROFILE } from '@orbrun/offline'
 
 export interface ServerInfo {
   id: string
@@ -11,6 +12,32 @@ export interface ServerInfo {
   http: string
   host: string
   custom?: boolean
+  /** Games on this device (@orbrun/offline): no socket, no proxies, gamedata from ENGINE_BASE. */
+  offline?: boolean
+}
+
+/** Where the offline engine's files are served (engine/dist; the dev server's /engine route). */
+export const ENGINE_BASE = '/engine'
+
+/**
+ * The server that is this device: the offline engine. Its accounts are
+ * profiles, each with saves of its own (@orbrun/offline `profileSaveDir`),
+ * made with a name and no password; the server list offers it first when an
+ * account is being added, and never for watching.
+ */
+export const OFFLINE_SERVER: ServerInfo = { id: 'offline', name: 'This device', ws: '', http: '', host: 'this device', offline: true }
+
+/** The profile listed until the device has one of its own, so there is always one to play offline with. */
+export const DEFAULT_OFFLINE_ACCOUNT: Account = { serverId: OFFLINE_SERVER.id, username: DEFAULT_PROFILE }
+
+/**
+ * Whether Offline is offered. Only the dev server serves an engine for now
+ * (engine-files.ts, from a local engine/build.sh); a deployed shell has none
+ * to load until the engine is published. Read on each call, so a test can
+ * stub the environment.
+ */
+export function offlineOffered(): boolean {
+  return !!import.meta.env.DEV && import.meta.env.MODE !== 'test'
 }
 
 const KEY = 'orbrun.servers'
@@ -78,6 +105,8 @@ export interface Account {
 
 const ACCOUNTS_KEY = 'orbrun.accounts'
 const ACCOUNT_KEY = 'orbrun.account'
+/** when each account was last picked (ms since the epoch), by tokenKey */
+const USED_KEY = 'orbrun.accountUsed'
 /** older builds: one token per server, and the server chosen on its own */
 const OLD_SERVER_KEY = 'orbrun.server'
 
@@ -123,15 +152,36 @@ function localStorageHas(key: string): boolean {
   }
 }
 
-/** The accounts on this device, in the order they were added. */
+/**
+ * The accounts on this device, the one picked last first, then the ones
+ * never picked in the order they were added; offline profiles only where
+ * Offline is offered, and the default one when there is no other.
+ */
 export function listAccounts(): Account[] {
+  const stored = storedAccounts()
+  const all = !offlineOffered()
+    ? stored.filter((a) => a.serverId !== OFFLINE_SERVER.id)
+    : stored.some((a) => a.serverId === OFFLINE_SERVER.id)
+      ? stored
+      : [...stored, DEFAULT_OFFLINE_ACCOUNT]
+  const used = load<Record<string, number>>(USED_KEY, {})
+  const at = (a: Account) => used[tokenKey(a.serverId, a.username)] ?? 0
+  return all.sort((a, b) => at(b) - at(a))
+}
+
+function storedAccounts(): Account[] {
   migrateAccounts()
   return load<Account[]>(ACCOUNTS_KEY, []).filter((a) => a && a.serverId && a.username)
 }
 
+/** Whether `a` was added on this device, and is not just the default offline profile standing in for one. */
+export function isStoredAccount(a: Account): boolean {
+  return storedAccounts().some((x) => sameAccount(x, a))
+}
+
 /** Add `a` (or spell its name as the server does, if it is already there). */
 export function addAccount(a: Account) {
-  const all = listAccounts().filter((x) => !sameAccount(x, a))
+  const all = storedAccounts().filter((x) => !sameAccount(x, a))
   all.push({ serverId: a.serverId, username: a.username })
   save(ACCOUNTS_KEY, all)
 }
@@ -140,9 +190,12 @@ export function addAccount(a: Account) {
 export function removeAccount(a: Account) {
   save(
     ACCOUNTS_KEY,
-    listAccounts().filter((x) => !sameAccount(x, a)),
+    storedAccounts().filter((x) => !sameAccount(x, a)),
   )
   setToken(a.serverId, a.username, null)
+  const used = load<Record<string, number>>(USED_KEY, {})
+  delete used[tokenKey(a.serverId, a.username)]
+  save(USED_KEY, used)
   if (sameAccount(getChosenAccount(), a)) setChosenAccount(null)
 }
 
@@ -153,8 +206,13 @@ export function getChosenAccount(): Account | null {
   return a && a.serverId && a.username && findServer(a.serverId) ? a : null
 }
 
-export function setChosenAccount(a: Account | null) {
+/** Choose `a`, and mark it used now: listAccounts puts it first. */
+export function setChosenAccount(a: Account | null, now = Date.now()) {
   save(ACCOUNT_KEY, a ? { serverId: a.serverId, username: a.username } : null)
+  if (!a) return
+  const used = load<Record<string, number>>(USED_KEY, {})
+  used[tokenKey(a.serverId, a.username)] = now
+  save(USED_KEY, used)
 }
 
 /**
@@ -211,9 +269,12 @@ export function setToken(serverId: string, username: string, token: string | nul
  */
 export type LoginState = 'in' | 'pending' | 'out'
 
-export function loginState(account: Account | null, loggedIn: string | null | undefined): LoginState {
+export function loginState(account: Account | null, loggedIn: string | null | undefined, loggingIn = false): LoginState {
   if (loggedIn) return 'in'
-  if (account && getToken(account.serverId, account.username)) return 'pending'
+  // its token already sent (and so forgotten), its answer still to come
+  if (loggingIn) return 'pending'
+  // an offline profile's token is its name (session.ts), never stored and never refused
+  if (account && (account.serverId === OFFLINE_SERVER.id || getToken(account.serverId, account.username))) return 'pending'
   return 'out'
 }
 
@@ -357,6 +418,7 @@ export function setGames(serverId: string, games: CachedGame[]) {
 
 /** Where gamedata is fetched from for a server, in this shell. */
 export function gamedataBaseFor(server: ServerInfo): string {
+  if (server.offline) return ENGINE_BASE
   return `/gamedata-proxy/${server.host}`
 }
 
@@ -368,6 +430,7 @@ export function gamedataBaseFor(server: ServerInfo): string {
  * proxy can carry (another scheme, a host the server picker would refuse).
  */
 export function morgueUrlFor(server: ServerInfo, dump: string): string | null {
+  if (server.offline) return null
   let u: URL
   try {
     u = new URL(dump + '.txt', server.http)
@@ -570,43 +633,103 @@ export function saveView(v: SavedView) {
 
 // ------------------------------------------------------------------- servers
 
-/** A server by id or host, from the bundled list or the custom ones. */
+/** A server by id or host, from the bundled list or the custom ones, or this device's. */
 export function findServer(idOrHost: string): ServerInfo | null {
+  if (offlineOffered() && idOrHost === OFFLINE_SERVER.id) return OFFLINE_SERVER
   return listServers().find((s) => s.id === idOrHost || s.host === idOrHost) ?? null
 }
 
 // --------------------------------------------------------------------- route
 
 /**
- * What the URL says we should be doing. The hash follows the official
- * webtiles client (`#lobby`, `#play-<game_id>`, `#watch-<username>`); who it
- * is doing it as is the account chosen on the home screen, remembered in
- * storage, so an empty hash is the home screen, the account list itself.
- * `#lobby` is the Watch screen: the server's lobby roster, as the official
- * client's `#lobby` shows. (`watch`'s `username` is the player being watched,
- * not the account's own.)
+ * What the URL says we should be doing. The game hashes follow the official
+ * webtiles client (`lobby`, `play-<game_id>`, `watch-<username>`), scoped
+ * by who is doing it: `caeo@cdi/play-dcss-0.34`, or a server alone for
+ * what needs no account (`cdi/lobby`, `cdi/watch-bob`), so a link opens the
+ * same thing on another device. The official client's bare hashes still
+ * read, as the account chosen on the home screen. The front end's own
+ * screens have addresses too (`#settings/camera`, `#about/new`,
+ * `#cdi/login`); an empty hash is the home screen. `#lobby` is the Watch
+ * screen: the server's lobby roster, as the official client's `#lobby`
+ * shows. (`watch`'s `username` is the player being watched, not the
+ * account's own.)
  */
 export type Route =
   | { kind: 'home' }
-  | { kind: 'lobby'; account: Account }
+  | MenuRoute
+  | { kind: 'lobby'; serverId: string; account: Account | null }
   | { kind: 'play'; account: Account; gameId: string }
-  | { kind: 'watch'; account: Account; username: string }
+  | { kind: 'watch'; serverId: string; account: Account | null; username: string }
+
+/**
+ * A front-end screen: `path` is one of MENU_PATH's, or `login`/`register`
+ * on `serverId` (as `username`, when the address names one).
+ */
+export interface MenuRoute {
+  kind: 'menu'
+  path: string
+  serverId?: string
+  username?: string
+}
+
+/** the front end's screens that belong to no server; a settings group is its name in lower case (settings-rows.ts) */
+const MENU_PATH = /^(settings(\/[a-z]+)?|settings\/controls\/gamepad|accounts(\/add)?|watch|about(\/(orbrun|new|steam))?)$/
+
+function decode(s: string): string {
+  try {
+    return decodeURIComponent(s)
+  } catch {
+    return s
+  }
+}
+
+/** `name` among the accounts on this device on `server`, spelled as it was added */
+function knownAccount(serverId: string, name: string): Account | null {
+  return listAccounts().find((a) => sameAccount(a, { serverId, username: name })) ?? null
+}
 
 export function parseRoute(href: string = window.location.href): Route {
-  const url = new URL(href)
-  let hash = url.hash.replace(/^#/, '')
-  try {
-    hash = decodeURIComponent(hash)
-  } catch {
-    /* keep it raw */
+  const raw = new URL(href).hash.replace(/^#/, '')
+  if (!raw) return { kind: 'home' }
+  if (MENU_PATH.test(raw)) return { kind: 'menu', path: raw }
+  const slash = raw.indexOf('/')
+  if (slash < 0) {
+    // the official client's own hashes, as the chosen account
+    const account = getChosenAccount()
+    if (!account) return { kind: 'home' }
+    const hash = decode(raw)
+    if (hash === 'lobby') return { kind: 'lobby', serverId: account.serverId, account }
+    if (hash.startsWith('play-') && hash.length > 5) return { kind: 'play', account, gameId: hash.slice(5) }
+    if (hash.startsWith('watch-') && hash.length > 6) return { kind: 'watch', serverId: account.serverId, account, username: hash.slice(6) }
+    return { kind: 'home' }
   }
-  if (!hash) return { kind: 'home' }
-  const account = getChosenAccount()
-  if (!account) return { kind: 'home' }
-  if (hash === 'lobby') return { kind: 'lobby', account }
-  if (hash.startsWith('play-') && hash.length > 5) return { kind: 'play', account, gameId: hash.slice(5) }
-  if (hash.startsWith('watch-') && hash.length > 6) return { kind: 'watch', account, username: hash.slice(6) }
+  const who = decode(raw.slice(0, slash))
+  const rest = decode(raw.slice(slash + 1))
+  const at = who.lastIndexOf('@')
+  const server = findServer(at < 0 ? who : who.slice(at + 1))
+  if (!server) return { kind: 'home' }
+  const serverId = server.id
+  const named = at > 0 ? who.slice(0, at) : null
+  const known = named ? knownAccount(serverId, named) : null
+  if (rest === 'login' || rest === 'register') return { kind: 'menu', path: rest, serverId, ...(named ? { username: known?.username ?? named } : {}) }
+  if (rest.startsWith('play-') && rest.length > 5) {
+    // an unnamed play is the chosen account's, or any on that server; with none here, its login
+    const chosen = getChosenAccount()
+    const account = named ? known : chosen?.serverId === serverId ? chosen : (listAccounts().find((a) => a.serverId === serverId) ?? null)
+    if (!account) return { kind: 'menu', path: 'login', serverId, ...(named ? { username: named } : {}) }
+    return { kind: 'play', account, gameId: rest.slice(5) }
+  }
+  // nobody else plays on this device
+  if (server.offline) return { kind: 'home' }
+  // watching needs no account: one this device does not have watches without
+  if (rest === 'lobby') return { kind: 'lobby', serverId, account: known }
+  if (rest.startsWith('watch-') && rest.length > 6) return { kind: 'watch', serverId, account: known, username: rest.slice(6) }
   return { kind: 'home' }
+}
+
+/** who a route is as, in its address: `caeo@cdi`, or the server alone */
+function scope(serverId: string, username?: string | null): string {
+  return (username ? encodeURIComponent(username) + '@' : '') + encodeURIComponent(serverId)
 }
 
 /**
@@ -618,13 +741,20 @@ export function parseRoute(href: string = window.location.href): Route {
 export function formatRoute(r: Route): string {
   const base = window.location.pathname + window.location.search
   if (r.kind === 'home') return base
-  const hash = r.kind === 'lobby' ? 'lobby' : r.kind === 'play' ? 'play-' + encodeURIComponent(r.gameId) : 'watch-' + encodeURIComponent(r.username)
+  const hash =
+    r.kind === 'menu'
+      ? (r.serverId ? scope(r.serverId, r.username) + '/' : '') + r.path
+      : r.kind === 'lobby'
+        ? scope(r.serverId, r.account?.username) + '/lobby'
+        : r.kind === 'play'
+          ? scope(r.account.serverId, r.account.username) + '/play-' + encodeURIComponent(r.gameId)
+          : scope(r.serverId, r.account?.username) + '/watch-' + encodeURIComponent(r.username)
   return `${base}#${hash}`
 }
 
 /**
  * How deep in the front end a route is: the home screen, or anything else
- * (the Watch screen, a game, a spectate). Leaving home leaves one history
+ * (a menu, the Watch screen, a game, a spectate). Leaving home leaves one history
  * entry behind, so Back is always the way out to the home screen; moving
  * between the deeper screens, or coming back up, rewrites that entry in place.
  */

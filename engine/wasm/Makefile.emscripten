@@ -1,0 +1,125 @@
+# The webtiles binary, built for WebAssembly. Run from crawl-ref/source
+# (engine/build.sh does all of this):
+#
+#   make -f wasm/Makefile.emscripten -j8 DAT_STAMP=<unix time>
+#
+# Prerequisites:
+#  - emsdk environment active (em++/emcc on PATH)
+#  - `make -f wasm/generated.mk WEBTILES=y` (generates art-data.h, mon-data.h,
+#    levcomp.*.cc, rltiles/tiledef-*.cc, dat/dlua/tags.lua, ...)
+#  - wasm/objects.txt (wasm/gen-objects.sh, after generated.mk)
+#
+# Design:
+#  - WEBTILES=y equivalent defines; headless mode at runtime (-headless argv)
+#  - the Unix-socket IPC is replaced by wasm/bridge.h + wasm/pre.js
+#  - curses satisfied by wasm/fake-curses.h via upstream CURSES_INCLUDE_FILE
+#  - zlib + sqlite from Emscripten ports; interpreted C-Lua from contrib
+#  - JSPI for the blocking sites: tileweb.cc await_input and the IDBFS
+#    persist (wasm/bridge.h). Needs 'Suspending' in WebAssembly (Chrome 137).
+
+CXX := em++
+CC := emcc
+
+OBJDIR := wasm/build
+OUTDIR := wasm/dist
+
+# Game objects, derived from the upstream link line (gen-objects.sh).
+GAME_OBJS := $(addprefix $(OBJDIR)/,$(shell cat wasm/objects.txt))
+
+# Interpreted C-Lua from contrib (LuaJIT cannot target wasm); lua.c/luac.c
+# are the standalone interpreter/compiler mains -- exclude.
+LUA_SRCS := $(filter-out contrib/lua/src/lua.c contrib/lua/src/luac.c,\
+    $(wildcard contrib/lua/src/*.c))
+LUA_OBJS := $(addprefix $(OBJDIR)/,$(LUA_SRCS:.c=.o))
+
+# DGL_EXTENDED_LOGFILES: pre-rendered tmsg/vmsg death sentences in the xlog
+# (scores/logfile) -- standalone define, does NOT imply DGAMELAUNCH.
+DEFINES := -DUSE_TILE -DUSE_TILE_WEB -DWIZARD -DASSERTS -DCLUA_BINDINGS \
+    -DDGL_EXTENDED_LOGFILES \
+    -DCURSES_INCLUDE_FILE='"wasm/fake-curses.h"'
+
+# The per-build constant file_modtime() reports for the shipped data
+# (files.cc): preloaded MEMFS files get fresh mtimes each boot, which would
+# invalidate the IDBFS-cached description DBs + des cache on every launch.
+# build.sh passes the built commit's timestamp, so a new build invalidates
+# them and a rebuild of the same commit is byte-identical.
+ifndef DAT_STAMP
+$(error DAT_STAMP is required: the built commit's unix timestamp)
+endif
+DEFINES += -DWASM_DAT_STAMP=$(DAT_STAMP)
+
+INCLUDES := -Iutil -I. -Irltiles -isystem contrib/lua/src -isystem wasm/include
+
+PORTS := -sUSE_ZLIB=1 -sUSE_SQLITE3=1
+
+WARN := -Wall -Wformat-security -Wno-implicit-fallthrough -Wno-unqualified-std-cast-call
+
+# Native wasm exceptions + wasm longjmp keep the whole stack in wasm, which
+# JSPI needs: with -fexceptions every try goes through a JS invoke_*
+# trampoline (and Lua's setjmp likewise), and a JS frame between the
+# promising export and the suspending import is a SuspendError.
+EH := -fwasm-exceptions -sSUPPORT_LONGJMP=wasm
+
+CXXFLAGS := -std=c++11 -O2 -pipe $(EH) $(DEFINES) $(INCLUDES) $(PORTS) $(WARN)
+CFLAGS := -O2 -pipe $(EH) $(PORTS)
+
+# Link. Notes on the load-bearing flags:
+#  - JSPI: the engine suspends in wasm_bridge_await_message() (EM_ASYNC_JS);
+#    the suspended wasm lives on a VM-managed stack.
+#  - STACK_SIZE: generous for crawl's deep levelgen/lua call chains.
+#  - EXPORT_ES6/MODULARIZE/ENVIRONMENT=worker,node: a default-export factory
+#    run in a Web Worker, and under node for the cache bake.
+#  - EXIT_RUNTIME: main() returning must fire Module.onExit.
+#  - IDBFS: the writable /crawl mount (saves/morgue/db caches) -- wasm/pre.js.
+#  - GROWABLE_ARRAYBUFFERS=0: the resizable-ArrayBuffer path throws in
+#    current WebKit. Off, ALLOW_MEMORY_GROWTH still works.
+#  - The dat/ tree ships in crawl.data via --preload-file; docs/ ships too
+#    (help screens read it at runtime). dat/tiles is left out: those PNGs are
+#    tilegen inputs; the headless binary compiles its tile data in
+#    (rltiles/tiledef-*.cc) and the client draws from the atlas sheets in
+#    webserver/game_data/static/.
+LDFLAGS := -O2 $(EH) \
+    -sJSPI=1 -Wno-experimental \
+    -sSTACK_SIZE=8388608 \
+    -sINITIAL_MEMORY=67108864 \
+    -sALLOW_MEMORY_GROWTH=1 \
+    -sMAXIMUM_MEMORY=536870912 \
+    -sGROWABLE_ARRAYBUFFERS=0 \
+    -sMODULARIZE=1 \
+    -sEXPORT_ES6=1 \
+    -sENVIRONMENT=worker,node \
+    -sEXIT_RUNTIME=1 \
+    -sEXPORTED_RUNTIME_METHODS=UTF8ToString,stringToUTF8,lengthBytesUTF8,FS \
+    -sEXPORTED_FUNCTIONS=_main,_malloc,_free \
+    -sUSE_ZLIB=1 -sUSE_SQLITE3=1 \
+    -lidbfs.js \
+    --pre-js wasm/pre.js \
+    --preload-file dat@/dat \
+    --exclude-file '*dat/tiles/*' \
+    --preload-file ../docs@/docs
+
+all: $(OUTDIR)/crawl.js
+
+$(OUTDIR)/crawl.js: $(GAME_OBJS) $(LUA_OBJS) wasm/pre.js
+	@mkdir -p $(OUTDIR)
+	$(CXX) $(GAME_OBJS) $(LUA_OBJS) $(LDFLAGS) -o $@
+
+# Re-bake files.o when the stamp changes (make can't see -D changes).
+STAMPFILE := $(OBJDIR)/dat-stamp
+$(shell mkdir -p $(OBJDIR); [ "$$(cat $(STAMPFILE) 2>/dev/null)" = "$(DAT_STAMP)" ] || echo $(DAT_STAMP) > $(STAMPFILE))
+$(OBJDIR)/files.o: $(STAMPFILE)
+
+$(OBJDIR)/%.o: %.cc
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -MMD -c $< -o $@
+
+$(OBJDIR)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -MMD -c $< -o $@
+
+clean:
+	rm -rf $(OBJDIR) $(OUTDIR)
+
+-include $(shell find $(OBJDIR) -name '*.d' 2>/dev/null)
+
+.PHONY: all clean

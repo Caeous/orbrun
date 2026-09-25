@@ -14,8 +14,10 @@ full text.
 ## Relationship to DCSS
 
 Orbrun connects to standard DCSS WebTiles servers and speaks the same
-WebSocket protocol as the official client. This repository contains none of
-the DCSS game engine: gameplay runs entirely on the server. Nothing
+WebSocket protocol as the official client. Online, gameplay runs entirely on
+the server. The one exception is `engine/`, which builds upstream DCSS for
+WebAssembly with a small patch set, for offline play; its patches stay under
+DCSS's own GPLv2+ (see `engine/README.md`). Nothing
 version-specific is shipped either — tile ids, enums, flag masks and atlases
 are loaded at runtime from the connected server's own `/gamedata/<version>/`
 files, exactly as the official client loads them.
@@ -117,6 +119,11 @@ is an unofficial DCSS client for phones, also AGPL-3.0-or-later. These
 documents are based on PocketZot's, and parts of Orbrun's design took
 inspiration from it. Thanks to its developer for building it in the open and
 for feedback on Orbrun.
+
+The offline engine's patches and build files (`engine/`) are derived from
+[pocketzot-engine](https://github.com/pocketzot/pocketzot-engine)'s
+WebAssembly port of DCSS (GPLv2+), reworked into a patch series against
+upstream and a JSPI-only build.
 
 ## Third-party assets and dependencies
 

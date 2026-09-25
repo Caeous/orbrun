@@ -1,0 +1,29 @@
+Declarations for the tileweb.cc changes.
+
+Modified for the WebAssembly build of the webtiles binary (engine/README.md).
+GPLv2+, as the file it patches.
+
+--- a/crawl-ref/source/tileweb.h
++++ b/crawl-ref/source/tileweb.h
+@@ -160,6 +160,7 @@
+     void pop_ui_cutoff();
+ 
+     void send_exit_reason(const string& type, const string& message = "");
++    void send_ending(const string& type, const string& message = "");
+     void send_dump_info(const string& type, const string& filename);
+ 
+     string get_message();
+@@ -246,6 +247,13 @@
+     void _await_connection();
+     wint_t _handle_control_message(sockaddr_un addr, string data);
+     wint_t _receive_control_message();
++
++#ifdef __EMSCRIPTEN__
++    // A client-requested checkpoint save, latched until the player has
++    // control (see _maybe_checkpoint).
++    bool m_checkpoint_pending;
++    void _maybe_checkpoint();
++#endif
+ 
+     struct JsonFrame
+     {

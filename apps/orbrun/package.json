@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@orbrun/gamedata": "*",
+    "@orbrun/offline": "*",
     "@orbrun/render-2d": "*",
     "@orbrun/render-3d": "*",
     "@orbrun/scene": "*",

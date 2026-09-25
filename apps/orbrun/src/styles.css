@@ -766,8 +766,8 @@ img.room-poster.up {
 .frame.menu-frame .item:focus-visible::after {
   opacity: 0;
 }
-/* the account row: a dot before the name says where the login stands */
-.frame.home-list .item.conn .dot {
+/* an account row (home, Accounts): a dot before the name says where the login stands (conn-off is not .off, a row that cannot be taken) */
+.frame:is(.home-list, .accounts-list) .item.conn .dot {
   display: inline-block;
   width: 0.5rem;
   height: 0.5rem;
@@ -777,18 +777,18 @@ img.room-poster.up {
   background: currentColor;
   box-shadow: 0 0 8px currentColor;
 }
-.frame.home-list .item.conn.up .dot {
+.frame:is(.home-list, .accounts-list) .item.conn-up .dot {
   color: #6fbf73;
 }
-.frame.home-list .item.conn.wait .dot {
+.frame:is(.home-list, .accounts-list) .item.conn-wait .dot {
   color: var(--gold);
   animation: conn-wait 1.4s ease-in-out infinite;
 }
-.frame.home-list .item.conn.off .dot {
+.frame:is(.home-list, .accounts-list) .item.conn-off .dot {
   color: var(--ink-dim);
   box-shadow: none;
 }
-.frame.home-list .item.conn.down .dot {
+.frame:is(.home-list, .accounts-list) .item.conn-down .dot {
   color: var(--color-12);
 }
 @keyframes conn-wait {
@@ -3609,4 +3609,8 @@ canvas.minimap.hidden {
   font: inherit;
   white-space: pre;
   overflow-x: auto;
+}
+/* a server's ping, written in after the row: it breaks onto a new line whole or not at all */
+.frame.menu-frame .item .sub .ping {
+  white-space: nowrap;
 }

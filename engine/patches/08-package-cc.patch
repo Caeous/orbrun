@@ -1,0 +1,37 @@
+Flushes the save mount to IndexedDB at each save commit and announces it.
+
+Modified for the WebAssembly build of the webtiles binary (engine/README.md).
+GPLv2+, as the file it patches.
+
+--- a/crawl-ref/source/package.cc
++++ b/crawl-ref/source/package.cc
+@@ -38,6 +38,12 @@
+ #include "errors.h"
+ #include "syscalls.h"
+ #include "libutil.h" // map_find
++
++#ifdef __EMSCRIPTEN__
++// wasm/bridge.h (definitions emitted via tileweb.cc's single include).
++extern "C" bool wasm_bridge_persist();
++extern "C" void wasm_bridge_checkpoint();
++#endif
+ 
+ // debugging defines
+ #undef  FSCK_VERBOSE
+@@ -266,6 +272,16 @@
+ 
+ #ifdef COSTLY_ASSERTS
+     fsck();
++#endif
++
++#ifdef __EMSCRIPTEN__
++    // A commit is the save's consistency point: flush the batched IDBFS
++    // mount now (suspends until IndexedDB has it), so a tab
++    // death after this line can never lose or tear the committed state.
++    // Announce the checkpoint only once the flush has actually landed --
++    // rationale in wasm/bridge.h (wasm_bridge_checkpoint).
++    if (wasm_bridge_persist())
++        wasm_bridge_checkpoint();
+ #endif
+ }
+ 

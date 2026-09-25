@@ -86,7 +86,7 @@ function make(session?: (server: ServerInfo, username: string | null) => Session
   const watch = vi.fn()
   const play = vi.fn()
   const logout = vi.fn()
-  const screen = new FrontEnd(host, { connect, session: (s, u) => session?.(s, u) ?? null, logout, play, watch, leave: () => {}, padConnected: () => padConnected })
+  const screen = new FrontEnd(host, { connect, session: (s, u) => session?.(s, u) ?? null, logout, play, watch, at: () => {}, padConnected: () => padConnected })
   made.push(screen)
   return { screen, connect, watch, play, logout }
 }
@@ -111,7 +111,7 @@ function conn(screen: FrontEnd): string | null {
 function dot(screen: FrontEnd): string | null {
   const item = screen.root.querySelector('.home-utilities .item[data-focus="account"]')
   if (!item?.querySelector('.dot')) return null
-  return ['up', 'wait', 'off', 'down'].find((c) => item.classList.contains(c)) ?? null
+  return ['up', 'wait', 'off', 'down'].find((c) => item.classList.contains('conn-' + c)) ?? null
 }
 
 function pick(screen: FrontEnd, label: string) {
@@ -443,6 +443,50 @@ describe('the front end: the home screen', () => {
     await vi.waitFor(() => expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk']))
   })
 
+  it('comes up on another account with its Continue already there: the accounts screen asks ahead, and a switch keeps the answer', async () => {
+    const sam: Account = { serverId: 'cdi', username: 'sam' }
+    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo, sam]))
+    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
+    const where = (name: string) =>
+      `v=0.35-a0:vlong=0.35-a0-1015-gbe08bfc2e8:tiles=1:name=${name}:race=Minotaur:cls=Fighter:char=MiFi:xl=3:` +
+      'title=Covered:place=D::2:br=D:lvl=2:hp=30:mhp=33:turn=1084:status=saved\n'
+    const fetched = vi.fn(async (url: string) => {
+      const m = /\/crawl\/morgue\/(\w+)\/\1\.where$/.exec(url)
+      return new Response(m ? where(m[1]) : '', { status: m ? 200 : 404 })
+    })
+    vi.stubGlobal('fetch', fetched)
+    const games = [{ id: 'dcss-git', label: 'DCSS trunk' }]
+    const sessions = new Map<string, Session>()
+    const { screen } = make((server, u) => {
+      if (!u) return null
+      if (!sessions.has(u)) sessions.set(u, fakeSession(server, u, { username: u, complete: true, games }))
+      return sessions.get(u)!
+    })
+    await vi.waitFor(() => expect(labels(screen)[0]).toBe('Continue DCSS trunk'))
+    screen.showAccounts()
+    await vi.waitFor(() => expect(fetched).toHaveBeenCalledWith(expect.stringContaining('/sam/sam.where'), expect.anything()))
+    await Promise.resolve()
+    pick(screen, 'sam · ' + cdi.name)
+    expect(labels(screen)[0]).toBe('Continue DCSS trunk')
+    screen.showAccounts()
+    pick(screen, 'caeo · ' + cdi.name)
+    expect(labels(screen)[0]).toBe('Continue DCSS trunk')
+  })
+
+  it('reads a token login still on its way as on its way, not as logged out', () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
+    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
+    // the token went out with the open socket and was forgotten as it went (session.ts); no answer yet
+    setToken('cdi', 'caeo', null)
+    const s = fakeSession(cdi, 'caeo', { games: [{ id: 'dcss-git', label: 'DCSS trunk' }] })
+    ;(s as { loggingIn: boolean }).loggingIn = true
+    const { screen } = make(() => s)
+    expect(labels(screen)).not.toContain('Log in')
+    expect(labels(screen)[0]).toBe('Play DCSS trunk')
+    expect(conn(screen)).not.toContain('Not logged in')
+    expect(dot(screen)).toBe('wait')
+  })
+
   it('lets a `.where` that lands after destroy go: no redraw, and no session followed on behalf of a screen that is gone', async () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([caeo]))
     localStorage.setItem('orbrun.account', JSON.stringify(caeo))
@@ -508,8 +552,8 @@ describe('the front end: the home screen', () => {
     expect(focused(screen)).toBe('account')
     pad(screen, 'A')
     expect(screen.view).toBe('accounts')
-    expect(sub(screen, 'caeo')).toContain('crawl.dcss.io')
-    expect(sub(screen, 'caeo')).toContain('logged in')
+    expect(sub(screen, 'caeo · CDI')).toContain('crawl.dcss.io')
+    expect(sub(screen, 'caeo · CDI')).toContain('logged in')
     pad(screen, 'B')
     expect(focused(screen)).toBe('account')
     press(screen, 'ArrowRight')
@@ -643,7 +687,7 @@ describe('the front end: the home screen', () => {
     expect(screen.root.querySelector('.error')?.textContent).toBe('Connection closed: the connection dropped')
     const host = document.createElement('div')
     document.body.append(host)
-    const retrying = new FrontEnd(host, { connect: () => s, session: () => s, retrying: () => true, logout: () => {}, play: () => {}, watch: () => {}, leave: () => {} })
+    const retrying = new FrontEnd(host, { connect: () => s, session: () => s, retrying: () => true, logout: () => {}, play: () => {}, watch: () => {}, at: () => {} })
     made.push(retrying)
     retrying.showHome()
     ;(s as unknown as { emit(e: unknown): void }).emit({ type: 'closed', reason: 'the connection dropped' })
@@ -755,6 +799,22 @@ describe('the front end: accounts and servers', () => {
     expect(screen.view).toBe('home')
   })
 
+  it('the server list writes each ping in when it lands, and leaves a server that did not answer blank', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const ping = vi.fn(async (sv: ServerInfo) => (sv.id === 'cko' ? null : 42))
+    const screen = new FrontEnd(host, { connect: (sv, u) => fakeSession(sv, u), logout: () => {}, play: () => {}, watch: () => {}, at: () => {}, ping })
+    made.push(screen)
+    pick(screen, 'Watch')
+    const sub = (id: string) => screen.root.querySelector(`[data-focus="server:${id}"] .sub`)?.textContent
+    expect(sub('cdi')).toBe('us · crawl.dcss.io')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(sub('cdi')).toBe('us · crawl.dcss.io · 42 ms')
+    expect(sub('cko')).toBe('us-west · crawl.kelbi.org')
+    expect(ping).toHaveBeenCalledTimes(7)
+  })
+
   it('Start chooses a row, then submits a focused login field like Enter', () => {
     const { screen } = make()
     pad(screen, 'START')
@@ -784,14 +844,60 @@ describe('the front end: accounts and servers', () => {
     expect(screen.view).toBe('home')
   })
 
+  it('lights the account that is logged in with the home screen’s dot, and says where each is as the server list does', () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([caeo, kelbi]))
+    localStorage.setItem('orbrun.account', JSON.stringify(caeo))
+    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/caeo': 'tok' }))
+    const s = fakeSession(cdi, 'caeo')
+    const { screen } = make((sv, u) => (sv.id === 'cdi' && u === 'caeo' ? s : null))
+    screen.showAccounts()
+    const dots = () => Array.from(screen.root.querySelectorAll('.menu .item.conn')).map((el) => [el.querySelector('.label')?.textContent, ['up', 'wait', 'off', 'down'].find((c) => el.classList.contains('conn-' + c))])
+    expect(dots()).toEqual([['caeo · CDI', 'wait'], ['caeo · CKO', 'off']])
+    // a gray dot is an account not in use, not a row that cannot be taken
+    expect(screen.root.querySelectorAll('.menu .item.off').length).toBe(0)
+    // as the server list says where a server is, never whether it is up: that is the dot's
+    expect(sub(screen, 'caeo · CDI')).toMatch(/^us · crawl\.dcss\.io · logging in…/)
+    const before = screen.root.querySelector('.menu')
+    while (focused(screen) !== 'add') press(screen, 'ArrowDown')
+    // the login lands: the row goes green, in place, the cursor where it was
+    s.state.lobby.username = 'caeo'
+    screen.refresh()
+    expect(screen.root.querySelector('.menu')).not.toBe(before)
+    expect(dots()).toEqual([['caeo · CDI', 'up'], ['caeo · CKO', 'off']])
+    expect(sub(screen, 'caeo · CDI')).toMatch(/· logged in/)
+    expect(focused(screen)).toBe('add')
+    const again = screen.root.querySelector('.menu')
+    screen.refresh()
+    expect(screen.root.querySelector('.menu')).toBe(again)
+  })
+
+  it('names a player on this device by name alone, over "on this device", and the home screen says it too', () => {
+    vi.stubEnv('MODE', 'development')
+    vi.stubEnv('DEV', true)
+    try {
+      const marc: Account = { serverId: 'offline', username: 'Marc' }
+      localStorage.setItem('orbrun.accounts', JSON.stringify([marc, caeo]))
+      const { screen } = make()
+      screen.showAccounts()
+      expect(labels(screen)).toEqual(['Back', 'Marc', '(delete)', 'caeo · CDI', '(log out)', 'Add an account'])
+      expect(sub(screen, 'Marc')).toBe('on this device')
+      // and the home screen's account row names it as the account list does: the name alone
+      localStorage.setItem('orbrun.account', JSON.stringify(marc))
+      const home = make((sv, u) => fakeSession(sv, u, { username: 'Marc' })).screen
+      expect(conn(home)).toBe('Marc')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('an account picked is chosen, opens its own connection, and the home screen is its', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([caeo, kelbi]))
     localStorage.setItem('orbrun.account', JSON.stringify(caeo))
     const { screen, connect } = make()
     pick(screen, 'caeo · CDI')
     expect(screen.view).toBe('accounts')
-    expect(labels(screen)).toEqual(['Back', 'caeo', '(log out)', 'caeo', '(log out)', 'Add an account'])
-    expect(sub(screen, 'caeo')).toContain('crawl.dcss.io')
+    expect(labels(screen)).toEqual(['Back', 'caeo · CDI', '(log out)', 'caeo · CKO', '(log out)', 'Add an account'])
+    expect(sub(screen, 'caeo · CDI')).toContain('crawl.dcss.io')
     screen.root.querySelector<HTMLElement>('[data-focus="account:cko/caeo"]')!.click()
     expect(connect).toHaveBeenCalledWith(cko, 'caeo', undefined)
     expect(JSON.parse(localStorage.getItem('orbrun.account')!)).toEqual(kelbi)
@@ -881,30 +987,78 @@ describe('the front end: Play and Watch', () => {
     expect(connect).toHaveBeenLastCalledWith(cdi, 'caeo', { kind: 'play', gameId: 'dcss-web-0.34' })
   })
 
-  it('tells the address bar where it stands: #lobby is the Watch screen, home is home', () => {
+  it('tells the address bar where it stands: lobby is the Watch screen, home is home', () => {
     const s = loggedIn()
-    const leave = vi.fn()
+    const at = vi.fn()
     const host = document.createElement('div')
     document.body.append(host)
-    const screen = new FrontEnd(host, { connect: () => s, session: () => s, logout: () => {}, play: () => {}, watch: () => {}, leave, padConnected: () => false })
+    const screen = new FrontEnd(host, { connect: () => s, session: () => s, logout: () => {}, play: () => {}, watch: () => {}, at, padConnected: () => false })
     made.push(screen)
+    // the home screen it starts on is the caller's address already
+    expect(at).not.toHaveBeenCalled()
     pick(screen, 'Watch')
     expect(screen.view).toBe('watch')
-    expect(leave).toHaveBeenLastCalledWith('lobby')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'lobby', serverId: 'cdi', account: caeo })
     // redraws of the roster do not say it again
-    leave.mockClear()
+    at.mockClear()
     screen.refresh()
-    expect(leave).not.toHaveBeenCalled()
+    expect(at).not.toHaveBeenCalled()
     press(screen, 'Escape')
     expect(screen.view).toBe('home')
-    expect(leave).toHaveBeenLastCalledWith('home')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'home' })
     // after a spectate: the roster; after a game: home
     screen.watchFor(s)
     expect(screen.view).toBe('watch')
-    expect(leave).toHaveBeenLastCalledWith('lobby')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'lobby', serverId: 'cdi', account: caeo })
     screen.attach(s)
     expect(screen.view).toBe('home')
-    expect(leave).toHaveBeenLastCalledWith('home')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'home' })
+  })
+
+  it('gives every menu screen an address, and opens each from it', () => {
+    const s = loggedIn()
+    const at = vi.fn()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const screen = new FrontEnd(host, { connect: () => s, session: () => s, logout: () => {}, play: () => {}, watch: () => {}, at, padConnected: () => false })
+    made.push(screen)
+    const walk: [string, string, () => void][] = [
+      ['settings', 'settings', () => pick(screen, 'Settings')],
+      ['settings/camera', 'settings-group', () => pick(screen, 'Camera')],
+      ['about', 'about', () => (press(screen, 'Escape'), press(screen, 'Escape'), pick(screen, 'About & credits'))],
+      ['about/new', 'doc', () => pick(screen, 'What’s new')],
+      ['accounts', 'accounts', () => (press(screen, 'Escape'), press(screen, 'Escape'), pick(screen, 'caeo · CDI'))],
+      ['accounts/add', 'servers', () => pick(screen, 'Add an account')],
+    ]
+    for (const [path, view, go] of walk) {
+      go()
+      expect(screen.view).toBe(view)
+      expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path })
+    }
+    pick(screen, 'CKO')
+    expect(screen.view).toBe('login')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'login', serverId: 'cko' })
+    // and back again: each address opens its screen, and says nothing new
+    for (const [path, view] of walk) {
+      at.mockClear()
+      screen.open({ kind: 'menu', path })
+      expect(screen.view).toBe(view)
+      expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path })
+    }
+    screen.open({ kind: 'menu', path: 'settings/controls/gamepad' })
+    expect(screen.view).toBe('controls')
+    screen.open({ kind: 'menu', path: 'login', serverId: 'cko', username: 'someone' })
+    expect(screen.view).toBe('login')
+    expect((screen.root.querySelector('input[name=username]') as HTMLInputElement).value).toBe('someone')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'login', serverId: 'cko' })
+    screen.open({ kind: 'menu', path: 'register', serverId: 'cko' })
+    expect(screen.view).toBe('register')
+    // Back from the register form is the login it is a row of
+    press(screen, 'Escape')
+    expect(screen.view).toBe('login')
+    // a settings group it does not know is the settings
+    screen.open({ kind: 'menu', path: 'settings/nowhere' })
+    expect(screen.view).toBe('settings')
   })
 
   it('adds arriving versions on home without stealing focus', async () => {

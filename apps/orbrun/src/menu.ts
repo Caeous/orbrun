@@ -5,9 +5,11 @@ import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
 import { FocusNav, type Focusable } from './focus'
 import { RoomView } from './room/view'
-import { addAccount, addServer, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type ServerInfo } from './servers'
+import { addAccount, addServer, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, isStoredAccount, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import type { Session } from './session'
+import { deleteProfileSaves, profileName, type EngineNote } from '@orbrun/offline'
+import { engines } from './engines'
 import type { PadEvent, PadKind } from './gamepad'
 import { Osk, oskPrompts } from './osk'
 import { glyph, glyphName, type GlyphName } from './glyphs'
@@ -29,6 +31,13 @@ export type Intent = { kind: 'play'; gameId: string } | { kind: 'watch'; usernam
 export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'servers' | 'login' | 'register' | 'about' | 'exit' | 'doc'
 
 const SECTIONS: View[] = ['home', 'watch', 'settings']
+
+/** the About page's documents, by their address (`#about/new`) */
+const ABOUT_DOCS = {
+  orbrun: ['About Orbrun', aboutText],
+  new: ['What’s new', changelogText],
+  steam: ['Add to Steam', steamText],
+} as const
 
 /** the way off a screen (`data-focus`) */
 const BACK = 'back'
@@ -76,8 +85,10 @@ export interface FrontHooks {
   logout(account: Account): void
   play(session: Session, gameId: string): void
   watch(session: Session, username: string): void
-  /** back on the home screen, or on the Watch screen (`#lobby`): the address bar says so, the connection stays */
-  leave(where: 'home' | 'lobby'): void
+  /** the screen on show is `r` now: the address bar says so, the connection stays */
+  at(r: Route): void
+  /** a server's round trip in milliseconds for the server list, or null when it did not answer (ping.ts) */
+  ping?(server: ServerInfo): Promise<number | null>
 }
 
 /** One line of a menu: what it says, what it does, what the message line says while the cursor is on it. */
@@ -85,6 +96,8 @@ interface Row {
   id: string
   label: string
   sub?: string | null
+  /** filled in after the row is drawn, at the end of its note (a server's ping) */
+  late?: HTMLElement
   /** where a connection stands, as a dot before the label: green logged in, gold waiting, gray logged out, red down */
   conn?: 'up' | 'wait' | 'off' | 'down'
   /** the glyph in the margin, as the game marks a feature: `>` stairs, `?` a scroll, `{` the pool, `+` a door */
@@ -129,6 +142,7 @@ export class FrontEnd {
   private nav = new FocusNav()
   private session: Session | null = null
   private unsub: (() => void) | null = null
+  private unwatchEngines: () => void
   /**
    * `destroy` was called: the screen is off the page, and nothing that lands afterwards (a `.where` fetch
    * still in the air) may redraw it or follow a session on its behalf, which would keep it alive
@@ -153,6 +167,8 @@ export class FrontEnd {
   private loginName = ''
   /** the server picked for an account being added: the login and register screens are its */
   private adding: ServerInfo | null = null
+  /** the offline profile whose Delete was pressed once, asking to be pressed again (profileDelete) */
+  private deleting: Account | null = null
   /** where the server list was opened from, so B retraces the way in: the accounts, or the front screen */
   private serversFrom: View = 'accounts'
   /** the server picked to watch on without an account */
@@ -182,6 +198,12 @@ export class FrontEnd {
   private docScroller: HTMLElement | null = null
   /** what the document goes back to: the screen it was opened from */
   private docFrom: (() => void) | null = null
+  /**
+   * the address last given to `at`: a redraw of the same screen says nothing, so an address the game has
+   * written since (a Play pressed here) stands. The home screen is where a front end starts; the caller has
+   * put that, or the screen it opens next, in the address bar already.
+   */
+  private here = JSON.stringify({ kind: 'home' })
   /** the footer line on the home screen that says which controller is plugged in (or that none is) */
 
   constructor(host: HTMLElement, hooks: FrontHooks) {
@@ -190,6 +212,10 @@ export class FrontEnd {
     host.append(this.root)
     this.root.addEventListener('focusin', this.onNativeFocus)
     this.roomView = new RoomView(this.root)
+    // an offline build downloading, or just switched in, is said on its game's row
+    this.unwatchEngines = engines.onChange(() => {
+      if (this._view === 'home') this.showHome()
+    })
     this.showHome()
   }
 
@@ -197,6 +223,7 @@ export class FrontEnd {
     this.destroyed = true
     this.aborter.abort()
     this.unsub?.()
+    this.unwatchEngines()
     if (this.frame) cancelAnimationFrame(this.frame)
     this.osk.detach()
     this.roomView.destroy()
@@ -458,6 +485,7 @@ export class FrontEnd {
     if (this.destroyed) return
     if (this._view === 'home') this.showHome()
     else if (this._view === 'watch') this.showWatch()
+    else if (this._view === 'accounts') this.showAccounts()
   }
 
   /** A redraw on the next frame: a burst of messages (the roster on arrival) is drawn once. */
@@ -485,6 +513,47 @@ export class FrontEnd {
       this.rosterSeen.clear()
       this.rosterTable = null
     }
+  }
+
+  /** Put the screen on show in the address bar, unless it is there already; `force` says it again whatever it said last. */
+  private at(r: Route, force = false) {
+    const key = JSON.stringify(r)
+    if (!force && key === this.here) return
+    this.here = key
+    this.hooks.at(r)
+  }
+
+  /**
+   * Open the screen an address names (parseRoute): a reload, a link, Back or
+   * Forward. A name it does not know is the nearest screen that it does.
+   */
+  open(r: MenuRoute) {
+    const [root, sub, leaf] = r.path.split('/')
+    if (root === 'login' || root === 'register') {
+      const server = r.serverId ? findServer(r.serverId) : null
+      if (!server) return this.showHome()
+      const chosen = this.chosen()
+      // the chosen account's own login (its token refused); otherwise an account being added there
+      this.adding = r.username && chosen && sameAccount(chosen.account, { serverId: server.id, username: r.username }) && root === 'login' ? null : server
+      this.loginName = r.username ?? ''
+      // Register is a row of an account being added; Back from it is that login
+      if (root === 'register' && this.adding && !server.offline) this.showRegister()
+      else this.showLogin()
+      return
+    }
+    if (root === 'settings') {
+      const group = settingGroups().find((g) => g.group.toLowerCase() === sub)?.group
+      if (group === 'Controls' && leaf === 'gamepad') this.showControls()
+      else if (group) this.showSettingsGroup(group)
+      else this.showSettings(() => this.showHome())
+    } else if (root === 'accounts') {
+      if (sub === 'add') this.showServers('add')
+      else this.showAccounts()
+    } else if (root === 'watch') this.showServers('watch')
+    else if (root === 'about') {
+      if (sub === 'orbrun' || sub === 'new' || sub === 'steam') this.showAboutDoc(sub)
+      else this.showAbout()
+    } else this.showHome()
   }
 
   /** The screen's frame in the safe area, over the room; the room and its poster stay where they are. */
@@ -527,11 +596,11 @@ export class FrontEnd {
   private item(r: Row): HTMLElement {
     return h(
       'button',
-      { type: 'button', class: 'item' + (r.main ? ' main' : '') + (r.off ? ' off' : '') + (r.gap && !r.chip ? ' gap' : '') + (r.chip ? ' chip' : '') + (r.conn ? ' conn ' + r.conn : ''), dataset: { focus: r.id, marker: r.marker ?? '' }, onclick: () => this.click(r) },
+      { type: 'button', class: 'item' + (r.main ? ' main' : '') + (r.off ? ' off' : '') + (r.gap && !r.chip ? ' gap' : '') + (r.chip ? ' chip' : '') + (r.conn ? ' conn conn-' + r.conn : ''), dataset: { focus: r.id, marker: r.marker ?? '' }, onclick: () => this.click(r) },
       h('span', { class: 'marker' }),
-      r.conn ? h('span', { class: 'dot', 'aria-hidden': 'true' }) : null,
-      h('span', { class: 'label' }, r.label),
-      r.sub ? h('span', { class: 'sub' }, r.sub) : null,
+      // in the label, so it stands before the name however the row is laid out (a grid, beside a Log out)
+      h('span', { class: 'label' }, r.conn ? h('span', { class: 'dot', 'aria-hidden': 'true' }) : null, r.label),
+      r.sub ? h('span', { class: 'sub' }, r.sub, r.late ?? null) : null,
     )
   }
 
@@ -717,7 +786,8 @@ export class FrontEnd {
   private static readonly WHEREIS_MS = 60_000
 
   private whereFor(server: ServerInfo, who: string | null): Whereis | null {
-    if (!who) return null
+    // a profile's saves are on this device, and the game links say what is in them (@orbrun/offline SaveBook)
+    if (!who || server.offline) return null
     const key = server.id + '/' + who.toLowerCase()
     const at = this.asked.get(key)
     if (at === undefined || Date.now() - at > FrontEnd.WHEREIS_MS) {
@@ -784,6 +854,8 @@ export class FrontEnd {
    * would read differently; the cursor stays where it is.
    */
   showHome() {
+    // the home screen is where offline builds update: never under a game, never in the player's way
+    if (offlineOffered()) void engines.update()
     this.adding = null
     this.watchOn = null
     const chosen = this.chosen()
@@ -799,11 +871,10 @@ export class FrontEnd {
     let report: { s: Session; exit: NonNullable<GameState['exit']>; why: string | null; words: string } | null = null
     if (chosen) {
       const { account, server } = chosen
-      const login = loginState(account, loggedIn)
+      const login = loginState(account, loggedIn, !!s?.loggingIn)
       const problem = s?.closed ? 'Disconnected' : open && login === 'out' ? 'Not logged in' : null
-      // the dot before the name: green once the server knows you, gray when it does not, gold on the way, red when the line is down
-      const conn = loggedIn ? 'up' : s?.closed ? 'down' : open && login === 'out' ? 'off' : 'wait'
-      rows.push({ id: 'account', label: `${loggedIn ?? account.username} · ${server.name}`, sub: problem, conn, hint: 'Manage accounts, check your connection, or log out.', fn: () => this.showAccounts() })
+      const conn = accountConn(s, account, true)
+      rows.push({ id: 'account', label: server.offline ? account.username : `${loggedIn ?? account.username} · ${server.name}`, sub: problem, conn, hint: 'Manage accounts, check your connection, or log out.', fn: () => this.showAccounts() })
       const games = this.games(server, s)
       const links = games?.length ? gameLinkRows(games) : null
       // each row with the version it belongs to, as `gameLinkRows` grouped them: what a `.where` line answers for
@@ -831,15 +902,18 @@ export class FrontEnd {
         for (const { game: g, save } of ordered) {
           rows.push({
             id: 'play:' + g.id, label: `${save ? 'Continue' : 'Play'} ${g.label}`,
-            sub: save?.sub ?? (g.save ? `[${g.save}]` : null), marker: '>', main: g === primary?.game,
-            hint: save?.hint ?? `A new game of ${g.label} on ${server.host}.`,
+            sub: save?.sub ?? (g.save ? `[${g.save}]` : server.offline ? engineSub(engines.note(g.id)) : null), marker: '>', main: g === primary?.game,
+            hint: server.offline
+              ? (save?.hint ?? `A new character in ${g.label}, on this device.`) + engineHint(engines.note(g.id))
+              : (save?.hint ?? `A new game of ${g.label} on ${server.host}.`),
             fn: () => this.connectTo(account, { kind: 'play', gameId: g.id }),
           })
         }
         if (!ordered.length) notices.push(h('div', { class: 'hint' }, !open ? 'Connecting…' : lobby?.complete ? 'No games offered by this server.' : 'Loading game versions…'))
       }
       const n = lobby?.entries.size ?? 0
-      rows.push({ id: 'watch', label: 'Watch', sub: open ? (lobby?.complete ? `${n} playing` : 'loading…') : 'connecting…', marker: '{', hint: `Look into the pool: who is playing on ${server.host} right now, and watch them.`, fn: () => this.showWatch() })
+      // nobody else plays on this device
+      if (!server.offline) rows.push({ id: 'watch', label: 'Watch', sub: open ? (lobby?.complete ? `${n} playing` : 'loading…') : 'connecting…', marker: '{', hint: `Look into the pool: who is playing on ${server.host} right now, and watch them.`, fn: () => this.showWatch() })
       // the server's notices (client.html #account_restricted, #stale_processes_message, #force_terminate)
       if (lobby?.accountHold) notices.push(h('div', { class: 'notice' }, 'This account is being held for administrator approval. Until approved, community features and some game modes may be restricted, and games will not be visible to other players.'))
       // client.js lets any key cancel the purge and keep the old game; here the old game is nearly always this
@@ -869,7 +943,9 @@ export class FrontEnd {
         else s.state.exit = null
       }
     } else {
-      rows.push({ id: 'account', label: 'Play', marker: '>', main: true, hint: 'Choose a public server, then log in or create an account.', fn: () => this.showServers('add') })
+      // with an account to pick (this device's own offline one, at least), Play picks one; with none, it adds one
+      const any = listAccounts().length > 0
+      rows.push({ id: 'account', label: 'Play', marker: '>', main: true, hint: any ? 'Play on this device, or pick or add an account on a server.' : 'Choose a public server, then log in or create an account.', fn: () => (any ? this.showAccounts() : this.showServers('add')) })
       rows.push({ id: 'watch', label: 'Watch', sub: 'No account needed', marker: '{', hint: 'Pick a server and watch a live game. No login needed.', fn: () => this.showServers('watch') })
     }
     // Only game actions in the main list; identity and information share a quiet footer.
@@ -888,6 +964,7 @@ export class FrontEnd {
     const redraw = (this._view === 'home' || this._view === 'exit') && this.shape.has('home')
     const keep = this._view === 'home' && redraw ? this.nav.current()?.id : undefined
     this.setView('home', 'accounts')
+    this.at({ kind: 'home' })
     this.shape.set('home', shape)
     const first = rows.find((r) => r.main)?.id ?? rows[0]?.id
     this.list({ cls: 'home-list' + (redraw ? ' still' : ''), title: 'Orbrun', lede: 'An unofficial first-person client for Dungeon Crawl Stone Soup.', splash: this.splash, rows, utilities, notices, extra, focus: keep ?? this.marks.get('home') ?? first })
@@ -999,11 +1076,12 @@ export class FrontEnd {
    */
   private showAbout() {
     this.setView('about', 'about')
+    this.at({ kind: 'menu', path: 'about' })
     const rows: Row[] = [
       { id: BACK, label: 'Back', marker: '<', hint: 'Back to the front.', fn: () => this.back() },
-      { id: 'about:doc', label: 'About Orbrun', marker: '?', hint: 'What Orbrun is, how it plays, and what it does with your account.', fn: () => this.showDoc({ title: 'About Orbrun', body: () => renderMarkdown(aboutText, { dropTitle: true }), from: () => this.showAbout() }) },
-      { id: 'about:new', label: 'What’s new', marker: '?', hint: 'What changed, newest first.', fn: () => this.showDoc({ title: 'What’s new', body: () => renderMarkdown(changelogText, { dropTitle: true }), from: () => this.showAbout() }) },
-      { id: 'about:steam', label: 'Add to Steam', marker: '?', hint: 'Five steps that put Orbrun in your Steam library, on a Deck or a desktop.', fn: () => this.showDoc({ title: 'Add to Steam', body: () => renderMarkdown(steamText, { dropTitle: true }), from: () => this.showAbout() }) },
+      { id: 'about:doc', label: 'About Orbrun', marker: '?', hint: 'What Orbrun is, how it plays, and what it does with your account.', fn: () => this.showAboutDoc('orbrun') },
+      { id: 'about:new', label: 'What’s new', marker: '?', hint: 'What changed, newest first.', fn: () => this.showAboutDoc('new') },
+      { id: 'about:steam', label: 'Add to Steam', marker: '?', hint: 'Five steps that put Orbrun in your Steam library, on a Deck or a desktop.', fn: () => this.showAboutDoc('steam') },
     ]
     const links = h('nav', { class: 'about-links', 'aria-label': 'Links out' })
     const extra: Focusable[] = []
@@ -1023,6 +1101,13 @@ export class FrontEnd {
       below: [h('p', { class: 'about-copy' }, 'Orbrun is an unofficial client for Dungeon Crawl Stone Soup on the public servers. Not affiliated with the DCSS team.'), links],
       extra,
     })
+  }
+
+  /** One of the About page's documents, at `#about/<which>`. */
+  private showAboutDoc(which: keyof typeof ABOUT_DOCS) {
+    const [title, text] = ABOUT_DOCS[which]
+    this.showDoc({ title, body: () => renderMarkdown(text, { dropTitle: true }), from: () => this.showAbout() })
+    this.at({ kind: 'menu', path: 'about/' + which })
   }
 
   // ------------------------------------------------------------------ watch
@@ -1046,8 +1131,8 @@ export class FrontEnd {
     const all = Array.from(lobby.entries.values()).sort((a, b) => a.username.localeCompare(b.username, undefined, { sensitivity: 'base' }) || a.id - b.id).slice(0, 200)
     const first = this._view !== 'watch' || !this.rosterTable
     if (first) {
-      // the address bar says `#lobby`, the official client's name for this roster, so Back out of a spectate lands here
-      this.hooks.leave('lobby')
+      // the address bar says `lobby`, the official client's name for this roster, so Back out of a spectate lands here
+      this.at({ kind: 'lobby', serverId: server.id, account: chosen?.account ?? null }, true)
       this.rosterSeen = new Set(all.map((e) => e.id))
       this.rosterRows.clear()
       this.detailsOpen.clear()
@@ -1180,6 +1265,7 @@ export class FrontEnd {
     const back = from ?? (this._view === 'watch' ? () => this.showWatch() : this._view === 'controls' || this._view === 'settings-group' ? this.settingsFrom ?? (() => this.showHome()) : () => this.showHome())
     this.settingsFrom = back
     this.setView('settings', 'settings')
+    this.at({ kind: 'menu', path: 'settings' })
     const rows: Row[] = [
       { id: BACK, label: 'Back', marker: '<', hint: 'Back to where you were.', fn: () => this.back() },
       ...settingGroups().map((g) => ({ id: 'settings:' + g.group, label: g.group, sub: g.hint, marker: '>', hint: g.hint, fn: () => this.showSettingsGroup(g.group) })),
@@ -1196,6 +1282,7 @@ export class FrontEnd {
     if (this._view === 'settings-group' && this.settingsGroup === group) return
     this.settingsGroup = group
     this.setView('settings-group', 'settings')
+    this.at({ kind: 'menu', path: 'settings/' + group.toLowerCase() })
     // a change shows on the room behind the panel at once: the camera rows are the room's camera too
     const panel = settingsPanel(group, { onchange: () => this.roomView.applySettings(), controls: () => this.showControls() })
     // Only the front-end instance gets the title-screen treatment; the pause
@@ -1225,6 +1312,7 @@ export class FrontEnd {
   private showControls() {
     if (this._view === 'controls') return
     this.setView('controls', 'controls')
+    this.at({ kind: 'menu', path: 'settings/controls/gamepad' })
     const sheet = h('div', { class: 'bindings-sheet ours' }, controlsSheet(this.hooks.padKind?.() ?? 'generic'))
     const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back to the controls.', fn: () => this.back() }]
     this.list({ cls: 'controls-list', title: 'Gamepad controls', lede: 'What every button does, on each layer.', rows, below: [sheet] })
@@ -1237,10 +1325,11 @@ export class FrontEnd {
    * server and where its login stands; Log out beside each. Add an account
    * leads to the server list.
    */
-  showAccounts() {
+  showAccounts(focus?: string) {
+    const again = this._view === 'accounts'
+    if (!focus && !again) this.deleting = null
     this.adding = null
     this.watchOn = null
-    this.setView('accounts', 'accounts-list')
     const accounts = listAccounts()
     const chosen = getChosenAccount()
     const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back to the front.', fn: () => this.back() }]
@@ -1251,20 +1340,62 @@ export class FrontEnd {
       const state = loginWord(s, sameAccount(a, chosen))
       rows.push({
         id: 'account:' + a.serverId + '/' + a.username,
-        label: a.username,
-        sub: [server.name, server.host, state].filter(Boolean).join(' · '),
+        // named as the home screen's account row names it, and under it where the server is, as the server list
+        // says; a player on this device is just its name, over what it is. It has no login word: there is no login
+        // to lose, and the dot says which is in use
+        label: server.offline ? a.username : `${a.username} · ${server.name}`,
+        sub: server.offline ? 'on this device' : [serverWhere(server), state].filter(Boolean).join(' · '),
+        conn: accountConn(s, a, sameAccount(a, chosen)),
         marker: '\\',
         main: sameAccount(a, chosen),
         hint: `Play as ${a.username} on ${server.host}.`,
         fn: () => {
           setChosenAccount(a)
-          this.connectTo(a)
+          // a switch, not a return from a game: what the server said is waiting still stands
+          this.connectTo(a, undefined, false)
         },
-        also: [{ id: 'logout:' + a.serverId + '/' + a.username, label: '(log out)', title: `Forget ${a.username}'s login on this device.`, fn: () => this.logout(a) }],
+        also: server.offline ? this.profileDelete(a) : [{ id: 'logout:' + a.serverId + '/' + a.username, label: '(log out)', title: `Forget ${a.username}'s login on this device.`, fn: () => this.logout(a) }],
       })
     }
-    rows.push({ id: 'add', label: 'Add an account', sub: accounts.length ? 'on any server' : 'to play online', marker: '+', gap: true, main: !accounts.length, hint: 'Choose a server, then log in or register.', fn: () => this.showServers('add') })
-    this.list({ cls: 'accounts-list', title: 'Accounts', lede: 'The accounts on this device.', rows })
+    // asked ahead, so the home screen an account is switched to comes up with its Continue already there, rather
+    // than as Play and then Continue a moment later
+    for (const a of accounts) {
+      const server = findServer(a.serverId)
+      if (server) this.whereFor(server, a.username)
+    }
+    const offline = offlineOffered()
+    rows.push({ id: 'add', label: 'Add an account', sub: offline ? 'on this device or a server' : accounts.length ? 'on any server' : 'to play online', marker: '+', gap: true, main: !accounts.length, hint: offline ? 'A player on this device, or an account on a server.' : 'Choose a server, then log in or register.', fn: () => this.showServers('add') })
+    // redrawn as its login moves on (a connection's messages call it again): only when it would read differently,
+    // and in place, without sliding in again
+    const shape = JSON.stringify(rows.map((r) => [r.id, r.label, r.sub, r.conn, r.main, r.also?.map((a) => a.label)]))
+    if (again && !focus && this.shape.get('accounts') === shape && !this.error) return
+    this.setView('accounts', 'accounts-list')
+    this.at({ kind: 'menu', path: 'accounts' })
+    this.shape.set('accounts', shape)
+    this.list({ cls: 'accounts-list' + (again ? ' still' : ''), title: 'Accounts', lede: 'The accounts on this device.', rows, focus: focus ?? (again ? this.nav.current()?.id : this.marks.get('accounts') ?? rows.find((r) => r.main)?.id) })
+  }
+
+  /**
+   * An offline profile's Delete, beside its row: it takes the profile's saved characters with it, so it asks
+   * once more (the same button, relabelled) before it does. The default profile, standing in until one is
+   * added, has nothing to delete but saves, and stays listed, so it has none.
+   */
+  private profileDelete(a: Account): NonNullable<Row['also']> {
+    if (!isStoredAccount(a)) return []
+    const id = 'delete:' + a.serverId + '/' + a.username
+    if (this.deleting && sameAccount(this.deleting, a))
+      return [{ id, label: '(delete, and its saves?)', title: `Delete ${a.username} and every character saved under it. This cannot be undone.`, fn: () => void this.deleteProfile(a) }]
+    return [{ id, label: '(delete)', title: `Delete ${a.username} from this device, and its saved characters.`, fn: () => ((this.deleting = a), this.showAccounts(id)) }]
+  }
+
+  /** Delete an offline profile: the account, its connection, then its saves, once nothing has them open. */
+  private async deleteProfile(a: Account) {
+    this.deleting = null
+    removeAccount(a)
+    this.hooks.logout(a)
+    this.session = null
+    await deleteProfileSaves(a.username)
+    this.showAccounts()
   }
 
   /** the lobby page's Log out (client.html #logout_link): it forgets the account on this device */
@@ -1297,15 +1428,30 @@ export class FrontEnd {
     this.watchOn = mode === 'watch' ? this.watchOn ?? listServers()[0] ?? null : null
     if (mode === 'watch') this.watchOn = null
     this.setView('servers', 'servers-list')
+    this.at({ kind: 'menu', path: mode === 'watch' ? 'watch' : 'accounts/add' })
     const servers = listServers()
     const accounts = listAccounts()
     const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back.', fn: () => this.back() }]
+    // nobody plays on this device to watch; a player on it is added with a name alone
+    if (mode === 'add' && offlineOffered())
+      rows.push({
+        id: 'server:' + OFFLINE_SERVER.id,
+        label: OFFLINE_SERVER.name,
+        sub: serverWhere(OFFLINE_SERVER),
+        marker: '\\',
+        hint: 'Play with no server: a player on this device, with saved characters of its own.',
+        fn: () => {
+          this.adding = OFFLINE_SERVER
+          this.showLogin()
+        },
+      })
     for (const sv of servers) {
       const mine = accounts.filter((a) => a.serverId === sv.id).map((a) => a.username)
       rows.push({
         id: 'server:' + sv.id,
         label: sv.name,
-        sub: [sv.region, sv.host].filter(Boolean).join(' · ') + (mine.length ? ` · ${mine.join(', ')}` : ''),
+        sub: serverWhere(sv) + (mine.length ? ` · ${mine.join(', ')}` : ''),
+        late: this.pingNote(sv),
         marker: '\\',
         hint: mode === 'watch' ? `Watch who is playing on ${sv.host}.` : `An account on ${sv.host}.` + (mine.length ? ` ${mine.join(' and ')} ${mine.length === 1 ? 'is' : 'are'} already here.` : ''),
         fn: () => {
@@ -1342,15 +1488,34 @@ export class FrontEnd {
   }
 
   /**
+   * A server's ping at the end of its note, written in when it lands (the row
+   * is not redrawn, so a host half typed into Add a server stays). No answer
+   * leaves it blank: whether a server is up is not this line's to say.
+   */
+  private pingNote(sv: ServerInfo): HTMLElement | undefined {
+    if (!this.hooks.ping) return undefined
+    const el = h('span', { class: 'ping' })
+    void this.hooks.ping(sv).then((ms) => {
+      if (this.destroyed || ms === null) return
+      el.textContent = ` · ${ms} ms`
+    })
+    return el
+  }
+
+  /**
    * Open a session for `account` and show the home screen, its server's
    * lobby. With an `intent` (Continue, Play, a `#play-`/`#watch-` address
    * on reload) the game or spectate starts on its own once the login is
-   * through, and the screen stays up meanwhile.
+   * through, and the screen stays up meanwhile. `played` (the way back from
+   * a game) forgets what the server said was waiting; a switch of account
+   * keeps it.
    */
-  connectTo(account: Account, intent?: Intent) {
+  connectTo(account: Account, intent?: Intent, played = true) {
     if (intent) this.lost = false
     const server = findServer(account.serverId)
     if (!server) return this.showHome()
+    // the default profile becomes one of the device's own once it is played
+    if (server.offline && !isStoredAccount(account)) addAccount(account)
     const session = this.hooks.connect(server, account.username, intent)
     const last = getLast()
     if (!last || last.serverId !== server.id) setLast({ serverId: server.id, username: account.username })
@@ -1358,7 +1523,7 @@ export class FrontEnd {
     // answers, and until then the screen stands where it is (redrawn in place if its lines changed) rather than
     // being torn down and slid in again as a new one
     if (session === this.session && this._view === 'home') return this.showHome()
-    this.attach(session)
+    this.attach(session, played)
   }
 
   /** A game's connection dropped on its way here: the home screen says so, and that the game is saved. */
@@ -1369,19 +1534,29 @@ export class FrontEnd {
   }
 
   /** Follow an already open session and show the home screen: after a death, a save, or a reload. */
-  attach(session: Session) {
+  attach(session: Session, played = true) {
     // a game was played: whatever the server said was waiting before it is stale now
-    this.asked.clear()
-    this.whereis.clear()
+    if (played) {
+      this.asked.clear()
+      this.whereis.clear()
+    }
     this.follow(session)
-    this.hooks.leave('home')
+    this.at({ kind: 'home' }, true)
     this.shape.delete('home')
     this.showHome()
   }
 
   /** Follow an already open session and show the Watch screen: after a spectate ended, or Back to `#lobby`. */
   watchFor(session: Session) {
+    // a spectate with no account was picked from that server's roster, not the chosen account's
+    this.watchOn = session.username ? null : session.server
     this.follow(session)
+    this.showWatch()
+  }
+
+  /** The Watch screen of `server` with no account: a `cdi/lobby` address. */
+  watchServer(server: ServerInfo) {
+    this.watchOn = server
     this.showWatch()
   }
 
@@ -1403,7 +1578,7 @@ export class FrontEnd {
     this.session = session
     this.unsub = session.on((e) => {
       // every message redraws what changed, once a frame however many came
-      if ((e.type === 'state' || e.type === 'open') && (this._view === 'home' || this._view === 'watch')) this.schedule()
+      if ((e.type === 'state' || e.type === 'open') && (this._view === 'home' || this._view === 'watch' || this._view === 'accounts')) this.schedule()
       if (e.type === 'state' && e.msg.msg === 'login_success' && (this._view === 'login' || this._view === 'register')) this.loggedIn(session)
       if (e.type === 'state' && e.msg.msg === 'login_fail' && this._view === 'login') this.showLogin()
       if (e.type === 'state' && e.msg.msg === 'register_fail' && this._view === 'register') this.showRegister()
@@ -1425,7 +1600,7 @@ export class FrontEnd {
 
   /** The home screen, with the address bar saying so. */
   private goHome() {
-    this.hooks.leave('home')
+    this.at({ kind: 'home' }, true)
     this.shape.delete('home')
     this.showHome()
   }
@@ -1458,12 +1633,14 @@ export class FrontEnd {
    * register form is a row off it while an account is being added.
    */
   showLogin() {
+    if (this.adding?.offline) return this.showNewProfile()
     const chosen = this.adding ? null : this.chosen()
     const server = this.adding ?? chosen?.server ?? null
     if (!server) return this.showServers('add')
     const s = this.ensureSession(server, chosen?.account.username ?? null)
     if (!this.loginName && chosen) this.loginName = chosen.account.username
     this.setView('login', 'login')
+    this.at({ kind: 'menu', path: 'login', serverId: server.id, ...(chosen ? { username: chosen.account.username } : {}) })
     const user = h('input', { type: 'text', name: 'username', autocomplete: 'username', placeholder: 'name', size: 20, value: this.loginName })
     const pass = h('input', { type: 'password', name: 'password', autocomplete: 'current-password', placeholder: 'password', size: 20 })
     let form: HTMLFormElement
@@ -1501,12 +1678,63 @@ export class FrontEnd {
     })
   }
 
+  /**
+   * A new player on this device (@orbrun/offline): a name and nothing else, since there is nobody to prove it to.
+   * It becomes an account like any other, chosen, and its home screen comes up.
+   */
+  private showNewProfile() {
+    this.setView('login', 'login')
+    this.at({ kind: 'menu', path: 'login', serverId: OFFLINE_SERVER.id })
+    const user = h('input', { type: 'text', name: 'username', autocomplete: 'off', placeholder: 'name', size: 20, value: this.loginName })
+    let form: HTMLFormElement
+    const typing = this.hooks.padConnected?.() ? ' Press X to type.' : ''
+    const rows: Row[] = [
+      { id: BACK, label: 'Back', marker: '<', hint: 'Back to the servers.', fn: () => this.back() },
+      { id: 'username', label: 'Name', input: user, hint: 'Letters, digits, - and _.' + typing },
+      { id: 'login', label: 'Add', sub: 'this device', marker: '+', main: true, hint: 'Add this player and go to its games.', fn: () => form.requestSubmit() },
+    ]
+    this.list({
+      cls: 'login-form',
+      title: 'A new player',
+      lede: 'On this device',
+      rows,
+      focus: 'username',
+      wrap: (list) => {
+        form = h(
+          'form',
+          {
+            class: 'form',
+            onsubmit: (ev: Event) => {
+              ev.preventDefault()
+              this.loginName = user.value
+              const name = profileName(user.value)
+              const account: Account | null = name ? { serverId: OFFLINE_SERVER.id, username: name } : null
+              const taken = account && listAccounts().find((a) => sameAccount(a, account))
+              if (!account || taken) {
+                this.error = taken ? `${taken.username} is already on this device.` : 'A name needs a letter or a digit.'
+                return this.showNewProfile()
+              }
+              addAccount(account)
+              setChosenAccount(account)
+              this.adding = null
+              this.loginName = ''
+              this.connectTo(account)
+            },
+          },
+          list,
+        )
+        return form
+      },
+    })
+  }
+
   /** The lobby page's register dialog (client.html #reg_link), off the login of an account being added. */
   showRegister() {
     const server = this.adding ?? this.chosen()?.server ?? null
     if (!server) return this.showServers('add')
     const s = this.ensureSession(server, this.adding ? null : (this.chosen()?.account.username ?? null))
     this.setView('register', 'register-form')
+    this.at({ kind: 'menu', path: 'register', serverId: server.id })
     const user = h('input', { type: 'text', placeholder: 'name', size: 20 })
     const pass = h('input', { type: 'password', placeholder: 'password', size: 20 })
     const pass2 = h('input', { type: 'password', placeholder: 'repeat password', size: 20 })
@@ -1656,6 +1884,44 @@ function exitTitle(reason: string, watched: string | null): string {
     case 'disconnect': return watched ? `${watched} was disconnected` : 'Disconnected'
     default: return `${whose} ended`
   }
+}
+
+/**
+ * Where a server is, as the server list and the accounts both say it: its region and host, or for this device
+ * that no connection is needed. Whether a server is up is the dot's to say, never this line's.
+ */
+function serverWhere(sv: ServerInfo): string {
+  return sv.offline ? 'no connection needed' : [sv.region, sv.host].filter(Boolean).join(' · ')
+}
+
+/**
+ * What an offline game's row says about its build, under the label: how far a download is, or once, until the
+ * next game, that it was just switched in. Nothing otherwise: a build that is here and current says nothing.
+ */
+function engineSub(note: EngineNote | null): string | null {
+  if (!note) return null
+  if ('percent' in note) return `${note.kind}… ${note.percent}%`
+  return note.version ? `${note.kind} · ${note.version}` : note.kind
+}
+
+/** The message line's word on the same, after the row's own hint. */
+function engineHint(note: EngineNote | null): string {
+  if (note?.kind === 'updating') return ' An update is on its way; until it is whole, Play starts the version you have.'
+  if (note?.kind === 'downloading') return ' It is being kept on this device, to play with no connection.'
+  return ''
+}
+
+/**
+ * The dot before an account's name: green once its server knows it, gold on the way, red when the line is
+ * down, gray when it is not logged in or not connected at all (an account other than the chosen one).
+ */
+export function accountConn(s: Session | null | undefined, account: Account, chosen: boolean): NonNullable<Row['conn']> {
+  const open = !!s?.conn.open
+  const loggedIn = open ? s?.state.lobby.username || null : null
+  if (loggedIn) return 'up'
+  if (s?.closed) return 'down'
+  if (!s && !chosen) return 'off'
+  return open && loginState(account, loggedIn, !!s?.loggingIn) === 'out' ? 'off' : 'wait'
 }
 
 export function loginWord(s: Session | null | undefined, chosen: boolean): string {

@@ -1,0 +1,28 @@
+{
+  // orbrun-engine: the offline engine's files (engine/dist, as build.sh lays it
+  // out), served to orbrun.app's /engine/* through a service binding, and the
+  // nightly trigger for its own build (engine/ci.sh on Workers Builds).
+  //
+  // A Worker of its own so a new engine build never redeploys the app, and the
+  // app's deploy never has to carry the engine. Publish with
+  //   engine/build.sh && node engine/publish.mjs
+  // not a bare `wrangler deploy`: publish.mjs stages the channels not built
+  // here from the live Worker into .publish, since a deploy replaces every file.
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "orbrun-engine",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-04-01",
+  "assets": {
+    "directory": ".publish",
+    "binding": "ASSETS",
+    // a missing file is a 404, never a page: a channel that was not published
+    // reads as absent (@orbrun/offline)
+    "not_found_handling": "none",
+    "run_worker_first": true
+  },
+  // the night's two chances to build: one channel a run (engine/plan.mjs)
+  "triggers": { "crons": ["0 4 * * *", "30 4 * * *"] },
+  "observability": {
+    "enabled": true
+  }
+}

@@ -1,0 +1,29 @@
+Sends messages before the game starts, so pre-game prompts and the
+first-launch cache build reach the client.
+
+Modified for the WebAssembly build of the webtiles binary (engine/README.md).
+GPLv2+, as the file it patches.
+
+--- a/crawl-ref/source/message.cc
++++ b/crawl-ref/source/message.cc
+@@ -934,8 +934,20 @@
+     // defer sending any messages to client in this form until a game is
+     // started up. It's still possible to send them as a popup. When this is
+     // eventually called, it'll send any queued messages.
++#ifdef __EMSCRIPTEN__
++    // No gating. Deferring to game_started makes any pre-game
++    // more() an invisible hang — the prompt (and the messages explaining
++    // it) never reach the client while the engine suspends in readkey_more
++    // awaiting a key. Dropping the io_inited gate too lets startup call
++    // sites (_loading_message, TextDB::_regenerate_db) stream first-launch
++    // cache-build progress, which happens before cio_init. Nothing below
++    // needs live IO: it only
++    // walks the message store and appends JSON, and finish_message drops
++    // output safely if the worker hasn't hooked up yet.
++#else
+     if (!crawl_state.io_inited || !crawl_state.game_started)
+         return;
++#endif
+     tiles.json_open_object();
+     tiles.json_write_string("msg", "msgs");
+     tiles.json_treat_as_empty();

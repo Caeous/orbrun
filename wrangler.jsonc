@@ -27,8 +27,11 @@
     "not_found_handling": "single-page-application",
     // without this the asset layer answers the proxy routes with index.html
     // and the gamedata loader is handed HTML instead of JavaScript
-    "run_worker_first": ["/gamedata-proxy/*", "/morgue-proxy/*"]
+    "run_worker_first": ["/gamedata-proxy/*", "/morgue-proxy/*", "/engine/*"]
   },
+  // the offline engine's files: a Worker of their own (engine/wrangler.jsonc),
+  // deployed before this one, so a new engine build never redeploys the app
+  "services": [{ "binding": "ENGINE", "service": "orbrun-engine" }],
   "observability": {
     "enabled": true
   }

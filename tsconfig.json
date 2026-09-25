@@ -8,6 +8,7 @@
     { "path": "packages/render-2d" },
     { "path": "packages/render-3d" },
     { "path": "packages/vault" },
+    { "path": "packages/offline" },
     { "path": "apps/orbrun" }
   ]
 }

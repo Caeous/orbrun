@@ -3,7 +3,8 @@ import { GAMEDATA_PROXY_PREFIX, MORGUE_PROXY_PREFIX, serveGamedata, serveMorgue 
 /**
  * orbrun.app: the static build, plus the gamedata proxy the browser cannot do
  * without and the morgue proxy the exit screen reads through (see
- * ../gamedata-proxy.ts for why and for the routes).
+ * ../gamedata-proxy.ts for why and for the routes), and the offline engine's
+ * files, handed to the orbrun-engine Worker as they are.
  *
  * Everything that is not a proxy path is handed to the static assets, so
  * `public/_headers` and `public/_redirects` (the `/deck` installer) keep
@@ -13,11 +14,14 @@ import { GAMEDATA_PROXY_PREFIX, MORGUE_PROXY_PREFIX, serveGamedata, serveMorgue 
  */
 interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> }
+  /** orbrun-engine (engine/wrangler.jsonc): the offline engine's files, at /engine/* */
+  ENGINE: { fetch(request: Request): Promise<Response> }
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+    if (url.pathname.startsWith('/engine/')) return env.ENGINE.fetch(request)
     const morgue = url.pathname.startsWith(MORGUE_PROXY_PREFIX)
     if (!morgue && !url.pathname.startsWith(GAMEDATA_PROXY_PREFIX)) return env.ASSETS.fetch(request)
 

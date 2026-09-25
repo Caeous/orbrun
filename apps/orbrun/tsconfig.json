@@ -20,6 +20,7 @@
     "data/*.json",
     "vite.config.ts",
     "gamedata-proxy.ts",
+    "engine-files.ts",
     "worker"
   ],
   "references": [
@@ -43,6 +44,9 @@
     },
     {
       "path": "../../packages/vault"
+    },
+    {
+      "path": "../../packages/offline"
     }
   ]
 }

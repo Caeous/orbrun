@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   addAccount,
   characterOf,
@@ -9,8 +9,12 @@ import {
   getChosenAccount,
   getGames,
   getLast,
+  findServer,
   getToken,
   listAccounts,
+  listServers,
+  DEFAULT_OFFLINE_ACCOUNT,
+  isStoredAccount,
   loginState,
   removeAccount,
   sameAccount,
@@ -31,6 +35,78 @@ Object.defineProperty(globalThis, 'localStorage', {
     setItem: (k: string, v: string) => void store.set(k, String(v)),
     removeItem: (k: string) => void store.delete(k),
   },
+})
+
+/**
+ * Offline accounts are profiles on this device: stored like any account, as
+ * many as the device likes, with a default one listed while there is none.
+ */
+describe('offline profiles', () => {
+  beforeEach(() => {
+    store.clear()
+    vi.stubEnv('MODE', 'development')
+    vi.stubEnv('DEV', true)
+  })
+  afterEach(() => vi.unstubAllEnvs())
+
+  const sam: Account = { serverId: 'offline', username: 'Sam' }
+
+  it('lists the default profile while the device has none of its own, and never in the server list', () => {
+    expect(listAccounts()).toEqual([DEFAULT_OFFLINE_ACCOUNT])
+    addAccount({ serverId: 'cdi', username: 'caeo' })
+    expect(listAccounts()).toEqual([{ serverId: 'cdi', username: 'caeo' }, DEFAULT_OFFLINE_ACCOUNT])
+    expect(isStoredAccount(DEFAULT_OFFLINE_ACCOUNT)).toBe(false)
+    expect(listServers().some((s) => s.offline)).toBe(false)
+    expect(findServer('offline')?.offline).toBe(true)
+  })
+
+  it('keeps added profiles like accounts, and the default steps aside for them', () => {
+    addAccount(sam)
+    addAccount({ serverId: 'offline', username: 'Ann' })
+    expect(listAccounts()).toEqual([sam, { serverId: 'offline', username: 'Ann' }])
+    removeAccount(sam)
+    expect(listAccounts()).toEqual([{ serverId: 'offline', username: 'Ann' }])
+    removeAccount({ serverId: 'offline', username: 'ann' })
+    expect(listAccounts()).toEqual([DEFAULT_OFFLINE_ACCOUNT])
+  })
+
+  it('lists the account picked last first, and the never-picked after in the order they were added', () => {
+    const ann: Account = { serverId: 'offline', username: 'Ann' }
+    const caeo: Account = { serverId: 'cdi', username: 'caeo' }
+    addAccount(caeo)
+    addAccount(sam)
+    addAccount(ann)
+    expect(listAccounts()).toEqual([caeo, sam, ann])
+    setChosenAccount(sam, 1000)
+    setChosenAccount(ann, 2000)
+    expect(listAccounts()).toEqual([ann, sam, caeo])
+    setChosenAccount(sam, 3000)
+    expect(listAccounts()).toEqual([sam, ann, caeo])
+    // forgotten with the account: added again, it is new
+    removeAccount(sam)
+    addAccount(sam)
+    expect(listAccounts()).toEqual([ann, caeo, sam])
+  })
+
+  it('stays chosen by its own name', () => {
+    addAccount(sam)
+    setChosenAccount(sam)
+    expect(getChosenAccount()).toEqual(sam)
+  })
+
+  it('logs in with no stored token', () => {
+    expect(loginState(sam, null)).toBe('pending')
+    expect(loginState({ serverId: 'cdi', username: 'caeo' }, null)).toBe('out')
+  })
+
+  it('is not offered where no engine is served', () => {
+    addAccount(sam)
+    setChosenAccount(sam)
+    vi.stubEnv('DEV', false)
+    expect(listAccounts()).toEqual([])
+    expect(findServer('offline')).toBeNull()
+    expect(getChosenAccount()).toBeNull()
+  })
 })
 
 /**

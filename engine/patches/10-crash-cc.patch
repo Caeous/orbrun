@@ -1,0 +1,15 @@
+No backtrace support under Emscripten.
+
+Modified for the WebAssembly build of the webtiles binary (engine/README.md).
+GPLv2+, as the file it patches.
+
+--- a/crawl-ref/source/crash.cc
++++ b/crawl-ref/source/crash.cc
+@@ -32,6 +32,7 @@
+     defined(TARGET_OS_NETBSD) || \
+     defined(TARGET_OS_OPENBSD) || \
+     defined(TARGET_COMPILER_CYGWIN) || \
++    defined(__EMSCRIPTEN__) || \
+     defined(__ANDROID__)
+         #undef BACKTRACE_SUPPORTED
+ #endif

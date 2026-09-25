@@ -376,7 +376,7 @@ export class GameScreen {
     const hideMessages = mapView && o.tile_level_map_hide_messages === true
     // no character yet: the official client's crt layer (game.js `set_ui_state`, `client.set_layer("crt")`) covers
     // the sidebar while the new-game chooser has the UI in CRT state (newgame.cc `choose_game`), until the redraw
-    // that sends the first `player` (tileweb.cc `redraw`); a continued game has no sheet before that message either
+    // that sends the first `player` (tileweb.cc `redraw`); a continued game has no sheet before that message either.
     const hideStats = hideSidebar || st.uiState === UiState.CRT || !st.player.received
     const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, st.messages.paneHeight, hideStats, hideSidebar, hideMessages].join(',')
     if (!force && key === this.layoutKey) return

@@ -11,6 +11,8 @@ import {
 import { loadGamedata, browserIo, type Gamedata } from '@orbrun/gamedata'
 import { buildScene } from '@orbrun/scene-webtiles'
 import { emptyScene, type Scene } from '@orbrun/scene'
+import { LocalWasmConnection, browserSaveBook } from '@orbrun/offline'
+import { engines } from './engines'
 import type { ServerInfo } from './servers'
 import { gamedataBaseFor, getToken, setToken } from './servers'
 
@@ -54,6 +56,11 @@ export class Session {
    * the account's lobby follows this one instead of opening a second.
    */
   username: string | null
+  /**
+   * A token login is out and not yet answered. The token is forgotten as it is sent, so without this the
+   * moment between would read as nobody logged in and nothing to log in with.
+   */
+  loggingIn = false
   readonly conn: Connection
   state: GameState = initialState()
   gamedata: Gamedata | null = null
@@ -80,26 +87,43 @@ export class Session {
   private lastSceneRev = { map: -1, player: -1, ui: -1 }
   diagnostics: string[] = []
   closed = false
+  private unwatchEngines: (() => void) | null = null
   /** a `probe` waiting on its answer */
   private probing: { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> } | null = null
 
   constructor(server: ServerInfo, username: string | null = null) {
     this.server = server
     this.username = username
-    this.conn = new RemoteConnection({
-      url: server.ws,
-      gamedataBase: gamedataBaseFor(server),
-      WebSocket: window.WebSocket as never,
-      onDiagnostic: (t, d) => this.diag(t + (d ? ' ' + safeString(d) : '')),
-    })
+    const onDiagnostic = (t: string, d?: unknown) => this.diag(t + (d ? ' ' + safeString(d) : ''))
+    this.conn = server.offline
+      ? new LocalWasmConnection({
+          channels: () => engines.channels(),
+          engineBase: (c) => engines.engineBase(c),
+          gamedataBase: gamedataBaseFor(server),
+          saves: browserSaveBook(),
+          onDiagnostic,
+        })
+      : new RemoteConnection({
+          url: server.ws,
+          gamedataBase: gamedataBaseFor(server),
+          WebSocket: window.WebSocket as never,
+          onDiagnostic,
+        })
     this.conn.onMessage((m) => this.handle(m))
+    // a build that finished downloading is a game the lobby offers
+    if (this.conn instanceof LocalWasmConnection) {
+      const conn = this.conn
+      this.unwatchEngines = engines.onChange(() => conn.channelsChanged())
+    }
     this.conn.onOpen(() => {
       // the account as it stands now, not as the session was made: a connection reopened after a drop logs in as
       // whoever this one turned out to be
       const who = this.username
-      const token = who ? getToken(server.id, who) : null
+      // the offline server takes any login: its token is just the name (@orbrun/offline), so none need be stored
+      const token = who ? (server.offline ? 'offline:' + who : getToken(server.id, who)) : null
       if (token) {
         this.send(cm.tokenLogin(token))
+        this.loggingIn = true
         // the server forgets a token as it is used (ws_handler.py `token_login`), so it is forgotten here too, as
         // client.js `start_login` does; `login_cookie` brings the next one
         setToken(server.id, who!, null)
@@ -108,6 +132,7 @@ export class Session {
     })
     this.conn.onClose((r) => {
       this.closed = true
+      this.loggingIn = false
       this.endProbe(false)
       // a load for a connection that is gone: stop it, and let the messages it was holding go with it
       this.loadAbort?.abort()
@@ -144,6 +169,7 @@ export class Session {
   }
 
   close() {
+    this.unwatchEngines?.()
     this.conn.close()
   }
 
@@ -212,6 +238,7 @@ export class Session {
       this.endProbe(true)
       return
     }
+    if (m.msg === 'login_success' || m.msg === 'login_fail') this.loggingIn = false
     if (m.msg === 'login_success') {
       // the name the server answered with: an account just added had none on this connection until now
       this.username = (m.username as string) || this.username

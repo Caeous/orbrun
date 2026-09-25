@@ -2,13 +2,15 @@ import { cm } from '@orbrun/webtiles'
 import { installAnalytics } from './analytics'
 import { h } from './dom'
 import { Session } from './session'
+import { pingServer } from './ping'
 import { FrontEnd, type Intent } from './menu'
 import type { GameScreen, InputDevice } from './game'
 import { GamepadInput, installPadKeys, isPadActivity } from './gamepad'
-import { findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getSettings, getToken, parseRoute, setGames, setLast, setMorgueDir, setRoute, setToken, type Account, type Route, type ServerInfo } from './servers'
+import { findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getSettings, getToken, parseRoute, sameAccount, setChosenAccount, setGames, setLast, setMorgueDir, setRoute, setToken, type Account, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { gamedataUrls } from '@orbrun/gamedata'
 import { morgueDirOf } from './whereis'
 import { settingsPanel } from './settings-panel'
+import { engines, keepEngines } from './engines'
 
 const app = document.getElementById('app')!
 const gamepad = new GamepadInput()
@@ -55,7 +57,7 @@ const PROBE_MS = 6000
  * (`scheduleRetry`): what to go back to, the timer for the next try, and how
  * many have been made.
  */
-let rejoining: { account: Account; server: ServerInfo; intent: Intent; tries: number; timer: ReturnType<typeof setTimeout> | null } | null = null
+let rejoining: { account: Account | null; server: ServerInfo; intent: Intent; tries: number; timer: ReturnType<typeof setTimeout> | null } | null = null
 /** the wait before each try after the first, which goes at once; spent, the menu (about half a minute) */
 const REJOIN_MS = [1000, 2000, 4000, 8000, 15_000]
 /** the wall clock at the last beat, which a sleep leaves behind */
@@ -84,6 +86,7 @@ function updateTitle(s: Session | null) {
 function play(s: Session, gameId: string) {
   // which version was played last, so the home screen leads with it; who waits in it is the server's to say
   setLast({ serverId: s.server.id, gameId, username: s.state.lobby.username || undefined })
+  if (s.server.offline) void engines.played(gameId)
   s.send(cm.play(gameId))
   const account = accountOf(s)
   if (account) setRoute({ kind: 'play', account, gameId })
@@ -96,20 +99,33 @@ function accountOf(s: Session): Account | null {
   return chosen && chosen.serverId === s.server.id ? chosen : null
 }
 
-/** The URL for what a session is doing now, or is about to do once connected. */
-function routeFor(s: Session): Route {
+/** The account a session logged in as, if any: who a spectate watches as, which may be nobody. */
+function ownAccount(s: Session): Account | null {
+  return s.username ? { serverId: s.server.id, username: s.username } : null
+}
+
+/**
+ * The URL for the game or spectate a session is in, or is about to be in once
+ * connected; null when it is in neither, and a front-end screen (which says
+ * its own address) is where the player is.
+ */
+function routeFor(s: Session): Route | null {
   const account = accountOf(s)
-  // an account being added has no name yet: the home screen is where the player is until the login lands
-  if (!account) return { kind: 'home' }
-  if (s.state.watching) return { kind: 'watch', account, username: s.state.watching.username }
-  if (intent?.kind === 'play') return { kind: 'play', account, gameId: intent.gameId }
-  if (s.playing || s.state.phase === 'loading') {
+  const serverId = s.server.id
+  if (s.state.watching) return { kind: 'watch', serverId, account: ownAccount(s), username: s.state.watching.username }
+  if (account && intent?.kind === 'play') return { kind: 'play', account, gameId: intent.gameId }
+  if (account && (s.playing || s.state.phase === 'loading')) {
     const gameId = s.state.version.gameId ?? getLast()?.gameId
     if (gameId) return { kind: 'play', account, gameId }
   }
-  if (intent?.kind === 'watch') return { kind: 'watch', account, username: intent.username }
-  // idle on a front-end screen: the one the address bar already names (the Watch screen's `#lobby`), else home
-  return { kind: parseRoute().kind === 'lobby' ? 'lobby' : 'home', account }
+  if (intent?.kind === 'watch') return { kind: 'watch', serverId, account: ownAccount(s), username: intent.username }
+  return null
+}
+
+/** Put the game or spectate `s` is in (routeFor) in the address bar, if it is in one. */
+function routeTo(s: Session) {
+  const r = routeFor(s)
+  if (r) setRoute(r)
 }
 
 /** The open session on `server` for `username`, when that is what it is: the warm connection, or the game's. */
@@ -125,24 +141,29 @@ function sessionOn(server: ServerInfo, username: string | null): Session | null 
  * or uses the back button (`hashchange`). Mirrors client.js `handle_hash`.
  */
 function applyRoute(r: Route) {
-  if (r.kind === 'home') {
-    // Back out of a game to the home screen it was started from: `go_lobby` stops the process, which saves it as a
-    // dropped connection does (ws_handler.py go_lobby, process_handler.py stop: SIGHUP)
+  if (r.kind === 'home' || r.kind === 'menu') {
+    // Back out of a game to the home screen it was started from, or a menu: `go_lobby` stops the process, which
+    // saves it as a dropped connection does (ws_handler.py go_lobby, process_handler.py stop: SIGHUP)
     intent = null
     if (session && !session.closed && (game || boot)) session.send(cm.goLobby())
-    showHome()
+    if (r.kind === 'home') showHome()
+    else showMenu(r)
     return
   }
-  const server = findServer(r.account.serverId)
+  const account = r.account
+  const server = findServer(account?.serverId ?? (r.kind === 'play' ? '' : r.serverId))
   if (!server) {
     // the account's server is gone (a custom one the device no longer has): the account list
     intent = null
     showHome()
     return
   }
-  const same = sessionOn(server, r.account.username)
+  // an address that names an account of this device's makes it the chosen one, as picking it on the home screen does
+  if (account && !sameAccount(account, getChosenAccount())) setChosenAccount(account)
+  const username = account?.username ?? null
+  const same = sessionOn(server, username)
   if (r.kind === 'lobby') {
-    // `#lobby` is the Watch screen: the server's lobby roster. Back out of a spectate (or one still starting) to
+    // `lobby` is the Watch screen: the server's lobby roster. Back out of a spectate (or one still starting) to
     // it: `go_lobby` stops the process, and the server's own `go_lobby` puts the roster up
     intent = null
     if (same && (game || boot)) {
@@ -150,7 +171,8 @@ function applyRoute(r: Route) {
       // a spectate that has not drawn yet has no screen to wait on: the roster now, rather than a dark boot screen
       if (!game) showWatchFor(same)
     } else if (same) showWatchFor(same)
-    else frontEnd().showWatch()
+    else if (account) frontEnd().showWatch()
+    else frontEnd().watchServer(server)
     return
   }
   const i: Intent = r.kind === 'play' ? { kind: 'play', gameId: r.gameId } : { kind: 'watch', username: r.username }
@@ -164,15 +186,15 @@ function applyRoute(r: Route) {
   if (same) return // already in a game or spectate here; leave it alone
   // a play with no token in hand waits on a login form, so it takes the front end as it always has;
   // spectating needs no account at all
-  if (i.kind === 'play' && !getToken(r.account.serverId, r.account.username)) {
-    frontEnd().connectTo(r.account, i)
+  if (i.kind === 'play' && account && !getToken(account.serverId, account.username)) {
+    frontEnd().connectTo(account, i)
     return
   }
   // straight to it: the connection is opened here rather than through the lobby screen, and the dark
   // boot screen stands until the game does. A refused login (or a dropped socket) brings the front end up.
-  openSession(server, r.account.username, i)
+  openSession(server, username, i)
   const last = getLast()
-  if (!last || last.serverId !== server.id) setLast({ serverId: server.id, username: r.account.username })
+  if (account && (!last || last.serverId !== server.id)) setLast({ serverId: server.id, username: account.username })
   showBoot()
 }
 
@@ -205,7 +227,7 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
       }
       // the old game would not stop: the server asks whether to kill it, and the home screen is where that is answered
       if (m === 'force_terminate?' && boot && s === session) showLobbyFor(s)
-      if (m === 'game_started' || m === 'watching_started') setRoute(routeFor(s))
+      if (m === 'game_started' || m === 'watching_started') routeTo(s)
       if ((m === 'game_client' || m === 'watching_started' || m === 'game_started') && !game) startGame()
       if (m === 'game_client' && typeof e.msg.version === 'string') {
         // the version this server's games run on, so the next visit can fetch its tiles before Play
@@ -264,14 +286,15 @@ function scheduleRetry(s: Session) {
   if (game || boot) {
     const r = parseRoute()
     const account = accountOf(s)
-    const server = account ? findServer(account.serverId) : null
+    const server = s.server
     // a game that has ended is not started again: `play` on it would roll a new character
     const live = s.state.phase !== 'ended'
-    if (game && live && account && server && (r.kind === 'play' || r.kind === 'watch')) {
+    // a spectate needs no account to be gone back into
+    if (game && live && ((r.kind === 'play' && account) || r.kind === 'watch')) {
       game.destroy()
       game = null
       const i: Intent = r.kind === 'play' ? { kind: 'play', gameId: r.gameId } : { kind: 'watch', username: r.username }
-      rejoining = { account, server, intent: i, tries: 0, timer: null }
+      rejoining = { account: ownAccount(s), server, intent: i, tries: 0, timer: null }
       showBoot('Reconnecting\u2026')
       rejoin()
       return
@@ -306,15 +329,16 @@ function rejoin() {
   if (j.timer) clearTimeout(j.timer)
   j.timer = null
   // a token is used once, and the drop may have come before the next one arrived
-  if (j.intent.kind === 'play' && !getToken(j.server.id, j.account.username)) {
+  if (j.intent.kind === 'play' && !getToken(j.server.id, j.account?.username ?? '')) {
     const s = session
     if (s) leaveFor(s)
-    else frontEnd().connectTo(j.account)
+    else if (j.account) frontEnd().connectTo(j.account)
+    else showHome()
     lobby?.dropped()
     return
   }
   j.tries++
-  openSession(j.server, j.account.username, j.intent)
+  openSession(j.server, j.account?.username ?? null, j.intent)
 }
 
 function clearRetry() {
@@ -457,15 +481,16 @@ function frontEnd(): FrontEnd {
             play(s, i.gameId)
             intent = null
           }
-          setRoute(routeFor(s))
+          routeTo(s)
           return s
         }
         const n = openSession(server, username, i)
-        setRoute(routeFor(n))
+        routeTo(n)
         return n
       },
       session: (server: ServerInfo, username: string | null) => sessionOn(server, username),
       retrying,
+      ping: (server: ServerInfo) => pingServer(server),
       logout(account: Account) {
         // client.js logout: forget the token here and the cookie on the server, then drop the connection. The account
         // itself is already gone (lobby.ts), so nothing warms a connection to it again.
@@ -480,21 +505,17 @@ function frontEnd(): FrontEnd {
         }
         clearRetry()
         intent = null
-        setRoute({ kind: 'home' })
       },
       play,
       watch(s, username) {
         s.send(cm.watch(username))
-        const account = accountOf(s)
-        setRoute(account ? { kind: 'watch', account, username } : { kind: 'home' })
+        setRoute({ kind: 'watch', serverId: s.server.id, account: ownAccount(s), username })
       },
-      leave(where) {
-        // back on a front-end screen (home, or the Watch screen at `#lobby`): the connection stays up for the next
-        // Play. A Continue or a reload waiting on a login keeps its own route, so a refresh mid-login still lands in
-        // the game.
+      at(r) {
+        // on a front-end screen: the connection stays up for the next Play. A Continue or a reload waiting on a
+        // login keeps its own route, so a refresh mid-login still lands in the game.
         if (intent) return
-        const account = getChosenAccount()
-        setRoute(where === 'lobby' && account ? { kind: 'lobby', account } : { kind: 'home' })
+        setRoute(r)
       },
     })
   }
@@ -520,6 +541,14 @@ function showHome() {
 function showLobbyFor(s: Session) {
   updateTitle(null)
   frontEnd().attach(s)
+}
+
+/** A front-end screen by its address (`#settings/camera`, `#cdi/login`), over this device's warm connection. */
+function showMenu(r: MenuRoute) {
+  updateTitle(null)
+  const l = frontEnd()
+  warm()
+  l.open(r)
 }
 
 /** The Watch screen (the server's lobby roster, `#lobby`) on the connection `s`. */
@@ -566,12 +595,12 @@ function makeGame(GameScreen: typeof import('./game').GameScreen, s: Session): G
     gamepad,
     initialInput: lastInput,
     onSystem() {
-      const account = accountOf(s)
-      if (s.state.watching && account) {
-        // Leave a spectate: back to the Watch screen it was picked from (`#lobby`), on the same connection.
+      if (s.state.watching) {
+        // Leave a spectate: back to the Watch screen it was picked from (`lobby`), on the same connection.
         // `go_lobby` stops the spectate, and the server's own `go_lobby` puts the roster up (see applyRoute)
-        setRoute({ kind: 'lobby', account })
-        applyRoute({ kind: 'lobby', account })
+        const r: Route = { kind: 'lobby', serverId: s.server.id, account: ownAccount(s) }
+        setRoute(r)
+        applyRoute(r)
         return
       }
       leaveFor(s)
@@ -645,6 +674,8 @@ window.addEventListener('beforeunload', (ev) => {
 // the address bar is the record of where we are: `#lobby`, `#play-<game_id>`,
 // `#watch-<username>` as in the official client; the server comes from storage
 window.addEventListener('hashchange', () => applyRoute(parseRoute()))
+// before the first route is applied, so a game started from it finds the worker keeping the engine it fetches
+keepEngines(() => !!(game || starting) || session?.state.phase === 'loading' || session?.state.phase === 'playing')
 applyRoute(parseRoute())
 
 // last, so the beacon never delays the first screen (see analytics.ts)
