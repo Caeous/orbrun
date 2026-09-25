@@ -114,7 +114,7 @@ tools, and the Steam Deck installer.
 
 ## PocketZot
 
-[PocketZot](https://pocketzot.app) ([source](https://github.com/pocketzot/pocketzot))
+[PocketZot](https://pocketzot.app/about) ([source](https://github.com/pocketzot/pocketzot))
 is an unofficial DCSS client for phones, also AGPL-3.0-or-later. These
 documents are based on PocketZot's, and parts of Orbrun's design took
 inspiration from it. Thanks to its developer for building it in the open and

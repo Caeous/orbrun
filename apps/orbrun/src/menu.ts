@@ -1118,7 +1118,7 @@ export class FrontEnd {
     const destinations = [
       ['Source on GitHub', 'https://github.com/Caeous/orbrun'],
       ['Dungeon Crawl Stone Soup', 'https://crawl.develz.org/'],
-      ['PocketZot', 'https://pocketzot.app/'],
+      ['PocketZot', 'https://pocketzot.app/about'],
     ]
     destinations.forEach(([label, href], i) => {
       const el = h('a', { class: 'item', href, target: '_blank', rel: 'noopener noreferrer', dataset: { focus: 'link:' + i, marker: '+' } }, h('span', { class: 'marker', 'aria-hidden': 'true' }), h('span', { class: 'label' }, label), h('span', { class: 'sub', 'aria-hidden': 'true' }, '↗'))

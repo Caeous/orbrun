@@ -103,7 +103,7 @@ build tools.
 an independent project, not affiliated with or endorsed by the DCSS
 development team. See [ATTRIBUTION.md](ATTRIBUTION.md) for the relationship to
 DCSS and what is derived from the official client. Thanks to
-[PocketZot](https://pocketzot.app) for inspiring parts of the game and for
+[PocketZot](https://pocketzot.app/about) for inspiring parts of the game and for
 feedback.
 
 ## Feedback

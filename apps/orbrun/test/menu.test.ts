@@ -577,7 +577,7 @@ describe('the front end: the home screen', () => {
     expect(labels(screen)).toEqual(['Back', 'About Orbrun', 'What’s new', 'Add to Steam'])
     expect(screen.root.querySelector('.about-copy')?.textContent).toContain('Not affiliated with the DCSS team.')
     const links = Array.from(screen.root.querySelectorAll<HTMLAnchorElement>('.about-links a'))
-    expect(links.map((el) => el.href)).toEqual(['https://github.com/Caeous/orbrun', 'https://crawl.develz.org/', 'https://pocketzot.app/'])
+    expect(links.map((el) => el.href)).toEqual(['https://github.com/Caeous/orbrun', 'https://crawl.develz.org/', 'https://pocketzot.app/about'])
     for (const link of links) {
       expect(link.target).toBe('_blank')
       expect(link.rel).toBe('noopener noreferrer')
