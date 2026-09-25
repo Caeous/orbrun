@@ -38,8 +38,9 @@ export function renderMarkdown(src: string, opts: { dropTitle?: boolean } = {}):
       i++
       continue
     }
-    // a block of raw html (the logo, the screenshots): nothing of it is drawn here
-    if (/^<[a-zA-Z/]/.test(line)) {
+    // a block of raw html (the logo, the screenshots): nothing of it is drawn here; a line that opens on an
+    // autolink (`<https://…>`, `<someone@example.com>`) is words
+    if (/^<[a-zA-Z/]/.test(line) && !/^<(?:https?:\/\/|mailto:)?[^\s>]*[@:][^\s>]*>/.test(line)) {
       flush()
       while (i < lines.length && lines[i].trim() !== '') i++
       continue

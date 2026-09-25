@@ -21,6 +21,7 @@
     "vite.config.ts",
     "gamedata-proxy.ts",
     "engine-files.ts",
+    "site-pages.ts",
     "worker"
   ],
   "references": [

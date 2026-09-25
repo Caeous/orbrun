@@ -158,6 +158,15 @@ describe('routes', () => {
       expect(history.length).toBe(deep)
     })
 
+    it('names the tab after the page it moves to, and leaves a game’s to the game', () => {
+      setRoute({ kind: 'menu', path: 'about/steam' })
+      expect(document.title).toBe('Add Orbrun to Steam and the Steam Deck')
+      setRoute({ kind: 'play', account: orbrun, gameId: 'dcss-0.34' })
+      expect(document.title).toBe('Add Orbrun to Steam and the Steam Deck')
+      setRoute({ kind: 'menu', path: 'settings' })
+      expect(document.title).toBe('Orbrun - Dungeon Crawl Stone Soup in first person')
+    })
+
     it('leaves the address alone when it already says this', () => {
       setRoute({ kind: 'lobby', serverId: 'cdi', account: orbrun })
       const len = history.length

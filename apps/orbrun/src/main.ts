@@ -11,6 +11,7 @@ import { gamedataUrls } from '@orbrun/gamedata'
 import { morgueDirOf } from './whereis'
 import { settingsPanel } from './settings-panel'
 import { engines, keepEngines } from './engines'
+import { HOME, titleAt } from './site'
 
 const app = document.getElementById('app')!
 const gamepad = new GamepadInput()
@@ -65,21 +66,19 @@ let lastBeat = Date.now()
 /** when the page was last hidden */
 let hiddenAt = 0
 document.documentElement.style.setProperty('--ui-scale', String(getSettings().uiScale))
-/** The tab's title as the page loaded, restored once out of a game. */
-const BASE_TITLE = document.title || 'Orbrun'
-/** What a character's tab title ends in: the site title's first words, so a game in progress reads as "orbrun the Chiller | Vine Stalker - Orbrun". */
-const SHORT_TITLE = BASE_TITLE.split(/\s[—–-]\s/)[0] || 'Orbrun'
+/** What a character's tab title ends in, so a game in progress reads as "orbrun the Chiller | Vine Stalker - Orbrun". */
+const SHORT_TITLE = HOME.name
 
 /**
  * The tab says whose game this is (playing or watching), from the game's
- * `player` updates; the plain title otherwise. Any phase but the lobby counts:
+ * `player` updates; the page's own title otherwise (site.ts). Any phase but the lobby counts:
  * a server may name the character before `game_started` says the game is on.
  */
 function updateTitle(s: Session | null) {
   const p = s?.state.player
   const t = p?.name && s && s.state.phase !== 'lobby' && s.state.phase !== 'ended'
     ? gameTitle({ name: p.name, title: p.title || '', species: p.species_display_name || p.species || '', god: p.god || '', xl: p.xl, place: p.place || '', depth: p.depth || 0 }, SHORT_TITLE)
-    : BASE_TITLE
+    : titleAt(window.location.pathname)
   if (document.title !== t) document.title = t
 }
 

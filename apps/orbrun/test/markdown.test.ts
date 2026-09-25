@@ -63,4 +63,10 @@ describe('the repository’s documents, drawn in the front end', () => {
     expect(Array.from(doc.querySelectorAll('code')).map((c) => c.textContent)).toEqual(['VIEW_OPTIONS', 'tileinfo-*.js'])
     expect(doc.querySelector('em')).toBeNull()
   })
+
+  it('reads a line that opens on an autolink as words, not raw html', () => {
+    const doc = renderMarkdown('Write to\n<someone@example.com>.\n\n<https://orbrun.app> is the site.')
+    expect(Array.from(doc.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(['mailto:someone@example.com', 'https://orbrun.app'])
+    expect(doc.textContent).toContain('is the site.')
+  })
 })

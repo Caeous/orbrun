@@ -613,8 +613,9 @@ describe('the front end: the home screen', () => {
     expect(doc.querySelector('h2')).toBeNull()
     expect(doc.querySelector('h3')?.textContent).toBe('Getting started')
     expect(doc.textContent).toContain('Orbrun is an unofficial')
-    // the document's own links go out, in a new tab; nothing of the repository's own html is drawn
-    for (const a of Array.from(doc.querySelectorAll('a'))) expect(a.getAttribute('target')).toBe('_blank')
+    // the document's own links go out, in a new tab (mail goes to the mail client); nothing of the repository's own html is drawn
+    for (const a of Array.from(doc.querySelectorAll('a:not([href^="mailto:"])'))) expect(a.getAttribute('target')).toBe('_blank')
+    expect(doc.querySelector('a[href^="mailto:"]')).not.toBeNull()
     expect(doc.querySelector('img')).toBeNull()
     // up and down move the document, not the cursor: Back is the one row and stays under it
     const scroller = screen.root.querySelector('.doc-scroll') as HTMLElement

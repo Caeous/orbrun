@@ -7,6 +7,7 @@
  *   assets/logo.svg                    the README's wordmark: the orb beside the name, as the title screen sets it
  *   apps/orbrun/public/favicon.svg     the orb on a dark rounded square
  *   apps/orbrun/public/steam/art/*.png  Steam artwork: icon (the orb), logo, hero, grid, portrait (the wordmark)
+ *   apps/orbrun/public/icons/*.png      the web app manifest's icons and the home-screen icon (the orb)
  *
  *   node tools/build/brand.mjs
  *
@@ -93,9 +94,12 @@ function wordmark({ background = true, rounded = true } = {}) {
 }
 
 // ---------------------------------------------------------------- the mark
-/** the orb alone on a dark rounded square of `size` */
-const mark = (size) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 64 64" role="img" aria-label="Orbrun">${GLOW}
-  <rect width="64" height="64" rx="10" fill="${BG}"/>
+/**
+ * the orb alone on a dark rounded square of `size`; square-cornered for the icons a platform rounds or masks itself
+ * (the orb's 48 of 64 already sits inside a maskable icon's safe circle)
+ */
+const mark = (size, rounded = true) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 64 64" role="img" aria-label="Orbrun">${GLOW}
+  <rect width="64" height="64" rx="${rounded ? 10 : 0}" fill="${BG}"/>
   ${orb(8, 8, 48)}
 </svg>
 `
@@ -127,5 +131,17 @@ deck(path.join(art, 'logo.png'), wordRounded, 1152)
 deck(path.join(art, 'hero.png'), word, 1152, 1920, 620)
 deck(path.join(art, 'grid.png'), word, 864, 920, 430)
 deck(path.join(art, 'portrait.png'), word, 540, 600, 900)
-for (const f of ['assets/logo.svg', 'apps/orbrun/public/favicon.svg', ...fs.readdirSync(art).map((f) => `apps/orbrun/public/steam/art/${f}`)]) console.log(`${f}  ${fs.statSync(path.join(root, f)).size} bytes`)
+const icons = path.join(pub, 'icons')
+const square = svg('square.svg', mark(512, false))
+fs.mkdirSync(icons, { recursive: true })
+deck(path.join(icons, 'icon-192.png'), icon, 192)
+deck(path.join(icons, 'icon-512.png'), icon, 512)
+deck(path.join(icons, 'maskable-512.png'), square, 512)
+deck(path.join(icons, 'apple-touch-icon.png'), square, 180)
+for (const f of [
+  'assets/logo.svg',
+  'apps/orbrun/public/favicon.svg',
+  ...fs.readdirSync(art).map((f) => `apps/orbrun/public/steam/art/${f}`),
+  ...fs.readdirSync(icons).map((f) => `apps/orbrun/public/icons/${f}`),
+]) console.log(`${f}  ${fs.statSync(path.join(root, f)).size} bytes`)
 fs.rmSync(tmp, { recursive: true, force: true })

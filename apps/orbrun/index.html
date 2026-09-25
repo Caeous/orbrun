@@ -7,48 +7,76 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#000000" />
     <meta name="color-scheme" content="dark" />
-    <title>Orbrun - Dungeon Crawl Stone Soup</title>
+    <title>Orbrun - Dungeon Crawl Stone Soup in first person</title>
+    <!-- the title, description, canonical and cards below are the home page's; the build writes each of
+         the other pages (src/site.ts PAGES) with its own in their place (site-pages.ts) -->
     <meta
       name="description"
-      content="Play DCSS (Dungeon Crawl Stone Soup) in first person with a gamepad. Orbrun is an unofficial WebTiles client for public DCSS servers, built for controllers and handhelds, with the Steam Deck first. Runs in the browser: your account, your rc file, your keys."
+      content="Play Dungeon Crawl Stone Soup (DCSS) in first-person 3D with a gamepad, in your browser. Built for the Steam Deck, on your own WebTiles account."
     />
     <!-- Canonical / social URLs point at the project's official deployment.
-         Forks deployed elsewhere should update the domain below. -->
+         Forks deployed elsewhere should update the domain below and SITE_URL in src/site.ts. -->
     <link rel="canonical" href="https://orbrun.app/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Orbrun" />
-    <meta property="og:title" content="Orbrun — Dungeon Crawl Stone Soup in first person" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="Orbrun - Dungeon Crawl Stone Soup in first person" />
     <meta
       property="og:description"
-      content="An unofficial DCSS client that puts you inside the dungeon: first-person 3D, full gamepad support, Steam Deck ready. Connects to public WebTiles servers."
+      content="Play Dungeon Crawl Stone Soup (DCSS) in first-person 3D with a gamepad, in your browser. Built for the Steam Deck, on your own WebTiles account."
     />
     <meta property="og:url" content="https://orbrun.app/" />
     <!-- the front room at rest (tools/build/poster.mjs), the same picture the menus stand on before WebGL is up -->
     <meta property="og:image" content="https://orbrun.app/room/poster.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
     <meta property="og:image:width" content="1280" />
     <meta property="og:image:height" content="720" />
     <meta property="og:image:alt" content="A stone hall in Dungeon Crawl Stone Soup's tiles: a down staircase between two granite statues, plants, an altar and a fountain" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Orbrun — Dungeon Crawl Stone Soup in first person" />
+    <meta name="twitter:title" content="Orbrun - Dungeon Crawl Stone Soup in first person" />
     <meta
       name="twitter:description"
-      content="An unofficial DCSS client that puts you inside the dungeon: first-person 3D, full gamepad support, Steam Deck ready."
+      content="Play Dungeon Crawl Stone Soup (DCSS) in first-person 3D with a gamepad, in your browser. Built for the Steam Deck, on your own WebTiles account."
     />
     <meta name="twitter:image" content="https://orbrun.app/room/poster.jpg" />
+    <meta name="twitter:image:alt" content="A stone hall in Dungeon Crawl Stone Soup's tiles: a down staircase between two granite statues, plants, an altar and a fountain" />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "WebApplication",
-        "name": "Orbrun",
-        "url": "https://orbrun.app/",
-        "description": "Unofficial first-person client for Dungeon Crawl Stone Soup (DCSS). Connects to public WebTiles servers; built for gamepads and handhelds, Steam Deck first.",
-        "applicationCategory": "GameApplication",
-        "operatingSystem": "SteamOS, Linux, Windows, macOS, any modern browser",
-        "browserRequirements": "Requires JavaScript and WebGL",
-        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-        "sameAs": ["https://github.com/Caeous/orbrun"]
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://orbrun.app/#website",
+            "name": "Orbrun",
+            "url": "https://orbrun.app/",
+            "inLanguage": "en"
+          },
+          {
+            "@type": ["WebApplication", "VideoGame"],
+            "@id": "https://orbrun.app/#app",
+            "name": "Orbrun",
+            "url": "https://orbrun.app/",
+            "description": "Unofficial first-person client for Dungeon Crawl Stone Soup (DCSS). Connects to public WebTiles servers; built for gamepads and handhelds, Steam Deck first.",
+            "image": "https://orbrun.app/room/poster.jpg",
+            "screenshot": "https://orbrun.app/room/poster.jpg",
+            "applicationCategory": "GameApplication",
+            "genre": ["Roguelike", "Dungeon crawler"],
+            "gamePlatform": ["Web browser", "Steam Deck", "SteamOS", "Linux", "Windows", "macOS"],
+            "playMode": "SinglePlayer",
+            "operatingSystem": "SteamOS, Linux, Windows, macOS, any modern browser",
+            "browserRequirements": "Requires JavaScript and WebGL",
+            "isAccessibleForFree": true,
+            "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+            "isBasedOn": { "@type": "VideoGame", "name": "Dungeon Crawl Stone Soup", "url": "https://crawl.develz.org/" },
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "sameAs": ["https://github.com/Caeous/orbrun"],
+            "isPartOf": { "@id": "https://orbrun.app/#website" }
+          }
+        ]
       }
     </script>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <!-- the wordmark's face (styles.css @font-face) is asked for here, with the stylesheet, not when the
          title is first laid out by the bundle: a round trip later, with the title already on screen in the
@@ -56,24 +84,66 @@
     <link rel="preload" href="/fonts/grenze-gotisch-700-latin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/dejavu-sans-mono-400.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/dejavu-sans-mono-700.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- the menus stand on the poster until the room is drawn: the first large paint, so it is asked for with the stylesheet -->
+    <link rel="preload" href="/room/poster.jpg" as="image" />
     <link rel="stylesheet" href="/src/styles.css" />
+    <!-- the page's words (below) are for a reader without scripts and for crawlers; the app draws its own -->
+    <noscript>
+      <style>
+        html, body { height: auto; overflow: auto }
+        #app { display: none }
+        #page[hidden] { display: block; max-width: 680px; margin: 0 auto; padding: 3rem 1rem; font: 16px/1.6 system-ui, -apple-system, sans-serif; color: #e7e2da; background: #000 }
+        #page a { color: #d08a3e }
+        #page nav a { margin-right: 1rem }
+        #page pre, #page table { overflow-x: auto; max-width: 100% }
+        #page code { font-family: ui-monospace, monospace }
+        #page th, #page td { text-align: left; padding: 0.2rem 0.8rem 0.2rem 0 }
+      </style>
+    </noscript>
   </head>
   <body>
     <div id="app"></div>
-    <noscript>
-      <main style="max-width:680px;margin:0 auto;padding:3rem 1.5rem;font-family:system-ui,-apple-system,sans-serif;color:#e7e2da;background:#000;line-height:1.6">
-        <h1>Orbrun — Dungeon Crawl Stone Soup in first person</h1>
-        <p>
-          Orbrun is an unofficial first-person client for
-          <a href="https://crawl.develz.org" style="color:#d08a3e">Dungeon Crawl Stone Soup (DCSS)</a>.
-          It connects to public WebTiles servers with the same protocol as the
-          official client, renders the dungeon in 3D, and is built to be played
-          with a gamepad — on a Steam Deck, a handheld, or a desktop.
-          JavaScript and WebGL are required to play.
-        </p>
-        <p><a href="https://github.com/Caeous/orbrun" style="color:#d08a3e">Read more about Orbrun →</a></p>
-      </main>
-    </noscript>
+    <main id="page" hidden>
+      <nav aria-label="Orbrun">
+        <a href="/">Orbrun</a>
+        <a href="/about/orbrun">About</a>
+        <a href="/about/new">What’s new</a>
+        <a href="/about/steam">Add to Steam</a>
+        <a href="https://github.com/Caeous/orbrun">Source</a>
+      </nav>
+      <!--page-->
+      <h1>Orbrun - Dungeon Crawl Stone Soup in first person</h1>
+      <p>
+        Orbrun is an unofficial client for
+        <a href="https://crawl.develz.org">Dungeon Crawl Stone Soup (DCSS)</a>
+        that puts you inside the dungeon. It connects to the public WebTiles
+        servers with the same protocol as the official client, and draws the
+        same game in first-person 3D, built to be played with a gamepad on a
+        handheld: the Steam Deck first.
+      </p>
+      <p>
+        If you play WebTiles, this is your game, your account, your rc file
+        and your keys. There is nothing to install and no Orbrun account:
+        pick a server, log in or spectate, and play in the browser. Or play
+        on this device with no server at all.
+      </p>
+      <h2>What it does</h2>
+      <ul>
+        <li>A first-person 3D view of the live dungeon, from the game’s own tiles.</li>
+        <li>Full gamepad support: a contextual A button, command menus, an on-screen keyboard, and an action bar that always says what each button does.</li>
+        <li>Everything the official client shows: menus, prompts, the monster list, the message log, chat, the level map and targeting.</li>
+        <li>Your rc file, read live from the server and never overridden.</li>
+        <li>Follows every DCSS release and trunk build without an update, from each server’s own data.</li>
+        <li>Runs from your Steam library on a Steam Deck or a desktop.</li>
+      </ul>
+      <p>
+        <a href="/about/orbrun">Read more about Orbrun</a>,
+        <a href="/about/new">see what’s new</a>, or
+        <a href="/about/steam">add it to Steam</a>.
+      </p>
+      <!--/page-->
+      <noscript><p><strong>Orbrun needs JavaScript and WebGL to play.</strong></p></noscript>
+    </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

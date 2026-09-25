@@ -2,6 +2,7 @@ import type { HintMode } from './gamepad-hints'
 import type { GameLink } from '@orbrun/webtiles'
 import bundled from '../data/servers.json'
 import { canQuit } from './quit'
+import { MENU_PATH, titleAt } from './site'
 
 export interface ServerInfo {
   id: string
@@ -368,8 +369,8 @@ export function describePlace(c: LastCharacter): string {
  * "orbrun the Chiller | Vine Stalker of Vehumet - Orbrun": the browser tab's
  * title while in a game, so a tab (or a window in a taskbar) says whose game
  * it is. The species and god read as the HUD's second line does, and the site
- * follows a dash, as the page's own title has it.
- * `base` is the page's own title.
+ * follows a hyphen, as the site's page titles have it (site.ts).
+ * `base` is the site's name.
  */
 export function gameTitle(c: LastCharacter, base: string): string {
   const who = c.name + (c.title ? ((c.title[0] === ',' ? '' : ' ') + c.title) : '')
@@ -682,9 +683,6 @@ export interface MenuRoute {
   username?: string
 }
 
-/** the front end's screens that belong to no server; a settings group is its name in lower case (settings-rows.ts) */
-const MENU_PATH = /^(settings(\/[a-z]+)?|settings\/controls\/gamepad|accounts(\/add(\/server)?)?|watch(\/add)?|about(\/(orbrun|new|steam))?)$/
-
 /** what every game id on this device starts with (@orbrun/offline channelOf), which its address leaves out */
 const DEVICE_GAME = 'offline-'
 
@@ -795,4 +793,6 @@ export function setRoute(r: Route) {
   if (cur === next) return
   if (!canQuit() && routeDepth(r) > routeDepth(parseRoute())) history.pushState(null, '', next)
   else history.replaceState(null, '', next)
+  // a game names the tab after its character (main.ts updateTitle); every other screen after its page
+  if (r.kind !== 'play' && r.kind !== 'watch') document.title = titleAt(window.location.pathname)
 }
