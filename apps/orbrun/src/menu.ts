@@ -5,7 +5,7 @@ import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
 import { FocusNav, type Focusable } from './focus'
 import { RoomView } from './room/view'
-import { addAccount, addServer, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, isStoredAccount, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { addAccount, addServer, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import type { Session } from './session'
 import { deleteProfileSaves, profileName, type EngineNote } from '@orbrun/offline'
@@ -693,7 +693,7 @@ export class FrontEnd {
     const want = opts.focus ?? this.marks.get(this._view)
     let at = want && want !== BACK ? all.findIndex((f) => f.id === want) : -1
     if (at < 0) at = all.findIndex((f) => f.id !== BACK)
-    this.nav.set(all, this._view, { wrap: true }, at < 0 ? 0 : at, true)
+    this.nav.set(all, this._view, { wrap: true, keepColumn: true }, at < 0 ? 0 : at, true)
     const cur = this.nav.current()
     if (cur) {
       if (cur.el instanceof HTMLInputElement) cur.el.focus()
@@ -943,9 +943,10 @@ export class FrontEnd {
         else s.state.exit = null
       }
     } else {
-      // with an account to pick (this device's own offline one, at least), Play picks one; with none, it adds one
+      // with an account to pick, Play picks one; with none, it adds one
       const any = listAccounts().length > 0
-      rows.push({ id: 'account', label: 'Play', marker: '>', main: true, hint: any ? 'Play on this device, or pick or add an account on a server.' : 'Choose a public server, then log in or create an account.', fn: () => (any ? this.showAccounts() : this.showServers('add')) })
+      const none = offlineOffered() ? 'Add a player on this device, or an account on a server.' : 'Choose a public server, then log in or create an account.'
+      rows.push({ id: 'account', label: 'Play', marker: '>', main: true, hint: any ? 'Pick an account, or add one.' : none, fn: () => (any ? this.showAccounts() : this.showServers('add')) })
       rows.push({ id: 'watch', label: 'Watch', sub: 'No account needed', marker: '{', hint: 'Pick a server and watch a live game. No login needed.', fn: () => this.showServers('watch') })
     }
     // Only game actions in the main list; identity and information share a quiet footer.
@@ -1377,11 +1378,9 @@ export class FrontEnd {
 
   /**
    * An offline profile's Delete, beside its row: it takes the profile's saved characters with it, so it asks
-   * once more (the same button, relabelled) before it does. The default profile, standing in until one is
-   * added, has nothing to delete but saves, and stays listed, so it has none.
+   * once more (the same button, relabelled) before it does.
    */
   private profileDelete(a: Account): NonNullable<Row['also']> {
-    if (!isStoredAccount(a)) return []
     const id = 'delete:' + a.serverId + '/' + a.username
     if (this.deleting && sameAccount(this.deleting, a))
       return [{ id, label: '(delete, and its saves?)', title: `Delete ${a.username} and every character saved under it. This cannot be undone.`, fn: () => void this.deleteProfile(a) }]
@@ -1514,8 +1513,6 @@ export class FrontEnd {
     if (intent) this.lost = false
     const server = findServer(account.serverId)
     if (!server) return this.showHome()
-    // the default profile becomes one of the device's own once it is played
-    if (server.offline && !isStoredAccount(account)) addAccount(account)
     const session = this.hooks.connect(server, account.username, intent)
     const last = getLast()
     if (!last || last.serverId !== server.id) setLast({ serverId: server.id, username: account.username })

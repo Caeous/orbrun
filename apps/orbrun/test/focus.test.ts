@@ -94,6 +94,13 @@ describe('focus layout', () => {
     expect(focusWrap(slots, 0, 'left')).toBe(1)
     expect(focusWrap(slots, 2, 'right')).toBeNull()
   })
+  it('with keepColumn, wraps up or down into the nearest column', () => {
+    // the title screen: the main rows, then the footer's account and About side by side
+    const slots = focusSlots([{ row: 0 }, { row: 1 }, { row: 200, col: 0 }, { row: 200, col: 1 }])
+    expect(focusWrap(slots, 0, 'up')).toBe(3) // by default, the end of the last row
+    expect(focusWrap(slots, 0, 'up', { keepColumn: true })).toBe(2)
+    expect(focusWrap(slots, 3, 'down', { keepColumn: true })).toBe(0)
+  })
   it('pages by rows and clamps at the ends', () => {
     const slots = focusSlots([{}, {}, {}, {}, {}])
     expect(focusPage(slots, 0, 3)).toBe(3)

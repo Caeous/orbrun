@@ -122,8 +122,8 @@ export function focusStep(slots: FocusSlot[], index: number, dir: FocusDir, opts
   return best
 }
 
-/** Past an edge: the start of the first row going down, the end of the last row going up, the far end of the row (or, in `columns`, of the screen) sideways. */
-export function focusWrap(slots: FocusSlot[], index: number, dir: FocusDir, opts: { columns?: boolean } = {}): number | null {
+/** Past an edge: the start of the first row going down, the end of the last row going up (with `keepColumn`, the far row's nearest column), the far end of the row (or, in `columns`, of the screen) sideways. */
+export function focusWrap(slots: FocusSlot[], index: number, dir: FocusDir, opts: { columns?: boolean; keepColumn?: boolean } = {}): number | null {
   if (!slots.length) return null
   const cur = slots[index]
   if (!cur) return 0
@@ -148,7 +148,7 @@ export function focusWrap(slots: FocusSlot[], index: number, dir: FocusDir, opts
   for (let i = 0; i < slots.length; i++) {
     const s = slots[i]
     if (s.row !== row) continue
-    if (best < 0 || (dir === 'down' ? s.col < slots[best].col : s.col > slots[best].col)) best = i
+    if (best < 0 || (opts.keepColumn ? Math.abs(s.col - cur.col) < Math.abs(slots[best].col - cur.col) : dir === 'down' ? s.col < slots[best].col : s.col > slots[best].col)) best = i
   }
   return best
 }
@@ -174,6 +174,8 @@ export interface FocusOptions {
   linear?: boolean
   /** the screen is laid out in columns: left and right cross to the next column, not only along a row */
   columns?: boolean
+  /** wrapping up or down lands in the far row's nearest column, not at its far end: up from the top of the title screen is the account, not About */
+  keepColumn?: boolean
 }
 
 /**
@@ -254,7 +256,7 @@ export class FocusNav {
     if (this.opts.linear && (dir === 'up' || dir === 'down')) dir = dir === 'up' ? 'left' : 'right'
     const cols = { columns: this.opts.columns }
     let nx = focusStep(this.slots, this.index, dir, cols)
-    if (nx === null && this.opts.wrap) nx = focusWrap(this.slots, this.index, dir, cols)
+    if (nx === null && this.opts.wrap) nx = focusWrap(this.slots, this.index, dir, { ...cols, keepColumn: this.opts.keepColumn })
     if (nx === null) return false
     return this.focus(nx)
   }

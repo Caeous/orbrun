@@ -13,8 +13,6 @@ import {
   getToken,
   listAccounts,
   listServers,
-  DEFAULT_OFFLINE_ACCOUNT,
-  isStoredAccount,
   loginState,
   removeAccount,
   sameAccount,
@@ -39,7 +37,7 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 /**
  * Offline accounts are profiles on this device: stored like any account, as
- * many as the device likes, with a default one listed while there is none.
+ * many as the device likes, and none listed until one is added.
  */
 describe('offline profiles', () => {
   beforeEach(() => {
@@ -50,23 +48,22 @@ describe('offline profiles', () => {
 
   const sam: Account = { serverId: 'offline', username: 'Sam' }
 
-  it('lists the default profile while the device has none of its own, and never in the server list', () => {
-    expect(listAccounts()).toEqual([DEFAULT_OFFLINE_ACCOUNT])
+  it('lists no profile until one is added, and never offers this device in the server list', () => {
+    expect(listAccounts()).toEqual([])
     addAccount({ serverId: 'cdi', username: 'orbrun' })
-    expect(listAccounts()).toEqual([{ serverId: 'cdi', username: 'orbrun' }, DEFAULT_OFFLINE_ACCOUNT])
-    expect(isStoredAccount(DEFAULT_OFFLINE_ACCOUNT)).toBe(false)
+    expect(listAccounts()).toEqual([{ serverId: 'cdi', username: 'orbrun' }])
     expect(listServers().some((s) => s.offline)).toBe(false)
     expect(findServer('offline')?.offline).toBe(true)
   })
 
-  it('keeps added profiles like accounts, and the default steps aside for them', () => {
+  it('keeps added profiles like accounts', () => {
     addAccount(sam)
     addAccount({ serverId: 'offline', username: 'Ann' })
     expect(listAccounts()).toEqual([sam, { serverId: 'offline', username: 'Ann' }])
     removeAccount(sam)
     expect(listAccounts()).toEqual([{ serverId: 'offline', username: 'Ann' }])
     removeAccount({ serverId: 'offline', username: 'ann' })
-    expect(listAccounts()).toEqual([DEFAULT_OFFLINE_ACCOUNT])
+    expect(listAccounts()).toEqual([])
   })
 
   it('lists the account picked last first, and the never-picked after in the order they were added', () => {

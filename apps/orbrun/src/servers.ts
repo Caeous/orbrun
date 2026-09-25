@@ -2,7 +2,6 @@ import type { HintMode } from './gamepad-hints'
 import type { GameLink } from '@orbrun/webtiles'
 import bundled from '../data/servers.json'
 import { canQuit } from './quit'
-import { DEFAULT_PROFILE } from '@orbrun/offline'
 
 export interface ServerInfo {
   id: string
@@ -26,9 +25,6 @@ export const ENGINE_BASE = '/engine'
  * account is being added, and never for watching.
  */
 export const OFFLINE_SERVER: ServerInfo = { id: 'offline', name: 'This device', ws: '', http: '', host: 'this device', offline: true }
-
-/** The profile listed until the device has one of its own, so there is always one to play offline with. */
-export const DEFAULT_OFFLINE_ACCOUNT: Account = { serverId: OFFLINE_SERVER.id, username: DEFAULT_PROFILE }
 
 /**
  * Whether Offline is offered: everywhere but under test, where no engine is
@@ -155,15 +151,11 @@ function localStorageHas(key: string): boolean {
 /**
  * The accounts on this device, the one picked last first, then the ones
  * never picked in the order they were added; offline profiles only where
- * Offline is offered, and the default one when there is no other.
+ * Offline is offered.
  */
 export function listAccounts(): Account[] {
   const stored = storedAccounts()
-  const all = !offlineOffered()
-    ? stored.filter((a) => a.serverId !== OFFLINE_SERVER.id)
-    : stored.some((a) => a.serverId === OFFLINE_SERVER.id)
-      ? stored
-      : [...stored, DEFAULT_OFFLINE_ACCOUNT]
+  const all = offlineOffered() ? stored : stored.filter((a) => a.serverId !== OFFLINE_SERVER.id)
   const used = load<Record<string, number>>(USED_KEY, {})
   const at = (a: Account) => used[tokenKey(a.serverId, a.username)] ?? 0
   return all.sort((a, b) => at(b) - at(a))
@@ -172,11 +164,6 @@ export function listAccounts(): Account[] {
 function storedAccounts(): Account[] {
   migrateAccounts()
   return load<Account[]>(ACCOUNTS_KEY, []).filter((a) => a && a.serverId && a.username)
-}
-
-/** Whether `a` was added on this device, and is not just the default offline profile standing in for one. */
-export function isStoredAccount(a: Account): boolean {
-  return storedAccounts().some((x) => sameAccount(x, a))
 }
 
 /** Add `a` (or spell its name as the server does, if it is already there). */

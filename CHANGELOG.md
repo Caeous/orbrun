@@ -2,6 +2,15 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.0 — 2026-09-25
+
+- Play on this device, with no server and no connection needed: under Add an account, pick This device, give your player a name, and play — the game runs in your browser.
+- Everyone who shares the device can have a player of their own, each with their own game and saves.
+- The game on your device keeps itself up to date: new versions download in the background and are ready the next time you press Play.
+- Choosing a god at an altar works with the gamepad: Start joins, and the d-pad switches between the god's pages.
+- Doors, statues and items no longer go missing on busy levels deeper in the game.
+- Pressing up at the top of the title screen goes to your account; About & credits is one step right of it.
+
 ## 0.1.8 — 2026-09-23
 
 - Menus now use the same font as the game, and it comes with Orbrun, so it looks the same on every device.

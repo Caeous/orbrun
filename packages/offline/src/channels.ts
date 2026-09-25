@@ -49,7 +49,7 @@ export function channelOf(info: EngineInfo): OfflineChannel {
   }
 }
 
-/** The profile a device starts with, which keeps its saves in the slot's own directory. */
+/** The profile that keeps its saves in the slot's own directory: the one a server given no name plays as. */
 export const DEFAULT_PROFILE = 'Player'
 
 /**
