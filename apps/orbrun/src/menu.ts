@@ -5,7 +5,7 @@ import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
 import { FocusNav, type Focusable } from './focus'
 import { RoomView } from './room/view'
-import { addAccount, addServer, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { addAccount, addServer, removeServer, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import type { Session } from './session'
 import { deleteProfileSaves, profileName, type EngineNote } from '@orbrun/offline'
@@ -28,7 +28,7 @@ export type Intent = { kind: 'play'; gameId: string } | { kind: 'watch'; usernam
  * shoulder buttons walk; the rest are the flows off them: the account and
  * server flows off the account row, the login and register forms.
  */
-export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'servers' | 'login' | 'register' | 'about' | 'exit' | 'doc'
+export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'servers' | 'add-server' | 'login' | 'register' | 'about' | 'exit' | 'doc'
 
 const SECTIONS: View[] = ['home', 'watch', 'settings']
 
@@ -87,6 +87,11 @@ export interface FrontHooks {
   session?(server: ServerInfo, username: string | null): Session | null
   /** whether a connection that just closed will be opened again on its own (asked as the close lands) */
   retrying?(): boolean
+  /**
+   * The chosen account's connection again, when another has taken its place (the login of an account being
+   * added opens one of its own): asked as its screens, home and Accounts, come back up
+   */
+  warm?(): void
   /** forget the login of `account` (its token and the server's cookie) and close its session */
   logout(account: Account): void
   play(session: Session, gameId: string): void
@@ -177,6 +182,10 @@ export class FrontEnd {
   private deleting: Account | null = null
   /** where the server list was opened from, so B retraces the way in: the accounts, or the front screen */
   private serversFrom: View = 'accounts'
+  /** what the server list was opened for, which Add a server goes back to */
+  private serversMode: 'add' | 'watch' = 'add'
+  /** a host half typed into Add a server, kept across a redraw that says what was wrong with it */
+  private serverDraft = ''
   /** the server picked to watch on without an account */
   private watchOn: ServerInfo | null = null
   /** what a screen held last time it was drawn: the same again, and it is left alone */
@@ -477,6 +486,9 @@ export class FrontEnd {
     } else if (v === 'servers') {
       if (this.watchOn || this.serversFrom === 'home') this.showHome()
       else this.showAccounts()
+    } else if (v === 'add-server') {
+      this.serverDraft = ''
+      this.showServers(this.serversMode, 'add-server')
     } else if (v === 'login') this.cancelAuth()
     else if (v === 'register') this.showLogin()
   }
@@ -553,9 +565,13 @@ export class FrontEnd {
       else if (group) this.showSettingsGroup(group)
       else this.showSettings(() => this.showHome())
     } else if (root === 'accounts') {
-      if (sub === 'add') this.showServers('add')
+      if (sub === 'add' && leaf === 'server') this.showAddServer('add')
+      else if (sub === 'add') this.showServers('add')
       else this.showAccounts()
-    } else if (root === 'watch') this.showServers('watch')
+    } else if (root === 'watch') {
+      if (sub === 'add') this.showAddServer('watch')
+      else this.showServers('watch')
+    }
     else if (root === 'about') {
       if (sub === 'orbrun' || sub === 'new' || sub === 'steam') this.showAboutDoc(sub)
       else this.showAbout()
@@ -707,6 +723,8 @@ export class FrontEnd {
     if (cur) {
       if (cur.el instanceof HTMLInputElement) cur.el.focus()
       cur.onFocus?.()
+      // a row asked for by name (a server just added, at the foot of a long list) is brought into view
+      if (opts.focus && cur.id === opts.focus) cur.el.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
     }
     return brand
   }
@@ -867,6 +885,7 @@ export class FrontEnd {
     if (offlineOffered()) void engines.update()
     this.adding = null
     this.watchOn = null
+    this.hooks.warm?.()
     const chosen = this.chosen()
     const s = chosen ? this.sessionOn(chosen.server, chosen.account.username) : null
     const st: GameState | null = s?.state ?? null
@@ -1341,6 +1360,7 @@ export class FrontEnd {
     if (!focus && !again) this.deleting = null
     this.adding = null
     this.watchOn = null
+    this.hooks.warm?.()
     const accounts = listAccounts()
     const chosen = getChosenAccount()
     const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back to the front.', fn: () => this.back() }]
@@ -1428,14 +1448,14 @@ export class FrontEnd {
    * The server list: one row per server with its region and host (and the
    * accounts kept there); picking one leads to its login when adding an
    * account, or straight to its roster when watching without one. Add a
-   * server takes a host or URL for one not on the list.
+   * server, at the foot, is a screen of its own for one not on the list.
    */
-  showServers(mode: 'add' | 'watch') {
+  showServers(mode: 'add' | 'watch', focus?: string) {
     // the way back is set when the list is entered; a redraw, or a step back from the login on it, keeps it
     if (this._view === 'home' || this._view === 'accounts') this.serversFrom = this._view
+    this.serversMode = mode
     this.adding = null
-    this.watchOn = mode === 'watch' ? this.watchOn ?? listServers()[0] ?? null : null
-    if (mode === 'watch') this.watchOn = null
+    this.watchOn = null
     this.setView('servers', 'servers-list')
     this.at({ kind: 'menu', path: mode === 'watch' ? 'watch' : 'accounts/add' })
     const servers = listServers()
@@ -1456,14 +1476,27 @@ export class FrontEnd {
       })
     for (const sv of servers) {
       const mine = accounts.filter((a) => a.serverId === sv.id).map((a) => a.username)
+      const also: NonNullable<Row['also']> = mode === 'add' ? [siteLink(sv)] : []
+      // one the player added comes off again, unless an account still stands on it
+      if (sv.custom && !mine.length)
+        also.push({
+          id: 'remove:' + sv.id,
+          label: '(remove)',
+          title: `Take ${sv.host} off the list.`,
+          fn: () => {
+            removeServer(sv.id)
+            this.showServers(mode, 'add-server')
+          },
+        })
       rows.push({
         id: 'server:' + sv.id,
         label: sv.name,
-        sub: serverWhere(sv) + (mine.length ? ` · ${mine.join(', ')}` : ''),
+        // one the player added is named by its host already: its note says where it came from instead
+        sub: (sv.custom ? 'added on this device' : serverWhere(sv)) + (mine.length ? ` · ${mine.join(', ')}` : ''),
         late: this.pingNote(sv),
         marker: '\\',
         hint: mode === 'watch' ? `Watch who is playing on ${sv.host}.` : `An account on ${sv.host}.` + (mine.length ? ` ${mine.join(' and ')} ${mine.length === 1 ? 'is' : 'are'} already here.` : ''),
-        also: mode === 'add' ? [siteLink(sv)] : undefined,
+        also: also.length ? also : undefined,
         fn: () => {
           if (mode === 'watch') {
             this.watchOn = sv
@@ -1475,26 +1508,59 @@ export class FrontEnd {
         },
       })
     }
-    const input = h('input', { type: 'text', placeholder: 'host or URL', autocomplete: 'off', spellcheck: 'false', size: 24 })
-    const form = h(
-      'form',
-      {
-        class: 'prompt',
-        onsubmit: (ev: Event) => {
-          ev.preventDefault()
-          if (!input.value.trim()) return
-          try {
-            addServer(input.value.trim())
-            this.showServers(mode)
-          } catch (e) {
-            this.error = 'Invalid server: ' + String(e)
-            this.showServers(mode)
-          }
-        },
+    rows.push({ id: 'add-server', label: 'Add a server', sub: 'one not on this list', marker: '+', gap: true, hint: 'A WebTiles server not listed here, by its address.', fn: () => this.showAddServer(mode) })
+    this.list({ cls: 'servers-list', title: mode === 'watch' ? 'Watch' : 'Add an account', lede: 'Choose a server.', rows, focus })
+  }
+
+  /**
+   * Add a server: its host or the address of its page, then Add. It lands on
+   * the list with the cursor on it (one already there is simply found), and
+   * what was wrong with an address that is not one is said here, with the
+   * text kept to fix.
+   */
+  private showAddServer(mode: 'add' | 'watch') {
+    this.serversMode = mode
+    this.setView('add-server', 'add-server-form')
+    this.at({ kind: 'menu', path: mode === 'watch' ? 'watch/add' : 'accounts/add/server' })
+    const input = h('input', { type: 'text', name: 'server', inputmode: 'url', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: 'crawl.example.org', size: 28, value: this.serverDraft })
+    let form: HTMLFormElement
+    const typing = this.hooks.padConnected?.() ? ' Press X to type.' : ''
+    const rows: Row[] = [
+      { id: BACK, label: 'Back', marker: '<', hint: 'Back to the servers.', fn: () => this.back() },
+      { id: 'address', label: 'Address', input, hint: 'Its host, or the address of its page: crawl.example.org, or http://crawl.example.org:8080.' + typing },
+      { id: 'add', label: 'Add', sub: 'to the server list', marker: '+', main: true, hint: 'Add it to the list, to log in or watch there.', fn: () => form.requestSubmit() },
+    ]
+    this.list({
+      cls: 'add-server-form',
+      title: 'Add a server',
+      lede: mode === 'watch' ? 'To watch' : 'For an account',
+      rows,
+      focus: 'address',
+      wrap: (list) => {
+        form = h(
+          'form',
+          {
+            class: 'form',
+            onsubmit: (ev: Event) => {
+              ev.preventDefault()
+              this.serverDraft = input.value
+              let sv: ServerInfo
+              try {
+                sv = addServer(input.value)
+              } catch (e) {
+                this.error = e instanceof Error ? e.message : String(e)
+                this.showAddServer(mode)
+                return
+              }
+              this.serverDraft = ''
+              this.showServers(mode, 'server:' + sv.id)
+            },
+          },
+          list,
+        )
+        return form
       },
-    )
-    rows.push({ id: 'add-server', label: 'Add a server', input, gap: true, hint: 'Enter a host or URL; Enter adds it to the list.' })
-    this.list({ cls: 'servers-list', title: mode === 'watch' ? 'Watch' : 'Add an account', lede: 'Choose a server.', rows, wrap: (list) => (form.append(list), form), focus: this.error ? 'add-server' : undefined })
+    })
   }
 
   /**
@@ -1595,10 +1661,13 @@ export class FrontEnd {
         window.location.reload()
       }
       if (e.type === 'closed') {
-        // a drop the app is already retrying says so; one it is not (the server closed it) says why
-        this.error = this.hooks.retrying?.() ? 'Connection lost. Reconnecting…' : 'Connection closed: ' + e.reason
+        // a drop the app is already retrying says so; one it is not (the server closed it) says why. Only a screen
+        // that stands on the connection says it: one that does not (the server list, the settings) is not redrawn,
+        // so the words would wait there and turn up on the next screen, long after the connection was back
+        const says = this._view === 'login' || this._view === 'register' || this._view === 'home' || this._view === 'watch' || this._view === 'accounts'
+        if (says) this.error = this.hooks.retrying?.() ? 'Connection lost. Reconnecting…' : 'Connection closed: ' + e.reason
         if (this._view === 'login' || this._view === 'register') this.goHome()
-        else {
+        else if (says) {
           this.shape.delete(this._view)
           this.refresh()
         }
@@ -1933,6 +2002,8 @@ function engineHint(note: EngineNote | null): string {
  * down, and none when it is not logged in or not connected at all (an account other than the chosen one).
  */
 export function accountConn(s: Session | null | undefined, account: Account, chosen: boolean): NonNullable<Row['conn']> {
+  // a player on this device has no server to wait on: in use is up, from the moment it is chosen
+  if (account.serverId === OFFLINE_SERVER.id) return s?.closed ? 'down' : chosen ? 'up' : 'off'
   const open = !!s?.conn.open
   const loggedIn = open ? s?.state.lobby.username || null : null
   if (loggedIn) return 'up'

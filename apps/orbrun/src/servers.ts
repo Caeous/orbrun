@@ -63,15 +63,40 @@ export function listServers(): ServerInfo[] {
   return [...(bundled as ServerInfo[]), ...custom]
 }
 
+/**
+ * Add a server by its host or the address of its page (any path is dropped:
+ * the socket is always `/socket` at its root). A host already on the list
+ * gives back the server listed there, bundled or not, rather than a second
+ * row for it. Throws, in words for the player, on anything that is not an address.
+ */
 export function addServer(url: string): ServerInfo {
-  const u = new URL(url.includes('://') ? url : 'https://' + url)
-  const host = u.host
+  const text = url.trim()
+  if (!text) throw new Error('Enter a host or an address.')
+  let u: URL
+  try {
+    u = new URL(text.includes('://') ? text : 'https://' + text)
+  } catch {
+    throw new Error(`${text} is not an address.`)
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('A server is reached over http or https.')
+  const host = u.host.toLowerCase()
+  if (!host || /\s/.test(text) || !/[a-z0-9]/.test(host)) throw new Error(`${text} is not an address.`)
+  const had = listServers().find((s) => !s.offline && s.host.toLowerCase() === host)
+  if (had) return had
   const ws = (u.protocol === 'http:' ? 'ws://' : 'wss://') + host + '/socket'
   const info: ServerInfo = { id: host, name: host, ws, http: u.origin, host, custom: true }
   const custom = load<ServerInfo[]>(KEY, []).filter((s) => s.id !== info.id)
   custom.push(info)
   save(KEY, custom)
   return info
+}
+
+/** Take a server the player added off the list; the bundled ones stay. */
+export function removeServer(id: string) {
+  save(
+    KEY,
+    load<ServerInfo[]>(KEY, []).filter((s) => s.id !== id),
+  )
 }
 
 // ------------------------------------------------------------------ accounts
@@ -658,7 +683,7 @@ export interface MenuRoute {
 }
 
 /** the front end's screens that belong to no server; a settings group is its name in lower case (settings-rows.ts) */
-const MENU_PATH = /^(settings(\/[a-z]+)?|settings\/controls\/gamepad|accounts(\/add)?|watch|about(\/(orbrun|new|steam))?)$/
+const MENU_PATH = /^(settings(\/[a-z]+)?|settings\/controls\/gamepad|accounts(\/add(\/server)?)?|watch(\/add)?|about(\/(orbrun|new|steam))?)$/
 
 /** what every game id on this device starts with (@orbrun/offline channelOf), which its address leaves out */
 const DEVICE_GAME = 'offline-'

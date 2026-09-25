@@ -693,6 +693,10 @@ a.item.beside {
 .frame.menu-frame .menu-actions:has(.beside) {
   grid-template-columns: minmax(0, 1fr) max-content;
 }
+/* a second control beside a row (a server the player added: its site, then remove) takes a third column */
+.frame.menu-frame .menu-actions:has(.beside + .beside) {
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+}
 .frame.menu-frame .menu-actions .line {
   display: contents;
 }
@@ -738,6 +742,9 @@ a.item.beside {
   flex: 0 0 auto;
   min-height: 44px;
   padding: 0.6rem 0.5rem;
+}
+.frame.menu-frame .item.beside + .item.beside {
+  grid-column: 3;
 }
 .frame.menu-frame .item.beside .label {
   font-size: var(--menu-note-size);
@@ -872,7 +879,9 @@ a.item.beside {
   flex: 1 1 0;
   min-width: 0;
   min-height: 44px;
-  padding: 0.65rem 0.5rem 0.65rem 1.6rem;
+  /* the label stands as far past its glyph as a main row's does: the glyph's 0.3rem in and its own width (0.6em of
+     the smaller text), then the main rows' 1.6rem inset less their wider glyph */
+  padding: 0.65rem 0.5rem 0.65rem calc(0.3rem + 0.6 * var(--menu-note-size) + var(--menu-label-inset) - var(--menu-cursor-inset) - 0.6 * var(--menu-action-size));
   color: var(--ink-dim);
 }
 .frame.home-list .home-utilities .item:is(:hover, .focused, :focus-visible) {

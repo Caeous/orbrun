@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { initialState, type GameState, type LobbyEntry } from '@orbrun/webtiles'
-import { CONN_MARKER, FrontEnd, navDir, loginWord, exitReasonMessage, type Intent } from '../src/menu'
+import { accountConn, CONN_MARKER, FrontEnd, navDir, loginWord, exitReasonMessage, type Intent } from '../src/menu'
 import { settingsPanel } from '../src/settings-panel'
 import type { Session } from '../src/session'
 import { XOM_SPLASHES } from '../src/splash'
-import { findServer, setGames, setToken, type Account, type ServerInfo } from '../src/servers'
+import { findServer, OFFLINE_SERVER, setGames, setToken, type Account, type ServerInfo } from '../src/servers'
 import changelogText from '../../../CHANGELOG.md?raw'
 
 // happy-dom's localStorage has no working methods; give servers.ts a plain one
@@ -817,6 +817,97 @@ describe('the front end: accounts and servers', () => {
     expect(ping).toHaveBeenCalledTimes(7)
   })
 
+  it('Add a server is a screen of its own: an address, then the list with the cursor on it', () => {
+    const at = vi.fn()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const screen = new FrontEnd(host, { connect: (sv, u) => fakeSession(sv, u), logout: () => {}, play: () => {}, watch: () => {}, at })
+    made.push(screen)
+    pick(screen, 'Play')
+    pick(screen, 'Add a server')
+    expect(screen.view).toBe('add-server')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'accounts/add/server' })
+    expect(labels(screen)).toEqual(['Back', 'Address', 'Add'])
+    expect(focused(screen)).toBe('address')
+    const input = () => screen.root.querySelector<HTMLInputElement>('input[name=server]')!
+    // not an address: said here, with the text kept to fix
+    input().value = 'not a host'
+    pick(screen, 'Add')
+    expect(screen.view).toBe('add-server')
+    expect(screen.root.querySelector('.error')?.textContent).toBe('not a host is not an address.')
+    expect(input().value).toBe('not a host')
+    input().value = 'http://crawl.example.org:8080/some/page'
+    pick(screen, 'Add')
+    expect(screen.view).toBe('servers')
+    expect(focused(screen)).toBe('server:crawl.example.org:8080')
+    expect(findServer('crawl.example.org:8080')).toMatchObject({ ws: 'ws://crawl.example.org:8080/socket', http: 'http://crawl.example.org:8080', custom: true })
+    // one it added comes off again; the bundled ones do not
+    expect(screen.root.querySelector('[data-focus="remove:crawl.example.org:8080"]')).not.toBeNull()
+    expect(screen.root.querySelector('[data-focus="remove:cdi"]')).toBeNull()
+    ;(screen.root.querySelector('[data-focus="remove:crawl.example.org:8080"]') as HTMLElement).click()
+    expect(findServer('crawl.example.org:8080')).toBeNull()
+    // a host already listed is found, not added twice; Back from the screen is the list it came from
+    pick(screen, 'Add a server')
+    input().value = 'CRAWL.DCSS.IO'
+    pick(screen, 'Add')
+    expect(focused(screen)).toBe('server:cdi')
+    expect(labels(screen).filter((l) => l === 'CDI')).toHaveLength(1)
+    pick(screen, 'Add a server')
+    press(screen, 'Escape')
+    expect(screen.view).toBe('servers')
+    expect(focused(screen)).toBe('add-server')
+    // and from Watch, the same screen at an address of its own
+    screen.open({ kind: 'menu', path: 'watch/add' })
+    expect(screen.view).toBe('add-server')
+    press(screen, 'Escape')
+    expect(screen.root.querySelector('.head .place')?.textContent).toBe('Watch')
+  })
+
+  it('asks for the chosen account\'s connection again when its screens come back from a login that took its place', () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const warm = vi.fn()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const screen = new FrontEnd(host, { connect: (sv, u) => fakeSession(sv, u), logout: () => {}, play: () => {}, watch: () => {}, at: () => {}, warm })
+    made.push(screen)
+    screen.showHome()
+    pick(screen, 'orbrun · CDI')
+    pick(screen, 'Add an account')
+    pick(screen, 'CKO')
+    expect(screen.view).toBe('login')
+    warm.mockClear()
+    press(screen, 'Escape')
+    press(screen, 'Escape')
+    expect(screen.view).toBe('accounts')
+    expect(warm).toHaveBeenCalled()
+  })
+
+  it('a player on this device is up once chosen, with no server to wait on', () => {
+    const device: Account = { serverId: 'offline', username: 'Marc' }
+    expect(accountConn(null, device, true)).toBe('up')
+    expect(accountConn(fakeSession(OFFLINE_SERVER, 'Marc', {}, false), device, true)).toBe('up')
+    expect(accountConn(null, device, false)).toBe('off')
+    // a server's account with nothing up yet is still on its way
+    expect(accountConn(null, orbrun, true)).toBe('wait')
+  })
+
+  it('a drop on a screen that does not stand on the connection leaves nothing for the next screen to say', () => {
+    const s = fakeSession(cdi, null)
+    const host = document.createElement('div')
+    document.body.append(host)
+    const screen = new FrontEnd(host, { connect: () => s, session: () => s, retrying: () => true, logout: () => {}, play: () => {}, watch: () => {}, at: () => {} })
+    made.push(screen)
+    screen.watchFor(s)
+    pick(screen, 'Back')
+    pick(screen, 'Play')
+    expect(screen.view).toBe('servers')
+    ;(s as unknown as { emit(e: unknown): void }).emit({ type: 'closed', reason: 'the connection dropped' })
+    pick(screen, 'CDI')
+    expect(screen.view).toBe('login')
+    expect(screen.root.querySelector('.error')).toBeNull()
+  })
+
   it('Start chooses a row, then submits a focused login field like Enter', () => {
     const { screen } = make()
     pad(screen, 'START')
@@ -1287,6 +1378,7 @@ describe('the front end: settings and marks', () => {
   it('leaves the letters to a text field, and reads the four vim keys as directions and nothing else', () => {
     const { screen } = make()
     pick(screen, 'Play')
+    pick(screen, 'Add a server')
     const input = screen.root.querySelector('input') as HTMLInputElement
     expect(press(screen, 'j', input)).toBe(false)
     expect(press(screen, 'ArrowDown', input)).toBe(true)

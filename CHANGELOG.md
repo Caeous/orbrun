@@ -2,6 +2,13 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.1 — 2026-09-25
+
+- Add a server has its own page: type an address, and the server lands on the list with the cursor on it. A server you added can be removed again.
+- Logging in no longer shows a stale "Connection lost" when the connection had already come back.
+- Looking at another server's login no longer leaves your account stuck on "connecting"; a player on this device always shows as ready.
+- Your account and About & credits line up with the rest of the title screen menu.
+
 ## 0.2.0 — 2026-09-25
 
 - Play on this device, with no server and no connection needed: under Add an account, pick This device, give your player a name, and play — the game runs in your browser.

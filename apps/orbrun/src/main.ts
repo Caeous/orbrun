@@ -431,6 +431,23 @@ function warm() {
 }
 
 /**
+ * The front end is back on the chosen account's screens after one that put a
+ * connection of its own in its place (the login of an account being added,
+ * which is nobody's until it logs in): the chosen account's again. A
+ * connection that is somebody's is left be, closed or not — the account a
+ * route asked for, or the chosen one's drop, which the retry reopens on its
+ * own schedule — and so is a spectate.
+ */
+function rewarm() {
+  const account = getChosenAccount()
+  const server = account ? findServer(account.serverId) : null
+  if (!account || !server || game || boot) return
+  const s = session
+  if (s && (s.username || s.state.watching)) return
+  openSession(server, account.username)
+}
+
+/**
  * A reload straight into a game or a spectate: hold the screen dark until the
  * game screen is up, rather than drawing the account list and the lobby the
  * player never asked for. Any front end already up is dropped, so an address
@@ -490,6 +507,7 @@ function frontEnd(): FrontEnd {
       },
       session: (server: ServerInfo, username: string | null) => sessionOn(server, username),
       retrying,
+      warm: rewarm,
       ping: (server: ServerInfo) => pingServer(server),
       logout(account: Account) {
         // client.js logout: forget the token here and the cookie on the server, then drop the connection. The account

@@ -55,7 +55,7 @@ describe('routes', () => {
   })
 
   it('gives the front end’s screens addresses of their own', () => {
-    for (const path of ['settings', 'settings/camera', 'settings/controls/gamepad', 'accounts', 'accounts/add', 'watch', 'about', 'about/new', 'about/steam', 'about/orbrun']) {
+    for (const path of ['settings', 'settings/camera', 'settings/controls/gamepad', 'accounts', 'accounts/add', 'accounts/add/server', 'watch', 'watch/add', 'about', 'about/new', 'about/steam', 'about/orbrun']) {
       expect(parseRoute(base + path)).toEqual({ kind: 'menu', path })
       expect(parseRoute(base + path + '/')).toEqual({ kind: 'menu', path })
     }
