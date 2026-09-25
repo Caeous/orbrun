@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, beforeEach } from 'vitest'
-import { formatRoute, parseRoute, setChosenAccount, setRoute, type Account, type Route } from '../src/servers'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { addServer, formatRoute, parseRoute, setChosenAccount, setRoute, type Account, type Route } from '../src/servers'
 
 const base = 'http://localhost:5173/'
 
@@ -16,12 +16,10 @@ Object.defineProperty(globalThis, 'localStorage', {
 })
 
 /**
- * The hash is the official client's (`lobby`, `play-<game_id>`,
- * `watch-<username>`) scoped by who is doing it (`orbrun@cdi/play-…`), or by
- * the server alone for what needs no account (`cdi/watch-…`), so a link
- * opens the same thing on another device; the bare hashes read as the
- * account chosen on the home screen. The front end's screens have addresses
- * of their own. An empty hash is the home screen.
+ * The path says what, where and who: `/play/cdi/orbrun/dcss-0.34`,
+ * `/watch/cdi/bob`, so a link opens the same thing on another device; the
+ * front end's screens have addresses of their own, and the root is the home
+ * screen.
  */
 describe('routes', () => {
   const orbrun: Account = { serverId: 'cdi', username: 'orbrun' }
@@ -33,77 +31,86 @@ describe('routes', () => {
     setChosenAccount(null)
   })
 
-  it('an empty hash is home, whatever the query says', () => {
+  it('the root is home, whatever the query says', () => {
     expect(parseRoute(base)).toEqual({ kind: 'home' })
     expect(parseRoute(base + '?server=crawl.dcss.io')).toEqual({ kind: 'home' })
   })
 
-  it('reads the official client hash scheme as the chosen account', () => {
-    setChosenAccount(orbrun)
-    expect(parseRoute(base + '#lobby')).toEqual({ kind: 'lobby', serverId: 'cdi', account: orbrun })
-    expect(parseRoute(base + '#play-dcss-web-trunk')).toEqual({ kind: 'play', account: orbrun, gameId: 'dcss-web-trunk' })
-    expect(parseRoute(base + '#watch-orbruntest')).toEqual({ kind: 'watch', serverId: 'cdi', account: orbrun, username: 'orbruntest' })
-  })
-
-  it('reads the bare hashes as home when no account has been chosen, and ignores a server in the query', () => {
-    expect(parseRoute(base + '#lobby')).toEqual({ kind: 'home' })
-    expect(parseRoute(base + '?server=crawl.dcss.io#lobby')).toEqual({ kind: 'home' })
-    setChosenAccount(someone)
-    expect(parseRoute(base + '?server=crawl.dcss.io#watch-someone')).toMatchObject({ kind: 'watch', serverId: 'cko' })
-  })
-
-  it('is home when the chosen account names a server this device no longer has', () => {
-    setChosenAccount({ serverId: 'nowhere.example', username: 'orbrun' })
-    expect(parseRoute(base + '#lobby')).toEqual({ kind: 'home' })
-  })
-
-  it('ignores hashes it does not know', () => {
-    setChosenAccount(orbrun)
-    expect(parseRoute(base + '#register')).toEqual({ kind: 'home' })
-    expect(parseRoute(base + '#play-')).toEqual({ kind: 'home' })
-    expect(parseRoute(base + '#nowhere.example/lobby')).toEqual({ kind: 'home' })
-    expect(parseRoute(base + '#cdi/somewhere')).toEqual({ kind: 'home' })
-    expect(parseRoute(base + '#about/nowhere')).toEqual({ kind: 'home' })
-  })
-
   it('watches on a server with no account at all, so a link to a game opens anywhere', () => {
-    expect(parseRoute(base + '#cdi/lobby')).toEqual({ kind: 'lobby', serverId: 'cdi', account: null })
-    expect(parseRoute(base + '#cdi/watch-bob')).toEqual({ kind: 'watch', serverId: 'cdi', account: null, username: 'bob' })
-    // by host as well as by id
-    expect(parseRoute(base + '#crawl.dcss.io/watch-bob')).toEqual({ kind: 'watch', serverId: 'cdi', account: null, username: 'bob' })
-    // as an account this device has; one it does not have watches without
-    expect(parseRoute(base + '#ORBRUN@cdi/watch-bob')).toEqual({ kind: 'watch', serverId: 'cdi', account: orbrun, username: 'bob' })
-    expect(parseRoute(base + '#stranger@cdi/watch-bob')).toEqual({ kind: 'watch', serverId: 'cdi', account: null, username: 'bob' })
+    expect(parseRoute(base + 'watch/cdi')).toEqual({ kind: 'lobby', serverId: 'cdi', account: null })
+    expect(parseRoute(base + 'watch/cdi/bob')).toEqual({ kind: 'watch', serverId: 'cdi', account: null, username: 'bob' })
+    // by host as well as by id, in any case
+    expect(parseRoute(base + 'watch/crawl.dcss.io/bob')).toEqual({ kind: 'watch', serverId: 'cdi', account: null, username: 'bob' })
+    expect(parseRoute(base + 'Watch/CDI/bob')).toEqual({ kind: 'watch', serverId: 'cdi', account: null, username: 'bob' })
+    // as the chosen account, when it is on that server
+    setChosenAccount(orbrun)
+    expect(parseRoute(base + 'watch/cdi/bob')).toEqual({ kind: 'watch', serverId: 'cdi', account: orbrun, username: 'bob' })
+    expect(parseRoute(base + 'watch/cko')).toEqual({ kind: 'lobby', serverId: 'cko', account: null })
   })
 
-  it('plays as the account it names, or any on the server, or asks for a login there', () => {
-    expect(parseRoute(base + '#orbrun@cdi/play-dcss-0.34')).toEqual({ kind: 'play', account: orbrun, gameId: 'dcss-0.34' })
-    expect(parseRoute(base + '#cko/play-dcss-0.34')).toEqual({ kind: 'play', account: someone, gameId: 'dcss-0.34' })
-    expect(parseRoute(base + '#stranger@cdi/play-dcss-0.34')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
-    expect(parseRoute(base + '#cbro/play-dcss-0.34')).toEqual({ kind: 'menu', path: 'login', serverId: 'cbro' })
+  it('plays as the account it names, or asks for a login there', () => {
+    expect(parseRoute(base + 'play/cdi/orbrun/dcss-0.34')).toEqual({ kind: 'play', account: orbrun, gameId: 'dcss-0.34' })
+    expect(parseRoute(base + 'play/cdi/ORBRUN/dcss-0.34')).toEqual({ kind: 'play', account: orbrun, gameId: 'dcss-0.34' })
+    expect(parseRoute(base + 'play/cdi/stranger/dcss-0.34')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
   })
 
   it('gives the front end’s screens addresses of their own', () => {
-    for (const path of ['settings', 'settings/camera', 'settings/controls/gamepad', 'accounts', 'accounts/add', 'watch', 'about', 'about/new', 'about/steam', 'about/orbrun'])
-      expect(parseRoute(base + '#' + path)).toEqual({ kind: 'menu', path })
-    expect(parseRoute(base + '#cdi/login')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi' })
-    expect(parseRoute(base + '#cdi/register')).toEqual({ kind: 'menu', path: 'register', serverId: 'cdi' })
-    expect(parseRoute(base + '#orbrun@cdi/login')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'orbrun' })
+    for (const path of ['settings', 'settings/camera', 'settings/controls/gamepad', 'accounts', 'accounts/add', 'watch', 'about', 'about/new', 'about/steam', 'about/orbrun']) {
+      expect(parseRoute(base + path)).toEqual({ kind: 'menu', path })
+      expect(parseRoute(base + path + '/')).toEqual({ kind: 'menu', path })
+    }
+    expect(parseRoute(base + 'Settings/Camera')).toEqual({ kind: 'menu', path: 'settings/camera' })
+    expect(parseRoute(base + 'login/cdi')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi' })
+    expect(parseRoute(base + 'register/cdi')).toEqual({ kind: 'menu', path: 'register', serverId: 'cdi' })
+    expect(parseRoute(base + 'login/cdi/ORBRUN')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'orbrun' })
   })
 
-  it('round-trips through formatRoute, encoding the names and saying who', () => {
-    const url = formatRoute({ kind: 'play', account: orbrun, gameId: 'seeded-web-trunk' })
-    expect(url).toBe('/#orbrun@cdi/play-seeded-web-trunk')
+  it('ignores paths it does not know', () => {
+    for (const path of ['nowhere', 'play', 'play/cdi', 'play/cdi/orbrun', 'play/cdi/orbrun/dcss-0.34/more', 'watch/nowhere.example', 'watch/cdi/bob/more', 'lobby/cdi', 'about/nowhere', 'login/cdi/orbrun/more'])
+      expect(parseRoute(base + path)).toEqual({ kind: 'home' })
+  })
+
+  it('leaves `offline-` out of the games on this device', () => {
+    // offline is not offered under test (servers.ts offlineOffered)
+    vi.stubEnv('MODE', 'development')
+    const marc: Account = { serverId: 'offline', username: 'Marc' }
+    store.set('orbrun.accounts', JSON.stringify([orbrun, marc]))
+    const play: Route = { kind: 'play', account: marc, gameId: 'offline-0.34' }
+    expect(formatRoute(play)).toBe('/play/offline/Marc/0.34')
+    expect(parseRoute(base + 'play/offline/marc/0.34')).toEqual(play)
+    expect(parseRoute(base + 'play/offline/Marc/trunk')).toEqual({ ...play, gameId: 'offline-trunk' })
+    expect(formatRoute({ kind: 'menu', path: 'login', serverId: 'offline' })).toBe('/login/offline')
+    // nobody else plays on this device
+    expect(parseRoute(base + 'watch/offline')).toEqual({ kind: 'home' })
+    expect(parseRoute(base + 'watch/offline/bob')).toEqual({ kind: 'home' })
+    vi.unstubAllEnvs()
+  })
+
+  it('round-trips through formatRoute, encoding each name whole', () => {
+    expect(formatRoute({ kind: 'play', account: orbrun, gameId: 'seeded-web-trunk' })).toBe('/play/cdi/orbrun/seeded-web-trunk')
+    expect(formatRoute({ kind: 'watch', serverId: 'cdi', account: null, username: 'a b' })).toBe('/watch/cdi/a%20b')
+    expect(formatRoute({ kind: 'lobby', serverId: 'cko', account: someone })).toBe('/watch/cko')
+    setChosenAccount(orbrun)
+    // names with what a path or a URL would otherwise take apart: spaces, slashes, a query, a fragment, escapes, pluses
+    const odd = ['a b', 'a/b', 'a?b', 'a#b', '100%', 'a+b', 'a%20b', 'ünï cödé', 'a@b', 'a.b', '..b']
+    const custom: Account = { serverId: addServer('http://crawl.example.org:8080').id, username: 'a b/c' }
+    store.set('orbrun.accounts', JSON.stringify([orbrun, someone, ...odd.map((username) => ({ serverId: 'cdi', username })), custom]))
     const routes: Route[] = [
       { kind: 'play', account: orbrun, gameId: 'seeded-web-trunk' },
-      { kind: 'watch', serverId: 'cdi', account: orbrun, username: 'a b' },
-      { kind: 'watch', serverId: 'cdi', account: null, username: 'a/b' },
+      { kind: 'watch', serverId: 'cdi', account: orbrun, username: 'someone' },
       { kind: 'lobby', serverId: 'cko', account: null },
-      { kind: 'lobby', serverId: 'cko', account: someone },
+      { kind: 'lobby', serverId: 'cdi', account: orbrun },
       { kind: 'menu', path: 'settings/interface' },
       { kind: 'menu', path: 'login', serverId: 'cko', username: 'someone' },
+      { kind: 'play', account: custom, gameId: 'dcss-0.34' },
+      { kind: 'watch', serverId: custom.serverId, account: null, username: 'bob' },
+      ...odd.flatMap((name): Route[] => [
+        { kind: 'play', account: { serverId: 'cdi', username: name }, gameId: name },
+        { kind: 'watch', serverId: 'cdi', account: orbrun, username: name },
+        { kind: 'menu', path: 'login', serverId: 'cdi', username: name },
+      ]),
     ]
-    for (const r of routes) expect(parseRoute(base + formatRoute(r).slice(1))).toEqual(r)
+    for (const r of routes) expect(parseRoute(new URL(formatRoute(r), base).href)).toEqual(r)
     expect(formatRoute({ kind: 'home' })).toBe('/')
   })
 
@@ -112,10 +119,10 @@ describe('routes', () => {
     history.replaceState(null, '', '/?fullscreen&perf')
     try {
       expect(formatRoute({ kind: 'home' })).toBe('/?fullscreen&perf')
-      expect(formatRoute({ kind: 'play', account: orbrun, gameId: 'dcss-web-trunk' })).toBe('/?fullscreen&perf#orbrun@cdi/play-dcss-web-trunk')
+      expect(formatRoute({ kind: 'play', account: orbrun, gameId: 'dcss-web-trunk' })).toBe('/play/cdi/orbrun/dcss-web-trunk?fullscreen&perf')
       setRoute({ kind: 'play', account: orbrun, gameId: 'dcss-web-trunk' })
       expect(window.location.search).toBe('?fullscreen&perf')
-      expect(window.location.hash).toBe('#orbrun@cdi/play-dcss-web-trunk')
+      expect(window.location.pathname).toBe('/play/cdi/orbrun/dcss-web-trunk')
     } finally {
       history.replaceState(null, '', '/')
     }
@@ -137,7 +144,7 @@ describe('routes', () => {
       const before = history.length
       setRoute({ kind: 'lobby', serverId: 'cdi', account: orbrun })
       setRoute({ kind: 'play', account: orbrun, gameId: 'dcss-0.34' })
-      expect(window.location.hash).toBe('#orbrun@cdi/play-dcss-0.34')
+      expect(window.location.pathname).toBe('/play/cdi/orbrun/dcss-0.34')
       expect(history.length).toBe(before + 1)
     })
 
@@ -147,7 +154,7 @@ describe('routes', () => {
       const deep = history.length
       setRoute({ kind: 'lobby', serverId: 'cdi', account: orbrun })
       setRoute({ kind: 'home' })
-      expect(window.location.hash).toBe('')
+      expect(window.location.pathname).toBe('/')
       expect(history.length).toBe(deep)
     })
 
@@ -169,7 +176,7 @@ describe('routes', () => {
         const before = history.length
         setRoute({ kind: 'lobby', serverId: 'cdi', account: orbrun })
         setRoute({ kind: 'play', account: orbrun, gameId: 'dcss-0.34' })
-        expect(window.location.hash).toBe('#orbrun@cdi/play-dcss-0.34')
+        expect(window.location.pathname).toBe('/play/cdi/orbrun/dcss-0.34')
         expect(history.length).toBe(before)
       } finally {
         history.replaceState(null, '', '/')
@@ -181,7 +188,7 @@ describe('routes', () => {
       setRoute({ kind: 'watch', serverId: 'cdi', account: orbrun, username: 'someone' })
       const len = history.length
       setRoute({ kind: 'watch', serverId: 'cdi', account: orbrun, username: 'other' })
-      expect(window.location.hash).toBe('#orbrun@cdi/watch-other')
+      expect(window.location.pathname).toBe('/watch/cdi/other')
       expect(history.length).toBe(len)
     })
   })

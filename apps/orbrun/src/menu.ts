@@ -32,7 +32,7 @@ export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls'
 
 const SECTIONS: View[] = ['home', 'watch', 'settings']
 
-/** the About page's documents, by their address (`#about/new`) */
+/** the About page's documents, by their address (`/about/new`) */
 const ABOUT_DOCS = {
   orbrun: ['About Orbrun', aboutText],
   new: ['What’s new', changelogText],
@@ -1104,7 +1104,7 @@ export class FrontEnd {
     })
   }
 
-  /** One of the About page's documents, at `#about/<which>`. */
+  /** One of the About page's documents, at `/about/<which>`. */
   private showAboutDoc(which: keyof typeof ABOUT_DOCS) {
     const [title, text] = ABOUT_DOCS[which]
     this.showDoc({ title, body: () => renderMarkdown(text, { dropTitle: true }), from: () => this.showAbout() })
@@ -1503,7 +1503,7 @@ export class FrontEnd {
 
   /**
    * Open a session for `account` and show the home screen, its server's
-   * lobby. With an `intent` (Continue, Play, a `#play-`/`#watch-` address
+   * lobby. With an `intent` (Continue, Play, a `/play`/`/watch` address
    * on reload) the game or spectate starts on its own once the login is
    * through, and the screen stays up meanwhile. `played` (the way back from
    * a game) forgets what the server said was waiting; a switch of account
@@ -1543,7 +1543,7 @@ export class FrontEnd {
     this.showHome()
   }
 
-  /** Follow an already open session and show the Watch screen: after a spectate ended, or Back to `#lobby`. */
+  /** Follow an already open session and show the Watch screen: after a spectate ended, or Back to `/watch/<server>`. */
   watchFor(session: Session) {
     // a spectate with no account was picked from that server's roster, not the chosen account's
     this.watchOn = session.username ? null : session.server

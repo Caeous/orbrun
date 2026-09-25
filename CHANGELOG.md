@@ -10,6 +10,7 @@ Notable changes to Orbrun, newest first.
 - Choosing a god at an altar works with the gamepad: Start joins, and the d-pad switches between the god's pages.
 - Doors, statues and items no longer go missing on busy levels deeper in the game.
 - Pressing up at the top of the title screen goes to your account; About & credits is one step right of it.
+- Cleaner addresses you can share, like orbrun.app/watch/cdi/bob.
 
 ## 0.1.8 — 2026-09-23
 

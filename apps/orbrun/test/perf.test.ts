@@ -95,7 +95,7 @@ describe('the perf flag', () => {
     expect(perfWanted()).toBe(false)
     history.replaceState(null, '', '/?perf')
     expect(perfWanted()).toBe(true)
-    history.replaceState(null, '', '/?perf#play-dcss-web-trunk')
+    history.replaceState(null, '', '/play/cdi/orbrun/dcss-web-trunk?perf')
     expect(perfWanted()).toBe(true)
     history.replaceState(null, '', '/?perf=0')
     expect(perfWanted()).toBe(false)

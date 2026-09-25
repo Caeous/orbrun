@@ -1,7 +1,7 @@
 /**
  * orbrun-engine: engine/dist over HTTP, at /engine/<path> (how orbrun.app
- * forwards it) or at /<path> (the Worker's own address), and the nightly
- * start of its own build.
+ * forwards it) or at /<path> (the Worker's own address), the nightly start of
+ * its own build, and an email when that build fails or publishes.
  *
  * The files under a commit never change meaning, so they are cached for good;
  * a channel's engine.json is what moves, so it is always asked again.
@@ -10,7 +10,22 @@ interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> }
   /** The Workers Builds deploy hook that runs engine/ci.sh: a secret (`wrangler secret put DEPLOY_HOOK`), since whoever has it can start builds. */
   DEPLOY_HOOK?: string
+  /** Sends from orbrun.app (Email Routing), to verified addresses only. */
+  EMAIL: { send(message: { from: string; to: string; subject: string; text: string }): Promise<unknown> }
+  /** Where build emails go: a secret (`wrangler secret put NOTIFY_EMAIL`), since the repo is public. */
+  NOTIFY_EMAIL?: string
+  /** When the running version was deployed: newer than a build's start means that build published. */
+  VERSION: { id: string; timestamp: string }
 }
+
+/** A Workers Builds event, as the event subscription puts it on the queue. */
+interface BuildEvent {
+  type: string
+  metadata: { accountId: string }
+  payload: { buildUuid: string; runningAt?: string | null; createdAt: string; stoppedAt?: string | null }
+}
+
+const CHANNELS = ['stable', 'trunk']
 
 const IMMUTABLE = /^\/(builds|gamedata)\/[0-9a-f]{40}\//
 
@@ -48,5 +63,38 @@ export default {
     if (!env.DEPLOY_HOOK) return
     const res = await fetch(env.DEPLOY_HOOK, { method: 'POST' })
     if (!res.ok) throw new Error(`deploy hook: HTTP ${res.status}`)
+  },
+  // Workers Builds events (the orbrun-engine-builds queue): one email per build
+  // that failed, was canceled or published; a run with nothing new sends none
+  async queue(batch: { messages: { body: BuildEvent }[] }, env: Env): Promise<void> {
+    if (!env.NOTIFY_EMAIL) return
+    for (const { body } of batch.messages) {
+      const outcome = body.type.split('.').pop()
+      const build = body.payload
+      const started = build.runningAt ?? build.createdAt
+      let subject: string
+      if (outcome === 'failed' || outcome === 'canceled') {
+        subject = `orbrun engine build ${outcome}`
+      } else if (outcome === 'succeeded' && Date.parse(env.VERSION.timestamp) > Date.parse(started)) {
+        const live = await Promise.all(CHANNELS.map(async (c) => {
+          const res = await env.ASSETS.fetch(new Request(`https://engine/${c}/engine.json`))
+          return res.ok ? `${c} ${((await res.json()) as { version: string }).version}` : `${c} none`
+        }))
+        subject = `orbrun engine published: ${live.join(', ')}`
+      } else {
+        continue
+      }
+      const minutes = build.stoppedAt ? Math.round((Date.parse(build.stoppedAt) - Date.parse(started)) / 60000) : undefined
+      await env.EMAIL.send({
+        from: 'engine@orbrun.app',
+        to: env.NOTIFY_EMAIL,
+        subject,
+        text: [
+          `${subject}.`,
+          `Started ${started}${minutes === undefined ? '' : `, ${minutes} min`}.`,
+          `Log: https://dash.cloudflare.com/${body.metadata.accountId}/workers/services/view/orbrun-engine/production/builds/${build.buildUuid}`,
+        ].join('\n\n'),
+      })
+    }
   },
 }

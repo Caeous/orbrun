@@ -29,7 +29,7 @@ let starting: Promise<void> | null = null
 /** what a fresh connection should do once it is logged in (play) or open (watch) */
 let intent: Intent | null = null
 /**
- * The screen a `#play-`/`#watch-` address stands on while its connection is
+ * The screen a `/play`/`/watch` address stands on while its connection is
  * made: no front end is built for it, so a reload into a game never flashes
  * the account list and the lobby on the way (showBoot).
  */
@@ -137,8 +137,8 @@ function sessionOn(server: ServerInfo, username: string | null): Session | null 
 // --------------------------------------------------------------------- flow
 
 /**
- * Do what the address bar says: on load, and when the player edits the hash
- * or uses the back button (`hashchange`). Mirrors client.js `handle_hash`.
+ * Do what the address bar says: on load, and on the player's Back or Forward
+ * (`popstate`).
  */
 function applyRoute(r: Route) {
   if (r.kind === 'home' || r.kind === 'menu') {
@@ -244,7 +244,7 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
       }
       if (m === 'go_lobby' && (game || boot)) {
         // out of a game (death, save, quit): the home screen, where Continue and Play are. Out of a spectate (the
-        // player left, or Back went to `#lobby`): the Watch screen it was picked from
+        // player left, or Back went to `/watch/<server>`): the Watch screen it was picked from
         const r = parseRoute()
         if (r.kind === 'watch' || r.kind === 'lobby') showWatchFor(s)
         else showLobbyFor(s)
@@ -543,7 +543,7 @@ function showLobbyFor(s: Session) {
   frontEnd().attach(s)
 }
 
-/** A front-end screen by its address (`#settings/camera`, `#cdi/login`), over this device's warm connection. */
+/** A front-end screen by its address (`/settings/camera`, `/login/cdi`), over this device's warm connection. */
 function showMenu(r: MenuRoute) {
   updateTitle(null)
   const l = frontEnd()
@@ -551,7 +551,7 @@ function showMenu(r: MenuRoute) {
   l.open(r)
 }
 
-/** The Watch screen (the server's lobby roster, `#lobby`) on the connection `s`. */
+/** The Watch screen (the server's lobby roster, `/watch/<server>`) on the connection `s`. */
 function showWatchFor(s: Session) {
   updateTitle(null)
   frontEnd().watchFor(s)
@@ -671,9 +671,8 @@ window.addEventListener('beforeunload', (ev) => {
   }
 })
 
-// the address bar is the record of where we are: `#lobby`, `#play-<game_id>`,
-// `#watch-<username>` as in the official client; the server comes from storage
-window.addEventListener('hashchange', () => applyRoute(parseRoute()))
+// the address bar is the record of where we are (servers.ts Route)
+window.addEventListener('popstate', () => applyRoute(parseRoute()))
 // before the first route is applied, so a game started from it finds the worker keeping the engine it fetches
 keepEngines(() => !!(game || starting) || session?.state.phase === 'loading' || session?.state.phase === 'playing')
 applyRoute(parseRoute())

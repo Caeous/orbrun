@@ -1,7 +1,8 @@
 {
   // orbrun-engine: the offline engine's files (engine/dist, as build.sh lays it
   // out), served to orbrun.app's /engine/* through a service binding, and the
-  // nightly trigger for its own build (engine/ci.sh on Workers Builds).
+  // nightly trigger for its own build (engine/ci.sh on Workers Builds), which
+  // emails how that build went.
   //
   // A Worker of its own so a new engine build never redeploys the app, and the
   // app's deploy never has to carry the engine. Publish with
@@ -22,6 +23,11 @@
   },
   // the night's two chances to build: one channel a run (engine/plan.mjs)
   "triggers": { "crons": ["0 4 * * *", "30 4 * * *"] },
+  // Workers Builds events for this Worker (a queue event subscription), and
+  // the email they turn into: to the NOTIFY_EMAIL secret, from orbrun.app
+  "queues": { "consumers": [{ "queue": "orbrun-engine-builds" }] },
+  "send_email": [{ "name": "EMAIL" }],
+  "version_metadata": { "binding": "VERSION" },
   "observability": {
     "enabled": true
   }

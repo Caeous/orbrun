@@ -2876,7 +2876,7 @@ export class Overlays {
     add('Gamepad controls', 'what each button does, and how to change it', () => this.showBindings(this.hooks.padKind?.() ?? 'generic', again), true)
     add('Settings', "Orbrun's own options: the camera, the controls, the HUD", () => this.showSettings(again))
     // a player saves (crawl's S, which asks first, then go_lobby brings the front end back); a spectator has nothing to
-    // save and goes back to the Watch screen (`#lobby`) the game was picked from
+    // save and goes back to the Watch screen (`/watch/<server>`) the game was picked from
     if (playing) add('Save and exit (S)', 'the game keeps; come back to it whenever', () => this.hooks.send(cm.input('S')), true)
     else add(opts.spectating ? 'Stop watching' : 'Leave game', opts.spectating ? 'back to the list of games being played' : 'back to the front door', () => this.hooks.onSystemAction('disconnect'), true)
     // a spectator sends no keys, so the character commands are the player's alone

@@ -22,8 +22,8 @@
   "assets": {
     "directory": "apps/orbrun/dist",
     "binding": "ASSETS",
-    // the app routes on the hash (main.ts `applyRoute`), so any path that is
-    // not an asset is still the app shell
+    // the app routes on the path (servers.ts `parseRoute`), so any path that
+    // is not an asset is still the app shell
     "not_found_handling": "single-page-application",
     // without this the asset layer answers the proxy routes with index.html
     // and the gamedata loader is handed HTML instead of JavaScript

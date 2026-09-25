@@ -629,17 +629,15 @@ export function findServer(idOrHost: string): ServerInfo | null {
 // --------------------------------------------------------------------- route
 
 /**
- * What the URL says we should be doing. The game hashes follow the official
- * webtiles client (`lobby`, `play-<game_id>`, `watch-<username>`), scoped
- * by who is doing it: `orbrun@cdi/play-dcss-0.34`, or a server alone for
- * what needs no account (`cdi/lobby`, `cdi/watch-bob`), so a link opens the
- * same thing on another device. The official client's bare hashes still
- * read, as the account chosen on the home screen. The front end's own
- * screens have addresses too (`#settings/camera`, `#about/new`,
- * `#cdi/login`); an empty hash is the home screen. `#lobby` is the Watch
- * screen: the server's lobby roster, as the official client's `#lobby`
- * shows. (`watch`'s `username` is the player being watched, not the
- * account's own.)
+ * What the URL says we should be doing. The path names it, the verb first,
+ * then the server, then who: `/play/cdi/orbrun/dcss-0.34`, `/watch/cdi` (the
+ * Watch screen: the server's lobby roster, the official client's `#lobby`),
+ * `/watch/cdi/bob`, `/login/cdi/orbrun`, so a link opens the same thing on
+ * another device. Watching needs no account, so its address names none: it is
+ * the chosen account's when that is on the same server. Games on this device
+ * drop their `offline-` (`/play/offline/Marc/0.34`). The front end's own screens have addresses too
+ * (`/settings/camera`, `/about/new`); the bare root is the home screen.
+ * (`watch`'s `username` is the player being watched, not the account's own.)
  */
 export type Route =
   | { kind: 'home' }
@@ -662,6 +660,9 @@ export interface MenuRoute {
 /** the front end's screens that belong to no server; a settings group is its name in lower case (settings-rows.ts) */
 const MENU_PATH = /^(settings(\/[a-z]+)?|settings\/controls\/gamepad|accounts(\/add)?|watch|about(\/(orbrun|new|steam))?)$/
 
+/** what every game id on this device starts with (@orbrun/offline channelOf), which its address leaves out */
+const DEVICE_GAME = 'offline-'
+
 function decode(s: string): string {
   try {
     return decodeURIComponent(s)
@@ -675,48 +676,49 @@ function knownAccount(serverId: string, name: string): Account | null {
   return listAccounts().find((a) => sameAccount(a, { serverId, username: name })) ?? null
 }
 
-export function parseRoute(href: string = window.location.href): Route {
-  const raw = new URL(href).hash.replace(/^#/, '')
-  if (!raw) return { kind: 'home' }
-  if (MENU_PATH.test(raw)) return { kind: 'menu', path: raw }
-  const slash = raw.indexOf('/')
-  if (slash < 0) {
-    // the official client's own hashes, as the chosen account
-    const account = getChosenAccount()
-    if (!account) return { kind: 'home' }
-    const hash = decode(raw)
-    if (hash === 'lobby') return { kind: 'lobby', serverId: account.serverId, account }
-    if (hash.startsWith('play-') && hash.length > 5) return { kind: 'play', account, gameId: hash.slice(5) }
-    if (hash.startsWith('watch-') && hash.length > 6) return { kind: 'watch', serverId: account.serverId, account, username: hash.slice(6) }
-    return { kind: 'home' }
-  }
-  const who = decode(raw.slice(0, slash))
-  const rest = decode(raw.slice(slash + 1))
-  const at = who.lastIndexOf('@')
-  const server = findServer(at < 0 ? who : who.slice(at + 1))
-  if (!server) return { kind: 'home' }
-  const serverId = server.id
-  const named = at > 0 ? who.slice(0, at) : null
-  const known = named ? knownAccount(serverId, named) : null
-  if (rest === 'login' || rest === 'register') return { kind: 'menu', path: rest, serverId, ...(named ? { username: known?.username ?? named } : {}) }
-  if (rest.startsWith('play-') && rest.length > 5) {
-    // an unnamed play is the chosen account's, or any on that server; with none here, its login
-    const chosen = getChosenAccount()
-    const account = named ? known : chosen?.serverId === serverId ? chosen : (listAccounts().find((a) => a.serverId === serverId) ?? null)
-    if (!account) return { kind: 'menu', path: 'login', serverId, ...(named ? { username: named } : {}) }
-    return { kind: 'play', account, gameId: rest.slice(5) }
-  }
-  // nobody else plays on this device
-  if (server.offline) return { kind: 'home' }
-  // watching needs no account: one this device does not have watches without
-  if (rest === 'lobby') return { kind: 'lobby', serverId, account: known }
-  if (rest.startsWith('watch-') && rest.length > 6) return { kind: 'watch', serverId, account: known, username: rest.slice(6) }
-  return { kind: 'home' }
+/** the chosen account, when it is on `serverId`: who a watch address, which names nobody, watches as */
+function chosenOn(serverId: string): Account | null {
+  const chosen = getChosenAccount()
+  return chosen?.serverId === serverId ? chosen : null
 }
 
-/** who a route is as, in its address: `orbrun@cdi`, or the server alone */
-function scope(serverId: string, username?: string | null): string {
-  return (username ? encodeURIComponent(username) + '@' : '') + encodeURIComponent(serverId)
+export function parseRoute(href: string = window.location.href): Route {
+  const { pathname } = new URL(href)
+  // split before decoding, so a `/` in a name (`%2F`) stays in it; an empty segment (`//`, a trailing `/`) says nothing
+  const parts = pathname.split('/').filter(Boolean).map(decode)
+  if (!parts.length) return { kind: 'home' }
+  const menu = parts.join('/').toLowerCase()
+  if (MENU_PATH.test(menu)) return { kind: 'menu', path: menu }
+  const [verb, where, ...rest] = parts
+  const server = where === undefined ? null : findServer(where.toLowerCase())
+  if (!server) return { kind: 'home' }
+  const serverId = server.id
+  const what = verb.toLowerCase()
+  if ((what === 'login' || what === 'register') && rest.length <= 1) {
+    const named = rest[0]
+    return { kind: 'menu', path: what, serverId, ...(named ? { username: knownAccount(serverId, named)?.username ?? named } : {}) }
+  }
+  if (what === 'play' && rest.length === 2) {
+    const [named, game] = rest
+    const account = knownAccount(serverId, named)
+    // an account this device does not have: its login, to add it
+    if (!account) return { kind: 'menu', path: 'login', serverId, username: named }
+    return { kind: 'play', account, gameId: server.offline ? DEVICE_GAME + game : game }
+  }
+  // nobody else plays on this device
+  if (what !== 'watch' || server.offline || rest.length > 1) return { kind: 'home' }
+  if (!rest.length) return { kind: 'lobby', serverId, account: chosenOn(serverId) }
+  return { kind: 'watch', serverId, account: chosenOn(serverId), username: rest[0] }
+}
+
+/** a path of names, each encoded whole: a space, `/`, `?`, `#` or `%` in one stays in it */
+function pathOf(...parts: string[]): string {
+  return '/' + parts.map(encodeURIComponent).join('/')
+}
+
+/** a game on this device in an address */
+function deviceGame(gameId: string): string {
+  return gameId.startsWith(DEVICE_GAME) ? gameId.slice(DEVICE_GAME.length) : gameId
 }
 
 /**
@@ -726,17 +728,19 @@ function scope(serverId: string, username?: string | null): string {
  * address bar could not put one back, so a Play must not drop them.
  */
 export function formatRoute(r: Route): string {
-  const base = window.location.pathname + window.location.search
-  if (r.kind === 'home') return base
-  const hash =
-    r.kind === 'menu'
-      ? (r.serverId ? scope(r.serverId, r.username) + '/' : '') + r.path
-      : r.kind === 'lobby'
-        ? scope(r.serverId, r.account?.username) + '/lobby'
-        : r.kind === 'play'
-          ? scope(r.account.serverId, r.account.username) + '/play-' + encodeURIComponent(r.gameId)
-          : scope(r.serverId, r.account?.username) + '/watch-' + encodeURIComponent(r.username)
-  return `${base}#${hash}`
+  const where =
+    r.kind === 'home'
+      ? '/'
+      : r.kind === 'menu'
+        ? r.serverId
+          ? pathOf(r.path, r.serverId, ...(r.username ? [r.username] : []))
+          : '/' + r.path
+        : r.kind === 'lobby'
+          ? pathOf('watch', r.serverId)
+          : r.kind === 'play'
+            ? pathOf('play', r.account.serverId, r.account.username, r.account.serverId === OFFLINE_SERVER.id ? deviceGame(r.gameId) : r.gameId)
+            : pathOf('watch', r.serverId, r.username)
+  return where + window.location.search
 }
 
 /**
@@ -751,7 +755,7 @@ function routeDepth(r: Route): number {
 
 /**
  * Put the route in the address bar. Neither push nor replace fires
- * `hashchange`, so this never comes back through `applyRoute`; only the
+ * `popstate`, so this never comes back through `applyRoute`; only the
  * player's own Back, Forward or edit does.
  *
  * In a window of our own there is no Back to serve, and a second history
