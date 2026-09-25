@@ -873,7 +873,6 @@ describe('the front end: accounts and servers', () => {
 
   it('names a player on this device by name alone, over "on this device", and the home screen says it too', () => {
     vi.stubEnv('MODE', 'development')
-    vi.stubEnv('DEV', true)
     try {
       const marc: Account = { serverId: 'offline', username: 'Marc' }
       localStorage.setItem('orbrun.accounts', JSON.stringify([marc, orbrun]))

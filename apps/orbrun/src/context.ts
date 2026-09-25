@@ -280,9 +280,12 @@ const CH_PROMPT = 2
  * on the lines printed after it (shout.cc `_issue_orders_prompt`: " t -
  * Shout!", "r - Retreat!             s - Stop attacking."). The key is one
  * character; a label runs to the next comma or parenthesis, or to a gap of
- * two spaces where two share a line.
+ * two spaces where two share a line. One parenthesis closing the label is
+ * passed over and left out of it: an item named as the inventory names it
+ * ends in its state (item-use.cc `_item_swap_prompt`: "< or c - a ring of
+ * protection from fire (worn)").
  */
-const KEYED_RE = /(?:^|[\s(,])([A-Za-z0-9!?*.<>_^~&%/#:]|Tab\/Enter|Enter|Tab) - ([^,()]+?)(?=\s{2,}|[,)]|\s*$)/g
+const KEYED_RE = /(?:^|[\s(,])([A-Za-z0-9!?*.<>_^~&%/#:]|Tab\/Enter|Enter|Tab) - ([^,()]+?)(?: \([^()]*\))?(?=\s{2,}|[,)]|\s*$)/g
 /** the named keys a prompt spells out, as the key to send: Tab and Enter are not text, so the card sends them as keys */
 const NAMED_KEYS: Record<string, string> = { 'Tab/Enter': '\t', Tab: '\t', Enter: '\r' }
 /** a digit range on the prompt line: "(0-9, ..." */
@@ -315,7 +318,9 @@ function listedPrompt(lines: { text: string; channel?: number }[]): ParsedPrompt
     }
   }
   if (at < 0) return undefined
-  const text = formattedStringToText(lines[at].text)
+  let text = formattedStringToText(lines[at].text)
+  // a prompt line that is only its hint ("(? for menu, Esc to cancel)") asks nothing: the question is the line above
+  if (/^\(.*\)$/.test(text.trim()) && lines[at - 1]?.channel === CH_PROMPT) text = formattedStringToText(lines[at - 1].text)
   const options: ParsedPrompt['options'] = []
   const add = (hotkey: string, label: string, colour?: number) => {
     hotkey = NAMED_KEYS[hotkey] ?? hotkey

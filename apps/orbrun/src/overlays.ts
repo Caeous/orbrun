@@ -515,6 +515,16 @@ export class Overlays {
    * rebuilt or a new screen (`syncFocus`).
    */
   private keyArmed = false
+  /**
+   * A choice prompt whose Enter means nothing to the server fires its lit
+   * chip on Enter before any arrow: item-use.cc `_item_swap_prompt` ("you
+   * must remove one of the following items") reads only its letters, so a
+   * raw Enter did nothing under a lit chip. A yes/no keeps Enter for its
+   * default answer, a prompt that lists Enter keeps it as that choice, and
+   * the stat gain, which cannot be cancelled, keeps it too, so mashing Enter
+   * through the level-up's --more-- never spends the point.
+   */
+  private promptEnterFires = false
   /** newgame: the server's `button_focus` at the last build, so a move of its own re-seats our cursor and an echo of ours does not */
   private newgameFocus = ''
   /** bumped whenever either focus set is rebuilt, so syncFocus re-seats the cursor once */
@@ -1931,6 +1941,7 @@ export class Overlays {
     let lead: string | null = null
     let buttons = new Map<string, Button>()
     let letters: ParsedPrompt | null = null
+    let enterFires = false
     if (mode === 'yesno' || mode === 'prompt') {
       const p: ParsedPrompt | undefined = prompt ?? (mode === 'yesno' ? { text: '', options: [{ hotkey: 'y', label: 'Yes' }, { hotkey: 'n', label: 'No' }], yesno: true, cancel: true } : undefined)
       if (p && p.options.length) {
@@ -1942,6 +1953,7 @@ export class Overlays {
         chips = p.options.map((o) => ({ label: o.label, hotkey: o.hotkey, colour: o.colour, send: () => this.hooks.send(o.hotkey === '\t' || o.hotkey === '\r' ? cm.key(o.hotkey.charCodeAt(0)) : cm.input(o.hotkey)), cancel: o.hotkey.toLowerCase() === 'n' && p.yesno }))
         buttons = promptButtons(p)
         letters = p.letters ? p : null
+        enterFires = !p.yesno && !p.letters && p.cancel && !p.options.some((o) => o.hotkey === '\r')
       }
     }
     if (key === this.promptKey) return
@@ -1951,11 +1963,12 @@ export class Overlays {
     this.promptFocusables = []
     this.promptInitial = 0
     this.keyArmed = false
+    this.promptEnterFires = enterFires
     this.focusGen++
     if (!key) return
     const padKind = this.hooks.padKind?.() ?? 'xbox'
     const pad = device === 'pad'
-    const el = h('div', { class: 'prompt-card' + (pad ? '' : ' kbd'), 'data-client': '1' })
+    const el = h('div', { class: 'prompt-card' + (pad ? '' : ' kbd') + (enterFires ? ' armed' : ''), 'data-client': '1' })
     if (text && lead === null) el.append(h('div', { class: 'text' }, text))
     if (letters) {
       this.letterGrid(el, letters, chips)
@@ -2072,16 +2085,18 @@ export class Overlays {
    * A keyboard key in a focus mode. Consumed only when the screen has a
    * client-owned cursor and the op moved or fired it; otherwise the key stays
    * raw, as in the official client. On a prompt the arrows arm the cursor
-   * first: Enter fires the focused chip only after one, and Escape is always
-   * raw (a yes/no takes both as its default answer, see `promptArmed`).
+   * first: Enter fires the focused chip only after one (or at once, on a
+   * prompt that ignores Enter: `promptEnterFires`; `enter` says the select is
+   * a fresh Enter rather than space or a repeat), and Escape is always raw (a
+   * yes/no takes both as its default answer, see `promptArmed`).
    */
-  focusKey(state: GameState, ctx: Context, op: FocusOp): boolean {
+  focusKey(state: GameState, ctx: Context, op: FocusOp, enter = false): boolean {
     void state
     this.pointerLive = false
-    return this.focusKeyOp(ctx, op, true)
+    return this.focusKeyOp(ctx, op, true, enter)
   }
 
-  private focusKeyOp(ctx: Context, op: FocusOp, keyboard: boolean): boolean {
+  private focusKeyOp(ctx: Context, op: FocusOp, keyboard: boolean, enter = false): boolean {
     const set = this.focusSet(ctx)
     if (keyboard && !this.nav.count) return false
     const prompt = set.items === this.promptFocusables
@@ -2089,7 +2104,7 @@ export class Overlays {
     // on a prompt any arrow arms it, on a popup only one the cursor took (the others scroll the text)
     if (keyboard && prompt) {
       if (op === 'cancel' || op === 'pageNext' || op === 'pagePrev') return false
-      if (op === 'select' && !this.keyArmed) return false
+      if (op === 'select' && !this.keyArmed && !(enter && this.promptEnterFires)) return false
       if (op !== 'select') {
         this.keyArmed = true
         this.promptEl?.classList.add('armed')

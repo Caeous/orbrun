@@ -1358,7 +1358,7 @@ export class GameScreen {
       // space fires the cursor too, except on a popup that scrolls its own text, where
       // it pages (ui-layouts.js scroller_handle_key) — the reading key stays the reader's
       const op = FOCUS_KEYS[ev.key] ?? (ev.key === ' ' && !this.overlays.popupScrolls ? 'select' : undefined)
-      if (op && this.overlays.focusKey(this.session.state, this.ctx, op)) {
+      if (op && this.overlays.focusKey(this.session.state, this.ctx, op, ev.key === 'Enter' && !ev.repeat)) {
         ev.preventDefault()
         this.inputActed()
         this.needsRender = true

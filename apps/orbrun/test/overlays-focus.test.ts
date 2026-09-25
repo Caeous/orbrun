@@ -304,6 +304,43 @@ describe('prompt card', () => {
     expect(ov.focusKey(st, ctx, 'select')).toBe(true)
     expect(sent).toEqual([{ msg: 'input', text: 'n' }])
   })
+  it('a choice prompt that ignores Enter (the ring swap): a fresh Enter fires the lit chip at once, space and a repeat stay raw', () => {
+    const { ov, st, sent, frame, host } = setup()
+    // item-use.cc `_item_swap_prompt`, as it prints
+    reduce(st, {
+      msg: 'msgs',
+      messages: [
+        { text: 'To do this, you must remove one of the following items:', channel: 2 },
+        { text: '(<w>?</w> for menu, <w>Esc</w> to cancel)', channel: 2 },
+        { text: '<w><<</w> or c - a ring of protection from fire (worn)', channel: 0 },
+        { text: '<w>></w> or d - a ring of strength (worn)', channel: 0 },
+      ],
+    })
+    reduce(st, { msg: 'input_mode', mode: MouseMode.PROMPT })
+    const ctx = frame('keyboard')
+    expect(ctx.mode).toBe('prompt')
+    expect(ov.focusInfo(ctx)?.label).toBe('A ring of protection from fire')
+    // the card asks the question, not the hint line under it
+    expect(host.querySelector('.prompt-card .text')?.textContent).toBe('To do this, you must remove one of the following items:')
+    expect(host.querySelector('.prompt-card.armed')).not.toBeNull()
+    // space is the prompt's cancel on the server, and a held Enter's repeats are not a choice
+    expect(ov.focusKey(st, ctx, 'select')).toBe(false)
+    expect(ov.focusKey(st, ctx, 'select', false)).toBe(false)
+    expect(ov.focusKey(st, ctx, 'select', true)).toBe(true)
+    expect(sent).toEqual([{ msg: 'input', text: 'c' }])
+  })
+  it('a fresh Enter stays raw on a yes/no and on the stat gain until an arrow', () => {
+    const { ov, st, frame } = setup()
+    reduce(st, { msg: 'msgs', messages: [{ text: 'Really attack? (y/n)', channel: 2 }] })
+    reduce(st, { msg: 'input_mode', mode: MouseMode.YESNO })
+    let ctx = frame('keyboard')
+    expect(ov.focusKey(st, ctx, 'select', true)).toBe(false)
+    reduce(st, { msg: 'msgs', messages: [{ text: 'Increase (S)trength, (I)ntelligence, or (D)exterity? ', channel: 2 }] })
+    reduce(st, { msg: 'input_mode', mode: MouseMode.PROMPT })
+    ctx = frame('keyboard')
+    expect(ctx.mode).toBe('prompt')
+    expect(ov.focusKey(st, ctx, 'select', true)).toBe(false)
+  })
   it('multi-choice prompt: one chip per parsed hotkey, wrapping; the cursor and A pick, not X and Y', () => {
     const { ov, st, sent, frame, host } = setup()
     reduce(st, { msg: 'msgs', messages: [{ text: '(D)rop, (w)ield, or (e)at?', channel: 2 }] })

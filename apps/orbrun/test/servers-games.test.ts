@@ -45,7 +45,6 @@ describe('offline profiles', () => {
   beforeEach(() => {
     store.clear()
     vi.stubEnv('MODE', 'development')
-    vi.stubEnv('DEV', true)
   })
   afterEach(() => vi.unstubAllEnvs())
 
@@ -102,7 +101,7 @@ describe('offline profiles', () => {
   it('is not offered where no engine is served', () => {
     addAccount(sam)
     setChosenAccount(sam)
-    vi.stubEnv('DEV', false)
+    vi.stubEnv('MODE', 'test')
     expect(listAccounts()).toEqual([])
     expect(findServer('offline')).toBeNull()
     expect(getChosenAccount()).toBeNull()
