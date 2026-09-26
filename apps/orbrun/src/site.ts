@@ -27,8 +27,6 @@ export interface Page {
   name: string
   /** the document's sections listed at its head, to jump to (a changelog's releases are not worth it) */
   contents?: boolean
-  /** the document's sections the page reads, by heading, when it reads only some: a page for a newcomer, not the manual */
-  sections?: string[]
 }
 
 export const HOME: Page = {
@@ -45,10 +43,9 @@ export const PAGES: Page[] = [
     path: '/about',
     name: 'About',
     doc: 'ABOUT.md',
-    sections: ['Features', 'Security and privacy'],
-    title: 'About & credits - Orbrun',
+    title: 'About Orbrun - DCSS in first person',
     description:
-      'Orbrun plays Dungeon Crawl Stone Soup in first person with a gamepad: everything it does, and what it does and does not do with your account.',
+      'Orbrun plays Dungeon Crawl Stone Soup in first person with a gamepad, on the public servers with your own account. See it, and what it does.',
   },
   {
     path: '/about/new',

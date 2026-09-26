@@ -47,10 +47,21 @@
   // the bar is the room while the room is under it, and takes a ground of its own once words are
   const bar = document.querySelector('.bar')
   const hero = document.querySelector('.hero')
-  const ground = () => bar.classList.toggle('solid', !hero || hero.getBoundingClientRect().bottom <= bar.offsetHeight)
+  // About's hero has words under the still: the bar takes its ground once they reach it, not once the whole hero is gone
+  const words = hero?.querySelector('.title')
+  const ground = () =>
+    bar.classList.toggle('solid', !hero || (words ?? hero).getBoundingClientRect()[words ? 'top' : 'bottom'] <= bar.offsetHeight)
   addEventListener('scroll', ground, { passive: true })
   addEventListener('resize', ground, { passive: true })
   ground()
+
+  // About's comparison: WebTiles over Orbrun, cut where the slider stands
+  for (const fig of document.querySelectorAll('.compare')) {
+    const range = fig.querySelector('input')
+    const set = () => fig.style.setProperty('--x', `${range.value}%`)
+    range.addEventListener('input', set)
+    set()
+  }
 
   // ---------------------------------------------------------------- the pad
   let cursor = null
@@ -78,7 +89,7 @@
     else scrollBy({ top: dir * innerHeight * 0.45, behavior: 'smooth' })
   }
   const section = (dir) => {
-    const heads = [...document.querySelectorAll('.doc h2')]
+    const heads = [...document.querySelectorAll('.doc h2, .label h2')]
     if (!heads.length) return
     const now = heads.findLastIndex((h) => h.getBoundingClientRect().top <= 96)
     const next = heads[Math.max(0, Math.min(heads.length - 1, now + dir))]
@@ -101,12 +112,36 @@
       fn()
     }
   }
+  // About's pad board: the standard mapping's index of each button it draws
+  const board = document.querySelector('.padboard')
+  const rows = board ? [...board.querySelectorAll('li[data-pad]')].map((li) => ({ li, names: li.dataset.pad.split(' ') })) : []
+  const INDEX = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, SELECT: 8, START: 9, L3: 10, R3: 11 }
+  const boardInView = () => {
+    if (!board) return false
+    const r = board.getBoundingClientRect()
+    return r.top < innerHeight * 0.7 && r.bottom > innerHeight * 0.3
+  }
+
   let polling = false
   const tick = (t) => {
     const pad = [...navigator.getGamepads()].find((p) => p && p.connected)
     if (pad) {
       document.body.classList.add('pad')
       const b = (i) => !!pad.buttons[i]?.pressed
+      if (rows.length) {
+        const stick = Math.hypot(pad.axes[0] ?? 0, pad.axes[1] ?? 0) > 0.5
+        const dpad = b(12) || b(13) || b(14) || b(15)
+        for (const { li, names } of rows) li.classList.toggle('lit', names.some((n) => (n === 'LSTICK' ? stick : n === 'DPAD' ? dpad : b(INDEX[n]))))
+      }
+      if (boardInView()) {
+        // only the right stick moves on, so every other button can be tried
+        const ry = pad.axes[3] ?? 0
+        if (Math.abs(ry) > 0.2) scrollBy(0, ry * 18)
+        // and a button still down when the board scrolls away does nothing until it is pressed again
+        for (const n of ['up', 'down', 'a', 'b', 'lb', 'rb']) held.set(n, { at: t, next: Infinity })
+        requestAnimationFrame(tick)
+        return
+      }
       const ly = pad.axes[1] ?? 0
       press('up', b(12) || ly < -0.6, () => step(-1), t, true)
       press('down', b(13) || ly > 0.6, () => step(1), t, true)

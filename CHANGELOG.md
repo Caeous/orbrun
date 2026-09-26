@@ -2,6 +2,10 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.2 — 2026-09-25
+
+- A new About page shows Orbrun in real games, from Lair to the Abyss; What’s new and Add to Steam match it.
+
 ## 0.2.1 — 2026-09-25
 
 - Add a server has its own page: type an address, and the server lands on the list with the cursor on it. A server you added can be removed again.

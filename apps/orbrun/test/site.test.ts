@@ -26,7 +26,7 @@ describe('the site’s pages', () => {
     for (const p of ['/', '/about', '/about/new', '/about/steam']) expect(addressKind(p), p).toBe('page')
     for (const p of ['/settings', '/settings/camera', '/accounts/add', '/watch', '/watch/cdi', '/watch/cdi/bob', '/play/cdi/orbrun/dcss-0.34', '/login/cdi', '/register/cko'])
       expect(addressKind(p), p).toBe('app')
-    for (const p of ['/wp-admin', '/about/nope', '/index.php', '/play', '/settings/controls/gamepad/x']) expect(addressKind(p), p).toBe('none')
+    for (const p of ['/wp-admin', '/about/nope', '/about/controls', '/about/how-it-works', '/index.php', '/play', '/settings/controls/gamepad/x']) expect(addressKind(p), p).toBe('none')
   })
 
   it('sends an address that moved to where it went', () => {
@@ -64,8 +64,11 @@ describe('the site’s pages', () => {
     const data = JSON.parse(doc.querySelector('script[type="application/ld+json"]')!.textContent!)
     expect(data['@graph'][1].itemListElement.map((i: { item: string }) => i.item)).toEqual([`${SITE_URL}/`, `${SITE_URL}/about`, `${SITE_URL}/about/steam`])
     expect(doc.querySelectorAll('h1')).toHaveLength(1)
-    expect(doc.querySelector('h1')?.textContent).toBe('Add to Steam')
+    expect(doc.querySelector('h1')?.textContent).toBe('@Add to Steam')
+    // each step a card of its own, its number set apart, the heading's words as the document has them
     expect(doc.querySelector('.doc h2')?.textContent).toBe('1. Get a browser')
+    expect(doc.querySelector('.doc .part h2 .n')?.textContent).toBe('1.')
+    expect(doc.querySelectorAll('.doc .part')).toHaveLength(doc.querySelectorAll('.doc h2').length)
     expect(doc.querySelector('.doc')?.textContent).toContain('flatpak --user override')
     // the page is the site's, not the app's: nothing boots, and Play is a link to it
     expect(doc.getElementById('app')).toBeNull()
@@ -108,22 +111,40 @@ describe('the site’s pages', () => {
     void window.happyDOM.close()
   })
 
-  it('gives About the whole pitch, the parts of ABOUT.md a newcomer wants, and no list of the other documents or closing call to play', () => {
+  it('shows About rather than describing it: acts that each open on a label, stills of real games, the pad, the questions', () => {
     const window = new Window()
     const doc = new window.DOMParser().parseFromString(sitePageHtml(pageAt('/about')!, window as never), 'text/html')
     expect(doc.querySelector('.hero h1')?.textContent).toBe('Orbrun')
-    // what Orbrun is, three lines each stood on one of the room's own tiles
-    expect(Array.from(doc.querySelectorAll('.things h3'), (h) => h.textContent)).toEqual(['Inside the dungeon', 'Made for a controller', 'Your WebTiles, as it is'])
-    expect(doc.querySelectorAll('.things .tile > span[style*="background-position"]')).toHaveLength(3)
-    expect(Array.from(doc.querySelectorAll('.doc h2'), (h) => h.textContent)).toEqual(pageAt('/about')!.sections)
-    // the manual's other parts stay in ABOUT.md: its opening (the hero says it), the features, the Steam steps, the version notes
-    const words = doc.querySelector('.doc')!.textContent!
-    expect(words).not.toContain('If you play WebTiles, this is your game')
-    expect(words).not.toContain('direction keys are relative to where you are facing')
-    expect(words).not.toContain('Most of the code was written')
-    // the bar already links them, and its Play button stands in for a closing one
-    expect(doc.querySelector('.read')).toBeNull()
-    expect(doc.querySelector('.cta')).toBeNull()
+    expect(Array.from(doc.querySelectorAll('.label h2'), (h) => h.textContent)).toEqual([
+      '@The real game',
+      '@Every branch',
+      '@Made for a controller',
+      '@On the Steam Deck',
+      '@The keyboard you know',
+      '@And more',
+      '@Your account stays yours',
+      '@Questions',
+    ])
+    // every still the page names is one the site ships
+    const srcs = Array.from(doc.querySelectorAll('img, source'), (el) => el.getAttribute('src') ?? el.getAttribute('srcset')!).filter((s) => s.startsWith('/about/'))
+    expect(srcs.length).toBeGreaterThan(8)
+    for (const src of srcs) expect(fs.existsSync(path.join(here, '..', 'public', src)), src).toBe(true)
+    // WebTiles and Orbrun, the same moment, one over the other
+    expect(doc.querySelectorAll('.compare img')).toHaveLength(2)
+    expect(doc.querySelectorAll('.branches figure')).toHaveLength(4)
+    // the pad board names each button as the standard mapping does, drawn as the game draws it
+    const pads = Array.from(doc.querySelectorAll('.padboard li'), (li) => li.getAttribute('data-pad'))
+    expect(pads).toContain('A')
+    expect(pads).toContain('LSTICK DPAD')
+    expect(doc.querySelectorAll('.padboard li .glyph svg').length).toBeGreaterThanOrEqual(pads.length)
+    // the Deck, with the game on its screen
+    expect(Array.from(doc.querySelectorAll('.deck img'), (i) => i.getAttribute('src'))).toEqual(['/about/deck.webp', '/about/deck-screen.webp'])
+    // the questions, for a search engine too
+    const faq = Array.from(doc.querySelectorAll('script[type="application/ld+json"]'), (s) => JSON.parse(s.textContent!)).find((d) => d['@type'] === 'FAQPage')
+    expect(faq.mainEntity).toHaveLength(doc.querySelectorAll('.faq details').length)
+    // no manual, and the card is the hero
+    expect(doc.querySelector('.doc')).toBeNull()
+    expect(doc.querySelector('meta[property="og:image"]')?.getAttribute('content')).toBe(`${SITE_URL}/about/card.jpg`)
     expect(Array.from(doc.querySelectorAll('.bar nav a:not([target])'), (a) => a.getAttribute('href'))).toEqual(['/about', '/about/new', '/about/steam'])
     void window.happyDOM.close()
   })
