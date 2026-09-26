@@ -78,6 +78,8 @@ export class GamepadInput {
   private opts: Required<GamepadOptions>
   private listeners = new Set<(e: PadEvent) => void>()
   private lastActive = -1
+  /** Each pad's axes as first seen, keyed by id and index: what "at rest" means for that pad. */
+  private rest = new Map<string, readonly number[]>()
   kind: PadKind = 'generic'
   connected = false
   private looking = false
@@ -153,21 +155,31 @@ export class GamepadInput {
       if (this.lastActive === p.index) pad = p
     }
     if (!pad) for (const p of pads) if (p) pad = pad || p
+    // An axis counts as moved against where that pad's axis rested when first seen, not
+    // against 0: an unmapped pad (a Steam Deck's external controller as Chrome sees the raw
+    // device) rests its triggers at -1, and would otherwise be "active" every frame and
+    // take the primary from the pad actually in use. When several wake on the same frame,
+    // as Steam Input's virtual pad and its raw twin do, the standard-mapped one wins.
+    let woke: Gamepad | null = null
     for (const p of pads) {
       if (!p) continue
-      const active = p.buttons.some((b) => b.pressed) || p.axes.some((a) => Math.abs(a) > 0.5)
-      if (active) {
-        this.lastActive = p.index
-        pad = p
-      }
+      let rest = this.rest.get(p.id + p.index)
+      if (!rest) this.rest.set(p.id + p.index, (rest = p.axes.slice()))
+      const active = p.buttons.some((b) => b.pressed) || p.axes.some((a, i) => Math.abs(a - (rest[i] ?? 0)) > 0.5)
+      if (active && (!woke || (woke.mapping !== 'standard' && p.mapping === 'standard'))) woke = p
+    }
+    if (woke) {
+      this.lastActive = woke.index
+      pad = woke
     }
     this.connected = !!pad
     if (!pad) return
     this.kind = detectKind(pad.id)
+    const { buttons, axes } = standardView(pad)
     // buttons
-    for (let i = 0; i < BUTTON_INDEX.length && i < pad.buttons.length; i++) {
+    for (let i = 0; i < BUTTON_INDEX.length && i < buttons.length; i++) {
       const b = BUTTON_INDEX[i]
-      const down = pad.buttons[i].pressed || pad.buttons[i].value > 0.5
+      const down = buttons[i]
       const was = this.pressed.has(b)
       if (down && !was) {
         this.pressed.set(b, now)
@@ -209,8 +221,8 @@ export class GamepadInput {
       }
     }
     // left stick 8-way with hysteresis
-    const lx = pad.axes[0] || 0
-    const ly = pad.axes[1] || 0
+    const lx = axes[0] || 0
+    const ly = axes[1] || 0
     const mag = Math.hypot(lx, ly)
     let newStick: Dir8 | null = this.stickDir
     if (this.stickDir === null) {
@@ -242,8 +254,8 @@ export class GamepadInput {
     // resting a little off centre must not steer the camera, nor count as the
     // pad speaking every frame (game.ts `pad`), which would keep the prompts
     // in pad glyphs while the player is on the keyboard
-    const rx = pad.axes[2] || 0
-    const ry = pad.axes[3] || 0
+    const rx = axes[2] || 0
+    const ry = axes[3] || 0
     const rm = Math.hypot(rx, ry)
     if (rm > (this.looking ? this.opts.deadzoneR : this.opts.enterR)) {
       const k = ((rm - this.opts.deadzoneR) / (1 - this.opts.deadzoneR)) ** 2
@@ -255,6 +267,49 @@ export class GamepadInput {
       this.emit({ type: 'look', dx: 0, dy: 0 })
     }
   }
+}
+
+/** Standard-layout slot (index into BUTTON_INDEX) of each raw button, by raw index; -1 is a gap. */
+// Linux xpad (a wired Xbox pad, or Steam's virtual one when the browser gets it raw):
+// A B X Y LB RB Back Start Guide L3 R3; axes LX LY LT RX RY RT, then the hat
+const XPAD_BUTTONS = [0, 1, 2, 3, 4, 5, 8, 9, 16, 10, 11]
+// Linux HID (an Xbox pad over Bluetooth): A B _ X Y _ LB RB _ _ Back Start Guide L3 R3;
+// axes LX LY RX RY RT LT, then the hat
+const BT_BUTTONS = [0, 1, -1, 2, 3, -1, 4, 5, -1, -1, 8, 9, 16, 10, 11]
+
+/**
+ * A pad's buttons (down or not, in BUTTON_INDEX order) and its sticks (LX LY RX RY)
+ * in the standard layout. The browser maps the pads it knows; one it does not (an Xbox
+ * pad on a Steam Deck, read raw) comes in the order Linux lists its controls, with the
+ * triggers on axes resting at -1 and the d-pad as a hat on the two axes after the rest.
+ */
+export function standardView(pad: Gamepad): { buttons: boolean[]; axes: number[] } {
+  const raw = pad.buttons.map((b) => b.pressed || b.value > 0.5)
+  if (pad.mapping === 'standard') return { buttons: raw, axes: pad.axes.slice(0, 4) }
+  const bt = pad.buttons.length >= BT_BUTTONS.length
+  const xpad = !bt && pad.buttons.length === XPAD_BUTTONS.length
+  if (!bt && !xpad) {
+    // an unknown layout: its buttons as they come, the d-pad from a hat if it has one
+    const buttons = raw.slice()
+    if (pad.axes.length >= 8) hat(buttons, pad.axes[6], pad.axes[7])
+    return { buttons, axes: pad.axes.slice(0, 4) }
+  }
+  const buttons: boolean[] = new Array(BUTTON_INDEX.length).fill(false)
+  const slots = bt ? BT_BUTTONS : XPAD_BUTTONS
+  slots.forEach((slot, i) => { if (slot >= 0 && raw[i]) buttons[slot] = true })
+  const a = pad.axes
+  const trigger = (v: number | undefined) => v !== undefined && v > 0.2
+  buttons[6] = buttons[6] || trigger(bt ? a[5] : a[2])
+  buttons[7] = buttons[7] || trigger(bt ? a[4] : a[5])
+  if (a.length >= 8) hat(buttons, a[6], a[7])
+  return { buttons, axes: bt ? [a[0], a[1], a[2], a[3]] : [a[0], a[1], a[3], a[4]] }
+}
+
+function hat(buttons: boolean[], hx: number, hy: number) {
+  buttons[12] = buttons[12] || hy < -0.5
+  buttons[13] = buttons[13] || hy > 0.5
+  buttons[14] = buttons[14] || hx < -0.5
+  buttons[15] = buttons[15] || hx > 0.5
 }
 
 function dirFromDelta(dx: number, dy: number): Dir8 {
