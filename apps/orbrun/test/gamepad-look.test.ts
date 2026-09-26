@@ -73,27 +73,3 @@ describe('right stick look has hysteresis', () => {
     expect(events.map((e) => e.type === 'look' && e.start === true)).toEqual([true, false, false, false])
   })
 })
-
-describe('a standard-mapped pad wins over an unmapped one', () => {
-  it('the raw twin of a Steam Input pad is ignored, even when it is the one active last', () => {
-    const raw = { ...fakePad([0, 0, -1, 0, 0, -1, 0, 0]), index: 1, mapping: '' } as unknown as Gamepad
-    // the raw device's bumper sits at index 6, where the standard layout has LT
-    raw.buttons[6] = { pressed: true, touched: true, value: 1 }
-    vi.stubGlobal('navigator', { getGamepads: () => [fakePad([0, 0, 0, 0]), raw] })
-    const gp = new GamepadInput()
-    const events: PadEvent[] = []
-    gp.on((e) => events.push(e))
-    gp.poll(0)
-    expect(events).toEqual([])
-    expect(gp.isHeld('LT')).toBe(false)
-  })
-
-  it('an unmapped pad alone is still read', () => {
-    const raw = { ...fakePad([0, 0, 0, 0]), mapping: '' } as unknown as Gamepad
-    raw.buttons[0] = { pressed: true, touched: true, value: 1 }
-    vi.stubGlobal('navigator', { getGamepads: () => [raw] })
-    const gp = new GamepadInput()
-    gp.poll(0)
-    expect(gp.isHeld('A')).toBe(true)
-  })
-})

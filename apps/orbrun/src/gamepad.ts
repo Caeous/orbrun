@@ -145,13 +145,7 @@ export class GamepadInput {
 
   /** Call every animation frame. */
   poll(now: number) {
-    const all = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : []
-    // Only a standard-mapped pad is read while there is one. On a Steam Deck, Chrome
-    // with udev access sees an external pad twice: Steam Input's virtual pad (standard)
-    // and the raw device (unmapped: bumpers where the triggers go, triggers and d-pad
-    // on axes), and pressing either wakes both, so "most recently active" would read
-    // the raw one half the time.
-    const pads = all.some((p) => p?.mapping === 'standard') ? all.filter((p) => p?.mapping === 'standard') : all
+    const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : []
     let pad: Gamepad | null = null
     // most recently active pad is primary
     for (const p of pads) {
