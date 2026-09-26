@@ -686,6 +686,9 @@ pollFrame = requestAnimationFrame(tick)
 
 window.addEventListener('beforeunload', (ev) => {
   if (session && session.playing) {
+    // closing the tab hides it only as the page goes, too late for the save: this is the last moment the engine
+    // lives, and it saves on its own thread while the leave prompt is up
+    session.checkpoint()
     ev.preventDefault()
     ev.returnValue = ''
   }
