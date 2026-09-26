@@ -256,8 +256,9 @@ export interface Billboard {
   alpha?: number
   /**
    * Lies flat on the floor instead of standing: a corpse or a skeleton. A
-   * renderer lays it face up with the tile's top to the north, as the map
-   * draws it; `height` is then its length, the size it would stand.
+   * renderer lays it face up with the tile's top away from the eye, turning
+   * with the view as a standing sprite does; `height` is then its length,
+   * the size it would stand.
    */
   lying?: boolean
   /** Attitude of an actor, for tinting rings and lists (WebTiles monster_list.js names). */

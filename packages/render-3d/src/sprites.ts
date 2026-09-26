@@ -122,7 +122,7 @@ export interface StandOptions {
   /** The hull round the block, in texels: 1 the ink, SEL_GROW the selected shell, 0 none. */
   grow?: number
   lift?: number
-  /** Laid face up on the floor, the tile's top to the north, instead of stood up (a corpse). */
+  /** Laid face up on the floor, the tile's top away from the eye, instead of stood up (a corpse). */
   lie?: boolean
   moverId?: number
 }
@@ -155,7 +155,7 @@ export function stand(x: number, y: number, layers: readonly SpriteLayer[], o: S
     const ghost = o.pass === 'ghostVisible' || o.pass === 'ghostRemembered'
     let mode = 0
     if (o.lie) mode |= MODE_LIE
-    else if (o.yaw === undefined) mode |= MODE_BILLBOARD
+    if (o.yaw === undefined) mode |= MODE_BILLBOARD
     if (solid) mode |= MODE_THICK
     if (o.shadeMap) mode |= MODE_SHADE_MAP
     // A board at a heading (an open door in its wall run) is seen from every angle, edge-on as the player walks

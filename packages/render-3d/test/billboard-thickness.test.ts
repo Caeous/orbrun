@@ -166,11 +166,10 @@ describe('billboard thickness', () => {
     const body = sprites.find((i) => i.pass === 'opaque')!
     const k = 0.8 / 32
     const mode = body.misc[0]
-    // lying, fixed to the map's north rather than turned to the eye
+    // lying, and turned with the eye like a standing sprite: its top always away from the viewer
     expect(mode & MODE_LIE).toBeTruthy()
-    expect(mode & MODE_BILLBOARD).toBeFalsy()
+    expect(mode & MODE_BILLBOARD).toBeTruthy()
     expect(mode & MODE_THICK).toBeTruthy()
-    expect(body.misc[3]).toBe(0)
     // the front is the top face: the block's underside clears the floor's decals
     expect(body.z[0] - body.z[1]).toBeCloseTo(LIE_LIFT)
     // the frame's y is measured from the cell's middle: RECT's 4 rows at the tile's top lie north of it
