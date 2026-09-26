@@ -1,14 +1,14 @@
 import { h, type Child } from './dom'
 
 /**
- * The repository's own documents (ABOUT.md, CHANGELOG.md) drawn in the
- * front end, so About and What's new read in place rather than in a tab.
+ * The repository's own documents (ABOUT.md, CHANGELOG.md, STEAM.md) as the
+ * site's About pages have them, drawn at build time (../site-pages.ts).
  *
  * A small reader for what those files use, not a Markdown implementation:
  * headings, paragraphs, bullet lists (with wrapped lines), fenced code,
  * tables, and inline code, emphasis, links and autolinks. Raw HTML and
- * comments are skipped, as is anything that draws nothing on this screen
- * (the logo, screenshots). Links to other files of the repository point at
+ * comments are skipped, as is anything that has no place on the page (the
+ * logo, screenshots). Links to other files of the repository point at
  * them on GitHub; links within the document are left as words.
  */
 

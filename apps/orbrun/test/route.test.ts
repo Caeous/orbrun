@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { addServer, formatRoute, parseRoute, setChosenAccount, setRoute, type Account, type Route } from '../src/servers'
+import { addServer, formatRoute, openPage, parseRoute, setChosenAccount, setRoute, type Account, type Route } from '../src/servers'
 
 const base = 'http://localhost:5173/'
 
@@ -55,7 +55,7 @@ describe('routes', () => {
   })
 
   it('gives the front end’s screens addresses of their own', () => {
-    for (const path of ['settings', 'settings/camera', 'settings/controls/gamepad', 'accounts', 'accounts/add', 'accounts/add/server', 'watch', 'watch/add', 'about', 'about/new', 'about/steam', 'about/orbrun']) {
+    for (const path of ['settings', 'settings/camera', 'settings/controls/gamepad', 'accounts', 'accounts/add', 'accounts/add/server', 'watch', 'watch/add']) {
       expect(parseRoute(base + path)).toEqual({ kind: 'menu', path })
       expect(parseRoute(base + path + '/')).toEqual({ kind: 'menu', path })
     }
@@ -66,7 +66,7 @@ describe('routes', () => {
   })
 
   it('ignores paths it does not know', () => {
-    for (const path of ['nowhere', 'play', 'play/cdi', 'play/cdi/orbrun', 'play/cdi/orbrun/dcss-0.34/more', 'watch/nowhere.example', 'watch/cdi/bob/more', 'lobby/cdi', 'about/nowhere', 'login/cdi/orbrun/more'])
+    for (const path of ['nowhere', 'play', 'play/cdi', 'play/cdi/orbrun', 'play/cdi/orbrun/dcss-0.34/more', 'watch/nowhere.example', 'watch/cdi/bob/more', 'lobby/cdi', 'about', 'about/new', 'login/cdi/orbrun/more'])
       expect(parseRoute(base + path)).toEqual({ kind: 'home' })
   })
 
@@ -158,13 +158,28 @@ describe('routes', () => {
       expect(history.length).toBe(deep)
     })
 
-    it('names the tab after the page it moves to, and leaves a game’s to the game', () => {
-      setRoute({ kind: 'menu', path: 'about/steam' })
-      expect(document.title).toBe('Add Orbrun to Steam and the Steam Deck')
+    it('gives the tab back its own title out of a game, and leaves a game’s to the game', () => {
+      document.title = 'orbrun the Chiller | Vine Stalker - Orbrun'
       setRoute({ kind: 'play', account: orbrun, gameId: 'dcss-0.34' })
-      expect(document.title).toBe('Add Orbrun to Steam and the Steam Deck')
+      expect(document.title).toBe('orbrun the Chiller | Vine Stalker - Orbrun')
       setRoute({ kind: 'menu', path: 'settings' })
       expect(document.title).toBe('Orbrun - Dungeon Crawl Stone Soup in first person')
+    })
+
+    it('leaves for the site’s pages with the launch flags, and in a window of its own without adding to history', () => {
+      const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {})
+      const replace = vi.spyOn(window.location, 'replace').mockImplementation(() => {})
+      try {
+        history.replaceState(null, '', '/?perf')
+        openPage('/about')
+        expect(assign).toHaveBeenCalledWith('/about?perf')
+        history.replaceState(null, '', '/?fullscreen')
+        openPage('/about')
+        expect(replace).toHaveBeenCalledWith('/about?fullscreen')
+      } finally {
+        assign.mockRestore()
+        replace.mockRestore()
+      }
     })
 
     it('leaves the address alone when it already says this', () => {

@@ -5,7 +5,7 @@ import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
 import { FocusNav, type Focusable } from './focus'
 import { RoomView } from './room/view'
-import { addAccount, addServer, removeServer, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { addAccount, addServer, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import type { Session } from './session'
 import { deleteProfileSaves, profileName, type EngineNote } from '@orbrun/offline'
@@ -15,10 +15,6 @@ import { Osk, oskPrompts } from './osk'
 import { glyph, glyphName, type GlyphName } from './glyphs'
 import { pickSplash } from './splash'
 import { canQuit, quit } from './quit'
-import { renderMarkdown } from './markdown'
-import aboutText from '../../../ABOUT.md?raw'
-import changelogText from '../../../CHANGELOG.md?raw'
-import steamText from '../../../STEAM.md?raw'
 
 /** What to do once a fresh connection is up: rejoin a game or a spectate. */
 export type Intent = { kind: 'play'; gameId: string } | { kind: 'watch'; username: string }
@@ -28,16 +24,9 @@ export type Intent = { kind: 'play'; gameId: string } | { kind: 'watch'; usernam
  * shoulder buttons walk; the rest are the flows off them: the account and
  * server flows off the account row, the login and register forms.
  */
-export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'servers' | 'add-server' | 'login' | 'register' | 'about' | 'exit' | 'doc'
+export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'servers' | 'add-server' | 'login' | 'register' | 'exit' | 'doc'
 
 const SECTIONS: View[] = ['home', 'watch', 'settings']
-
-/** the About page's documents, by their address (`/about/new`) */
-const ABOUT_DOCS = {
-  orbrun: ['About Orbrun', aboutText],
-  new: ['What’s new', changelogText],
-  steam: ['Add to Steam', steamText],
-} as const
 
 /** the way off a screen (`data-focus`) */
 const BACK = 'back'
@@ -98,6 +87,8 @@ export interface FrontHooks {
   watch(session: Session, username: string): void
   /** the screen on show is `r` now: the address bar says so, the connection stays */
   at(r: Route): void
+  /** leave the app for one of the site's pages (site.ts), About & credits; servers.ts openPage when not given */
+  page?(path: string): void
   /** a server's round trip in milliseconds for the server list, or null when it did not answer (ping.ts) */
   ping?(server: ServerInfo): Promise<number | null>
 }
@@ -209,7 +200,7 @@ export class FrontEnd {
   private detailsOpen = new Set<number>()
   private legend: HTMLElement | null = null
   private legendShape = ''
-  /** the document on show (About, What's new, a morgue file): its scroll region, which up and down move */
+  /** the document on show (a morgue file): its scroll region, which up and down move */
   private docScroller: HTMLElement | null = null
   /** what the document goes back to: the screen it was opened from */
   private docFrom: (() => void) | null = null
@@ -477,7 +468,7 @@ export class FrontEnd {
       if (from) from()
       else this.showHome()
     } else if (v === 'watch') this.goHome()
-    else if (v === 'accounts' || v === 'about') this.showHome()
+    else if (v === 'accounts') this.showHome()
     else if (v === 'exit') {
       // the screen behind the dialog is still the one to show: it is drawn again as it was (the shape it was
       // drawn from is kept, so it comes back as a redraw and does not play its way in a second time)
@@ -571,10 +562,6 @@ export class FrontEnd {
     } else if (root === 'watch') {
       if (sub === 'add') this.showAddServer('watch')
       else this.showServers('watch')
-    }
-    else if (root === 'about') {
-      if (sub === 'orbrun' || sub === 'new' || sub === 'steam') this.showAboutDoc(sub)
-      else this.showAbout()
     } else this.showHome()
   }
 
@@ -980,7 +967,8 @@ export class FrontEnd {
     // Only game actions in the main list; identity and information share a quiet footer.
     const accountRow = chosen ? rows.shift() : undefined
     const utilities: Row[] = accountRow ? [accountRow] : []
-    utilities.push({ id: 'about', label: 'About & credits', marker: '?', hint: 'About Orbrun, what’s new, and the people behind the game.', fn: () => this.showAbout() })
+    // the About pages are the site's, not a screen of the app: web pages of their own, for a reader who has never played
+    utilities.push({ id: 'about', label: 'About & credits', marker: '?', hint: 'About Orbrun, what’s new, and the people behind the game.', fn: () => (this.hooks.page ?? openPage)('/about') })
     const onPad = !!this.hooks.padConnected?.()
     rows.push({ id: 'settings', label: 'Settings', marker: '?', hint: 'Camera, controls, the HUD: kept on this device.' + (onPad ? ' (X)' : ''), fn: () => this.showSettings(() => this.showHome()) })
     // straight under Settings, and only where the browser left no way out of its own: a kiosk window on a
@@ -1049,8 +1037,7 @@ export class FrontEnd {
   }
 
   /**
-   * A document to read on a screen of its own: About, What's new, a morgue
-   * file. It scrolls in a region under the head, with up and down (the
+   * A document to read on a screen of its own: a morgue file. It scrolls in a region under the head, with up and down (the
    * d-pad, the arrows, the right stick, PageUp and PageDown), so the
    * message line and Back keep their place. A body that arrives later shows
    * "Loading…" until it does; one that fails says so, with the document's
@@ -1098,46 +1085,6 @@ export class FrontEnd {
     this.list({ cls: 'doc-list', title: opts.title, lede: opts.lede ?? (this.hooks.padConnected?.() ? 'Up and down scroll it; so does the right stick.' : 'Up and down scroll it.'), rows, below, extra, focus: BACK })
     // the list settles the cursor on Back, the one row: the document, not the cursor, is what up and down move
     this.docScroller = scroller
-  }
-
-  /**
-   * About, what's new and the Steam steps, read here, one step away from the title screen;
-   * the source, the game's own site and PocketZot are the exits, in a new tab.
-   */
-  private showAbout() {
-    this.setView('about', 'about')
-    this.at({ kind: 'menu', path: 'about' })
-    const rows: Row[] = [
-      { id: BACK, label: 'Back', marker: '<', hint: 'Back to the front.', fn: () => this.back() },
-      { id: 'about:doc', label: 'About Orbrun', marker: '?', hint: 'What Orbrun is, how it plays, and what it does with your account.', fn: () => this.showAboutDoc('orbrun') },
-      { id: 'about:new', label: 'What’s new', marker: '?', hint: 'What changed, newest first.', fn: () => this.showAboutDoc('new') },
-      { id: 'about:steam', label: 'Add to Steam', marker: '?', hint: 'Five steps that put Orbrun in your Steam library, on a Deck or a desktop.', fn: () => this.showAboutDoc('steam') },
-    ]
-    const links = h('nav', { class: 'about-links', 'aria-label': 'Links out' })
-    const extra: Focusable[] = []
-    const destinations = [
-      ['Source on GitHub', 'https://github.com/Caeous/orbrun'],
-      ['Dungeon Crawl Stone Soup', 'https://crawl.develz.org/'],
-      ['PocketZot', 'https://pocketzot.app/about'],
-    ]
-    destinations.forEach(([label, href], i) => {
-      const el = h('a', { class: 'item', href, target: '_blank', rel: 'noopener noreferrer', dataset: { focus: 'link:' + i, marker: '+' } }, h('span', { class: 'marker', 'aria-hidden': 'true' }), h('span', { class: 'label' }, label), h('span', { class: 'sub', 'aria-hidden': 'true' }, '↗'))
-      links.append(el)
-      extra.push({ id: 'link:' + i, label, el, row: rows.length + i, activate: () => el.click(), onFocus: () => this.say('Opens in a new tab. Your game stays here.') })
-    })
-    this.list({
-      cls: 'about-list', title: 'About & credits',
-      rows,
-      below: [h('p', { class: 'about-copy' }, 'Orbrun is an unofficial client for Dungeon Crawl Stone Soup on the public servers. Not affiliated with the DCSS team.'), links],
-      extra,
-    })
-  }
-
-  /** One of the About page's documents, at `/about/<which>`. */
-  private showAboutDoc(which: keyof typeof ABOUT_DOCS) {
-    const [title, text] = ABOUT_DOCS[which]
-    this.showDoc({ title, body: () => renderMarkdown(text, { dropTitle: true }), from: () => this.showAbout() })
-    this.at({ kind: 'menu', path: 'about/' + which })
   }
 
   // ------------------------------------------------------------------ watch

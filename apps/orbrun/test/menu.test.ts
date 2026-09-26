@@ -6,7 +6,6 @@ import { settingsPanel } from '../src/settings-panel'
 import type { Session } from '../src/session'
 import { XOM_SPLASHES } from '../src/splash'
 import { findServer, OFFLINE_SERVER, setGames, setToken, type Account, type ServerInfo } from '../src/servers'
-import changelogText from '../../../CHANGELOG.md?raw'
 
 // happy-dom's localStorage has no working methods; give servers.ts a plain one
 const store = new Map<string, string>()
@@ -60,6 +59,7 @@ interface Made {
   watch: ReturnType<typeof vi.fn>
   play: ReturnType<typeof vi.fn>
   logout: ReturnType<typeof vi.fn>
+  page: ReturnType<typeof vi.fn>
 }
 
 const made: FrontEnd[] = []
@@ -86,9 +86,10 @@ function make(session?: (server: ServerInfo, username: string | null) => Session
   const watch = vi.fn()
   const play = vi.fn()
   const logout = vi.fn()
-  const screen = new FrontEnd(host, { connect, session: (s, u) => session?.(s, u) ?? null, logout, play, watch, at: () => {}, padConnected: () => padConnected })
+  const page = vi.fn()
+  const screen = new FrontEnd(host, { connect, session: (s, u) => session?.(s, u) ?? null, logout, play, watch, at: () => {}, page, padConnected: () => padConnected })
   made.push(screen)
-  return { screen, connect, watch, play, logout }
+  return { screen, connect, watch, play, logout, page }
 }
 
 /** The rows of the screen's list: the label of each item, in order (the roster's rows by player). */
@@ -544,7 +545,7 @@ describe('the front end: the home screen', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
-    const { screen } = make(() => s)
+    const { screen, page } = make(() => s)
     expect(Array.from(screen.root.querySelectorAll('.brand > .menu .label'), (el) => el.textContent)).toEqual(['Play DCSS 0.34', 'Watch', 'Settings'])
     press(screen, 'ArrowDown')
     press(screen, 'ArrowDown')
@@ -558,101 +559,49 @@ describe('the front end: the home screen', () => {
     expect(focused(screen)).toBe('account')
     press(screen, 'ArrowRight')
     expect(focused(screen)).toBe('about')
-    pad(screen, 'A')
-    expect(screen.view).toBe('about')
-    pad(screen, 'RB')
-    expect(screen.view).toBe('about')
-    pad(screen, 'B')
-    expect(focused(screen)).toBe('about')
     press(screen, 'ArrowLeft')
     expect(focused(screen)).toBe('account')
     press(screen, 'ArrowDown')
     expect(focused(screen)).toBe('play:dcss-web-0.34')
   })
 
-  it('reads About and What’s new here, and keeps only the source, the game’s site and PocketZot as links out', () => {
-    const { screen, connect } = make()
-    pick(screen, 'About & credits')
-    expect(screen.view).toBe('about')
-    expect(labels(screen)).toEqual(['Back', 'About Orbrun', 'What’s new', 'Add to Steam'])
-    expect(screen.root.querySelector('.about-copy')?.textContent).toContain('Not affiliated with the DCSS team.')
-    const links = Array.from(screen.root.querySelectorAll<HTMLAnchorElement>('.about-links a'))
-    expect(links.map((el) => el.href)).toEqual(['https://github.com/Caeous/orbrun', 'https://crawl.develz.org/', 'https://pocketzot.app/about'])
-    for (const link of links) {
-      expect(link.target).toBe('_blank')
-      expect(link.rel).toBe('noopener noreferrer')
+  it('scrolls a document with up and down, the d-pad and the right stick, while Back keeps the cursor', async () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
+    s.state.exit = { reason: 'dead', message: 'You die...\n', dump: '/crawl/morgue/orbrun/morgue-orbrun-20260910-120000' }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('orbrun the Vexing\n'.repeat(200), { status: 200 })))
+    try {
+      const { screen } = make(() => s)
+      pick(screen, 'Morgue file')
+      await vi.waitFor(() => expect(screen.root.querySelector('.doc-scroll .doc-text')).not.toBeNull())
+      const scroller = screen.root.querySelector('.doc-scroll') as HTMLElement
+      Object.defineProperty(scroller, 'clientHeight', { value: 500 })
+      scroller.scrollTop = 0
+      expect(press(screen, 'ArrowDown')).toBe(true)
+      expect(scroller.scrollTop).toBe(100)
+      screen.pad({ type: 'dir', source: 'dpad', dir: 4 })
+      expect(scroller.scrollTop).toBe(200)
+      screen.pad({ type: 'look', dx: 0, dy: 5 })
+      expect(scroller.scrollTop).toBe(260)
+      press(screen, 'ArrowUp')
+      expect(scroller.scrollTop).toBe(160)
+      press(screen, 'PageDown')
+      expect(scroller.scrollTop).toBe(612)
+      press(screen, 'Home')
+      expect(scroller.scrollTop).toBe(0)
+      expect(focused(screen)).toBe('back')
+    } finally {
+      vi.unstubAllGlobals()
     }
-    expect(focused(screen)).toBe('about:doc')
-    press(screen, 'ArrowDown')
-    press(screen, 'ArrowDown')
-    press(screen, 'ArrowDown')
-    expect(focused(screen)).toBe('link:0')
-    const click = vi.spyOn(links[0], 'click').mockImplementation(() => {})
-    pad(screen, 'A')
-    expect(click).toHaveBeenCalledOnce()
-    // Native links handle Enter themselves, rather than activating twice.
-    expect(press(screen, 'Enter', links[0])).toBe(false)
-    links[1].focus()
-    expect(focused(screen)).toBe('link:1')
-    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('Opens in a new tab. Your game stays here.')
-    press(screen, 'Escape')
-    expect(screen.view).toBe('home')
-    expect(focused(screen)).toBe('about')
-    expect(connect).not.toHaveBeenCalled()
   })
 
-  it('shows About Orbrun and What’s new as documents of their own, scrolled by up and down, and comes back to About', () => {
-    const { screen } = make()
+  it('opens About & credits as the site’s own page, not a screen of the app', () => {
+    const { screen, page, connect } = make()
     pick(screen, 'About & credits')
-    pick(screen, 'About Orbrun')
-    expect(screen.view).toBe('doc')
-    expect(screen.root.querySelector('.frame.doc-list')).not.toBeNull()
-    expect(screen.root.querySelector('.head .place')?.textContent).toBe('About Orbrun')
-    const doc = screen.root.querySelector('.doc-scroll .doc')!
-    // the head names the document; its own title is not said twice
-    expect(doc.querySelector('h2')).toBeNull()
-    expect(doc.querySelector('h3')?.textContent).toBe('Getting started')
-    expect(doc.textContent).toContain('Orbrun is an unofficial')
-    // the document's own links go out, in a new tab (mail goes to the mail client); nothing of the repository's own html is drawn
-    for (const a of Array.from(doc.querySelectorAll('a:not([href^="mailto:"])'))) expect(a.getAttribute('target')).toBe('_blank')
-    expect(doc.querySelector('a[href^="mailto:"]')).not.toBeNull()
-    expect(doc.querySelector('img')).toBeNull()
-    // up and down move the document, not the cursor: Back is the one row and stays under it
-    const scroller = screen.root.querySelector('.doc-scroll') as HTMLElement
-    Object.defineProperty(scroller, 'clientHeight', { value: 500 })
-    scroller.scrollTop = 0
-    expect(press(screen, 'ArrowDown')).toBe(true)
-    expect(scroller.scrollTop).toBe(100)
-    screen.pad({ type: 'dir', source: 'dpad', dir: 4 })
-    expect(scroller.scrollTop).toBe(200)
-    screen.pad({ type: 'look', dx: 0, dy: 5 })
-    expect(scroller.scrollTop).toBe(260)
-    press(screen, 'ArrowUp')
-    expect(scroller.scrollTop).toBe(160)
-    press(screen, 'PageDown')
-    expect(scroller.scrollTop).toBe(612)
-    press(screen, 'Home')
-    expect(scroller.scrollTop).toBe(0)
-    expect(focused(screen)).toBe('back')
-    pad(screen, 'B')
-    expect(screen.view).toBe('about')
-    expect(focused(screen)).toBe('about:doc')
-    pick(screen, 'What’s new')
-    expect(screen.root.querySelector('.head .place')?.textContent).toBe('What’s new')
-    expect(screen.root.querySelector('.doc-scroll .doc h2')).toBeNull()
-    // the first release heading of CHANGELOG.md, whatever it reads at the time
-    expect(screen.root.querySelector('.doc-scroll .doc h3')?.textContent).toBe(/^## (.*)$/m.exec(changelogText)?.[1])
-    press(screen, 'Escape')
-    expect(screen.view).toBe('about')
-    expect(focused(screen)).toBe('about:new')
-    pick(screen, 'Add to Steam')
-    expect(screen.root.querySelector('.head .place')?.textContent).toBe('Add to Steam')
-    expect(screen.root.querySelector('.doc-scroll .doc h2')).toBeNull()
-    expect(screen.root.querySelector('.doc-scroll .doc p')?.textContent).toMatch(/non-Steam game/)
-    press(screen, 'Escape')
-    expect(focused(screen)).toBe('about:steam')
-    press(screen, 'Escape')
+    expect(page).toHaveBeenCalledWith('/about')
     expect(screen.view).toBe('home')
+    expect(connect).not.toHaveBeenCalled()
   })
 
   it('shows connection problems without moving the footer cursor, then clears them after login', () => {
@@ -1129,8 +1078,6 @@ describe('the front end: Play and Watch', () => {
     const walk: [string, string, () => void][] = [
       ['settings', 'settings', () => pick(screen, 'Settings')],
       ['settings/camera', 'settings-group', () => pick(screen, 'Camera')],
-      ['about', 'about', () => (press(screen, 'Escape'), press(screen, 'Escape'), pick(screen, 'About & credits'))],
-      ['about/new', 'doc', () => pick(screen, 'What’s new')],
       ['accounts', 'accounts', () => (press(screen, 'Escape'), press(screen, 'Escape'), pick(screen, 'orbrun · CDI'))],
       ['accounts/add', 'servers', () => pick(screen, 'Add an account')],
     ]

@@ -662,7 +662,8 @@ export function findServer(idOrHost: string): ServerInfo | null {
  * another device. Watching needs no account, so its address names none: it is
  * the chosen account's when that is on the same server. Games on this device
  * drop their `offline-` (`/play/offline/Marc/0.34`). The front end's own screens have addresses too
- * (`/settings/camera`, `/about/new`); the bare root is the home screen.
+ * (`/settings/camera`, `/accounts/add`); the bare root is the home screen. The About pages are the site's, not
+ * the app's (site.ts): `openPage` goes to them.
  * (`watch`'s `username` is the player being watched, not the account's own.)
  */
 export type Route =
@@ -774,6 +775,19 @@ export function formatRoute(r: Route): string {
  */
 function routeDepth(r: Route): number {
   return r.kind === 'home' ? 0 : 1
+}
+
+/**
+ * Leave the app for one of the site's own pages (`/about`), carrying the
+ * query as a Play does (formatRoute), so the flags set at launch come back
+ * with the player. In a window of our own the page takes this one's place in
+ * history rather than adding to it, as setRoute does, so Quit can still close
+ * the window afterwards.
+ */
+export function openPage(path: string) {
+  const next = path + window.location.search
+  if (canQuit()) window.location.replace(next)
+  else window.location.assign(next)
 }
 
 /**

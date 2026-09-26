@@ -1,10 +1,10 @@
 # About Orbrun
 
 Orbrun is an unofficial [DCSS](https://crawl.develz.org) client that puts you
-inside the dungeon. It connects to public
-[WebTiles](https://crawl.develz.org/wordpress/howto) servers, speaks the same
-protocol as the official client, and renders the same game in first person,
-built to be played with a gamepad on a handheld — the Steam Deck first.
+inside the dungeon. It plays on public
+[WebTiles](https://crawl.develz.org/wordpress/howto) servers, or on your own
+device with no server at all, and renders the game in first person, built to
+be played with a gamepad on a handheld — the Steam Deck first.
 
 If you play WebTiles, this is your game, your account, your rc file, and your
 keys. Orbrun adds a 3D view and controller support on top; it does not ask you
@@ -22,29 +22,28 @@ for the five steps that put Orbrun in your library with artwork.
 
 ## Features
 
-- First-person 3D view of the live dungeon: walls, doors, stairs, altars,
-  shops, water and lava, items and monsters as billboards, with memory dimming
-  for what you have seen but cannot see now.
-- Full gamepad support: a contextual A button, tap-or-hold buttons, an
-  action bar that always shows what each button does right now, command
-  menus, an on-screen keyboard for anything that needs text, and hints that
-  teach the controls as you use them.
-- Everything the official client shows: menus, popups, prompts, `--more--`,
-  the monster list, the stats pane, the message log, chat with spectators,
-  the level map, and targeting.
-- Your rc file is honoured, read live from the server — colours, autopickup,
-  `show_more`, `travel_delay`, mouse control, tile options, macros, and the
-  rest. Orbrun never caches or overrides your options.
-- Nothing version-specific is hardcoded: tile tables, enums and atlases come
-  from the connected server at runtime, so new DCSS releases and daily trunk
-  rebuilds work without an Orbrun update.
-- Multiple accounts across multiple servers, plus any server you add by URL.
-- Spectating, with the same view and HUD.
-- Minimap, monster list, edge markers for monsters the camera does not
-  frame, and a settings screen for camera angle, field of view, UI scale,
-  look sensitivity, hints, and the minimap.
-- The menus stand in the Antechamber, a small hall built from the game's own
-  tiles, so the front end is a place rather than a form.
+- **The real game on the real servers.** Orbrun is a WebTiles client, not a
+  port: you log in to CDI, CDO or any other public server with your existing
+  account. Your saves, rc file, macros, morgues and scoreboard entries are the
+  server's, exactly as if you'd played in the official client. New versions
+  and trunk work as soon as a server runs them.
+- **First person.** The same level, drawn around you instead of from above.
+  The map, the monster list, the stats and the message log are all still
+  there.
+- **Gamepad.** Autoexplore, autofight, rest, travel, your gear, casting,
+  firing and examining are each one button away, and a bar shows what each
+  button does in the current mode. An on-screen keyboard covers prompts,
+  inscriptions and chat.
+- **Keyboard unchanged, with one exception.** Direction keys are relative to
+  the way you're facing: `k` steps forward, `h` and `l` turn. Every other key
+  goes to the server untouched.
+- **Offline.** Play with no server at all: the current release or trunk runs
+  in your browser, and the saves stay on that device. These games don't
+  reach a scoreboard.
+- **Spectating**, in first person, from a link you can share.
+- **Made for the Steam Deck, and runs great on it.** It stops drawing
+  whenever nothing on screen is moving. Add Orbrun to Steam as a non-Steam
+  game, or install it as an app.
 
 ## Controls
 
@@ -119,11 +118,6 @@ version. Orbrun never caches or overrides them.
 The hosted site at orbrun.app counts page views anonymously — no cookies, no
 fingerprinting, nothing about your game — and relays the tile data your browser
 needs from the server you picked. Your game traffic never passes through it.
-
-## Not yet
-
-Sound, the feel layer (sway, hit shake, vignettes), a desktop/Steam shell, and
-offline play against a local engine.
 
 ## How it was built
 

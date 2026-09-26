@@ -1,5 +1,5 @@
 import { GAMEDATA_PROXY_PREFIX, MORGUE_PROXY_PREFIX, serveGamedata, serveMorgue } from '../gamedata-proxy'
-import { addressKind, pageAt } from '../src/site'
+import { MOVED, addressKind, pageAt } from '../src/site'
 
 /**
  * orbrun.app: the static build, plus the gamedata proxy the browser cannot do
@@ -73,7 +73,10 @@ export default {
  * (robots.txt, the favicon, the sitemap) is answered as it is.
  */
 async function answerPage(request: Request, url: URL, env: Env): Promise<Response> {
-  // a page has one address: `/About/New` or `/about/new/` is sent there for good, so it is never a second copy
+  // a page has one address: `/About/New` or `/about/new/` is sent there for good, so it is never a second copy;
+  // a page that moved (`/about/orbrun`, now part of `/about`) sends its old address on
+  const moved = MOVED['/' + url.pathname.split('/').filter(Boolean).join('/').toLowerCase()]
+  if (moved) return Response.redirect(new URL(moved + url.search, url).toString(), 301)
   const page = pageAt(url.pathname)
   if (page && url.pathname !== page.path) return Response.redirect(new URL(page.path + url.search, url).toString(), 301)
   const res = await env.ASSETS.fetch(request)

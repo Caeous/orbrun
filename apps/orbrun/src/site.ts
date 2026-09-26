@@ -3,11 +3,12 @@
  * finding, what each is called, and which are the app's own state (a
  * login, a game, a spectate) and stay out of the index.
  *
- * Read by three sides that must agree: the build, which writes each page
- * as HTML of its own with the sitemap beside them (../site-pages.ts); the
- * Worker, which answers an address that is none of these with a 404
- * (../worker/index.ts); and the app, which names its tab after the page it
- * is on (servers.ts setRoute). Nothing here touches the DOM.
+ * Read by three sides that must agree: the build, which writes every page
+ * but the home page (the app) as a web page of its own, and the sitemap
+ * beside them (../site-pages.ts); the Worker, which answers an address that
+ * is none of these with a 404 (../worker/index.ts); and the app, which names
+ * its tab after the page it is on (servers.ts setRoute). Nothing here
+ * touches the DOM.
  */
 
 /** the official deployment: canonical addresses, the sitemap and the social cards name it */
@@ -24,6 +25,10 @@ export interface Page {
   doc?: string
   /** the heading it has on the About page and in a breadcrumb */
   name: string
+  /** the document's sections listed at its head, to jump to (a changelog's releases are not worth it) */
+  contents?: boolean
+  /** the document's sections the page reads, by heading, when it reads only some: a page for a newcomer, not the manual */
+  sections?: string[]
 }
 
 export const HOME: Page = {
@@ -38,18 +43,12 @@ export const PAGES: Page[] = [
   HOME,
   {
     path: '/about',
-    name: 'About & credits',
+    name: 'About',
+    doc: 'ABOUT.md',
+    sections: ['Features', 'Security and privacy'],
     title: 'About & credits - Orbrun',
     description:
-      'What Orbrun is, what’s new, how to add it to Steam, and the projects behind this unofficial first-person client for Dungeon Crawl Stone Soup.',
-  },
-  {
-    path: '/about/orbrun',
-    name: 'About Orbrun',
-    doc: 'ABOUT.md',
-    title: 'About Orbrun - first-person DCSS for gamepads',
-    description:
-      'How Orbrun plays Dungeon Crawl Stone Soup on the public WebTiles servers: first-person 3D, full gamepad support, and your own account, rc file and keys.',
+      'Orbrun plays Dungeon Crawl Stone Soup in first person with a gamepad: everything it does, and what it does and does not do with your account.',
   },
   {
     path: '/about/new',
@@ -62,6 +61,7 @@ export const PAGES: Page[] = [
     path: '/about/steam',
     name: 'Add to Steam',
     doc: 'STEAM.md',
+    contents: true,
     title: 'Add Orbrun to Steam and the Steam Deck',
     description:
       'Five steps that put Orbrun, Dungeon Crawl Stone Soup in first person, in your Steam library on a Steam Deck or a desktop, with artwork and controller support.',
@@ -69,13 +69,18 @@ export const PAGES: Page[] = [
 ]
 
 /** the front end's screens that belong to no server; a settings group is its name in lower case (settings-rows.ts) */
-export const MENU_PATH = /^(settings(\/[a-z]+)?|settings\/controls\/gamepad|accounts(\/add(\/server)?)?|watch(\/add)?|about(\/(orbrun|new|steam))?)$/
+export const MENU_PATH = /^(settings(\/[a-z]+)?|settings\/controls\/gamepad|accounts(\/add(\/server)?)?|watch(\/add)?)$/
 
 /** the verbs of an address that names a server (`/watch/cdi/bob`); which servers there are is the device's business */
 const SERVER_VERBS = new Set(['login', 'register', 'play', 'watch'])
 
 function segments(pathname: string): string[] {
   return pathname.split('/').filter(Boolean)
+}
+
+/** addresses that were pages once, and the page each is now: a link from before still lands */
+export const MOVED: Record<string, string> = {
+  '/about/orbrun': '/about',
 }
 
 /** The page at an address, trailing slash or not; null for the app's own state and for nothing at all. */

@@ -896,11 +896,6 @@ a.item.beside {
   left: 0.3rem;
   font-size: var(--menu-note-size);
 }
-.about-copy {
-  max-width: 46ch;
-  line-height: 1.6;
-  color: var(--ink-dim);
-}
 .about-links {
   display: flex;
   flex-direction: column;
