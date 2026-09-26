@@ -436,6 +436,8 @@ function near(keys: CellKey[], reach: number): Set<CellKey> {
  * A room this wide or narrower is roofed entirely in its own wall type.
  */
 export const CEILING_REACH = 3
+/** How long a corpse or skeleton lies on the floor, in cells, where a standing item is 0.4 tall. */
+export const LYING_LENGTH = 0.6
 
 /** The wall base tiles each built scene's lids were voted from, for the next build to reuse them (Part IV). */
 const wallsOf = new WeakMap<Scene, Map<CellKey, number>>()
@@ -1225,6 +1227,8 @@ function addBillboards(scene: Scene, mc: MapCell, cell: SceneCell, gd: Gamedata,
     // an item
     const name = gd.main.baseName(fgIdx) || ''
     const isTree = /TREE|MANGROVE|PLANT|BUSH/.test(name)
+    // a corpse or a skeleton (tilepick.cc: a skeleton is FOOD_BONE, a humanoid's FOOD_BONE_HUMANOID)
+    const lying = /^(CORPSE|FOOD_BONE)(_|$)/.test(name)
     const layers: { tile: number }[] = []
     if (t.base) layers.push({ tile: t.base })
     layers.push({ tile: fgIdx })
@@ -1237,8 +1241,9 @@ function addBillboards(scene: Scene, mc: MapCell, cell: SceneCell, gd: Gamedata,
       y: mc.y,
       tile: fgIdx,
       kind: 'item',
-      height: isTree ? 0.95 : 0.4,
+      height: isTree ? 0.95 : lying ? LYING_LENGTH : 0.4,
       scenery: isTree || undefined,
+      lying: lying || undefined,
       layers: layers.length > 1 ? layers : undefined,
       statusIcons: badges.length ? badges : undefined,
       alpha,

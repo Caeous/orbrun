@@ -254,6 +254,12 @@ export interface Billboard {
   }[]
   /** Opacity 0..1 when the thing is translucent (submerged, invisible-but-known). */
   alpha?: number
+  /**
+   * Lies flat on the floor instead of standing: a corpse or a skeleton. A
+   * renderer lays it face up with the tile's top to the north, as the map
+   * draws it; `height` is then its length, the size it would stand.
+   */
+  lying?: boolean
   /** Attitude of an actor, for tinting rings and lists (WebTiles monster_list.js names). */
   attitude?: 'hostile' | 'neutral' | 'good_neutral' | 'friendly'
   /** Threat class as WebTiles' monster list names it; `invisible` is the fifth server level. */

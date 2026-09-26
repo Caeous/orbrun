@@ -419,6 +419,23 @@ describe('buildScene on a recorded level', () => {
     expect(seen).toBeGreaterThan(0)
   })
 
+  it('lays corpses on the floor and stands every other item up', () => {
+    const st = initialState()
+    let corpses = 0
+    for (const m of fixtureMessages()) {
+      reduce(st, m)
+      if (m.msg !== 'map') continue
+      for (const b of buildScene(st, gd).billboards) {
+        if (b.kind !== 'item') continue
+        const corpse = / corpse$/.test(b.name ?? '')
+        if (corpse) corpses++
+        expect(!!b.lying).toBe(corpse)
+      }
+    }
+    // the black mamba corpse in cdi-0.34-watch.ndjson
+    expect(corpses).toBeGreaterThan(0)
+  })
+
   it('marks the net and the web as whole-cell badges and every corner badge as not', () => {
     const st = initialState()
     for (const m of fixtureMessages()) reduce(st, m)

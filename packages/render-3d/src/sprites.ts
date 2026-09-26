@@ -27,6 +27,8 @@ export const STAIR_H = 0.7
 export const FIXTURE_BACK = BB_DEPTH / 32
 /** How far a projectile in flight is lifted off the floor, in cells. */
 export const PROJECTILE_LIFT = 0.1
+/** How far a lying sprite's underside is lifted off the floor, in cells: clear of the floor's decals (level-mesh.ts, up to 0.008). */
+export const LIE_LIFT = 0.01
 /** How many texels the selected sprite's shell stands out from its body, against the hull's one. */
 export const SEL_GROW = 2
 /** Remembered knowledge reads like the 2D map's dim tiles: nearly solid, told apart by its cool tint. */
@@ -58,6 +60,7 @@ export const MODE_HULL_FRONT = 4
 export const MODE_RING = 8
 export const MODE_SHADE_MAP = 16
 export const MODE_FLASH_OVERRIDE = 32
+export const MODE_LIE = 64
 
 export type Tint = { r: number; g: number; b: number }
 
@@ -119,6 +122,8 @@ export interface StandOptions {
   /** The hull round the block, in texels: 1 the ink, SEL_GROW the selected shell, 0 none. */
   grow?: number
   lift?: number
+  /** Laid face up on the floor, the tile's top to the north, instead of stood up (a corpse). */
+  lie?: boolean
   moverId?: number
 }
 
@@ -142,11 +147,15 @@ export function stand(x: number, y: number, layers: readonly SpriteLayer[], o: S
     const hq = hTex * k
     const cx = (l.r.ox + l.ox + l.r.w / 2 - cell / 2) * k
     const bottom = (cell - (l.r.oy + l.oy + hTex)) * k
+    // lying, the frame's y runs along the floor from the cell's middle, and its z up off the floor
+    const cy = o.lie ? bottom + hq / 2 - scale / 2 : bottom + hq / 2
+    const depth = BB_DEPTH * k
     const lt = l.tint || o.tint
     const solid = o.thick && !l.flat
     const ghost = o.pass === 'ghostVisible' || o.pass === 'ghostRemembered'
     let mode = 0
-    if (o.yaw === undefined) mode |= MODE_BILLBOARD
+    if (o.lie) mode |= MODE_LIE
+    else if (o.yaw === undefined) mode |= MODE_BILLBOARD
     if (solid) mode |= MODE_THICK
     if (o.shadeMap) mode |= MODE_SHADE_MAP
     // A board at a heading (an open door in its wall run) is seen from every angle, edge-on as the player walks
@@ -159,8 +168,8 @@ export function stand(x: number, y: number, layers: readonly SpriteLayer[], o: S
       atlas: l.r.atlas,
       pass: o.pass,
       anchor: [x + 0.5, o.lift ?? 0, y + 0.5],
-      quad: [cx, bottom + hq / 2, wq / 2, hq / 2],
-      z: [i * 0.002 - back, BB_DEPTH * k],
+      quad: [cx, cy, wq / 2, hq / 2],
+      z: o.lie ? [i * 0.002 + depth + LIE_LIFT, depth] : [i * 0.002 - back, depth],
       texel: [l.r.sx, l.r.sy, l.r.w, hTex],
       color: [o.shade * lt.r, o.shade * lt.g, o.shade * lt.b, o.alpha ?? 1],
       misc: [mode, grow, k, o.yaw ?? 0],
@@ -226,6 +235,7 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
     }
     const translucent = b.alpha !== undefined && b.alpha < 1
     const lift = b.kind === 'projectile' ? PROJECTILE_LIFT : 0
+    const lie = b.lying
     const moverId = b.kind === 'monster' ? monsterIdOf(b) : undefined
     const sel = selected && selected.x === b.x && selected.y === b.y
     sprites.push(
@@ -240,6 +250,7 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
         // a translucent sprite is flat and blends; its ink is a flat ring at its own alpha
         grow: sel ? SEL_GROW : 1,
         lift,
+        lie,
         moverId,
       }),
     )
@@ -257,11 +268,13 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
           pass: visible ? 'ghostVisible' : 'ghostRemembered',
           alpha: visible ? GHOST_ALPHA_VISIBLE : GHOST_ALPHA,
           lift,
+          lie,
           moverId,
         }),
       )
     }
-    shadows.push({ x: b.x, y: b.y, r: Math.max(0.6, b.height), moverId })
+    // what lies on the floor casts no shadow round itself
+    if (!lie) shadows.push({ x: b.x, y: b.y, r: Math.max(0.6, b.height), moverId })
   }
   return { sprites, shadows }
 }

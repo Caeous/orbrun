@@ -6,7 +6,9 @@ import {
   BLOCK_SHADE,
   CLOUD_ALPHA,
   CLOUD_FORWARD,
+  LIE_LIFT,
   MODE_BILLBOARD,
+  MODE_LIE,
   MODE_SHADE_MAP,
   MODE_THICK,
   SEL_GROW,
@@ -154,6 +156,29 @@ describe('billboard thickness', () => {
     expect(on.get('opaque')![1].misc[1]).toBe(0)
     // a cursor on another cell leaves the sprite alone
     expect(instances(scene(), { x: 4, y: 3 }).get('opaque')![0].misc[1]).toBe(1)
+  })
+
+  it('lays a corpse face up on the floor, its block above it and its middle on the cell', () => {
+    const s = emptyScene()
+    s.playerOnLevel = true
+    s.billboards = [{ x: 3, y: 3, tile: 1, kind: 'item', height: 0.8, lying: true }]
+    const { sprites, shadows } = crowdInstances(s, () => RECT, null)
+    const body = sprites.find((i) => i.pass === 'opaque')!
+    const k = 0.8 / 32
+    const mode = body.misc[0]
+    // lying, fixed to the map's north rather than turned to the eye
+    expect(mode & MODE_LIE).toBeTruthy()
+    expect(mode & MODE_BILLBOARD).toBeFalsy()
+    expect(mode & MODE_THICK).toBeTruthy()
+    expect(body.misc[3]).toBe(0)
+    // the front is the top face: the block's underside clears the floor's decals
+    expect(body.z[0] - body.z[1]).toBeCloseTo(LIE_LIFT)
+    // the frame's y is measured from the cell's middle: RECT's 4 rows at the tile's top lie north of it
+    expect(body.quad[1]).toBeCloseTo((32 - 4 / 2 - 16) * k)
+    expect(body.misc[1]).toBe(1)
+    const ghost = sprites.find((i) => i.pass === 'ghostRemembered')!
+    expect(ghost.misc[0] & MODE_LIE).toBeTruthy()
+    expect(shadows).toHaveLength(0)
   })
 
   it('stays unbuilt where the atlas pixels cannot be read', () => {

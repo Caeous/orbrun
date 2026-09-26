@@ -119,7 +119,8 @@ void main() {
  * a wall run, whose hull would swing out of its doorway and whose edge
  * columns stand in the masonry); 16 lit by the shade map (else the light is
  * in `iColor`); 32 washed by `flashOverride` instead of the flash map (the
- * hands, which stand in no cell).
+ * hands, which stand in no cell); 64 lying: the frame tipped onto its back,
+ * its y along the floor away from yaw's forward and its z up (a corpse).
  *
  * The fragment shader marches the view ray through the texel grid of the
  * block: the first body texel it crosses is the hit, coloured by that texel
@@ -166,10 +167,13 @@ void main() {
   float z1 = iZ.x, z0 = thick ? iZ.x - iZ.y : iZ.x;
   vec3 local = vec3(mix(x0, x1, position.x), mix(y0, y1, position.y), mix(z0, z1, position.z));
   float c = cos(yaw), s = sin(yaw);
-  vec3 world = (modelMatrix * vec4(iAnchor + vec3(c * local.x + s * local.z, local.y, c * local.z - s * local.x), 1.0)).xyz;
+  bool lie = (mode & 64) != 0;
+  vec3 up = lie ? vec3(local.x, local.z, -local.y) : local;
+  vec3 world = (modelMatrix * vec4(iAnchor + vec3(c * up.x + s * up.z, up.y, c * up.z - s * up.x), 1.0)).xyz;
   // the eye in the sprite's frame, for the march
   vec3 e = (modelInverse * vec4(cameraPosition, 1.0)).xyz - iAnchor;
-  fEye = vec3(c * e.x - s * e.z, e.y, c * e.z + s * e.x);
+  e = vec3(c * e.x - s * e.z, e.y, c * e.z + s * e.x);
+  fEye = lie ? vec3(e.x, -e.z, e.y) : e;
   vLocal = local;
   fAnchor = iAnchor; fQuad = iQuad; fZ = vec2(z0, z1); fTexel = iTexel; fColor = iColor; fMisc = iMisc; fCell = iCell; fYaw = yaw;
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
@@ -342,8 +346,11 @@ void main() {
   if (!hit) discard;
   vec3 hitLocal = vLocal + (dir * tHit) / toTexel;
   float c = cos(fYaw), s = sin(fYaw);
-  vec3 world = (modelMatrix * vec4(fAnchor + vec3(c * hitLocal.x + s * hitLocal.z, hitLocal.y, c * hitLocal.z - s * hitLocal.x), 1.0)).xyz;
-  vec3 entry = (modelMatrix * vec4(fAnchor + vec3(c * vLocal.x + s * vLocal.z, vLocal.y, c * vLocal.z - s * vLocal.x), 1.0)).xyz;
+  bool lie = (mode & 64) != 0;
+  vec3 h = lie ? vec3(hitLocal.x, hitLocal.z, -hitLocal.y) : hitLocal;
+  vec3 v = lie ? vec3(vLocal.x, vLocal.z, -vLocal.y) : vLocal;
+  vec3 world = (modelMatrix * vec4(fAnchor + vec3(c * h.x + s * h.z, h.y, c * h.z - s * h.x), 1.0)).xyz;
+  vec3 entry = (modelMatrix * vec4(fAnchor + vec3(c * v.x + s * v.z, v.y, c * v.z - s * v.x), 1.0)).xyz;
 #ifdef GHOST
   float sd = texture(sceneDepth, gl_FragCoord.xy / resolution).x;
   float occZ = perspectiveDepthToViewZ(sd, cameraNear, cameraFar);
