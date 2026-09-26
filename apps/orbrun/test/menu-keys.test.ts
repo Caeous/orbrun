@@ -117,11 +117,11 @@ describe('a server menu on the keyboard', () => {
     sent.length = 0
     expect(key('ArrowUp')).toBe(true)
     expect(hovered()).toBe(1)
-    // up from the first row: onto the last switch of the more line, the tail of the ring
-    // ([<w>!</w>] read|quaff|evoke and [<w>?</w>] describe selected, UseItemMenu's help)
+    // up from the first row: onto the more line's bottom line, its first switch, the tail of the ring
+    // ([<w>!</w>] read|quaff|evoke and [<w>?</w>] describe selected, UseItemMenu's help, on one line)
     expect(key('ArrowUp')).toBe(true)
     expect(hovered()).toBe(-1)
-    expect(Array.from(host.querySelectorAll('.more .more-hot')).findIndex((e) => e.classList.contains('hovered'))).toBe(1)
+    expect(Array.from(host.querySelectorAll('.more .more-hot')).findIndex((e) => e.classList.contains('hovered'))).toBe(0)
     expect(sent).toEqual([{ msg: 'menu_hover', hover: 1, mouse: false }])
     expect(sent.some((m) => m.msg === 'key')).toBe(false)
   })
@@ -325,36 +325,47 @@ describe('a server menu on the keyboard', () => {
     expect(marked()).toBe(0)
     expect(Array.from(host.querySelectorAll('li.hovered'))).toHaveLength(0)
     expect(sent).toEqual([]) // nothing to tell the server: the switches are the client's
-    // right and down both walk them
+    // the switches are walked as they are drawn: two lines of columns
+    //   [Esc] exit          [!] buy|examine items
+    //   [/] sort (default)         [Enter] buy marked items
+    // right goes along the line
     key('ArrowRight')
     expect(marked()).toBe(1)
     // Space (A) fires the lit switch; on a shop Enter is the buy, whatever is lit
     expect(key(' ')).toBe(true)
     expect(sent).toEqual([{ msg: 'input', text: '!' }])
     sent.length = 0
-    // Esc and Enter switches send the key they name, not a character
+    // down to the line below, nearest column: [Enter] under [!]; left along it to [/]; up over it to [Esc]
+    key('ArrowDown')
+    expect(marked()).toBe(3)
+    key('ArrowLeft')
+    expect(marked()).toBe(2)
+    // past the end of a line, sideways goes nowhere
+    key('ArrowLeft')
+    expect(marked()).toBe(2)
     key('ArrowUp')
     expect(marked()).toBe(0)
+    // Esc and Enter switches send the key they name, not a character
     expect(key(' ')).toBe(true)
     expect(sent).toEqual([{ msg: 'key', keycode: 27 }])
     sent.length = 0
-    // up from the first switch goes back to the last row
+    // up from the top line goes back to the last row
     expect(key('ArrowUp')).toBe(true)
     expect(marked()).toBe(-1)
     expect(hoveredRow(host)).toBe(2)
     // the server's hover never left that row while the cursor was on the more line, so it is told nothing
     expect(sent).toEqual([])
   })
-  it('rows and switches are one ring: down off the last switch comes back to the top, up from the first row to the last switch', async () => {
+  it('rows and switches are one ring: down off the bottom line comes back to the top, up from the first row to the bottom line', async () => {
     const { ov, st, frame, k, host, key } = setup()
     openShop(st)
     frame()
     await new Promise((r) => requestAnimationFrame(() => r(null)))
     const marked = () => Array.from(host.querySelectorAll('.more .more-hot')).findIndex((e) => e.classList.contains('hovered'))
-    // up from the first row lands on the last switch, [Enter] buy marked items
+    // up from the first row lands on the bottom line's first switch, [/] sort
     expect(hoveredRow(host)).toBe(0)
     key('ArrowUp')
-    expect(marked()).toBe(3)
+    expect(marked()).toBe(2)
     // and down off it comes round to the first row
     key('ArrowDown')
     expect(marked()).toBe(-1)
@@ -450,8 +461,8 @@ describe('examining the hovered row', () => {
     const { ov, st, sent, frame } = setup()
     openShop(st)
     frame()
-    // down past the last row lands on the footer's switches
-    for (let i = 0; i < 6; i++) ov.menuOp(st, 'next')
+    // down past the last of the three rows lands on the footer's switches
+    for (let i = 0; i < 3; i++) ov.menuOp(st, 'next')
     sent.length = 0
     ov.menuOp(st, 'examine')
     expect(sent).toEqual([])

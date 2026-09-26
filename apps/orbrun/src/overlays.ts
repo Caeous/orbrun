@@ -17,7 +17,7 @@ import { controlsSheet } from './controls-sheet'
 import { h, clear, escapeHtml } from './dom'
 import { Osk, oskPrompts, type OskOp, type OskTarget } from './osk'
 import commands from '../data/commands.json'
-import { FocusNav, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
+import { FocusNav, focusStep, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
 import { scrapeCrt } from './crt-scrape'
 import { focusFallback, promptButtons, submitOnStartOnly, type Action } from './bindings'
 import { CHARACTER_COMMANDS, COMMAND_MENUS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandMenu } from './command-menu'
@@ -406,6 +406,16 @@ export type ClientOverlayOp =
   | 'first'
   | 'last'
 
+/** A more-line switch made walkable (Overlays.hotSwitches): its key, its words, and where it is drawn. */
+interface MoreSwitchEl {
+  key: string
+  label: string
+  el: HTMLElement
+  /** the line of the more text it is on, and the character it starts at there */
+  line: number
+  col: number
+}
+
 /** LB / RB on a new-game grid move the cursor this many rows. */
 const NEWGAME_PAGE_ROWS = 5
 
@@ -425,7 +435,7 @@ export class Overlays {
    * `[Esc] exit`), and where the cursor sits among them: -1 while it is on
    * the rows. Down past the last row walks into them, up walks back.
    */
-  private menuFooter: { key: string; label: string; el: HTMLElement }[] = []
+  private menuFooter: MoreSwitchEl[] = []
   private menuFooterIndex = -1
   /** the menu the footer cursor belongs to, so a rebuild of the same menu keeps it */
   private menuFooterTag = ''
@@ -951,9 +961,10 @@ export class Overlays {
    * Clicking one sends its key, as clicking a row sends the row's. Shared by
    * the menus and by the popups that print a more line of their own.
    */
-  private hotSwitches(more: HTMLElement): { key: string; label: string; el: HTMLElement }[] {
-    const out: { key: string; label: string; el: HTMLElement }[] = []
-    const switches = parseMoreSwitches(more.textContent || '')
+  private hotSwitches(more: HTMLElement): MoreSwitchEl[] {
+    const out: MoreSwitchEl[] = []
+    const text = more.textContent || ''
+    const switches = parseMoreSwitches(text)
     // last first: wrapping one leaves the offsets of those before it untouched
     for (let i = switches.length - 1; i >= 0; i--) {
       const sw = switches[i]
@@ -963,7 +974,10 @@ export class Overlays {
       span.append(range.extractContents())
       range.insertNode(span)
       span.addEventListener('click', () => this.sendMoreSwitch(sw.key))
-      out.unshift({ key: sw.key, label: sw.label, el: span })
+      // where it stands in the line, which is laid out in columns (menu.cc `pad_more_with`): the cursor
+      // moves over them as they are drawn, up and down between the lines and sideways along one
+      const lineStart = text.lastIndexOf('\n', sw.start - 1) + 1
+      out.unshift({ key: sw.key, label: sw.label, el: span, line: text.slice(0, lineStart).split('\n').length - 1, col: sw.start - lineStart })
     }
     return out
   }
@@ -1178,7 +1192,7 @@ export class Overlays {
       case 'down': {
         const down = key === 'down'
         if (this.extraStep(menu, down)) break
-        if (this.menuFooterStep(menu, down)) break
+        if (this.menuFooterStep(menu, down ? 'down' : 'up')) break
         if (menu.last_hovered < 0) {
           // the menu opened without a hover (no MF_INIT_HOVER): seat the cursor at
           // the near end of the ring rather than letting the key fall on the floor
@@ -1188,7 +1202,7 @@ export class Overlays {
             this.menuNavigate(menu, down ? 'lineDown' : 'lineUp')
             break
           }
-          if (!down && this.menuFooter.length) this.setFooterIndex(this.menuFooter.length - 1)
+          if (!down && this.menuFooter.length) this.enterFooter('up')
           else this.setHover(menu, down ? hov[0] : hov[hov.length - 1])
           break
         }
@@ -1250,36 +1264,51 @@ export class Overlays {
   }
 
   /**
-   * Up or down between the more line's switches, into them from the last row
-   * and back out to it. Rows and switches make one ring here, whatever the
-   * menu's WRAP flag says (the shop's cursor is Orbrun's own, and a screen
-   * this short is quicker walked round than back up): down off the last
-   * switch comes back to the first row, up off the first row lands on the
-   * last switch. True when the cursor moved, false to leave the step to the
-   * rows.
+   * A step of the cursor on or onto the more line's switches, which are laid
+   * out as they are drawn: lines of columns (the shop's `[Esc] exit` over its
+   * `[/] sort`, `[!] buy|examine items` beside it). On them, up and down go
+   * to the nearest switch on the line above or below, and left and right
+   * along the line. Off the top line up goes back to the last row; off the
+   * bottom line down comes round to the first (rows and switches make one
+   * ring, whatever the menu's WRAP flag says: a screen this short is quicker
+   * walked round than back up). From the rows, down off the last lands on the
+   * top line's first switch and up off the first on the bottom line's.
+   * True when the cursor moved, or the step was the switches' to refuse;
+   * false leaves it to the rows.
    */
-  private menuFooterStep(menu: MenuState, down: boolean): boolean {
+  private menuFooterStep(menu: MenuState, dir: 'up' | 'down' | 'left' | 'right'): boolean {
     const foot = this.menuFooter
     if (!foot.length) return false
     const i = this.menuFooterIndex
+    const slots = foot.map((f) => ({ row: f.line, col: f.col }))
     if (i >= 0) {
-      const next = i + (down ? 1 : -1)
-      if (next >= 0 && next < foot.length) {
+      const next = focusStep(slots, i, dir)
+      if (next !== null) {
         this.setFooterIndex(next)
         return true
       }
-      // off the end of the switches: round to the first row, or back up to the last
+      // sideways past the end of a line: nowhere to go, and the rows' left and right are the server's
+      if (dir === 'left' || dir === 'right') return true
+      // off the switches: round to the first row, or back up to the last
       this.setFooterIndex(-1)
-      const row = nextHoverableItem(menu, !down, down ? 0 : menu.items.length - 1, true)
+      const row = nextHoverableItem(menu, dir === 'up', dir === 'down' ? 0 : menu.items.length - 1, true)
       if (row >= 0) this.setHover(menu, row)
       return true
     }
-    if (menu.last_hovered < 0) return false
+    if (dir === 'left' || dir === 'right' || menu.last_hovered < 0) return false
     // cycle_hover has nowhere left to go: the cursor steps off the rows onto the more line
-    const next = nextHoverableItem(menu, !down, menu.last_hovered)
+    const next = nextHoverableItem(menu, dir === 'up', menu.last_hovered)
     if (next !== -1 && next !== menu.last_hovered) return false
-    this.setFooterIndex(down ? 0 : foot.length - 1)
+    this.enterFooter(dir)
     return true
+  }
+
+  /** Onto the more line from the rows: down lands on its top line's first switch, up on its bottom line's. */
+  private enterFooter(dir: 'up' | 'down') {
+    const foot = this.menuFooter
+    const lines = foot.map((f) => f.line)
+    const line = dir === 'down' ? Math.min(...lines) : Math.max(...lines)
+    this.setFooterIndex(foot.reduce((best, f, k) => (f.line === line && (best < 0 || f.col < foot[best].col) ? k : best), -1))
   }
 
   /** Gamepad menu operations. */
@@ -1295,7 +1324,7 @@ export class Overlays {
     switch (op) {
       case 'next': {
         if (this.extraStep(menu, true)) break
-        if (this.menuFooterStep(menu, true)) break
+        if (this.menuFooterStep(menu, 'down')) break
         if (!hov.length) return this.hooks.send(cm.key(Keys.CK_DOWN))
         const n = cur < 0 ? 0 : cur + 1 < hov.length ? cur + 1 : wrap ? 0 : cur
         this.setHover(menu, hov[n])
@@ -1303,7 +1332,7 @@ export class Overlays {
       }
       case 'prev': {
         if (this.extraStep(menu, false)) break
-        if (this.menuFooterStep(menu, false)) break
+        if (this.menuFooterStep(menu, 'up')) break
         if (!hov.length) return this.hooks.send(cm.key(Keys.CK_UP))
         const n = cur < 0 ? hov.length - 1 : cur > 0 ? cur - 1 : wrap ? hov.length - 1 : 0
         this.setHover(menu, hov[n])
@@ -1315,7 +1344,7 @@ export class Overlays {
         // raw, as menu.js leaves them (CMD_MENU_LEFT / RIGHT on the server:
         // the inventory's category pages, invent.cc InvMenu::process_command `cycle_page`; elsewhere
         // `cycle_mode`, the `!` toggle)
-        if (this.menuFooterIndex >= 0) this.menuFooterStep(menu, op === 'right')
+        if (this.menuFooterIndex >= 0) this.menuFooterStep(menu, op)
         else this.hooks.send(cm.key(op === 'left' ? Keys.CK_LEFT : Keys.CK_RIGHT))
         break
       case 'sectionNext':
@@ -1634,12 +1663,15 @@ export class Overlays {
     // switches are a row of the cursor's ring, as a menu's more line is (markMoreSwitches)
     const moreEl = el.querySelector('.more') as HTMLElement | null
     if (moreEl) {
-      const r = row++
-      this.hotSwitches(moreEl).forEach((sw, i) => {
+      // the switches as they are drawn: a row of the cursor's per line, in their columns
+      const r = row
+      const sws = this.hotSwitches(moreEl)
+      for (const sw of sws) {
         const send = () => this.sendMoreSwitch(sw.key)
-        items.push({ label: sw.label, el: sw.el, activate: send, row: r, col: i, id: 'more:' + sw.key })
+        items.push({ label: sw.label, el: sw.el, activate: send, row: r + sw.line, col: sw.col, id: 'more:' + sw.key })
         acts.push({ key: sw.key, label: sw.label, send })
-      })
+      }
+      row += Math.max(0, ...sws.map((sw) => sw.line)) + 1
     }
     if (top) {
       this.actions = acts

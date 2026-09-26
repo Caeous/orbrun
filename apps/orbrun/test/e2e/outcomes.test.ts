@@ -107,6 +107,35 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     expect(club()).toBe(true)
   })
 
+  it("the shop's footer is walked as it is drawn: up and down between its lines, left and right along one", async () => {
+    const g = await at('shop')
+    const lit = () => g.root.querySelector('.more .more-hot.hovered')?.textContent ?? null
+    const rows = g.state().menus.at(-1)!.items.filter((it) => it?.hotkeys?.length).length
+    // down the rows and off the last onto the footer's top line
+    for (let i = 0; i < rows; i++) await g.dpad(4)
+    expect(lit()).toMatch(/^\[Esc\] exit/)
+    await g.dpad(2)
+    expect(lit()).toMatch(/^\[!\] buy\|examine/)
+    // down to the line under it, and along it to the left
+    await g.dpad(4)
+    expect(lit()).not.toMatch(/^\[!\]|^\[Esc\]/)
+    await g.dpad(6)
+    expect(lit()).toMatch(/^\[\/\] sort/)
+    // up over it, back to [Esc] exit; up again leaves the footer for the last row
+    await g.dpad(0)
+    expect(lit()).toMatch(/^\[Esc\] exit/)
+    await g.dpad(0)
+    expect(lit()).toBeNull()
+    // and A on a switch sends its key: [/] sort changes the order the footer names
+    await g.dpad(0)
+    await g.dpad(4)
+    await g.dpad(4)
+    await g.dpad(4)
+    expect(lit()).toMatch(/^\[\/\] sort \(type\)/)
+    await g.press('A')
+    expect(g.root.querySelector('.more')?.textContent).not.toMatch(/sort \(type\)/)
+  })
+
   it('look mode: A and Enter describe what the cursor is on', async () => {
     let g = await at('look')
     await g.press('A')
