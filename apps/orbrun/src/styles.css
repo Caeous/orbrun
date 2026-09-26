@@ -20,6 +20,8 @@
 :root {
   --ui-scale: 1;
   --mono: 'DejaVu Sans Mono', Menlo, Consolas, monospace;
+  /* the weight of every word that is not bold on purpose: the page's, the canvases' labels (hud.ts textWeight) */
+  --text-weight: 400;
   /* how far a glyph of grid text hangs out of its cell, top and bottom (below, "Every line of grid text") */
   --lip: 0.15em;
   /* the menu cursor answers the pointer in one frame's worth of time: hover reads as instant */
@@ -59,6 +61,13 @@
      so the empty end of a bar stays dark on Orbrun's bare pane instead of glowing over the dungeon */
   --stats-bar-track: color-mix(in srgb, var(--color-8) 45%, #000);
 }
+/* a screen at a device pixel or less per css px (a TV, a handheld's picture scaled up to one): a regular stroke is a
+   single grey pixel there, so the text goes bold; a high-density screen draws the regular weight crisp */
+@media (max-resolution: 1.5dppx) {
+  :root {
+    --text-weight: 700;
+  }
+}
 
 * {
   box-sizing: border-box;
@@ -73,6 +82,7 @@ body {
   color: #ddd;
   font-family: var(--mono);
   font-size: calc(15px * var(--ui-scale));
+  font-weight: var(--text-weight);
   overflow: hidden;
 }
 
@@ -374,7 +384,7 @@ img.room-poster.up {
   color: var(--color-7);
   font-family: var(--mono);
   font-size: 1.1rem;
-  font-weight: normal;
+  font-weight: var(--text-weight);
   letter-spacing: 0;
   text-transform: none;
   text-align: left;
@@ -394,7 +404,7 @@ img.room-poster.up {
   margin-left: auto;
   font-family: var(--mono);
   font-size: 0.9rem;
-  font-weight: normal;
+  font-weight: var(--text-weight);
   letter-spacing: 0;
   text-transform: none;
   color: var(--color-8);
@@ -1373,7 +1383,7 @@ a.item.beside {
   z-index: 1;
   background: rgb(8, 7, 12);
   text-align: left;
-  font-weight: normal;
+  font-weight: var(--text-weight);
   color: var(--color-8);
   padding: 0.35rem 1.2rem 0.35rem 0.6rem;
   white-space: nowrap;

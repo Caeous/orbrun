@@ -184,6 +184,11 @@ function gridFont(): string {
   return monoFace || 'monospace'
 }
 
+/** The page's text weight (styles.css `--text-weight`), for the labels the hud draws on canvases; read each time, it is cheap and a test may change it. */
+function textWeight(): string {
+  return getComputedStyle(document.documentElement).getPropertyValue('--text-weight').trim() || 'normal'
+}
+
 /** A face the rc names for canvas text (glyph_mode_font, action_panel_font_family): WebTiles' default "monospace" is ours, as game.ts maps it for the page's text. */
 export function rcFont(v: unknown): string {
   return typeof v === 'string' && v && v !== 'monospace' ? v : gridFont()
@@ -854,7 +859,7 @@ export class Hud {
         ctx.save()
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
         ctx.fillStyle = 'white'
-        ctx.font = `${fontSize * scale}px ${fontFamily}`
+        ctx.font = `${textWeight()} ${fontSize * scale}px ${fontFamily}`
         ctx.shadowColor = 'black'
         ctx.shadowBlur = 2
         ctx.shadowOffsetX = 1
@@ -870,7 +875,7 @@ export class Hud {
       ctx.save()
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.fillStyle = 'rgba(255,255,255,0.85)'
-      ctx.font = `${Math.max(8, Math.round(9 * scale))}px ${fontFamily}`
+      ctx.font = `${textWeight()} ${Math.max(8, Math.round(9 * scale))}px ${fontFamily}`
       ctx.shadowColor = 'black'
       ctx.shadowBlur = 2
       ctx.textAlign = 'right'
@@ -1325,7 +1330,7 @@ export class Hud {
     ctx.lineTo(m.tick.x2, m.tick.y2)
     ctx.stroke()
     ctx.fillStyle = grey
-    ctx.font = `${Math.round(m.font)}px ${gridFont()}`
+    ctx.font = `${textWeight()} ${Math.round(m.font)}px ${gridFont()}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText('N', m.x, m.y)
