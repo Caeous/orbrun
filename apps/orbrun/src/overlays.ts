@@ -2086,7 +2086,8 @@ export class Overlays {
    * client-owned cursor and the op moved or fired it; otherwise the key stays
    * raw, as in the official client. On a prompt the arrows arm the cursor
    * first: Enter fires the focused chip only after one (or at once, on a
-   * prompt that ignores Enter: `promptEnterFires`; `enter` says the select is
+   * prompt that ignores Enter: `promptEnterFires`, or on a describe popup's
+   * lit verb: `popupVerbLit`; `enter` says the select is
    * a fresh Enter rather than space or a repeat), and Escape is always raw (a
    * yes/no takes both as its default answer, see `promptArmed`).
    */
@@ -2110,7 +2111,7 @@ export class Overlays {
         this.promptEl?.classList.add('armed')
       }
     } else if (keyboard && ctx.mode === 'popup') {
-      if (op === 'select' && !this.keyArmed) return false
+      if (op === 'select' && !this.keyArmed && !(enter && this.popupVerbLit())) return false
       if (op !== 'select' && op !== 'cancel') {
         const moved = this.focusKeyMove(op)
         if (moved) this.keyArmed = true
@@ -2118,6 +2119,17 @@ export class Overlays {
       }
     }
     return this.focusKeyMove(op)
+  }
+
+  /**
+   * The cursor sits on a verb of a describe popup's actions line ("(p)ut on"):
+   * a fresh Enter fires it before any arrow. The server's Enter there only
+   * closes the popup (describe.cc: `key_exits_popup(key, true)` takes CK_ENTER),
+   * so the lit verb loses nothing; a spell entry, a pane switch and a god's
+   * join keep Enter raw.
+   */
+  private popupVerbLit(): boolean {
+    return !!this.popupTop?.type.startsWith('describe-') && !!this.nav.current()?.id?.startsWith('act:')
   }
 
   private focusKeyMove(op: FocusOp): boolean {

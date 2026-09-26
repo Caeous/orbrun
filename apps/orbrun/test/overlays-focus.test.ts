@@ -93,6 +93,23 @@ describe('describe popup', () => {
     ov.focusOp(st, ctx, 'cancel')
     expect(sent).toEqual([{ msg: 'key', keycode: Keys.ESC }])
   })
+  it("Enter on the keyboard fires the lit verb at once: the server's Enter would only close the popup", () => {
+    const { ov, st, sent, frame } = setup()
+    reduce(st, { msg: 'ui-push', type: 'describe-item', title: 'a ring of protection', body: 'A ring.', actions: '(P)ut on, (d)rop, or (i)nscribe.' })
+    const ctx = frame('keyboard')
+    expect(ctx.focus?.label).toBe('(P)ut on')
+    // a held Enter repeating into the popup stays raw
+    expect(ov.focusKey(st, ctx, 'select')).toBe(false)
+    expect(ov.focusKey(st, ctx, 'select', true)).toBe(true)
+    expect(sent).toEqual([{ msg: 'input', text: 'P' }])
+  })
+  it('Enter on a spell entry before any arrow stays raw', () => {
+    const { ov, st, sent, frame } = setup()
+    reduce(st, { msg: 'ui-push', type: 'describe-item', title: 't', body: 'b', spellset: [{ label: '', spells: [{ letter: 'a', title: 'Flame Tongue' }] }], actions: '(r)ead' })
+    const ctx = frame('keyboard')
+    expect(ov.focusKey(st, ctx, 'select', true)).toBe(false)
+    expect(sent).toEqual([])
+  })
   it('a spell entry sends its letter as text input, as the official click does', () => {
     const { ov, st, sent, frame } = setup()
     reduce(st, { msg: 'ui-push', type: 'describe-item', title: 't', body: 'b', spellset: [{ label: '', spells: [{ letter: 'a', title: 'Flame Tongue' }] }] })
