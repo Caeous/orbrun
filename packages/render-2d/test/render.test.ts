@@ -278,6 +278,33 @@ describe('Render2d draw order', () => {
     // cells up, off a 3-row canvas
     expect(wide.images.map((i) => `${i.dx},${i.dy}`)).toEqual(['30,10', '30,40'])
   })
+  it('overlaps the ground a device pixel on a map turned off the quarters, so no seam shows between cells', () => {
+    const { canvas, images, fills } = fakeCanvas()
+    const r = new Render2d({ cellSize: 10, follow: true })
+    r.mount(canvas)
+    r.setTiles(tiles)
+    r.resize(30, 30, 2)
+    r.setScene(sceneWith([floor(1, 1, { overlays: [400] }), floor(2, 1, { kind: 'wall', wallTile: 110 })]))
+    r.setCamera(makeCamera(1, 1, 0))
+    const ground = () => images.filter((i) => i.sx === 100 || i.sx === 110).map((i) => [i.dx, i.dh])
+    // on a diagonal the floor and the wall reach half a css px (a device pixel at dpr 2) past their squares; the overlay does not
+    r.setOptions({ upYaw: Math.PI / 4 })
+    r.render()
+    expect(ground()).toEqual([[9.5, 11], [19.5, 11]])
+    expect(images.find((i) => i.sx === 400)).toMatchObject({ dx: 10, dh: 10 })
+    // on a quarter turn the grid is square to the pixels and the cells stay exact
+    images.length = 0
+    r.setOptions({ upYaw: Math.PI / 2 })
+    r.render()
+    expect(ground()).toEqual([[10, 10], [20, 10]])
+    // the minimap's colour blocks the same
+    r.setOptions({ mode: 'minimap', upYaw: Math.PI / 4 })
+    fills.length = 0
+    r.render()
+    expect(fills).toContainEqual({ x: 9.5, y: 9.5, w: 11, h: 11 })
+    expect(fills).toContainEqual({ x: 19.5, y: 9.5, w: 11, h: 11 })
+  })
+
   it('looks the minimap’s cells up by position instead of walking the whole level, and shows the same cells', () => {
     const { canvas, fills } = fakeCanvas()
     const r = new Render2d({ cellSize: 4, follow: true, mode: 'minimap', up: 2 })

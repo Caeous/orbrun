@@ -177,6 +177,13 @@ export class Render2d implements MapRenderer {
   private dpr = 1
   private opts: Required<Omit<Render2dOptions, 'minimapColours'>> & { minimapColours: typeof DEFAULT_MINIMAP }
   private origin = { x: 0, y: 0 }
+  /**
+   * How far past its square, in css px, a cell's opaque ground is drawn this
+   * frame: nothing on a grid-aligned map, one device pixel on a map turned
+   * off the quarters, where every cell's edge is antialiased on its own and
+   * two half-covered edges leave a seam of what lies behind the canvas.
+   */
+  private seam = 0
 
   constructor(opts: Render2dOptions = {}) {
     this.opts = {
@@ -407,6 +414,7 @@ export class Render2d implements MapRenderer {
     }
     const cosR = Math.cos(rot)
     const sinR = Math.sin(rot)
+    this.seam = Math.abs(Math.round(rot / (Math.PI / 2)) * (Math.PI / 2) - rot) > 1e-6 ? 1 / dpr : 0
     /** turn the cell's own axes by `by` about its centre, and draw in them */
     const turned = (by: number, sx: number, sy: number, draw: () => void) => {
       if (!by) return draw()
@@ -607,15 +615,17 @@ export class Render2d implements MapRenderer {
         })
     }
     ctx.restore()
+    this.seam = 0
   }
 
   private drawMinimapCell(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, cell: SceneCell, sx: number, sy: number, cs: number) {
     const c = this.opts.minimapColours
+    const e = this.seam
     // minimap.js `update`: the server's map feature indexes the rc palette directly
     const mfc = this.opts.mfColours
     if (mfc && cell.mf !== undefined && mfc[cell.mf]) {
       ctx.fillStyle = mfc[cell.mf] as string
-      ctx.fillRect(sx, sy, cs, cs)
+      ctx.fillRect(sx - e, sy - e, cs + 2 * e, cs + 2 * e)
       return
     }
     let colour = c.unknown
@@ -635,7 +645,7 @@ export class Render2d implements MapRenderer {
     else if (cell.kind === 'wall') colour = cell.visibility === 'visible' ? c.wall : c.mappedWall
     else colour = cell.visibility === 'visible' ? c.floor : c.remembered
     ctx.fillStyle = colour
-    ctx.fillRect(sx, sy, cs, cs)
+    ctx.fillRect(sx - e, sy - e, cs + 2 * e, cs + 2 * e)
   }
 
   /**
@@ -650,12 +660,14 @@ export class Render2d implements MapRenderer {
    */
   private drawTileCell(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, cell: SceneCell, sx: number, sy: number, cs: number, upright?: (sx: number, sy: number, draw: () => void) => void) {
     if (cell.kind === 'unknown') return
+    // the base tile fills the square, so it alone takes the seam margin
+    const e = this.seam
     if (cell.kind === 'wall') {
-      this.drawTile(ctx, cell.wallTile ?? cell.floorTile, sx, sy, cs)
+      this.drawTile(ctx, cell.wallTile ?? cell.floorTile, sx - e, sy - e, cs + 2 * e)
       if (cell.wallOverlays) for (const o of cell.wallOverlays) this.drawTile(ctx, o, sx, sy, cs)
       return
     }
-    this.drawTile(ctx, cell.floorTile, sx, sy, cs)
+    this.drawTile(ctx, cell.floorTile, sx - e, sy - e, cs + 2 * e)
     if (cell.underlays) for (const o of cell.underlays) this.drawTile(ctx, o, sx, sy, cs)
     if (cell.featureTile !== undefined) {
       const feature = cell.featureTile
