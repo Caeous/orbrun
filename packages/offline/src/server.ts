@@ -166,6 +166,17 @@ export class OfflineServer {
     } else g.engine.control(JSON.stringify(msg))
   }
 
+  /**
+   * Save the game in progress where it stands and keep playing: the page may
+   * be about to go without a word (a hidden tab a phone discards), which a
+   * server's SIGHUP save covers and a tab has nothing for. The engine holds
+   * the request until the player has control (tileweb.cc `_maybe_checkpoint`).
+   */
+  checkpoint() {
+    const g = this.game
+    if (g && !g.ended) g.engine.control(JSON.stringify({ msg: 'checkpoint' }))
+  }
+
   /** The connection closed: save the game in progress, if any, and end it. */
   shutdown(): Promise<void> {
     return this.game ? this.stop() : Promise.resolve()

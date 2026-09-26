@@ -168,6 +168,11 @@ export class Session {
     this.emit({ type: 'sent', msg })
   }
 
+  /** A game on this device saves where it stands, as a server's would were its socket to go now (@orbrun/offline). */
+  checkpoint() {
+    if (this.conn instanceof LocalWasmConnection && this.playing) this.conn.checkpoint()
+  }
+
   close() {
     this.unwatchEngines?.()
     this.conn.close()

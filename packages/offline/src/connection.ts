@@ -82,6 +82,11 @@ export class LocalWasmConnection implements Connection {
     for (const h of this.closeHandlers) h({ code: 1000, reason: '', clean: true })
   }
 
+  /** Saves the game in progress without ending it (OfflineServer.checkpoint). */
+  checkpoint() {
+    if (!this.closed) this.server.checkpoint()
+  }
+
   /** The builds on offer changed: the lobby's game links are sent again. */
   channelsChanged() {
     if (!this.closed) this.server.channelsChanged()

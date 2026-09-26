@@ -268,6 +268,21 @@ describe('OfflineServer game', () => {
     expect(s.flat()).toEqual([{ msg: 'go_lobby' }, { msg: 'game_ended', reason: 'saved' }])
   })
 
+  it('saves a game in progress on request and keeps it running', async () => {
+    const s = setup()
+    s.server.checkpoint()
+    expect(s.sent.control).toEqual([])
+    s.server.receive({ msg: 'play', game_id: 'offline-0.34' })
+    await tick()
+    s.out.length = 0
+    s.server.checkpoint()
+    expect(s.sent.control.at(-1)).toBe(JSON.stringify({ msg: 'checkpoint' }))
+    s.engine().output('*{"msg":"checkpoint"}\n')
+    await tick()
+    expect(s.sent.terminated).toBe(false)
+    expect(s.flat()).toEqual([])
+  })
+
   it('terminates a stopping engine that never confirms its save', async () => {
     vi.useFakeTimers()
     try {

@@ -402,6 +402,9 @@ window.addEventListener('online', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     hiddenAt = Date.now()
+    // a hidden tab may be discarded without a word, and pagehide is too late to wait on IndexedDB: Android crawl
+    // saves on pause for the same reason
+    session?.checkpoint()
     return
   }
   const away = hiddenAt ? Date.now() - hiddenAt : 0
