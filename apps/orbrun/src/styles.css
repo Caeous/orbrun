@@ -1329,6 +1329,14 @@ a.item.beside {
   color: var(--ink-dim);
   max-width: 60ch;
 }
+/* small print after the words: an offline game's build */
+.frame.menu-frame .menu-msg .fine {
+  display: block;
+  margin-top: 0.2em;
+  font-size: 0.8em;
+  color: var(--color-8);
+  opacity: 0.7;
+}
 .frame.menu-frame .menu-msg.said {
   animation: msg-in 260ms ease-out both;
 }

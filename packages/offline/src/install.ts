@@ -116,6 +116,16 @@ export class EngineStore {
   }
 
   /**
+   * The build a game's row plays: the one installed, or, before any is, the
+   * published one it plays from the network. Null until the record is read.
+   */
+  build(id: string): EngineInfo | null {
+    const slot = id.replace(/^offline-/, '')
+    const s = this.stateNow
+    return s?.installed[slot] ?? Object.values(s?.published ?? {}).find((info) => slotOf(info) === slot) ?? null
+  }
+
+  /**
    * A game is starting: its build is kept from now on, if it was not yet,
    * and what the rows said about new builds is no longer news.
    */
@@ -170,7 +180,10 @@ export class EngineStore {
       } catch {
         // an unreadable record is an empty one: builds download again
       }
-      return (this.stateNow = s)
+      this.stateNow = s
+      // a row drawn before the record was read said nothing of its build
+      this.changed()
+      return s
     })())
   }
 

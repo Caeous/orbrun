@@ -8,7 +8,7 @@ import { RoomView } from './room/view'
 import { addAccount, addServer, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import type { Session } from './session'
-import { deleteProfileSaves, profileName, type EngineNote } from '@orbrun/offline'
+import { deleteProfileSaves, profileName, type EngineInfo, type EngineNote } from '@orbrun/offline'
 import { engines } from './engines'
 import type { PadEvent, PadKind } from './gamepad'
 import { Osk, oskPrompts } from './osk'
@@ -105,6 +105,8 @@ interface Row {
   /** the glyph in the margin, as the game marks a feature: `>` stairs, `?` a scroll, `{` the pool, `+` a door */
   marker?: string
   hint?: string
+  /** small print after the hint, fainter than it: which build an offline game plays */
+  fine?: string
   fn?: () => void
   /** things standing beside the row, reached with left and right (an account's log out beside its name); one with an `href` is a link out, in a new tab */
   also?: { id: string; label: string; title?: string; fn?: () => void; href?: string }[]
@@ -579,16 +581,17 @@ export class FrontEnd {
   }
 
   /** The message line: what the row under the cursor is, said the way the game says what is underfoot. */
-  private say(text: string | undefined) {
+  private say(text: string | undefined, fine?: string) {
     const m = this.msg
     if (!m) return
-    const t = text ?? ''
-    if (m.textContent === t) return
+    const t = (text ?? '') + (fine ? '\n' + fine : '')
+    if (m.dataset.said === t) return
     // a redraw (the roster's count changing under the cursor) hands a fresh line the same words:
     // they stand as they were, without playing the fade-in again
     const same = t === this.said
     this.said = t
-    m.textContent = t
+    m.dataset.said = t
+    replace(m, text ?? '', ...(fine ? [h('span', { class: 'fine' }, fine)] : []))
     m.classList.remove('said')
     if (t && !same) {
       void m.offsetWidth
@@ -679,7 +682,7 @@ export class FrontEnd {
     const help = this._view === 'home'
       ? h('div', { class: 'home-menu-help' }, this.msg,
         h('div', { class: 'menu-msg menu-msg-reserve', 'aria-hidden': 'true' },
-          ...this.rows.flatMap((r) => [r.hint ?? '', ...(r.also?.map((a) => a.title ?? '') ?? [])]).map((hint) => h('span', {}, hint))))
+          ...this.rows.flatMap((r) => [[r.hint ?? '', r.fine], ...(r.also?.map((a) => [a.title ?? '']) ?? [])]).map(([hint, fine]) => h('span', {}, hint, fine ? h('span', { class: 'fine' }, fine) : null))))
       : this.msg
     const brand = h('div', { class: 'brand' }, this.head(opts.title, opts.lede ?? null, opts.splash), error, ...(opts.notices ?? []), body, ...(opts.below ?? []), help, this.legend)
     const all = [...items, ...(opts.extra ?? [])]
@@ -732,7 +735,7 @@ export class FrontEnd {
 
   /** The cursor landed on a row: say what it is, unless the row says it already, and give a field the caret. */
   private onRow(r: Row, el: HTMLElement) {
-    this.say(r.hint === r.sub ? '' : r.hint)
+    this.say(r.hint === r.sub ? '' : r.hint, r.fine)
     if (r.input) r.input.focus()
     else if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) (document.activeElement as HTMLElement).blur()
     void el
@@ -921,6 +924,7 @@ export class FrontEnd {
             hint: server.offline
               ? (save?.hint ?? `A new character in ${g.label}, on this device.`) + engineHint(engines.note(g.id))
               : (save?.hint ?? `A new game of ${g.label} on ${server.host}.`),
+            fine: server.offline ? engineBuild(engines.build(g.id)) : undefined,
             fn: () => this.connectTo(account, { kind: 'play', gameId: g.id }),
           })
         }
@@ -1942,6 +1946,16 @@ function engineHint(note: EngineNote | null): string {
   if (note?.kind === 'updating') return ' An update is on its way; until it is whole, Play starts the version you have.'
   if (note?.kind === 'downloading') return ' It is being kept on this device, to play with no connection.'
   return ''
+}
+
+/**
+ * Which build an offline game plays, in the message line's small print: crawl's version less its commit hash
+ * (`0.35-a0-1079`), and the day it was built, since a trunk version alone says little of how recent it is.
+ */
+function engineBuild(info: EngineInfo | null): string | undefined {
+  if (!info) return undefined
+  const built = new Date(Number(info.stamp) * 1000)
+  return `${info.version.replace(/-g[0-9a-f]+$/, '')} · ${built.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`
 }
 
 /**

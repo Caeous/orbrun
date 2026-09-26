@@ -109,6 +109,21 @@ describe('EngineStore', () => {
     expect(await again.ids()).toEqual(['offline-trunk'])
   })
 
+  it('says when its record is read, so a row drawn before it names its build after', async () => {
+    const s = setup()
+    s.pub.publish(build('trunk', 'bb', '0.35-a0-9-gbb'))
+    await s.store.played('offline-trunk')
+    await s.store.update()
+
+    s.pub.offline()
+    const next = setup({ caches: s.caches, pub: s.pub })
+    expect(next.store.build('offline-trunk')).toBeNull()
+    const seen: unknown[] = []
+    next.store.onChange(() => seen.push(next.store.build('offline-trunk')?.version))
+    await next.store.update()
+    expect(seen).toContain('0.35-a0-9-gbb')
+  })
+
   it('offers trunk beside an installed release once it is reached again, with nothing new published', async () => {
     const s = setup()
     s.pub.publish(build('stable', 'aa', '0.34.1-4-gaa'))
@@ -145,10 +160,14 @@ describe('EngineStore', () => {
       during.push(next.store.note('offline-trunk'))
       // the build being replaced is still the one Play starts
       during.push((await next.store.channels())[0].commit)
+      // and the build its row names
+      during.push(next.store.build('offline-trunk')?.version)
     })
     await next.store.update()
     expect(during).toContainEqual({ kind: 'updating', percent: 0 })
     expect(during).toContain('bb')
+    expect(during).toContain('0.35-a0-9-gbb')
+    expect(next.store.build('offline-trunk')?.version).toBe('0.35-a0-10-gcc')
     expect((await next.store.channels())[0].commit).toBe('cc')
     expect(next.store.note('offline-trunk')).toEqual({ kind: 'updated', version: null })
     // the old build's files are gone
