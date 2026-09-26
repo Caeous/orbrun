@@ -156,7 +156,7 @@ select {
 /* the menu column gets a shade of its own, so the text never fights the level behind it */
 .home::before {
   background:
-    linear-gradient(90deg, rgba(3, 2, 6, 0.88) 0%, rgba(3, 2, 6, 0.72) 34%, rgba(3, 2, 6, 0.22) 62%, rgba(3, 2, 6, 0.08) 100%),
+    linear-gradient(90deg, rgba(3, 2, 6, 0.9) 0%, rgba(3, 2, 6, 0.8) 40%, rgba(3, 2, 6, 0.45) 56%, rgba(3, 2, 6, 0.12) 74%, rgba(3, 2, 6, 0.06) 100%),
     linear-gradient(180deg, rgba(3, 2, 6, 0.45), transparent 25%, transparent 70%, rgba(3, 2, 6, 0.7));
 }
 
@@ -527,6 +527,22 @@ img.room-poster.up {
 .frame.menu-frame .brand .head {
   margin-bottom: 0.6rem;
 }
+/* a screen's name in the wordmark's face and the About pages' gold, the line under it set as their small caps;
+   no gold wash behind it, which in the menus says where the cursor is */
+.frame.menu-frame:not(.home-list) .brand .head .place {
+  font: 700 clamp(2.4rem, 6vw, 3.2rem)/1.05 'Grenze Gotisch', var(--mono);
+  letter-spacing: 0;
+  color: var(--gold-bright);
+  text-shadow: 0 2px 18px #000;
+}
+.frame.menu-frame:not(.home-list) .brand .head .lede {
+  margin-top: 0.45rem;
+  font: 700 0.85rem/1.5 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  text-shadow: 0 2px 8px #000;
+}
 .frame.menu-frame .menu {
   gap: 0.3rem;
 }
@@ -611,7 +627,7 @@ a.item.beside {
   /* the wordmark never steps down for a narrow or a short window: it holds the same share of the
      width all the way down, so the floor is what a 320px screen can take (the lockup is about 3.6em
      wide with the orb) and the ceiling is the desktop size */
-  font-size: clamp(4.5rem, 13vw, 6.5rem);
+  font-size: clamp(4.5rem, 13vw, 7.5rem);
   line-height: 1.1;
   letter-spacing: 0;
   color: var(--ink);
@@ -627,19 +643,26 @@ a.item.beside {
   vertical-align: -0.055em;
   background: url('/orb.png') center / contain no-repeat;
   image-rendering: pixelated;
-  filter: drop-shadow(0 0 10px rgba(185, 120, 31, 0.55)) drop-shadow(0 2px 8px #000);
+  filter: drop-shadow(0 0 8px rgba(185, 120, 31, 0.75)) drop-shadow(0 0 18px rgba(139, 63, 176, 0.45)) drop-shadow(0 2px 8px #000);
 }
+/* a little spaced; the game's name is never split (menu.ts), so a wide screen breaks before it */
 .frame.home-list .brand .head .lede {
   margin-top: 0.75rem;
-  max-width: 40ch;
-  font-family: var(--mono);
-  font-size: 1.15rem;
-  line-height: 1.5;
+  max-width: 34rem;
+  font: 400 1.1rem/1.55 var(--mono);
+  letter-spacing: 0.02em;
   color: var(--ink-dim);
+  text-shadow: 0 1px 8px #000;
+}
+/* a phone balances the lines instead: two even ones, where filling the first would leave three */
+@media (max-width: 600px) {
+  .frame.home-list .brand .head .lede {
+    text-wrap: balance;
+  }
 }
 /* Xom's word under the lede: one line of godspeak per visit, in the god's own irreverent tone */
 .frame.home-list .brand .head .splash {
-  margin-top: 0.35rem;
+  margin-top: 1rem;
   max-width: 40ch;
   font-family: var(--mono);
   font-size: 1rem;
@@ -654,6 +677,8 @@ a.item.beside {
 .frame.home-list .brand .head .splash::after {
   content: '” — Xom';
   font-style: normal;
+  /* the attribution never stands on a line of its own: a long word of Xom's takes it along */
+  white-space: nowrap;
 }
 /* One button language for all front-end screens, separate from gameplay popups. */
 .frame.menu-frame .item {

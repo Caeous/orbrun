@@ -51,17 +51,16 @@ Not yet: sound, and the feel layer (camera sway, hit shake).
 - **Offline play.** The current release or trunk, built for WebAssembly, runs
   in your browser with saves kept on your device.
 - **Many accounts, many servers**, including any server you add by URL.
-- **Steam.** Add it to your library on a Steam Deck, Windows, Linux or a Mac;
-  see [Add to Steam](#add-to-steam).
+- **Steam Deck.** Add it to your library; see [Add to Steam](#add-to-steam).
 
 [ABOUT.md](ABOUT.md) has the full tour, the controls, and the security and
 privacy notes. [CHANGELOG.md](CHANGELOG.md) has what's new.
 
 ## Add to Steam
 
-Orbrun goes into Steam as a non-Steam game that opens a browser in kiosk mode
-on orbrun.app. It works on a Steam Deck, Windows, Linux and a Mac, takes five
-steps, and needs no script. [STEAM.md](STEAM.md) walks through them.
+Orbrun goes onto a Steam Deck as a non-Steam game that opens Chrome in kiosk
+mode on orbrun.app. It takes five steps and needs no script.
+[STEAM.md](STEAM.md) walks through them.
 
 ## DCSS as a library
 

@@ -112,8 +112,8 @@ a[target='_blank']:not(.btn)::after { content: ' ↗'; font: 0.75em var(--mono);
 /* the hero is an act like the rest: the name where a label stands, a line of small capitals, a sentence, then the way in */
 .hero.stage .title { display: grid; justify-items: center; gap: 0 }
 .hero.stage h1 { justify-content: center; font-size: clamp(4rem, 11vw, 8.5rem); text-shadow: 0 6px 40px #000 }
-.hero.stage .tag { margin: 0.9rem 0 0; font: 700 clamp(0.72rem, 1.3vw, 0.86rem)/1.6 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold-bright); text-shadow: 0 1px 8px #000 }
-.hero.stage .lede { max-width: var(--measure); margin: 1.4rem 0 2.2rem; color: var(--ink); opacity: 1; text-wrap: balance; text-shadow: 0 1px 12px #000 }
+/* the line the app's title screen says under the same wordmark, as it says it */
+.hero.stage .tag { margin: 0.9rem 0 2.2rem; font: 400 clamp(0.95rem, 1.6vw, 1.1rem)/1.55 var(--mono); letter-spacing: 0.02em; color: var(--ink-dim); text-shadow: 0 1px 8px #000 }
 .hero.stage .actions { justify-content: center }
 .hero.stage .small-print { margin-top: 1.6rem; letter-spacing: 0.04em }
 
@@ -249,10 +249,23 @@ a[target='_blank']:not(.btn)::after { content: ' ↗'; font: 0.75em var(--mono);
 .doc ul:not(.pad-list) { padding: 0; list-style: none }
 .doc ul:not(.pad-list) > li { position: relative; margin: 0.45rem 0; padding-left: 1.6rem }
 .doc ul:not(.pad-list) > li::before { content: '@'; position: absolute; left: 0; top: 0.1em; font: 700 0.85rem var(--mono); color: var(--gold) }
+/* Steam's artwork: each picture beside what it is for */
+.doc ul.art-list > li { display: grid; grid-template-columns: 10rem 1fr; gap: 1rem; align-items: center; margin: 0.9rem 0; padding-left: 0 }
+.doc ul.art-list > li::before { content: none }
+.doc .art-list .shot { display: flex; align-items: center; justify-content: center; height: 6rem; padding: 0.4rem; background: var(--bg); border: 1px solid var(--line); border-radius: 6px }
+.doc .art-list .shot:hover { border-color: var(--gold) }
+.doc .art-list .shot img { max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 3px }
+@media (max-width: 30rem) { .doc ul.art-list > li { grid-template-columns: 1fr; gap: 0.5rem } .doc .art-list .shot { justify-content: flex-start; height: 7rem } }
 .doc code { font: 0.86em var(--mono); padding: 0.1em 0.35em; background: var(--stone-2); border: 1px solid var(--line); border-radius: 4px }
 .doc pre { overflow-x: auto; padding: 1rem; background: var(--bg); border: 1px solid var(--line); border-radius: 6px }
 .doc pre code { padding: 0; border: 0; background: none }
+/* a line to type, and its Copy (site.js) */
+.doc .copyable { display: flex; gap: 0.5rem; margin: 1rem 0 }
+.doc .copyable pre { flex: 1; min-width: 0; margin: 0 }
+.doc .copy { flex: none; min-width: 5.5rem; padding: 0 0.9rem; font: 700 0.75rem/1 var(--mono); letter-spacing: 0.04em; color: var(--ink); background: var(--stone-2); border: 1px solid rgba(233, 226, 208, 0.3); border-radius: 4px; cursor: pointer }
+.doc .copy:hover { border-color: var(--ink) }
 .doc strong { color: #fff }
+.doc .name { font: 1.2em/1 var(--gothic); color: var(--gold-bright) }
 .doc table { width: 100%; border-collapse: collapse; margin: 1.2rem 0; font-size: 0.95rem }
 .doc th { text-align: left; font: 700 0.75rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim) }
 .doc th, .doc td { padding: 0.55rem 0.8rem 0.55rem 0; border-bottom: 1px solid var(--line) }

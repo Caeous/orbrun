@@ -36,7 +36,7 @@ describe('the site’s pages', () => {
   })
 
   it('names the tab after the page, and the home page anywhere else', () => {
-    expect(titleAt('/about/steam')).toBe('Add Orbrun to Steam and the Steam Deck')
+    expect(titleAt('/about/steam')).toBe('Add Orbrun to Steam on the Steam Deck')
     expect(titleAt('/settings')).toBe(HOME.title)
   })
 
@@ -57,7 +57,7 @@ describe('the site’s pages', () => {
     const window = new Window()
     const html = sitePageHtml(pageAt('/about/steam')!, window as never)
     const doc = new window.DOMParser().parseFromString(html, 'text/html')
-    expect(doc.title).toBe('Add Orbrun to Steam and the Steam Deck')
+    expect(doc.title).toBe('Add Orbrun to Steam on the Steam Deck')
     expect(doc.querySelector('link[rel=canonical]')?.getAttribute('href')).toBe(`${SITE_URL}/about/steam`)
     expect(doc.querySelector('meta[property="og:url"]')?.getAttribute('content')).toBe(`${SITE_URL}/about/steam`)
     expect(doc.querySelector('meta[name=description]')?.getAttribute('content')).toBe(pageAt('/about/steam')!.description)
@@ -66,7 +66,7 @@ describe('the site’s pages', () => {
     expect(doc.querySelectorAll('h1')).toHaveLength(1)
     expect(doc.querySelector('h1')?.textContent).toBe('@Add to Steam')
     // each step a card of its own, its number set apart, the heading's words as the document has them
-    expect(doc.querySelector('.doc h2')?.textContent).toBe('1. Get a browser')
+    expect(doc.querySelector('.doc h2')?.textContent).toBe('1. Install Chrome and enable the controller')
     expect(doc.querySelector('.doc .part h2 .n')?.textContent).toBe('1.')
     expect(doc.querySelectorAll('.doc .part')).toHaveLength(doc.querySelectorAll('.doc h2').length)
     expect(doc.querySelector('.doc')?.textContent).toContain('flatpak --user override')
@@ -82,7 +82,7 @@ describe('the site’s pages', () => {
     const window = new Window()
     const doc = new window.DOMParser().parseFromString(sitePageHtml(pageAt('/about/steam')!, window as never), 'text/html')
     const jumps = Array.from(doc.querySelectorAll('.contents a'), (a) => a.getAttribute('href'))
-    expect(jumps).toContain('#1-get-a-browser')
+    expect(jumps).toContain('#1-install-chrome-and-enable-the-controller')
     for (const id of jumps) expect(doc.querySelector(`.doc h2${id}`), id!).not.toBeNull()
     // a changelog's releases are not worth a list
     const news = new window.DOMParser().parseFromString(sitePageHtml(pageAt('/about/new')!, window as never), 'text/html')

@@ -113,6 +113,37 @@ function padLegend(list: HTMLUListElement, dom: Dom) {
   }
 }
 
+/** a picture of the site's own (`/steam/art/grid.png`), and its size as the file has it */
+const ART = /^\/steam\/art\/[\w-]+\.png$/
+function pngSize(href: string): { width: number; height: number } {
+  const head = fs.readFileSync(path.join(HERE, 'public', href))
+  return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) }
+}
+
+/**
+ * A list of pictures to save (Steam's artwork): each line opens on the
+ * picture itself, a link to the file, beside what it is for.
+ */
+function artList(list: HTMLUListElement, dom: Dom) {
+  const items = [...list.children] as HTMLElement[]
+  const art = items.map((li) => li.querySelector<HTMLAnchorElement>('a[href]'))
+  if (!items.length || art.some((a) => !a || !ART.test(a.getAttribute('href') ?? ''))) return
+  list.classList.add('art-list')
+  items.forEach((li, i) => {
+    const href = art[i]!.getAttribute('href')!
+    const { width, height } = pngSize(href)
+    const shot = dom.document.createElement('a')
+    shot.className = 'shot'
+    shot.setAttribute('href', href)
+    shot.setAttribute('aria-hidden', 'true')
+    shot.tabIndex = -1
+    shot.innerHTML = `<img src="${esc(href)}" alt="" width="${width}" height="${height}" loading="lazy" />`
+    const words = dom.document.createElement('span')
+    words.append(...li.childNodes)
+    li.append(shot, words)
+  })
+}
+
 /**
  * A document drawn by the app's own reader for a page of its own: its title
  * is the page's (left out here), its sections are h2 with an address each,
@@ -156,6 +187,15 @@ export function docHtml(file: string, dom: Dom): { html: string; sections: { id:
       if (name in PAD_BUTTONS) b.replaceWith(glyphEl(dom, PAD_BUTTONS[name], name))
     }
     for (const list of [...el.querySelectorAll('ul')]) padLegend(list as HTMLUListElement, dom)
+    for (const list of [...el.querySelectorAll('ul')]) artList(list as HTMLUListElement, dom)
+    // the name to type (`Orbrun`) set as the name is drawn, not as code
+    for (const code of [...el.querySelectorAll('code')]) {
+      if (code.textContent !== 'Orbrun' || code.parentElement?.tagName === 'PRE') continue
+      const name = doc.createElement('span')
+      name.className = 'name'
+      name.textContent = 'Orbrun'
+      code.replaceWith(name)
+    }
     // each section a part of its own, drawn as a card; a step's number and a release's date set apart from its name (the words stay as they read)
     for (const h2 of [...el.querySelectorAll('h2')]) {
       const part = doc.createElement('section')
@@ -340,8 +380,7 @@ function aboutMain(dom: Dom): string {
   </picture>
   <div class="title">
     <h1><img src="/orb.png" alt="" width="32" height="32" />Orbrun</h1>
-    <p class="tag">Dungeon Crawl Stone Soup · in first person</p>
-    <p class="lede">Play on the public servers with the account, rc file and keys you already have. Built for a gamepad and the Steam Deck, with nothing to install.</p>
+    <p class="tag">An unofficial first-person client for<br />Dungeon&nbsp;Crawl&nbsp;Stone&nbsp;Soup.</p>
     <div class="actions">
       <a class="btn play" href="/">▶ Play in your browser</a>
       <a class="btn ghost" href="/about/steam">Add to Steam</a>
@@ -437,11 +476,11 @@ function aboutMain(dom: Dom): string {
 /**
  * How each document's page stands, as About's acts do: a still of a real
  * game under its name, tinted as the act that stands on it is, and a line
- * of small capitals.
+ * of small capitals where there is one worth saying.
  */
-const DOC_LOOK: Record<string, { still: string; tint: string; sub: () => string }> = {
+const DOC_LOOK: Record<string, { still: string; tint: string; sub?: () => string }> = {
   '/about/new': { still: 'keys-bg', tint: 'depths', sub: () => latestRelease() },
-  '/about/steam': { still: 'pad-bg', tint: 'lair', sub: () => 'Five steps · a few minutes · nothing to install' },
+  '/about/steam': { still: 'pad-bg', tint: 'lair' },
 }
 
 /** the changelog's newest release, as its heading names it: "Version 0.2.1 · 2026-09-25" */
@@ -467,7 +506,7 @@ function docMain(page: Page, dom: Dom): string {
   return `<section class="hero band ${look.tint}">
   <img src="${STILLS}/${look.still}.webp" alt="" width="1920" height="1080" fetchpriority="high" />
   <div class="title">
-    <header class="label"><h1><span aria-hidden="true">@</span>${esc(page.name)}</h1><p>${esc(look.sub())}</p></header>
+    <header class="label"><h1><span aria-hidden="true">@</span>${esc(page.name)}</h1>${look.sub ? `<p>${esc(look.sub())}</p>` : ''}</header>
     <p class="lede">${esc(page.description)}</p>
   </div>
 </section>

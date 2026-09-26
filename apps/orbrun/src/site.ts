@@ -59,9 +59,9 @@ export const PAGES: Page[] = [
     name: 'Add to Steam',
     doc: 'STEAM.md',
     contents: true,
-    title: 'Add Orbrun to Steam and the Steam Deck',
+    title: 'Add Orbrun to Steam on the Steam Deck',
     description:
-      'Five steps that put Orbrun, Dungeon Crawl Stone Soup in first person, in your Steam library on a Steam Deck or a desktop, with artwork and controller support.',
+      'Five steps that put Orbrun, Dungeon Crawl Stone Soup in first person, in your Steam Deck’s library, with artwork and controller support.',
   },
 ]
 

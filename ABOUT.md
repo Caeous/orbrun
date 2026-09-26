@@ -17,8 +17,8 @@ WebTiles account, register a new one, or spectate without one. Then start a
 game. There is nothing to install and no Orbrun account: your browser talks
 to the DCSS server directly.
 
-To play from Steam, on a Deck or a desktop, [Add to Steam](STEAM.md) has the
-five steps that put Orbrun in your library, artwork included.
+To play from a Steam Deck's library, [Add to Steam](STEAM.md) has the five
+steps that put Orbrun there, artwork included.
 
 ## Features
 
@@ -93,9 +93,9 @@ in the current mode. It never guesses the mode: the server reports it.
 
 ## Add to Steam
 
-Orbrun goes into your Steam library, on a Steam Deck, Windows, Linux or a
-Mac, as a non-Steam game that opens a browser in kiosk mode on orbrun.app. It
-takes five steps and no script: see [STEAM.md](STEAM.md).
+Orbrun goes into a Steam Deck's library as a non-Steam game that opens Chrome
+in kiosk mode on orbrun.app. It takes five steps and no script: see
+[STEAM.md](STEAM.md).
 
 ## Version support
 

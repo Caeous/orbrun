@@ -730,9 +730,9 @@ export class FrontEnd {
     replace(this.legend, ...(connected && this._view === 'home' ? [prompt('RSTICK', 'Look around')] : []))
   }
 
-  /** The cursor landed on a row: say what it is, and give a field the caret. */
+  /** The cursor landed on a row: say what it is, unless the row says it already, and give a field the caret. */
   private onRow(r: Row, el: HTMLElement) {
-    this.say(r.hint)
+    this.say(r.hint === r.sub ? '' : r.hint)
     if (r.input) r.input.focus()
     else if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) (document.activeElement as HTMLElement).blur()
     void el
@@ -984,7 +984,7 @@ export class FrontEnd {
     this.at({ kind: 'home' })
     this.shape.set('home', shape)
     const first = rows.find((r) => r.main)?.id ?? rows[0]?.id
-    this.list({ cls: 'home-list' + (redraw ? ' still' : ''), title: 'Orbrun', lede: 'An unofficial first-person client for Dungeon Crawl Stone Soup.', splash: this.splash, rows, utilities, notices, extra, focus: keep ?? this.marks.get('home') ?? first })
+    this.list({ cls: 'home-list' + (redraw ? ' still' : ''), title: 'Orbrun', lede: 'An unofficial first\u2011person client for Dungeon\u00a0Crawl\u00a0Stone\u00a0Soup.', splash: this.splash, rows, utilities, notices, extra, focus: keep ?? this.marks.get('home') ?? first })
     if (report) this.showExit(report.s, report.exit, report.why, report.words)
   }
 

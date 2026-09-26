@@ -1,6 +1,6 @@
 // The site's pages with a pad in hand, and in a window of Orbrun's own (../site-pages.ts inlines this).
 //
-// Up and down (d-pad or left stick) move the gold cursor to the next link on
+// Up and down (d-pad or left stick) move the gold cursor to the next link (or Copy) on
 // screen, and scroll when there is none; A follows it, B or Start go back to
 // the game, the bumpers step between a document's sections, the right stick
 // scrolls. The prompts in the corner say so, as the game's do, and only once
@@ -63,6 +63,31 @@
     set()
   }
 
+  // a line to type (a document's fenced block) copied at a click; where the clipboard is shut, it is selected for Ctrl+C
+  for (const pre of document.querySelectorAll('.doc pre')) {
+    const box = document.createElement('div')
+    box.className = 'copyable'
+    pre.before(box)
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'copy'
+    button.textContent = 'Copy'
+    box.append(pre, button)
+    let reset = 0
+    button.addEventListener('click', async () => {
+      const text = pre.textContent.replace(/\n$/, '')
+      try {
+        await navigator.clipboard.writeText(text)
+        button.textContent = 'Copied'
+      } catch {
+        getSelection().selectAllChildren(pre)
+        button.textContent = 'Ctrl+C'
+      }
+      clearTimeout(reset)
+      reset = setTimeout(() => (button.textContent = 'Copy'), 2000)
+    })
+  }
+
   // ---------------------------------------------------------------- the pad
   let cursor = null
   const point = (el) => {
@@ -76,7 +101,7 @@
   addEventListener('mousemove', () => point(null), { passive: true })
 
   const onScreen = () =>
-    [...document.querySelectorAll('main a[href], header a[href], footer a[href]')].filter((el) => {
+    [...document.querySelectorAll('main a[href], main button.copy, header a[href], footer a[href]')].filter((el) => {
       const b = el.getBoundingClientRect()
       return b.width > 0 && b.top >= 56 && b.bottom <= innerHeight - 8
     })

@@ -152,7 +152,7 @@ describe('the front end: the home screen', () => {
     expect(labels(screen)).toEqual(['Play', 'Watch', 'Settings', 'About & credits'])
     expect(focused(screen)).toBe('account')
     expect(screen.root.querySelector('.head .place')?.textContent).toBe('Orbrun')
-    expect(screen.root.querySelector('.head .lede')?.textContent).toBe('An unofficial first-person client for Dungeon Crawl Stone Soup.')
+    expect(screen.root.querySelector('.head .lede')?.textContent).toBe('An unofficial first\u2011person client for Dungeon\u00a0Crawl\u00a0Stone\u00a0Soup.')
     expect(XOM_SPLASHES.map((s) => s.text)).toContain(screen.root.querySelector('.head .splash')?.textContent)
     expect(screen.root.querySelector('.home-footer')?.textContent).toBe('About & credits')
     expect(screen.root.querySelectorAll('a')).toHaveLength(0)
