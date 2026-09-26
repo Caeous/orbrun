@@ -34,6 +34,9 @@ const SOURCE = 'https://github.com/Caeous/orbrun'
 /** the poster's words, as index.html's card has them */
 const POSTER_ALT = 'A stone hall in Dungeon Crawl Stone Soup’s tiles: a down staircase between two granite statues, plants, an altar and a fountain'
 
+/** what a social card sets over its still (tools/build/cards.mjs), as index.html's card has it */
+const CARD_WORDS = ', under the Orbrun name, “Dungeon Crawl Stone Soup in first person” and “Play free at orbrun.app”'
+
 /** the pad's buttons as the documents name them in bold, and the app's glyph for each (glyphs.ts) */
 const PAD_BUTTONS: Record<string, GlyphName> = { A: 'A', B: 'B', X: 'X', Y: 'Y', LB: 'LB', RB: 'RB', LT: 'LT', RT: 'RT', L3: 'L3', R3: 'R3', Select: 'SELECT', Start: 'START' }
 
@@ -226,8 +229,8 @@ function structuredData(page: Page): string {
 }
 
 function head(page: Page, css: string): string {
-  // About's card is its hero, a still of a real game; the documents' is the room they stand in
-  const card = page.path === '/about' ? { src: '/about/card.jpg', alt: HERO_ALT } : { src: '/room/poster.jpg', alt: POSTER_ALT }
+  // About's card is its hero, a still of a real game; the documents' is the room they stand in (both 1200×630, tools/build/cards.mjs)
+  const card = page.path === '/about' ? { src: '/about/card.jpg', alt: HERO_ALT + CARD_WORDS } : { src: '/room/card.jpg', alt: POSTER_ALT + CARD_WORDS }
   const title = esc(page.title)
   const description = esc(page.description)
   return `<head>
@@ -246,8 +249,8 @@ function head(page: Page, css: string): string {
 <meta property="og:url" content="${url(page)}" />
 <meta property="og:image" content="${SITE_URL}${card.src}" />
 <meta property="og:image:type" content="image/jpeg" />
-<meta property="og:image:width" content="1280" />
-<meta property="og:image:height" content="720" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="${esc(card.alt)}" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="${title}" />
