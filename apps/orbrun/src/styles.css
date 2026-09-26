@@ -1076,9 +1076,10 @@ a.item.beside {
     min-width: 0;
   }
 }
-/* a phone on its side: the head on one line, the menu right under it. The wordmark keeps its size, so
-   the air around it is what gives way */
-@media (max-height: 460px) {
+/* a phone on its side, or a handheld's 1280x800 at 150% (853x533): the head on one line, the menu right
+   under it. The wordmark keeps its size, so the air around it is what gives way. The full head needs
+   about 590px, so this takes over below 600 rather than letting the title screen scroll */
+@media (max-height: 600px) {
   .frame.menu-frame {
     padding-top: max(0.6rem, env(safe-area-inset-top));
     padding-bottom: max(0.6rem, env(safe-area-inset-bottom));
