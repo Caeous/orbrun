@@ -27,6 +27,17 @@ interface BuildEvent {
 
 const CHANNELS = ['stable', 'trunk']
 
+/**
+ * Whether the running version was deployed by this build: after it started and
+ * before it stopped. Newer-than-the-start alone would credit every build still
+ * on the queue with the next deploy, as when the queue drained a day of no-op
+ * runs onto the first build that published.
+ */
+function publishedDuring(deployed: string, started: string, stopped?: string | null): boolean {
+  const t = Date.parse(deployed)
+  return t > Date.parse(started) && (!stopped || t <= Date.parse(stopped))
+}
+
 const IMMUTABLE = /^\/(builds|gamedata)\/[0-9a-f]{40}\//
 
 /**
@@ -65,7 +76,8 @@ export default {
     if (!res.ok) throw new Error(`deploy hook: HTTP ${res.status}`)
   },
   // Workers Builds events (the orbrun-engine-builds queue): one email per build
-  // that failed, was canceled or published; a run with nothing new sends none
+  // that failed, was canceled or published; a run with nothing new sends none,
+  // even when it reaches the queue late
   async queue(batch: { messages: { body: BuildEvent }[] }, env: Env): Promise<void> {
     if (!env.NOTIFY_EMAIL) return
     for (const { body } of batch.messages) {
@@ -75,7 +87,7 @@ export default {
       let subject: string
       if (outcome === 'failed' || outcome === 'canceled') {
         subject = `orbrun engine build ${outcome}`
-      } else if (outcome === 'succeeded' && Date.parse(env.VERSION.timestamp) > Date.parse(started)) {
+      } else if (outcome === 'succeeded' && publishedDuring(env.VERSION.timestamp, started, build.stoppedAt)) {
         const live = await Promise.all(CHANNELS.map(async (c) => {
           const res = await env.ASSETS.fetch(new Request(`https://engine/${c}/engine.json`))
           return res.ok ? `${c} ${((await res.json()) as { version: string }).version}` : `${c} none`

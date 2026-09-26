@@ -340,7 +340,7 @@ describe('a server menu on the keyboard', () => {
     expect(marked()).toBe(3)
     key('ArrowLeft')
     expect(marked()).toBe(2)
-    // past the end of a line, sideways goes nowhere
+    // no column further left: sideways goes nowhere
     key('ArrowLeft')
     expect(marked()).toBe(2)
     key('ArrowUp')
@@ -355,6 +355,28 @@ describe('a server menu on the keyboard', () => {
     expect(hoveredRow(host)).toBe(2)
     // the server's hover never left that row while the cursor was on the more line, so it is told nothing
     expect(sent).toEqual([])
+  })
+  it('past the end of a line, sideways crosses into the next column, on whatever line holds it', async () => {
+    const { st, frame, host, key } = setup()
+    // the shop in the screenshot: [/] sort alone on the bottom line, under [Esc] exit, with [!] buy|examine items to the right
+    const row = (letter: string) => ({ text: `<lightgreen>${letter} - </lightgreen>  450 gold   a ring`, hotkeys: [letter.charCodeAt(0)], level: 2 })
+    const more = '<yellow>You have 198 gold pieces.</yellow>\n[<w>Esc</w>] exit              [<w>!</w>] buy|examine items        [a-h] mark item for purchase\n[<w>/</w>] sort (type)                                    [A-H] put item on shopping list'
+    reduce(st, { msg: 'menu', tag: 'shop', flags: 0x0004, last_hovered: 0, title: { text: 'Welcome' }, more, alt_more: more, total_items: 2, items: [row('a'), row('b')] } as never)
+    frame()
+    await new Promise((r) => requestAnimationFrame(() => r(null)))
+    const switches = () => Array.from(host.querySelectorAll('.more .more-hot')) as HTMLElement[]
+    const lit = () => switches().find((e) => e.classList.contains('hovered'))?.textContent ?? null
+    // the letter ranges are not switches: one key each, or none
+    expect(switches().map((e) => e.textContent)).toEqual(['[Esc] exit', '[!] buy|examine items', '[/] sort (type)'])
+    // up from the first row: the bottom line's first switch
+    key('ArrowUp')
+    expect(lit()).toBe('[/] sort (type)')
+    // nothing to its right on its own line: right goes on into the next column, up a line
+    key('ArrowRight')
+    expect(lit()).toBe('[!] buy|examine items')
+    // and back left along the top line
+    key('ArrowLeft')
+    expect(lit()).toBe('[Esc] exit')
   })
   it('rows and switches are one ring: down off the bottom line comes back to the top, up from the first row to the bottom line', async () => {
     const { ov, st, frame, k, host, key } = setup()

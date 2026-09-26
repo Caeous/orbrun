@@ -1268,7 +1268,8 @@ export class Overlays {
    * out as they are drawn: lines of columns (the shop's `[Esc] exit` over its
    * `[/] sort`, `[!] buy|examine items` beside it). On them, up and down go
    * to the nearest switch on the line above or below, and left and right
-   * along the line. Off the top line up goes back to the last row; off the
+   * along the line, then on into the next column over, on whatever line it
+   * has a switch. Off the top line up goes back to the last row; off the
    * bottom line down comes round to the first (rows and switches make one
    * ring, whatever the menu's WRAP flag says: a screen this short is quicker
    * walked round than back up). From the rows, down off the last lands on the
@@ -1282,13 +1283,16 @@ export class Overlays {
     const i = this.menuFooterIndex
     const slots = foot.map((f) => ({ row: f.line, col: f.col }))
     if (i >= 0) {
-      const next = focusStep(slots, i, dir)
+      // sideways: along the line, and past its end into the next column over, whatever line holds it
+      // (the shop's `[/] sort`, alone on its line, goes right to `[!] buy|examine items` above)
+      const sideways = dir === 'left' || dir === 'right'
+      const next = focusStep(slots, i, dir) ?? (sideways ? focusStep(slots, i, dir, { columns: true }) : null)
       if (next !== null) {
         this.setFooterIndex(next)
         return true
       }
-      // sideways past the end of a line: nowhere to go, and the rows' left and right are the server's
-      if (dir === 'left' || dir === 'right') return true
+      // sideways with no column further that way: nowhere to go, and the rows' left and right are the server's
+      if (sideways) return true
       // off the switches: round to the first row, or back up to the last
       this.setFooterIndex(-1)
       const row = nextHoverableItem(menu, dir === 'up', dir === 'down' ? 0 : menu.items.length - 1, true)
