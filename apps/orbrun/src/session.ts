@@ -91,24 +91,27 @@ export class Session {
   /** a `probe` waiting on its answer */
   private probing: { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> } | null = null
 
-  constructor(server: ServerInfo, username: string | null = null) {
+  /** `conn`: a connection made elsewhere (the e2e harness's in-process engine); by default the server's own. */
+  constructor(server: ServerInfo, username: string | null = null, conn?: Connection) {
     this.server = server
     this.username = username
     const onDiagnostic = (t: string, d?: unknown) => this.diag(t + (d ? ' ' + safeString(d) : ''))
-    this.conn = server.offline
-      ? new LocalWasmConnection({
-          channels: () => engines.channels(),
-          engineBase: (c) => engines.engineBase(c),
-          gamedataBase: gamedataBaseFor(server),
-          saves: browserSaveBook(),
-          onDiagnostic,
-        })
-      : new RemoteConnection({
-          url: server.ws,
-          gamedataBase: gamedataBaseFor(server),
-          WebSocket: window.WebSocket as never,
-          onDiagnostic,
-        })
+    this.conn =
+      conn ??
+      (server.offline
+        ? new LocalWasmConnection({
+            channels: () => engines.channels(),
+            engineBase: (c) => engines.engineBase(c),
+            gamedataBase: gamedataBaseFor(server),
+            saves: browserSaveBook(),
+            onDiagnostic,
+          })
+        : new RemoteConnection({
+            url: server.ws,
+            gamedataBase: gamedataBaseFor(server),
+            WebSocket: window.WebSocket as never,
+            onDiagnostic,
+          }))
     this.conn.onMessage((m) => this.handle(m))
     // a build that finished downloading is a game the lobby offers
     if (this.conn instanceof LocalWasmConnection) {

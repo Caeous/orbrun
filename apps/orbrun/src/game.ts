@@ -8,9 +8,8 @@ import { RendererPark } from './park'
 import { escapeHtml, h } from './dom'
 import type { Session } from './session'
 import { CameraController } from './camera'
-import { deriveContext, deriveMode, isFocusMode, type Context } from './context'
-import type { FocusOp } from './focus'
-import { HOLD_MS, LEVEL_MAP, barLabels, contextualLabel, armsTapOrHold, holdAction, resolve, type Action, type CommandCategory, type RelDir } from './bindings'
+import { deriveContext, deriveMode, type Context } from './context'
+import { HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, type Action, type CommandCategory, type RelDir } from './bindings'
 import { Runner, type LastStep } from './runner'
 import { Hud, rcFont } from './hud'
 import { GridHost } from './grid/host'
@@ -43,8 +42,6 @@ const DRAG_SLOP = 6
 const MAP_PAN_RATE = 0.12
 /** game.js `show_diameter`: the cells across a full field of view, which the view is fitted to */
 const SHOW_DIAMETER = 17
-/** keyboard keys the focus layer takes over on a screen that offers a cursor */
-const FOCUS_KEYS: Record<string, FocusOp> = { ArrowUp: 'prev', ArrowDown: 'next', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'select', Escape: 'cancel', PageUp: 'pagePrev', PageDown: 'pageNext' }
 
 /** The device the player touched last; the prompt strip is drawn for it. */
 export type InputDevice = 'pad' | 'keyboard' | 'pointer'
@@ -56,6 +53,8 @@ export interface GameHooks {
   onSystem(op: 'disconnect'): void
   gamepad: GamepadInput
   initialInput?: InputDevice
+  /** the map view to draw with, in place of the settings' 2D or 3D one (the e2e harness has no WebGL) */
+  renderer?(): MapRenderer
 }
 
 /**
@@ -456,7 +455,7 @@ export class GameScreen {
 
   private makeRenderer(): MapRenderer {
     const st = this.hooks.settings()
-    const r: MapRenderer = this.is3d ? new Render3d(this.render3dOptions(st)) : new Render2d({ cellSize: 32 })
+    const r: MapRenderer = this.hooks.renderer?.() ?? (this.is3d ? new Render3d(this.render3dOptions(st)) : new Render2d({ cellSize: 32 }))
     r.mount(this.canvas)
     this.viewmodelRev = ''
     if (this.session.gamedata) {
@@ -638,14 +637,12 @@ export class GameScreen {
     // the server reports targeting alone; the runner knows whether its `x` opened it
     if (this.runner.examining(this.ctx.mode)) this.ctx.examining = true
     this.viewHeld = this.runner.holdingView(this.ctx.mode)
-    if (this.ctx.mode === 'popup') {
-      this.ctx.popupActions = this.overlays.popupActions()
-      this.ctx.popupEnter = this.overlays.popupEnter()
-    }
+    if (this.ctx.mode === 'popup') this.ctx.popupActions = this.overlays.popupActions()
     this.overlays.updatePrompt(this.ctx.mode, this.ctx.prompt, this.lastInput)
     this.overlays.syncFocus(this.ctx)
     const fi = this.overlays.focusInfo(this.ctx)
     if (fi) this.ctx.focus = fi
+    this.ctx.pageable = this.overlays.pageable(this.ctx)
     if (this.padHints.waiting) this.padHints.observe(this.padHintEvidence(), now)
     const cursor = this.cursorFor()
     const lc = this.lastCursor
@@ -1349,25 +1346,29 @@ export class GameScreen {
     }
     // Esc is the server's game menu; Orbrun's settings are also under Commands → More.
     const mode = this.ctx.mode
-    // a server menu: arrows, paging and the paging characters move its hover and
-    // page on the client, as menu.js does before any key reaches the server
+    // on a screen the keyboard is a pad: Enter, Escape, Space and the arrows are its buttons and its
+    // d-pad, and do exactly what those do (bindings.ts screenKey), down the same path
+    if (!ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
+      const sk = screenKey(ev.key, this.ctx, this.overlays.popupScrolls)
+      if (sk) {
+        ev.preventDefault()
+        // a pad's buttons never repeat (gamepad.ts): a held Enter confirms once, not on every screen it
+        // opens; the arrows repeat as the d-pad does
+        if (ev.repeat && 'button' in sk) return
+        this.inputActed()
+        const a = 'button' in sk ? buttonAction(sk.button, this.ctx) : resolve({ type: 'dir', dir: sk.dir, source: 'dpad' }, this.ctx)
+        if (a) this.runner.execute(a)
+        this.needsRender = true
+        return
+      }
+    }
+    // a server menu: paging and the paging characters move its hover and page on
+    // the client, as menu.js does before any key reaches the server
     if (mode === 'menu' && this.ctx.menu?.menu.type !== 'crt' && this.overlays.menuKey(this.session.state, ev)) {
       ev.preventDefault()
       this.inputActed()
       this.needsRender = true
       return
-    }
-    // the focus layer: arrows, Enter and Escape drive the cursor over a screen that offers one; otherwise the keys stay raw
-    if (isFocusMode(this.ctx) && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey) {
-      // space fires the cursor too, except on a popup that scrolls its own text, where
-      // it pages (ui-layouts.js scroller_handle_key) — the reading key stays the reader's
-      const op = FOCUS_KEYS[ev.key] ?? (ev.key === ' ' && !this.overlays.popupScrolls ? 'select' : undefined)
-      if (op && this.overlays.focusKey(this.session.state, this.ctx, op, ev.key === 'Enter' && !ev.repeat)) {
-        ev.preventDefault()
-        this.inputActed()
-        this.needsRender = true
-        return
-      }
     }
     // a popup that scrolls on the client (describe screens, help, the game-over
     // text): arrows, paging and the paging characters scroll it, as ui-layouts.js does

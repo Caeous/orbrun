@@ -287,7 +287,7 @@ describe('the command menus', () => {
     expect(TRAVEL_COMMANDS.find((c) => c.key === 'G >')!.action).toMatchObject({ seq: [{ text: 'G' }, { text: '>', await: 'prompt' }] })
   })
 
-  it('recorded pickup: A marks an item, Start sends Enter instead of selecting another item', () => {
+  it('recorded pickup: A marks an item, and once one is marked Start sends Enter instead of selecting another item', () => {
     const h = setup()
     const st = initialState()
     st.phase = 'playing'
@@ -304,7 +304,14 @@ describe('the command menus', () => {
     h.ov.menuOp(st, 'select')
     expect(h.sent.some((m) => m.msg === 'key' && m.keycode === 13)).toBe(false)
     expect(h.sent.some((m) => m.msg === 'key')).toBe(true)
-    expect(resolve({ type: 'press', button: 'START', t: 1 }, ctx)).toMatchObject({ kind: 'keys', seq: [{ key: 13 }] })
+    // nothing marked yet: Enter would take nothing, and Start is not offered
+    expect(resolve({ type: 'press', button: 'START', t: 1 }, ctx)).toBeNull()
+    // the server marks the row (menu.cc MenuEntry::get_text: `a + ...`), and Start takes it
+    const menu = st.menus[st.menus.length - 1]
+    const row = menu.items.findIndex((it) => !!it?.hotkeys?.length)
+    menu.items[row] = { ...menu.items[row]!, text: menu.items[row]!.text!.replace(/^(\s*\S) - /, '$1 + ') }
+    const marked = deriveContext(st, emptyScene(), { facing: 0 } as never, 'micro')
+    expect(resolve({ type: 'press', button: 'START', t: 2 }, marked)).toMatchObject({ kind: 'keys', seq: [{ key: 13 }] })
   })
 })
 

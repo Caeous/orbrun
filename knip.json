@@ -1,9 +1,28 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
-    ".": { "entry": ["tools/build/*.mjs", "engine/worker/index.ts"] },
-    "apps/orbrun": { "entry": ["testbed/*.ts", "worker/index.ts"] },
-    "tools/record": { "entry": ["*.mjs"] },
-    "packages/scene-webtiles": { "ignore": ["test/fixtures/**"] }
+    ".": {
+      "entry": [
+        "tools/build/*.mjs",
+        "engine/worker/index.ts"
+      ]
+    },
+    "apps/orbrun": {
+      "entry": [
+        "testbed/*.ts",
+        "worker/index.ts",
+        "test/e2e/engine-worker.mjs"
+      ]
+    },
+    "tools/record": {
+      "entry": [
+        "*.mjs"
+      ]
+    },
+    "packages/scene-webtiles": {
+      "ignore": [
+        "test/fixtures/**"
+      ]
+    }
   }
 }

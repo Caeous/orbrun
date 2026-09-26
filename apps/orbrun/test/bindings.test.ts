@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Keys, MouseMode, initialState, type MenuState } from '@orbrun/webtiles'
-import { actionLabel, armsTapOrHold, barLabels, bindingTable, contextualLabel, controlSheet, holdAction, NO_ACTION, promptLabels, resolve } from '../src/bindings'
+import { actionLabel, armsTapOrHold, barLabels, bindingTable, buttonAction, contextualLabel, controlSheet, holdAction, NO_ACTION, promptLabels, resolve, screenKey } from '../src/bindings'
 import { deriveMode, readiedAction, shopContext, type Context } from '../src/context'
 import commands from '../data/commands.json'
 
@@ -10,6 +10,7 @@ const ctx = (over: Partial<Context>): Context => ({
   ahead: { kind: 'none', label: '' },
   under: { kind: 'none', label: '' },
   hostilesInView: 0,
+  monstersInView: 0,
   ...over,
 })
 
@@ -48,14 +49,17 @@ describe('modes come from the server, never from message text', () => {
     st.messages.lines.push({ text: 'Okay, then.', turn: 40, channel: 0 })
     expect(deriveMode(st)).toBe('command')
   })
-  it('a yes/no the server asks as its own popup menu is a menu, not a prompt card', () => {
-    // prompt.cc `yesno` with `use_popup` (inside a layout, or `prompt_menu`): fixture menu-prompt-1
+  it('a yes/no is the yes/no card however crawl asks it: its own popup menu, a menu footer, the message pane', () => {
+    // prompt.cc `yesno` with `use_popup` (`prompt_menu`, on in every browser): fixture menu-prompt-1
     const st = initialState()
     st.phase = 'playing' as typeof st.phase
     st.inputMode = MouseMode.YESNO
     st.menus.push({ tag: 'prompt', items: [] } as unknown as (typeof st.menus)[number])
-    expect(deriveMode(st)).toBe('menu')
-    st.menus[0].tag = 'inventory'
+    expect(deriveMode(st)).toBe('yesno')
+    // the shop's "Purchase items for 40 gold? (y/N)", asked in its footer
+    st.menus[0].tag = 'shop'
+    expect(deriveMode(st)).toBe('yesno')
+    st.menus.length = 0
     expect(deriveMode(st)).toBe('yesno')
   })
   it('in macro capture the pad offers nothing that would send a rotated key', () => {
@@ -67,15 +71,20 @@ describe('modes come from the server, never from message text', () => {
 
 describe('focus modes share one binding set', () => {
   const focusModes = ['popup', 'newgame', 'crt', 'yesno', 'prompt', 'dialog', 'ended'] as const
-  it('A selects the focused item, B cancels, the bumpers page, the d-pad moves the cursor', () => {
+  it('A selects the focused item, B cancels, the bumpers page where there is a page, the d-pad moves the cursor', () => {
     for (const mode of focusModes) {
       const c = ctx({ mode })
       const t = bindingTable(c)
-      expect(t.A, mode).toEqual({ kind: 'focus', op: 'select' })
-      expect(t.B, mode).toEqual({ kind: 'focus', op: 'cancel' })
-      if (mode !== 'dialog') {
-        expect(t.LB, mode).toEqual({ kind: 'focus', op: 'pagePrev' })
-        expect(t.RB, mode).toEqual({ kind: 'focus', op: 'pageNext' })
+      // a yes/no has no cursor: its answers are its buttons (below)
+      if (mode !== 'yesno') expect(t.A, mode).toEqual({ kind: 'focus', op: 'select' })
+      // character creation's B is the screen's own step back, when it has one (below)
+      if (mode !== 'yesno' && mode !== 'newgame') expect(t.B, mode).toEqual({ kind: 'focus', op: 'cancel' })
+      expect(t.LB, mode).toBeUndefined()
+      expect(t.START, mode).toBeUndefined()
+      if (mode !== 'dialog' && mode !== 'yesno') {
+        const paged = bindingTable(ctx({ mode, pageable: true }))
+        expect(paged.LB, mode).toEqual({ kind: 'focus', op: 'pagePrev' })
+        expect(paged.RB, mode).toEqual({ kind: 'focus', op: 'pageNext' })
       }
       expect(resolve({ type: 'dir', source: 'dpad', dir: 0 }, c)).toEqual({ kind: 'focus', op: 'prev' })
       expect(resolve({ type: 'dir', source: 'dpad', dir: 4 }, c)).toEqual({ kind: 'focus', op: 'next' })
@@ -99,12 +108,27 @@ describe('focus modes share one binding set', () => {
     expect(actionLabel({ kind: 'focus', op: 'select' }, ctx({ mode: 'popup' }))).toBe('Close')
     expect(actionLabel({ kind: 'focus', op: 'cancel' }, ctx({ mode: 'popup' }))).toBe('Close')
     expect(actionLabel({ kind: 'focus', op: 'select' }, ctx({ mode: 'prompt' }))).toBe('Confirm')
-    const yn = { label: 'Yes', cancelLabel: 'No', index: 0, count: 2 }
-    expect(actionLabel({ kind: 'focus', op: 'select' }, ctx({ mode: 'yesno', focus: yn }))).toBe('Yes')
-    expect(actionLabel({ kind: 'focus', op: 'cancel' }, ctx({ mode: 'yesno', focus: yn }))).toBe('No')
+  })
+  it('a yes/no puts Yes on A and No on B, whatever crawl\'s default; an Always goes on X', () => {
+    const c = ctx({ mode: 'yesno', prompt: { text: 'Really?', options: [{ hotkey: 'Y', label: 'Yes' }, { hotkey: 'N', label: 'No' }, { hotkey: 'A', label: 'Always' }], yesno: true, cancel: true, default: 'N' } })
+    const t = bindingTable(c)
+    expect(t.A).toEqual({ kind: 'prompt', hotkey: 'Y' })
+    expect(t.B).toEqual({ kind: 'prompt', hotkey: 'N' })
+    expect(t.X).toEqual({ kind: 'prompt', hotkey: 'A' })
+    expect(actionLabel(t.A!, c)).toBe('Yes')
+    expect(actionLabel(t.B!, c)).toBe('No')
+    // nothing parsed: the two answers crawl always takes
+    expect(bindingTable(ctx({ mode: 'yesno' })).A).toEqual({ kind: 'prompt', hotkey: 'Y' })
+    // the d-pad has nothing to walk
+    expect(resolve({ type: 'dir', source: 'dpad', dir: 2 }, c)).toEqual({ kind: 'focus', op: 'right' })
+  })
+  it('character creation: B is the screen\'s own step back, and absent on the first screen', () => {
+    expect(bindingTable(ctx({ mode: 'newgame' })).B).toBeUndefined()
+    expect(bindingTable(ctx({ mode: 'newgame', newgameBack: 32 })).B).toMatchObject({ seq: [{ key: 32 }], label: 'Back' })
+    expect(bindingTable(ctx({ mode: 'newgame', newgameBack: 8 })).B).toMatchObject({ seq: [{ key: 8 }], label: 'Back' })
   })
   it('the skills screen is a crt menu: focus, not the server-hover menu set', () => {
-    const crtMenu = { menu: { tag: 'skills', type: 'crt', items: [], flags: 0 } as never, hoverable: [], arrowsSelect: false, multiselect: false, wrap: false }
+    const crtMenu = { menu: { tag: 'skills', type: 'crt', items: [], flags: 0 } as never, hoverable: [], arrowsSelect: false, multiselect: false, wrap: false, filter: false, sections: false, anyMarked: false }
     const c = ctx({ mode: 'menu', menu: crtMenu, crtTag: 'skills' })
     expect(bindingTable(c).A).toEqual({ kind: 'focus', op: 'select' })
     expect(resolve({ type: 'dir', source: 'dpad', dir: 4 }, c)).toEqual({ kind: 'focus', op: 'next' })
@@ -112,10 +136,12 @@ describe('focus modes share one binding set', () => {
     const c2 = ctx({ mode: 'menu', menu: { ...crtMenu, menu: { tag: 'inventory', items: [], flags: 0 } as never } })
     expect(bindingTable(c2).A).toEqual({ kind: 'menu', op: 'select' })
     expect(resolve({ type: 'dir', source: 'dpad', dir: 4 }, c2)).toEqual({ kind: 'menu', op: 'next' })
-    // left / right reach the server raw (the inventory's category pages); the bumpers walk the sections
+    // left / right reach the server raw (the inventory's category pages); the bumpers walk the sections, where there are some
     expect(resolve({ type: 'dir', source: 'dpad', dir: 2 }, c2)).toEqual({ kind: 'menu', op: 'right' })
-    expect(bindingTable(c2).LB).toEqual({ kind: 'menu', op: 'sectionPrev' })
-    expect(bindingTable(c2).RB).toEqual({ kind: 'menu', op: 'sectionNext' })
+    expect(bindingTable(c2).LB).toBeUndefined()
+    const c3 = ctx({ mode: 'menu', menu: { ...crtMenu, menu: { tag: 'inventory', items: [], flags: 0 } as never, sections: true } })
+    expect(bindingTable(c3).LB).toEqual({ kind: 'menu', op: 'sectionPrev' })
+    expect(bindingTable(c3).RB).toEqual({ kind: 'menu', op: 'sectionNext' })
   })
   it('X examines the hovered row of a menu that describes its rows; the label shows only on such a row', () => {
     const row = (letter: string) => ({ text: ` ${letter} - x`, hotkeys: [letter.charCodeAt(0)], level: 2 })
@@ -157,8 +183,8 @@ describe('focus modes share one binding set', () => {
     const t = bindingTable(ctx({ mode: 'more' }))
     expect(t.A).toMatchObject({ kind: 'keys', seq: [{ key: Keys.SPACE }] })
     expect(t.B).toMatchObject({ kind: 'keys', seq: [{ key: Keys.ESC }] })
-    expect(t.START).toMatchObject({ kind: 'keys', seq: [{ key: Keys.ENTER }] })
-    for (const b of ['X', 'Y', 'LT', 'RT', 'LB', 'RB', 'L3', 'R3', 'SELECT'] as const) expect(t[b]).toBeUndefined()
+    // Enter is A there (screenKey): no Start beside it
+    for (const b of ['X', 'Y', 'LT', 'RT', 'LB', 'RB', 'L3', 'R3', 'SELECT', 'START'] as const) expect(t[b]).toBeUndefined()
   })
   it('the --more-- chip under A reads as the pane\'s more row: its text, in the pane\'s white', () => {
     // the pane's more row is the server's more_text when it sent one, else --more--, in the page's white
@@ -396,10 +422,15 @@ describe('direct command controls', () => {
     expect(contextualLabel(ctx({ ahead: { kind: 'item', label: 'items' } }))).toBe(NO_ACTION)
     expect(contextualLabel(ctx({ under: { kind: 'item', label: 'a +0 halberd' } }))).toBe('a +0 halberd')
   })
-  it('Start is Enter in menus and prompts, distinct from selecting a row', () => {
-    for (const mode of ['menu', 'popup', 'prompt', 'yesno', 'crt', 'newgame', 'dialog', 'targeting', 'levelmap', 'more', 'macro'] as const) {
-      expect(bindingTable(ctx({ mode })).START).toMatchObject({ seq: [{ key: Keys.ENTER }] })
+  it('Start is Enter only where Enter is not A: a menu of marks with a mark, and macro capture', () => {
+    // everywhere else the keyboard's Enter is A (screenKey), and a Start beside it would say the same thing twice
+    for (const mode of ['menu', 'popup', 'prompt', 'yesno', 'crt', 'newgame', 'dialog', 'targeting', 'levelmap', 'more'] as const) {
+      expect(bindingTable(ctx({ mode })).START, mode).toBeUndefined()
     }
+    const menu = (anyMarked: boolean) => ({ menu: { tag: 'pickup', items: [], flags: 0x40004 } as never, hoverable: [], arrowsSelect: true, multiselect: true, wrap: false, filter: false, sections: false, anyMarked })
+    expect(bindingTable(ctx({ mode: 'menu', menu: menu(true) })).START).toMatchObject({ seq: [{ key: Keys.ENTER }], label: 'accept' })
+    expect(bindingTable(ctx({ mode: 'menu', menu: menu(false) })).START).toBeUndefined()
+    expect(bindingTable(ctx({ mode: 'macro' })).START).toMatchObject({ seq: [{ key: Keys.ENTER }] })
     expect(bindingTable(ctx({ mode: 'menu' })).A).toEqual({ kind: 'menu', op: 'select' })
     expect(bindingTable(ctx({ mode: 'menu' })).RT).toBeUndefined()
   })
@@ -409,7 +440,7 @@ describe('look mode (x): A describes, named for what the cursor rests on', () =>
   // directn.cc: `x` is `just_looking`; `v` is CMD_TARGET_DESCRIBE, while Enter and `.` select, which do_look_around turns into travel
   const look = (over: Partial<Context> = {}) => ctx({ mode: 'targeting', examining: true, ...over })
   it('A sends v as "Examine <thing>", X travels with `.`, Y is help, B cancels, bumpers cycle monsters and triggers objects', () => {
-    const t = bindingTable(look({ cursor: { kind: 'monster', monster: {} as never, hostile: true, label: 'goblin' } }))
+    const t = bindingTable(look({ monstersInView: 1, cursor: { kind: 'monster', monster: {} as never, hostile: true, label: 'goblin' } }))
     expect(t.A).toEqual({ kind: 'examine' })
     expect(t.X).toMatchObject({ seq: [{ text: '.' }], label: 'Travel here' })
     expect(t.Y).toMatchObject({ seq: [{ text: '?' }], label: 'Help' })
@@ -419,6 +450,8 @@ describe('look mode (x): A describes, named for what the cursor rests on', () =>
     // cmd-keys.h: `/` CMD_TARGET_OBJ_CYCLE_BACK, `*` CMD_TARGET_OBJ_CYCLE_FORWARD
     expect(t.LT).toMatchObject({ seq: [{ text: '/' }] })
     expect(t.RT).toMatchObject({ seq: [{ text: '*' }] })
+    // with no monster in view the bumpers have nothing to cycle
+    expect(bindingTable(look()).LB).toBeUndefined()
   })
   it('the corner shows the three keys the server prompts ("? - help, v - describe, . - travel"), A naming the monster, the pile, the feature, or "here"', () => {
     const show = (c: Context) => promptLabels(c).map((l) => l.button + ' ' + l.label)
@@ -438,8 +471,10 @@ describe('look mode (x): A describes, named for what the cursor rests on', () =>
   })
   it('Y cycles the quiver inside the aim, and the corner shows it while something is quivered', () => {
     // cmd-keys.h targeting: `)` CMD_TARGET_CYCLE_QUIVER_FORWARD, `(` CMD_TARGET_CYCLE_QUIVER_BACKWARD
-    const aim = ctx({ mode: 'targeting', readiedAction: 'Throw: 23 darts' })
+    const aim = ctx({ mode: 'targeting', readiedAction: 'Throw: 23 darts', aimQuiver: true })
     expect(bindingTable(aim).Y).toMatchObject({ kind: 'hold', tap: { seq: [{ text: ')' }] }, hold: { seq: [{ text: '(' }] } })
+    // a spell's aim prints no "Q - select action": there is no quiver to cycle
+    expect(bindingTable(ctx({ mode: 'targeting', readiedAction: 'Throw: 23 darts' })).Y).toBeUndefined()
     expect(promptLabels(aim).map((l) => l.button + ' ' + l.label)).toContainEqual('Y Next quiver')
     // nothing quivered, and nothing to cycle: the corner keeps the aim's own prompts
     expect(promptLabels(ctx({ mode: 'targeting' })).map((l) => l.button)).not.toContain('Y')
@@ -452,8 +487,9 @@ describe('look mode (x): A describes, named for what the cursor rests on', () =>
     expect(resolve({ type: 'press', button: 'RB', t: 0 }, ctx({ mode: 'targeting' }))).toEqual({ kind: 'fire' })
     // holding never repeats, as with every button
     expect(resolve({ type: 'repeat', button: 'RB', n: 1 }, ctx({ mode: 'targeting' }))).toBeNull()
-    // the aim's other bumper walks the targets; `-` is left to the palette
-    expect(bindingTable(ctx({ mode: 'targeting' })).LB).toMatchObject({ seq: [{ text: '+' }] })
+    // the aim's other bumper walks the targets, when there is more than one; `-` is left to the palette
+    expect(bindingTable(ctx({ mode: 'targeting', hostilesInView: 2 })).LB).toMatchObject({ seq: [{ text: '+' }] })
+    expect(bindingTable(ctx({ mode: 'targeting', hostilesInView: 1 })).LB).toBeUndefined()
     // a look is not an aim: RB there stays what the look table says
     expect(bindingTable(look()).RB).not.toEqual({ kind: 'fire' })
   })
@@ -506,7 +542,8 @@ describe('the shop menu', () => {
     expect(bindingTable(listed).START).toMatchObject({ label: 'buy shopping list' })
     expect(bindingTable(listed).LT).toMatchObject({ label: 'Mark listed' })
     const bare = shopCtx('buy', [row('a', '-', 'a potion')])
-    expect(bindingTable(bare).START).toMatchObject({ seq: [{ key: Keys.ENTER }] })
+    // purchase_selected with nothing marked and nothing listed does nothing: no Start to press
+    expect(bindingTable(bare).START).toBeUndefined()
     expect(bindingTable(bare).LT).toBeUndefined()
   })
   it('R3 names the order the footer is sorting by', () => {
@@ -574,9 +611,10 @@ describe('the action bar shows only what the situation created', () => {
     expect(show(ctx({ layer: 'macro' }))).toEqual([])
     expect(show(ctx({ layer: 'info', hostilesInView: 1 }))).toEqual([])
   })
-  it('a menu shows Start to confirm; a shop shows its marks and what Enter buys', () => {
-    const menu = { menu: { tag: 'inv', type: 'menu', items: [], flags: 0 } as never, hoverable: [], arrowsSelect: false, multiselect: false, wrap: false }
-    expect(show(ctx({ mode: 'menu', menu }))).toEqual(['START accept'])
+  it('a menu of marks shows Start once something is marked; a shop shows its marks and what Enter buys', () => {
+    const menu = { menu: { tag: 'inv', type: 'menu', items: [], flags: 0 } as never, hoverable: [], arrowsSelect: false, multiselect: false, wrap: false, filter: false, sections: false, anyMarked: false }
+    expect(show(ctx({ mode: 'menu', menu }))).toEqual([])
+    expect(show(ctx({ mode: 'menu', menu: { ...menu, multiselect: true, anyMarked: true } }))).toEqual(['START accept'])
     const shop = { canBuy: true, mode: 'buy', hoveredMarked: true, hoveredListed: false, anyMarked: true, anyListed: false } as const
     expect(show(ctx({ mode: 'menu', menu: { ...menu, shop } }))).toEqual(['A mark item for purchase', 'X buy|examine items', 'Y put item on shopping list', 'LT List marked', 'START buy marked items'])
     // nothing marked: the flip still shows, since the footer's `[!] buy|examine items` is the only way to it on a pad
@@ -587,7 +625,7 @@ describe('the action bar shows only what the situation created', () => {
     expect(show(ctx({ mode: 'menu', menu: { ...menu, shop: { ...bare, canBuy: false, mode: 'examine' } } }))).toEqual(['A examine item', 'Y put item on shopping list'])
   })
   it('a prompt shows its answers without a Start confirmation hint', () => {
-    expect(show(ctx({ mode: 'yesno', focus: { label: 'Yes', cancelLabel: 'No', index: 0, count: 2 } }))).toEqual(['A Yes'])
+    expect(show(ctx({ mode: 'yesno' }))).toEqual(['A Yes'])
     expect(show(ctx({ mode: 'popup' }))).toEqual([])
     expect(show(ctx({ mode: 'popup', focus: { label: 'Wield', cancelLabel: null, index: 0, count: 3 } }))).toEqual(['A Wield'])
   })
@@ -600,5 +638,62 @@ describe('the action bar shows only what the situation created', () => {
   })
   it('a --more-- names itself on A, with the other prompts', () => {
     expect(show(ctx({ mode: 'more' }))).toEqual(['A --more--'])
+  })
+})
+
+describe('on a screen the keyboard is a pad (screenKey)', () => {
+  const menu = (multiselect: boolean) => ({ menu: { tag: 'pickup', items: [], flags: 0 } as never, hoverable: [], arrowsSelect: true, multiselect, wrap: false, filter: false, sections: false, anyMarked: false })
+  it('Enter is A, Escape is B, the arrows are the d-pad, on every screen with a cursor', () => {
+    for (const mode of ['popup', 'newgame', 'crt', 'prompt', 'dialog', 'ended'] as const) {
+      const c = ctx({ mode })
+      expect(screenKey('Enter', c), mode).toEqual({ button: 'A' })
+      expect(screenKey('Escape', c), mode).toEqual({ button: 'B' })
+      expect(screenKey(' ', c), mode).toEqual({ button: 'A' })
+      expect(screenKey('ArrowUp', c), mode).toEqual({ dir: 0 })
+      expect(screenKey('ArrowRight', c), mode).toEqual({ dir: 2 })
+      expect(screenKey('ArrowDown', c), mode).toEqual({ dir: 4 })
+      expect(screenKey('ArrowLeft', c), mode).toEqual({ dir: 6 })
+      expect(screenKey('PageDown', c), mode).toEqual({ button: 'RB' })
+      expect(screenKey('a', c), mode).toBeNull()
+    }
+    const m = ctx({ mode: 'menu', menu: menu(false) })
+    expect(screenKey('Enter', m)).toEqual({ button: 'A' })
+    expect(screenKey('ArrowDown', m)).toEqual({ dir: 4 })
+    // a menu pages itself (menu-nav.ts)
+    expect(screenKey('PageDown', m)).toBeNull()
+  })
+  it('text to read keeps its Space and its paging keys', () => {
+    const c = ctx({ mode: 'popup' })
+    expect(screenKey(' ', c, true)).toBeNull()
+    expect(screenKey('PageDown', c, true)).toBeNull()
+    expect(screenKey('Enter', c, true)).toEqual({ button: 'A' })
+  })
+  it('a menu of marks: Enter takes what is marked (Start), Space marks (A)', () => {
+    const m = ctx({ mode: 'menu', menu: menu(true) })
+    expect(screenKey('Enter', m)).toEqual({ button: 'START' })
+    expect(screenKey(' ', m)).toEqual({ button: 'A' })
+  })
+  it("a yes/no: Enter and Space are crawl's own, its default answer; Escape is B, No", () => {
+    const c = ctx({ mode: 'yesno' })
+    expect(screenKey('Enter', c)).toBeNull()
+    expect(screenKey(' ', c)).toBeNull()
+    expect(screenKey('Escape', c)).toEqual({ button: 'B' })
+    expect(buttonAction('B', c)).toEqual({ kind: 'prompt', hotkey: 'N' })
+  })
+  it('an aim, a look, the level map and a --more--: Enter and Escape are A and B, the arrows stay direction keys', () => {
+    for (const mode of ['targeting', 'levelmap', 'more'] as const) {
+      const c = ctx({ mode })
+      expect(screenKey('Enter', c), mode).toEqual({ button: 'A' })
+      expect(screenKey('Escape', c), mode).toEqual({ button: 'B' })
+      expect(screenKey('ArrowUp', c), mode).toBeNull()
+      expect(screenKey(' ', c), mode).toBeNull()
+    }
+    // look mode: Enter describes, as A does
+    expect(buttonAction('A', ctx({ mode: 'targeting', examining: true }))).toEqual({ kind: 'examine' })
+  })
+  it('on the map, in a text field, and in macro capture, every key is its own', () => {
+    for (const mode of ['command', 'text', 'macro', 'spectating', 'lobby'] as const) {
+      for (const key of ['Enter', 'Escape', ' ', 'ArrowUp']) expect(screenKey(key, ctx({ mode })), mode + key).toBeNull()
+    }
   })
 })

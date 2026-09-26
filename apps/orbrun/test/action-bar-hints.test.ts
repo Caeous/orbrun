@@ -170,9 +170,10 @@ describe('the pad menu strip', () => {
 })
 
 describe('a god at an altar', () => {
-  it('shows Start as the join, and no X', () => {
-    const pad = bar(ctx({ mode: 'popup', popupType: 'describe-god', popupActions: [], popupEnter: 'Join religion', focus: { label: 'Overview', count: 4 } as never }))
-    expect(pad.querySelector('.chip.START .label')?.textContent).toBe('Join religion')
+  it('shows the join on A, where the cursor starts, and no X or Start beside it', () => {
+    const pad = bar(ctx({ mode: 'popup', popupType: 'describe-god', popupActions: [], focus: { label: 'Join religion', count: 2 } as never }))
+    expect(pad.querySelector('.chip.A .label')?.textContent).toBe('Join religion')
+    expect(pad.querySelector('.chip.START')).toBeNull()
     expect(pad.querySelector('.chip.X')).toBeNull()
   })
 })

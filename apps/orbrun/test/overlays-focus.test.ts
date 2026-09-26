@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach } from 'vitest'
-import { initialState, reduce, MouseMode, Keys, type ClientMessage, type GameState } from '@orbrun/webtiles'
+import { initialState, reduce, cm, MouseMode, Keys, type ClientMessage, type GameState } from '@orbrun/webtiles'
 import { Overlays } from '../src/overlays'
 import { deriveContext, type Context } from '../src/context'
-import { bindingTable, actionLabel } from '../src/bindings'
+import { bindingTable, actionLabel, buttonAction, resolve, screenKey, type Action } from '../src/bindings'
 import { isTextEntry } from '../src/keys'
 import skills from './fixtures/skills-crt.json'
 
@@ -35,22 +35,50 @@ function setup() {
     ov.setDevice(device)
     ov.update(st)
     const ctx = deriveContext(st, scene, cam, 'micro')
-    if (ctx.mode === 'popup') {
-      ctx.popupActions = ov.popupActions()
-      ctx.popupEnter = ov.popupEnter()
-    }
+    if (ctx.mode === 'popup') ctx.popupActions = ov.popupActions()
     ov.updatePrompt(ctx.mode, ctx.prompt, device)
     ov.syncFocus(ctx)
     const fi = ov.focusInfo(ctx)
     if (fi) ctx.focus = fi
+    ctx.pageable = ov.pageable(ctx)
     return ctx
+  }
+  /** what the runner does with an action the pad (or a key standing for a button) resolved to */
+  const run = (a: Action, ctx: Context) => {
+    switch (a.kind) {
+      case 'focus':
+        return ov.focusOp(st, ctx, a.op)
+      case 'menu':
+        return ov.menuOp(st, a.op)
+      case 'prompt':
+        return void sent.push(cm.input(a.hotkey))
+      case 'keys':
+        for (const k of a.seq) sent.push('key' in k ? cm.key(k.key) : cm.input(k.text))
+        return
+      case 'ui':
+        if (a.op === 'popupAction') ov.triggerPopupAction(a.arg ?? 0)
+        return
+    }
+  }
+  /** a keyboard key on this screen, as the game screen takes it (bindings.ts screenKey): true when it was a button's */
+  const key = (k: string, ctx: Context): boolean => {
+    const sk = screenKey(k, ctx, ov.popupScrolls)
+    if (!sk) return false
+    const a = 'button' in sk ? buttonAction(sk.button, ctx) : resolve({ type: 'dir', dir: sk.dir, source: 'dpad' }, ctx)
+    if (a) run(a, ctx)
+    return true
+  }
+  /** a pad button: what the table binds it to, run */
+  const press = (b: Parameters<typeof buttonAction>[0], ctx: Context) => {
+    const a = buttonAction(b, ctx)
+    if (a) run(a, ctx)
   }
   /** the focused item's text (a prompt chip's label, without the glyph's letter) */
   const focusedText = () => {
     const f = host.querySelector('.focused') as HTMLElement | null
     return (f?.querySelector('.label') ?? f)?.textContent?.trim() ?? null
   }
-  return { ov, st, sent, host, frame, focusedText }
+  return { ov, st, sent, host, frame, focusedText, key, press }
 }
 
 beforeEach(() => {
@@ -58,7 +86,7 @@ beforeEach(() => {
 })
 
 describe('describe popup', () => {
-  it('walks the spells then the verbs; A sends the verb, up/down at the edge fall through to scroll', () => {
+  it('starts on the first verb; up reaches the spells, down comes back; A sends the lit one, down at the edge scrolls', () => {
     const { ov, st, sent, frame } = setup()
     reduce(st, {
       msg: 'ui-push',
@@ -70,8 +98,11 @@ describe('describe popup', () => {
     })
     let ctx = frame()
     expect(ctx.mode).toBe('popup')
-    expect(ctx.focus).toMatchObject({ label: 'Flame Tongue', count: 5 })
-    expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('Flame Tongue')
+    // the verbs are what the screen is for: the cursor starts on the first, and A says so
+    expect(ctx.focus).toMatchObject({ label: '(r)ead', count: 5 })
+    expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('(r)ead')
+    ov.focusOp(st, ctx, 'prev')
+    expect(ov.focusInfo(ctx)?.label).toBe('Flame Tongue')
     // the spells sit two to a line: right crosses to Fireball, left back, and down leaves the pair for the verbs
     ov.focusOp(st, ctx, 'right')
     expect(ov.focusInfo(ctx)?.label).toBe('Fireball')
@@ -93,27 +124,24 @@ describe('describe popup', () => {
     ov.focusOp(st, ctx, 'cancel')
     expect(sent).toEqual([{ msg: 'key', keycode: Keys.ESC }])
   })
-  it("Enter on the keyboard fires the lit verb at once: the server's Enter would only close the popup", () => {
-    const { ov, st, sent, frame } = setup()
+  it("Enter on the keyboard does what A does: the lit verb, where crawl's own Enter would only close the popup", () => {
+    const { st, sent, frame, key } = setup()
     reduce(st, { msg: 'ui-push', type: 'describe-item', title: 'a ring of protection', body: 'A ring.', actions: '(P)ut on, (d)rop, or (i)nscribe.' })
     const ctx = frame('keyboard')
     expect(ctx.focus?.label).toBe('(P)ut on')
-    // a held Enter repeating into the popup stays raw
-    expect(ov.focusKey(st, ctx, 'select')).toBe(false)
-    expect(ov.focusKey(st, ctx, 'select', true)).toBe(true)
+    expect(key('Enter', ctx)).toBe(true)
     expect(sent).toEqual([{ msg: 'input', text: 'P' }])
   })
-  it('Enter on a spell entry before any arrow stays raw', () => {
-    const { ov, st, sent, frame } = setup()
-    reduce(st, { msg: 'ui-push', type: 'describe-item', title: 't', body: 'b', spellset: [{ label: '', spells: [{ letter: 'a', title: 'Flame Tongue' }] }], actions: '(r)ead' })
-    const ctx = frame('keyboard')
-    expect(ov.focusKey(st, ctx, 'select', true)).toBe(false)
-    expect(sent).toEqual([])
-  })
-  it('a spell entry sends its letter as text input, as the official click does', () => {
+  it('a spell entry sends its letter as text input, as the official click does; with no verbs nothing is lit, and A closes', () => {
     const { ov, st, sent, frame } = setup()
     reduce(st, { msg: 'ui-push', type: 'describe-item', title: 't', body: 'b', spellset: [{ label: '', spells: [{ letter: 'a', title: 'Flame Tongue' }] }] })
-    const ctx = frame()
+    let ctx = frame()
+    expect(ctx.focus?.label).toBeNull()
+    expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('Close')
+    // text to read with nothing lit: up and down read it, left and right light the first stop
+    ov.focusOp(st, ctx, 'right')
+    ctx = frame()
+    expect(ctx.focus?.label).toBe('Flame Tongue')
     ov.focusOp(st, ctx, 'select')
     expect(sent).toEqual([{ msg: 'text_input', text: 'a' }])
   })
@@ -145,6 +173,10 @@ describe('describe popup', () => {
     reduce(st, { msg: 'ui-push', type: 'formatted-scroller', title: 'Help', text: 'lots', more: '[<w>!</w>] toggle  [<w>Esc</w>] exit' })
     let ctx = frame()
     expect(ctx.focus?.count).toBe(2)
+    // text to read: nothing lit until the cursor is asked for, sideways
+    expect(ctx.focus?.label).toBeNull()
+    ov.focusOp(st, ctx, 'right')
+    ctx = frame()
     expect(ctx.focus?.label).toBe('toggle')
     ov.focusOp(st, ctx, 'select')
     expect(sent).toEqual([{ msg: 'input', text: '!' }])
@@ -169,17 +201,25 @@ describe('describe popup', () => {
     ov.focusOp(st, ctx, 'select')
     expect(sent).toEqual([{ msg: 'input', text: 'n' }])
   })
-  it('a monster description offers the pane switch and the verbs', () => {
+  it('a monster description offers the pane switch and the verbs, lit on the first verb', () => {
     const { ov, st, frame, sent } = setup()
     reduce(st, { msg: 'ui-push', type: 'describe-monster', title: 'a rat', body: 'A rat.', status: 'sleeping', quote: '', actions: '(x)amine.' })
     let ctx = frame()
+    expect(ctx.focus?.label).toBe('(x)amine')
+    ov.focusOp(st, ctx, 'prev')
+    ctx = frame()
     // the switch is one row, and the row is the whole list: the chip says what the footer says
     expect(ctx.focus?.label).toBe('Description | Status')
     ov.focusOp(st, ctx, 'select')
     expect(sent).toEqual([{ msg: 'input', text: '!' }])
-    ov.focusOp(st, ctx, 'next')
-    ctx = frame()
-    expect(ctx.focus?.label).toBe('(x)amine')
+  })
+  it('a monster with no verbs starts with nothing lit: A and Enter close it, as crawl\'s Enter does', () => {
+    const { st, frame, sent, key } = setup()
+    reduce(st, { msg: 'ui-push', type: 'describe-monster', title: 'a rat', body: 'A rat.', status: 'sleeping', quote: '' })
+    const ctx = frame('keyboard')
+    expect(ctx.focus?.label).toBeNull()
+    key('Enter', ctx)
+    expect(sent).toEqual([{ msg: 'key', keycode: Keys.ESC }])
   })
 })
 
@@ -258,15 +298,17 @@ describe('skills screen (crt menu)', () => {
     expect(bindingTable(ctx).Y).toBeUndefined()
     void ov
   })
-  it('the keyboard drives the same cursor: arrows move, Enter fires, and a raw key stays raw', () => {
-    const { ov, st, sent, frame } = setup()
+  it('the keyboard drives the same cursor: arrows move, Enter fires, Escape leaves, a letter stays raw', () => {
+    const { st, sent, frame, key } = setup()
     load(st)
     const ctx = frame()
-    expect(ov.focusKey(st, ctx, 'next')).toBe(true)
-    expect(ov.focusKey(st, ctx, 'select')).toBe(true)
+    expect(key('ArrowDown', ctx)).toBe(true)
+    expect(key('Enter', ctx)).toBe(true)
     expect(sent).toEqual([{ msg: 'input', text: 'b' }])
-    // Escape is not a focusable here: it goes out untouched
-    expect(ov.focusKey(st, ctx, 'cancel')).toBe(false)
+    sent.length = 0
+    expect(key('Escape', ctx)).toBe(true)
+    expect(sent).toEqual([{ msg: 'key', keycode: Keys.ESC }])
+    expect(key('c', ctx)).toBe(false)
   })
   it('a crt screen with no scraper still offers the switches it prints, and forwards the arrows off them', () => {
     const { ov, st, sent, frame } = setup()
@@ -286,50 +328,84 @@ describe('skills screen (crt menu)', () => {
 })
 
 describe('prompt card', () => {
-  it('yes/no: A is Yes, B is No, left/right swap them; the keyboard fires Enter only after an arrow, Escape never', () => {
-    const { ov, st, sent, frame, focusedText, host } = setup()
-    reduce(st, { msg: 'msgs', messages: [{ text: 'Really attack? (y/n)', channel: 2 }] })
+  it("yes/no: A is Yes and B is No whatever the default, with no cursor; the keyboard's Enter and Space are crawl's default, Escape is No", () => {
+    const { st, sent, frame, host, key, press } = setup()
+    reduce(st, { msg: 'msgs', messages: [{ text: 'Really attack? (y/N)', channel: 2 }] })
     reduce(st, { msg: 'input_mode', mode: MouseMode.YESNO })
-    const ctx = frame()
+    let ctx = frame()
     expect(ctx.mode).toBe('yesno')
-    expect(ctx.focus).toMatchObject({ label: 'Yes', cancelLabel: 'No' })
-    expect(focusedText()).toBe('Yes')
+    // no cursor: the answers are the buttons, and nothing on the card is lit
+    expect(ctx.focus?.count).toBe(0)
+    expect(host.querySelector('.prompt-card .focused')).toBeNull()
+    expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('Yes')
     expect(actionLabel(bindingTable(ctx).B!, ctx)).toBe('No')
-    // Yes advertises A; No remains selectable without a B hint
-    expect(Array.from(host.querySelectorAll('.prompt-card .chip')).map((c) => c.className)).toEqual(['chip A focused', 'chip'])
+    // Yes advertises A; No keeps its binding without a B hint
+    expect(Array.from(host.querySelectorAll('.prompt-card .chip')).map((c) => c.className)).toEqual(['chip A', 'chip default'])
     expect(host.querySelectorAll('.prompt-card .chip')[1].querySelector('svg')).toBeNull()
-    expect(host.querySelectorAll('.prompt-card .chip')[1].getAttribute('title')).toBe('No')
     // a yes/no's question is not its answers: the text stays over the chips
-    expect(host.querySelector('.prompt-card .text')?.textContent).toBe('Really attack? (y/n)')
-    ov.focusOp(st, ctx, 'right')
-    expect(focusedText()).toBe('No')
-    ov.focusOp(st, ctx, 'left')
-    ov.focusOp(st, ctx, 'select')
-    ov.focusOp(st, ctx, 'cancel')
+    expect(host.querySelector('.prompt-card .text')?.textContent).toBe('Really attack? (y/N)')
+    press('A', ctx)
+    press('B', ctx)
     expect(sent).toEqual([
       { msg: 'input', text: 'Y' },
       { msg: 'input', text: 'N' },
     ])
     sent.length = 0
-    // Enter and Escape are the server's (its default answer) until an arrow has moved the cursor
-    expect(ov.focusKey(st, ctx, 'select')).toBe(false)
-    expect(ov.focusKey(st, ctx, 'cancel')).toBe(false)
-    expect(ov.focusKey(st, ctx, 'right')).toBe(true)
-    expect(focusedText()).toBe('No')
-    expect(host.querySelector('.prompt-card.armed')).not.toBeNull()
-    expect(ov.focusKey(st, ctx, 'cancel')).toBe(false)
-    expect(ov.focusKey(st, ctx, 'select')).toBe(true)
+    // the d-pad has nothing to walk, and sends nothing
+    press('DR' as never, ctx)
+    key('ArrowRight', ctx)
+    expect(sent).toEqual([])
+    // on the keyboard the default's chip wears Enter; Enter and Space stay raw for crawl, Escape is B
+    ctx = frame('keyboard')
+    expect(host.querySelector('.prompt-card .chip.default')?.textContent).toContain('Enter')
+    expect(key('Enter', ctx)).toBe(false)
+    expect(key(' ', ctx)).toBe(false)
+    expect(key('Escape', ctx)).toBe(true)
     expect(sent).toEqual([{ msg: 'input', text: 'N' }])
   })
+  it("crawl's own Yes/No menu (every browser's yes/no) is the same card: its title the question, its hover the default", () => {
+    const { st, sent, frame, host, press } = setup()
+    reduce(st, { msg: 'input_mode', mode: MouseMode.YESNO })
+    reduce(st, {
+      msg: 'menu',
+      tag: 'prompt',
+      flags: 0x40012,
+      title: { text: '<white>Are you sure you want to leave the Dungeon? This will make you lose the game! ' },
+      items: [
+        { text: ' Y - Yes', hotkeys: [89, 121], level: 2 },
+        { text: ' N - No', hotkeys: [78, 110], level: 2 },
+      ],
+      total_items: 2,
+      last_hovered: 1,
+    })
+    const ctx = frame()
+    expect(ctx.mode).toBe('yesno')
+    expect(ctx.prompt).toMatchObject({ yesno: true, default: 'N' })
+    // the menu itself is not drawn: the card asks
+    expect(host.querySelector('.menu_prompt')).toBeNull()
+    expect(host.querySelector('.prompt-card .text')?.textContent).toContain('Are you sure you want to leave the Dungeon?')
+    expect(Array.from(host.querySelectorAll('.prompt-card .chip .label')).map((c) => c.textContent)).toEqual(['Yes', 'No'])
+    press('A', ctx)
+    expect(sent).toEqual([{ msg: 'input', text: 'Y' }])
+  })
+  it("the shop's purchase question, asked in its footer, is the card's question", () => {
+    const { st, frame, host } = setup()
+    reduce(st, { msg: 'menu', tag: 'shop', flags: 0x4, title: { text: 'Welcome' }, more: 'Purchase items for 40 gold? (y/N)', items: [], total_items: 0, last_hovered: -1 })
+    reduce(st, { msg: 'input_mode', mode: MouseMode.YESNO })
+    reduce(st, { msg: 'msgs', messages: [{ text: 'Enter Wizard Command (? - help):', channel: 2 }] })
+    const ctx = frame()
+    expect(ctx.prompt).toMatchObject({ text: 'Purchase items for 40 gold? (y/N)', default: 'N' })
+    expect(host.querySelector('.prompt-card .text')?.textContent).toBe('Purchase items for 40 gold? (y/N)')
+  })
   it("leaving the Dungeon: the bare question is a yes/no, and A answers with the uppercase Y it insists on", () => {
-    const { ov, st, sent, frame, host } = setup()
+    const { st, sent, frame, host, press } = setup()
     // main.cc: yesno(prompt, false, 'n') prints the question with no "(y/n)" and refuses a lowercase y
     reduce(st, { msg: 'msgs', messages: [{ text: '<white>Are you sure you want to leave the Dungeon? This will make you lose the game! <lightgrey>', channel: 2 }] })
     reduce(st, { msg: 'input_mode', mode: MouseMode.YESNO })
     let ctx = frame()
     expect(ctx.mode).toBe('yesno')
     expect(host.querySelector('.prompt-card .text')?.textContent).toContain('Are you sure you want to leave the Dungeon?')
-    ov.focusOp(st, ctx, 'select')
+    press('A', ctx)
     expect(sent).toEqual([{ msg: 'input', text: 'Y' }])
     // a wrong key's nag is not the question: the card keeps asking it
     reduce(st, { msg: 'msgs', messages: [{ text: '<lightred>Uppercase [Y]es or [N]o only, please.</lightred>', channel: 2 }] })
@@ -337,16 +413,16 @@ describe('prompt card', () => {
     expect(host.querySelector('.prompt-card .text')?.textContent).toContain('Are you sure you want to leave the Dungeon?')
   })
   it("pickup's own prompt reads lowercase keys: its Yes and No stay lowercase", () => {
-    const { ov, st, sent, frame } = setup()
+    const { st, sent, frame, press } = setup()
     // items.cc pickup: getch_ck under MOUSE_MODE_YESNO, taking 'y' but not 'Y'
     reduce(st, { msg: 'msgs', messages: [{ text: 'Pick up a dagger? ((y)es/(n)o/(a)ll/(m)enu/*?g,/q)', channel: 2 }] })
     reduce(st, { msg: 'input_mode', mode: MouseMode.YESNO })
     const ctx = frame()
-    ov.focusOp(st, ctx, 'select')
+    press('A', ctx)
     expect(sent).toEqual([{ msg: 'input', text: 'y' }])
   })
-  it('a choice prompt that ignores Enter (the ring swap): a fresh Enter fires the lit chip at once, space and a repeat stay raw', () => {
-    const { ov, st, sent, frame, host } = setup()
+  it('a choice prompt (the ring swap): the first chip is lit, and Enter takes it as A does', () => {
+    const { ov, st, sent, frame, host, key } = setup()
     // item-use.cc `_item_swap_prompt`, as it prints
     reduce(st, {
       msg: 'msgs',
@@ -363,24 +439,20 @@ describe('prompt card', () => {
     expect(ov.focusInfo(ctx)?.label).toBe('A ring of protection from fire')
     // the card asks the question, not the hint line under it
     expect(host.querySelector('.prompt-card .text')?.textContent).toBe('To do this, you must remove one of the following items:')
-    expect(host.querySelector('.prompt-card.armed')).not.toBeNull()
-    // space is the prompt's cancel on the server, and a held Enter's repeats are not a choice
-    expect(ov.focusKey(st, ctx, 'select')).toBe(false)
-    expect(ov.focusKey(st, ctx, 'select', false)).toBe(false)
-    expect(ov.focusKey(st, ctx, 'select', true)).toBe(true)
+    expect(key('Enter', ctx)).toBe(true)
     expect(sent).toEqual([{ msg: 'input', text: 'c' }])
   })
-  it('a fresh Enter stays raw on a yes/no and on the stat gain until an arrow', () => {
-    const { ov, st, frame } = setup()
-    reduce(st, { msg: 'msgs', messages: [{ text: 'Really attack? (y/n)', channel: 2 }] })
-    reduce(st, { msg: 'input_mode', mode: MouseMode.YESNO })
-    let ctx = frame('keyboard')
-    expect(ov.focusKey(st, ctx, 'select', true)).toBe(false)
-    reduce(st, { msg: 'msgs', messages: [{ text: 'Increase (S)trength, (I)ntelligence, or (D)exterity? ', channel: 2 }] })
+  it('the cursor keeps its place when the device changes: the card is drawn again, the same prompt', () => {
+    const { ov, st, frame, focusedText } = setup()
+    reduce(st, { msg: 'msgs', messages: [{ text: '(D)rop, (w)ield, or (e)at?', channel: 2 }] })
     reduce(st, { msg: 'input_mode', mode: MouseMode.PROMPT })
-    ctx = frame('keyboard')
-    expect(ctx.mode).toBe('prompt')
-    expect(ov.focusKey(st, ctx, 'select', true)).toBe(false)
+    let ctx = frame('keyboard')
+    ov.focusOp(st, ctx, 'right')
+    expect(focusedText()).toBe('(w)ield')
+    ctx = frame('pad')
+    expect(focusedText()).toBe('(w)ield')
+    ov.focusOp(st, ctx, 'right')
+    expect(focusedText()).toBe('(e)at')
   })
   it('multi-choice prompt: one chip per parsed hotkey, wrapping; the cursor and A pick, not X and Y', () => {
     const { ov, st, sent, frame, host } = setup()
@@ -625,7 +697,7 @@ describe('prompt card', () => {
     expect(frame().mode).toBe('prompt')
   })
   it('the stat-gain prompt: only the prompt line on the card, the cursor picks, no Cancel', () => {
-    const { st, frame, host } = setup()
+    const { ov, st, frame, host } = setup()
     // an earlier command's messages end at the return to command mode
     reduce(st, { msg: 'msgs', messages: [{ text: 'You see here a dagger.', channel: 0, turn: 40 }] })
     reduce(st, { msg: 'input_mode', mode: MouseMode.COMMAND })
@@ -654,11 +726,18 @@ describe('prompt card', () => {
     // the level-up lines stay in the message log; the card is the prompt alone
     expect(host.querySelector('.prompt-card')?.textContent).not.toContain('You have reached level 3!')
     // Escape does nothing to this prompt (CASE_ESCAPE ... break), so B offers nothing; the answers are not on X / Y either
-    const t = bindingTable(ctx)
+    let t = bindingTable(ctx)
     expect(t.X).toBeUndefined()
     expect(t.Y).toBeUndefined()
     expect(t.B).toBeUndefined()
-    expect(actionLabel(t.A!, ctx)).toBe('<white>(S)trength</white>')
+    // nothing lit, and so no A: a press carried over from the --more-- before it spends nothing
+    expect(t.A).toBeUndefined()
+    expect(Array.from(host.querySelectorAll('.prompt-card .chip')).map((c) => c.className)).toEqual(['chip', 'chip', 'chip'])
+    // the first move lights the first answer, and A takes it
+    ov.focusOp(st, ctx, 'right')
+    const lit = frame()
+    t = bindingTable(lit)
+    expect(actionLabel(t.A!, lit)).toBe('<white>(S)trength</white>')
     expect(Array.from(host.querySelectorAll('.prompt-card .chip')).map((c) => c.className)).toEqual(['chip focused', 'chip', 'chip'])
     // after the pad the chips wear no glyph: the cursor marks the answer
     expect(host.querySelector('.prompt-card .chip svg')).toBeNull()
@@ -727,7 +806,7 @@ describe('newgame', () => {
       'sub-items': { menu_id: 'sub', buttons: [{ x: 0, y: 0, hotkey: 42, label: '* - Random', description: 'Any.' }] },
     })
   it('the cursor is ours and moves at once; each move tells the server as a hover does, A and Enter fire the button', () => {
-    const { ov, st, sent, frame, focusedText, host } = setup()
+    const { ov, st, sent, frame, focusedText, host, key } = setup()
     push(st)
     reduce(st, { msg: 'ui-state', button_focus: 98 })
     const ctx = frame()
@@ -741,21 +820,25 @@ describe('newgame', () => {
     expect(host.querySelector('.button.selected')?.textContent).toBe('* - Random')
     expect(sent).toEqual([{ msg: 'outer_menu_focus', hotkey: 42, menu_id: 'sub' }])
     sent.length = 0
-    // the keyboard drives the same cursor
-    expect(ov.focusKey(st, ctx, 'prev')).toBe(true)
-    expect(ov.focusKey(st, ctx, 'right')).toBe(false) // Minotaur has nothing to its right: the key stays raw
-    expect(ov.focusKey(st, ctx, 'prev')).toBe(true)
-    expect(ov.focusKey(st, ctx, 'right')).toBe(true)
+    // the keyboard drives the same cursor, down the pad's path
+    expect(key('ArrowUp', ctx)).toBe(true)
+    sent.length = 0
+    // Minotaur has nothing to its right: the move falls back to the server's own arrow
+    expect(key('ArrowRight', ctx)).toBe(true)
+    expect(sent).toEqual([{ msg: 'key', keycode: Keys.CK_RIGHT }])
+    expect(key('ArrowUp', ctx)).toBe(true)
+    expect(key('ArrowRight', ctx)).toBe(true)
     expect(focusedText()).toBe('Octopode')
     sent.length = 0
-    expect(ov.focusKey(st, ctx, 'select')).toBe(true)
+    expect(key('Enter', ctx)).toBe(true)
     expect(sent).toEqual([
       { msg: 'outer_menu_focus', hotkey: 99, menu_id: 'species' },
       { msg: 'key', keycode: 99 },
     ])
     sent.length = 0
-    // Escape is not ours here
-    expect(ov.focusKey(st, ctx, 'cancel')).toBe(false)
+    // the first screen has no way back, and Escape would abandon the character: it is B, and B does nothing here
+    expect(key('Escape', ctx)).toBe(true)
+    expect(sent).toEqual([])
   })
   it('the server\'s own focus re-seats the cursor; an echo of ours (from_client) does not', () => {
     const { ov, st, frame, focusedText } = setup()
@@ -806,13 +889,13 @@ describe('newgame', () => {
   it('stops hovering once a key has the cursor, until the mouse is moved again', () => {
     // the grid scrolls under a resting pointer as the cursor walks it: the
     // `mouseenter` that fires must not drag the cursor back to the mouse
-    const { ov, st, frame, host, focusedText } = setup()
+    const { ov, st, frame, host, focusedText, key } = setup()
     push(st)
     reduce(st, { msg: 'ui-state', button_focus: 97 })
     const ctx = frame()
     const btn = host.querySelector('.button[data-hotkey="99"]') as HTMLElement
     expect(focusedText()).toBe('Human')
-    expect(ov.focusKey(st, ctx, 'next')).toBe(true)
+    expect(key('ArrowDown', ctx)).toBe(true)
     expect(focusedText()).toBe('Minotaur')
     btn.dispatchEvent(new MouseEvent('mouseenter'))
     expect(focusedText()).toBe('Minotaur')
@@ -865,7 +948,7 @@ describe('dialog', () => {
   })
 
   it('keeps the keyboard after a click on a button, and Enter fires what was clicked', () => {
-    const { ov, st, sent, host, frame } = setup()
+    const { st, sent, host, frame, key } = setup()
     reduce(st, {
       msg: 'show_dialog',
       html: "<p>[T]ransfer your save?</p><input type='button' data-key='N' value='No'><input type='button' data-key='T' value='Yes'>",
@@ -883,7 +966,7 @@ describe('dialog', () => {
     sent.length = 0
     // Enter now acts on the button that was clicked, not on where the cursor sat
     ctx = frame()
-    expect(ov.focusKey(st, ctx, 'select')).toBe(true)
+    expect(key('Enter', ctx)).toBe(true)
     expect(sent).toEqual([{ msg: 'input', data: [84] }])
   })
 })
@@ -932,14 +1015,18 @@ describe('client overlays', () => {
 })
 
 describe('scroller popups with unprinted keys', () => {
-  it('the dungeon overview: a row of what its keys do; the cursor walks it and A sends the key', () => {
+  it('the dungeon overview: a row of what its keys do, nothing lit at first; sideways lights it, and A sends the lit key', () => {
     const { ov, st, sent, frame, host } = setup()
     reduce(st, { msg: 'ui-push', type: 'formatted-scroller', title: '', text: '<lightgrey>                    <white>Dungeon Overview and Level Annotations<lightgrey>\n\n<green>Branches:<lightgrey> (press <white>G<lightgrey> to reach them and <white>?/b<lightgrey> for more information)\n<yellow>Dungeon<lightgrey> <darkgrey>(2/15)<lightgrey>            \n\n<green>Altars:<lightgrey> (press <white>_<lightgrey> to reach them and <white>?/g<lightgrey> for information about gods)\n<darkgrey>Ashenzari<lightgrey>          <darkgrey>Cheibriados<lightgrey>' })
     let ctx = frame()
     expect(ctx.mode).toBe('popup')
     expect(ctx.popupActions?.map((a) => a.key + '=' + a.label)).toEqual(['G=(G) Travel', '_=(_) Altar', '$=($) Shops', '!=(!) Annotate'])
-    expect(ctx.focus).toMatchObject({ label: '(G) Travel', count: 4 })
+    // text to read: nothing lit, so A closes it as crawl's Enter does
+    expect(ctx.focus).toMatchObject({ label: null, count: 4 })
+    expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('Close')
     expect(host.querySelector('.popup .actions')?.textContent).toBe('(G) Travel, (_) Altar, ($) Shops, (!) Annotate')
+    ov.focusOp(st, ctx, 'right')
+    expect(ov.focusInfo(ctx)?.label).toBe('(G) Travel')
     ov.focusOp(st, ctx, 'right')
     ov.focusOp(st, ctx, 'right')
     ov.focusOp(st, ctx, 'right')
@@ -949,47 +1036,44 @@ describe('scroller popups with unprinted keys', () => {
     ctx = frame()
     expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('(!) Annotate')
   })
-  it("a god's description at an altar: the footer's panes and joining are stops of their own; Enter stays raw until an arrow walks", () => {
-    const { ov, st, sent, frame, host } = setup()
+  it("a god's description at an altar: joining is lit and A or Enter joins; the pane names are one switch, its own stop", () => {
+    const { ov, st, sent, frame, host, key } = setup()
     // ui-layouts.js describe_god: the pane names sit behind ! and ^; at an altar the footer adds "J/Enter: join religion"
     reduce(st, { msg: 'ui-push', type: 'describe-god', name: 'Okawaru', colour: 14, description: 'Okawaru is a dangerous god.', title: 'the Fighter', favour: '', powers_list: '', powers: '', wrath: 'w', extra: '', is_altar: true, service_fee: '' })
     let ctx = frame('keyboard')
     expect(ctx.mode).toBe('popup')
     expect(host.querySelector('.popup .footer')?.textContent).toContain('J/Enter: join religion')
-    expect(ctx.focus).toMatchObject({ label: 'Overview', count: 4 })
-    // no pane switch on X; Start names the join
+    expect(ctx.focus).toMatchObject({ label: 'Join religion', count: 2 })
+    // no pane switch on X, and no Start beside A
     const t = bindingTable(ctx)
     expect(t.X).toBeUndefined()
-    expect(t.START).toMatchObject({ kind: 'keys', seq: [{ key: Keys.ENTER }], label: 'Join religion', contextual: true })
-    // Enter is the server's (a join) until the keyboard walked the cursor
-    expect(ov.focusKey(st, ctx, 'select')).toBe(false)
-    expect(sent).toEqual([])
-    // Wrath is two presses of ! on from Overview
-    expect(ov.focusKey(st, ctx, 'right')).toBe(true)
-    expect(ov.focusKey(st, ctx, 'right')).toBe(true)
-    expect(ov.focusKey(st, ctx, 'select')).toBe(true)
-    expect(sent).toEqual([{ msg: 'input', text: '!' }, { msg: 'input', text: '!' }])
-    sent.length = 0
-    // the pad walks to the join and A sends Enter
-    ov.focusOp(st, ctx, 'right')
-    expect(frame().focus?.label).toBe('Join religion')
-    ov.focusOp(st, ctx, 'select')
+    expect(t.START).toBeUndefined()
+    expect(key('Enter', ctx)).toBe(true)
     expect(sent).toEqual([{ msg: 'key', keycode: Keys.ENTER }])
-    // away from an altar there is no join, and Start is a plain Enter again
+    sent.length = 0
+    // the pane names: one stop, which turns to the next pane
+    ov.focusOp(st, ctx, 'left')
+    ctx = frame()
+    expect(ctx.focus?.label).toBe('Overview | Powers | Wrath')
+    ov.focusOp(st, ctx, 'select')
+    expect(sent).toEqual([{ msg: 'input', text: '!' }])
+    sent.length = 0
+    // away from an altar there is no join: nothing is lit, A closes, and the pane switch waits for the cursor
     reduce(st, { msg: 'ui-pop' })
     reduce(st, { msg: 'ui-push', type: 'describe-god', name: 'Okawaru', colour: 14, description: 'd', title: 't', favour: '', powers_list: '', powers: '', wrath: 'w', extra: '' })
     ctx = frame()
-    expect(ctx.focus?.count).toBe(3)
-    expect(bindingTable(ctx).START).toMatchObject({ label: 'Confirm' })
+    expect(ctx.focus).toMatchObject({ label: null, count: 1 })
+    expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('Close')
   })
-  it('a popup whose row the keyboard can walk: an arrow that moves the cursor arms Enter, which then fires the focused key', () => {
-    const { ov, st, sent, frame } = setup()
+  it('a popup whose row the keyboard can walk: an arrow lights it, and Enter then fires the lit key, as A does', () => {
+    const { st, sent, frame, key } = setup()
     reduce(st, { msg: 'ui-push', type: 'formatted-scroller', title: '', text: '<white>Dungeon Overview and Level Annotations<lightgrey>\n<yellow>Dungeon<lightgrey>' })
-    const ctx = frame('keyboard')
-    expect(ctx.focus).toMatchObject({ label: '(G) Travel', count: 4 })
-    expect(ov.focusKey(st, ctx, 'select')).toBe(false)
-    expect(ov.focusKey(st, ctx, 'right')).toBe(true)
-    expect(ov.focusKey(st, ctx, 'select')).toBe(true)
+    let ctx = frame('keyboard')
+    expect(ctx.focus).toMatchObject({ label: null, count: 4 })
+    expect(key('ArrowRight', ctx)).toBe(true)
+    expect(key('ArrowRight', ctx)).toBe(true)
+    ctx = frame('keyboard')
+    expect(key('Enter', ctx)).toBe(true)
     expect(sent).toEqual([{ msg: 'input', text: '_' }])
   })
   it('the help screen: its "k: Section" menu lines become the row, and it stays when a section replaces the text', () => {

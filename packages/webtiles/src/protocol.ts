@@ -258,6 +258,8 @@ export const MenuFlag = {
   START_AT_END: 0x1000,
   PRESELECTED: 0x2000,
   ARROWS_SELECT: 0x40000,
+  /** the inventory a page per category (drop): a category's own key selects it, `,` does not */
+  PAGED_INVENTORY: 0x200000,
 } as const
 
 export const UiState = { NORMAL: 0, CRT: 1, VIEW_MAP: 2 } as const

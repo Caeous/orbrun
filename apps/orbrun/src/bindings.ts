@@ -1,7 +1,7 @@
-import { Keys, colouredText } from '@orbrun/webtiles'
+import { Keys, MenuFlag, colouredText } from '@orbrun/webtiles'
 import type { Dir8 } from '@orbrun/scene'
 import type { Button, PadEvent } from './gamepad'
-import { LOG_DEFAULT_COLOUR, isFocusMode, type Context, type MenuContext, type ParsedPrompt, type ShopContext } from './context'
+import { DEFAULT_YESNO, LOG_DEFAULT_COLOUR, isFocusMode, type Context, type MenuContext, type ParsedPrompt, type ShopContext } from './context'
 import type { FocusOp } from './focus'
 import { menuHasSections } from './menu-nav'
 
@@ -129,24 +129,39 @@ const COMMAND: Partial<Record<Button, Action>> = {
  * up, exit, toggle selected, accept) it wears that switch's own word, lower
  * case as the footer prints it, so the glyph reads as the key the footer
  * names. The rest (help, the filter, select all) are keys the keyhelp does
- * not print, and keep our names and our capitals.
+ * not print, and keep our names and our capitals. A button is only there
+ * when it does something on this menu: marking and selecting all where rows
+ * are marked, the filter where the menu filters, describing where rows have
+ * a description behind them, the bumpers where there is a section or a page
+ * to go to, accepting once something is marked.
  */
-const MENU: Partial<Record<Button, Action>> = {
-  A: { kind: 'menu', op: 'select' },
-  B: { kind: 'menu', op: 'cancel' },
+function menuTable(m: MenuContext | undefined, ctx: Context): Partial<Record<Button, Action>> {
+  const t: Partial<Record<Button, Action>> = {
+    A: { kind: 'menu', op: 'select' },
+    B: { kind: 'menu', op: 'cancel' },
+    L3: palette('menu'),
+  }
+  if (!m) return t
+  // the menu's own help, on the key it names (the inventory's `_`); a menu that names none has none
+  if (m.helpKey) t.Y = k(m.helpKey, 'Help')
   // the hovered row, described where it stands (the spell, ability and item menus' "[?] toggle ... description"
   // without the toggle, see Overlays.menuAction); `!` cycles the mode from the palette, or Left/Right on a row
-  X: { kind: 'menu', op: 'examine' },
-  Y: k('?', 'Help'),
-  // the previous / next section (menu.cc cycle_headers, both ways); a menu without headers pages
-  LB: { kind: 'menu', op: 'sectionPrev' },
-  RB: { kind: 'menu', op: 'sectionNext' },
-  LT: { kind: 'menu', op: 'toggle' },
+  if (EXAMINING_MENUS.has(m.menu.tag) && !m.togglesAtOnce) t.X = { kind: 'menu', op: 'examine' }
+  // the previous / next section (menu.cc cycle_headers, both ways); a menu without headers pages, when it has pages
+  if (m.sections || ctx.pageable) {
+    t.LB = { kind: 'menu', op: 'sectionPrev' }
+    t.RB = { kind: 'menu', op: 'sectionNext' }
+  }
+  if (m.multiselect && !m.togglesAtOnce) {
+    t.LT = { kind: 'menu', op: 'toggle' }
+    // `,` selects all (menu.cc CMD_MENU_SELECT_ALL); a paged inventory (drop) selects a category at a time instead
+    if (!(m.menu.flags & MenuFlag.PAGED_INVENTORY)) t.R3 = k(',', 'Select all')
+    // Start is Enter here (screenKey): it takes what is marked, so it is there once something is
+    if (m.anyMarked) t.START = situational(kc(Keys.ENTER, 'accept'))
+  }
   // Select stays the filter (documented); the palette's menu section holds the rest
-  L3: palette('menu'),
-  R3: k(',', 'Select all'),
-  SELECT: ctrl('F', 'Filter'),
-  START: situational(kc(Keys.ENTER, 'accept')),
+  if (m.filter) t.SELECT = ctrl('F', 'Filter')
+  return t
 }
 
 /**
@@ -164,16 +179,17 @@ const MENU: Partial<Record<Button, Action>> = {
  * rather than ours. `$` is the exception: the shop binds it but never prints
  * it, so its label is ours and wears our capital.
  */
-function shopTable(shop: ShopContext): Partial<Record<Button, Action>> {
+function shopTable(shop: ShopContext, pageable: boolean): Partial<Record<Button, Action>> {
   const t: Partial<Record<Button, Action>> = {
     A: { kind: 'menu', op: 'select' },
     B: { kind: 'menu', op: 'cancel' },
     Y: { kind: 'menu', op: 'altSelect' },
-    LB: { kind: 'menu', op: 'pagePrev' },
-    RB: { kind: 'menu', op: 'pageNext' },
     L3: palette('menu'),
     R3: k('/', shop.sortOrder ? `sort (${shop.sortOrder})` : 'Sort'),
-    START: ENTER,
+  }
+  if (pageable) {
+    t.LB = { kind: 'menu', op: 'pagePrev' }
+    t.RB = { kind: 'menu', op: 'pageNext' }
   }
   // the server prints the mode as a live prompt (`[!] buy|examine items`, its lit half the current one), so the bar shows the
   // flip unasked. The label is the prompt's own text and does not change with the mode: the footer already lights the
@@ -189,20 +205,22 @@ function shopTable(shop: ShopContext): Partial<Record<Button, Action>> {
 }
 
 /** An aim (a throw, a spell): shaped like EXAMINE, with the mode's own action on A and on the trigger that opened it. */
-const TARGETING: Partial<Record<Button, Action>> = {
-  A: { kind: 'fire' },
-  B: ESC,
+function targetingTable(ctx: Context): Partial<Record<Button, Action>> {
+  const t: Partial<Record<Button, Action>> = {
+    A: { kind: 'fire' },
+    B: ESC,
+    // the same button as opened the aim confirms it, so tapping RB again and again fires shot after shot as `f f f` does
+    RB: { kind: 'fire' },
+    X: k('v', 'Describe'),
+    SELECT: palette('targeting'),
+  }
   // one button walks the targets, so the other bumper can stay the shot: `-` (previous) is in the
-  // palette, and the cycle wraps, so nothing is out of reach with only the forward step bound
-  LB: k('+', 'Next target'),
-  // the same button as opened the aim confirms it, so tapping RB again and again fires shot after shot as `f f f` does
-  RB: { kind: 'fire' },
-  X: k('v', 'Describe'),
+  // palette, and the cycle wraps; with one target there is nowhere to walk
+  if (ctx.hostilesInView > 1) t.LB = k('+', 'Next target')
   // the quiver, cycled inside the aim (CMD_TARGET_CYCLE_QUIVER_FORWARD / _BACKWARD): the shot to take is chosen
-  // where it is aimed, and the bar's Fire label follows the server's new quiver line
-  Y: hold(k(')', 'Next quiver'), k('(', 'Previous quiver')),
-  SELECT: palette('targeting'),
-  START: ENTER,
+  // where it is aimed, and the bar's Fire label follows the server's new quiver line. A spell's aim cycles nothing
+  if (ctx.aimQuiver) t.Y = hold(k(')', 'Next quiver'), k('(', 'Previous quiver'))
+  return t
 }
 
 /**
@@ -219,17 +237,22 @@ const TARGETING: Partial<Record<Button, Action>> = {
  * OBJ_CYCLE_BACK/FORWARD), B cancels; the finds (`<`, `>`, `_`, `^`, Tab, `r`)
  * live in the palette.
  */
-const EXAMINE: Partial<Record<Button, Action>> = {
-  A: { kind: 'examine' },
-  B: ESC,
-  LB: k('-', 'Previous monster'),
-  RB: k('+', 'Next monster'),
-  X: situational(k('.', 'Travel here')),
-  Y: situational(k('?', 'Help')),
-  LT: k('/', 'Previous item'),
-  RT: k('*', 'Next item'),
-  SELECT: palette('targeting'),
-  START: ENTER,
+function examineTable(ctx: Context): Partial<Record<Button, Action>> {
+  const t: Partial<Record<Button, Action>> = {
+    A: { kind: 'examine' },
+    B: ESC,
+    X: situational(k('.', 'Travel here')),
+    Y: situational(k('?', 'Help')),
+    LT: k('/', 'Previous item'),
+    RT: k('*', 'Next item'),
+    SELECT: palette('targeting'),
+  }
+  // the monsters in view, one way and the other; with none there is nothing to cycle
+  if (ctx.monstersInView > 0) {
+    t.LB = k('-', 'Previous monster')
+    t.RB = k('+', 'Next monster')
+  }
+  return t
 }
 
 /**
@@ -240,17 +263,22 @@ const EXAMINE: Partial<Record<Button, Action>> = {
  * `set_option`). `{` goes as a keycode: as text it would open a JSON message
  * (keys.ts). `+` and `-` scroll the map, so they are not zoom.
  */
-const LEVELMAP: Partial<Record<Button, Action>> = {
-  A: k('.', 'Travel here'),
-  B: ESC,
-  LB: k('<', 'Up stairs'),
-  RB: k('>', 'Down stairs'),
-  X: situational(k('v', 'Describe')),
-  Y: k('@', 'Find you'),
-  LT: situational(kc(123, 'Zoom out')),
-  RT: situational(k('}', 'Zoom in')),
-  SELECT: palette('levelmap'),
-  START: ENTER,
+function levelmapTable(ctx: Context): Partial<Record<Button, Action>> {
+  const t: Partial<Record<Button, Action>> = {
+    B: ESC,
+    LB: k('<', 'Up stairs'),
+    RB: k('>', 'Down stairs'),
+    X: situational(k('v', 'Describe')),
+    LT: situational(kc(123, 'Zoom out')),
+    RT: situational(k('}', 'Zoom in')),
+    SELECT: palette('levelmap'),
+  }
+  // the cursor away from the player: somewhere to travel to, and a way back to them
+  if (!ctx.mapCursorHome) {
+    t.A = k('.', 'Travel here')
+    t.Y = k('@', 'Find you')
+  }
+  return t
 }
 
 /**
@@ -261,11 +289,12 @@ const LEVELMAP: Partial<Record<Button, Action>> = {
 const FOCUS: Partial<Record<Button, Action>> = {
   A: focus('select'),
   B: focus('cancel'),
-  LB: focus('pagePrev'),
-  RB: focus('pageNext'),
   SELECT: palette('command'),
-  // Enter is a fallback A already covers: the hints do not need a Confirm chip next to the answer they name
-  START: ENTER,
+}
+
+/** The focus set, with the bumpers where there is a page to turn (`Context.pageable`). */
+function focusTable(ctx: Context): Partial<Record<Button, Action>> {
+  return ctx.pageable ? { ...FOCUS, LB: focus('pagePrev'), RB: focus('pageNext') } : { ...FOCUS }
 }
 
 /**
@@ -289,24 +318,47 @@ const POPUP_ACTION: Action = { kind: 'ui', op: 'popupAction', arg: 0 }
  */
 export function promptButtons(prompt: ParsedPrompt): Map<string, Button> {
   const out = new Map<string, Button>()
-  if (prompt.yesno) for (const o of prompt.options) out.set(o.hotkey, o.hotkey.toLowerCase() === 'n' ? 'B' : 'A')
+  if (prompt.yesno) for (const o of prompt.options) out.set(o.hotkey, YESNO_BUTTONS[o.hotkey.toUpperCase()] ?? 'A')
   return out
 }
+
+/** A yes/no's answers on the face buttons: Yes on A, No on B, and a prompt's Always (prompt.cc `ask_always`) on X. */
+const YESNO_BUTTONS: Record<string, Button> = { Y: 'A', N: 'B', A: 'X' }
 
 /**
  * The focus set, less B on a prompt Escape means nothing to
  * (`ParsedPrompt.cancel` false: the stat-gain prompt), so the bar never
  * offers a Cancel the game would ignore.
  */
-function promptTable(prompt: ParsedPrompt): Partial<Record<Button, Action>> {
-  if (prompt.cancel) return FOCUS
-  const { B: _b, ...rest } = FOCUS
-  return rest
+function promptTable(prompt: ParsedPrompt, ctx: Context): Partial<Record<Button, Action>> {
+  // a yes/no: its answers are its buttons (there is no cursor), whatever crawl's default
+  if (prompt.yesno) {
+    const t: Partial<Record<Button, Action>> = { SELECT: FOCUS.SELECT }
+    for (const [hotkey, button] of promptButtons(prompt)) t[button] = { kind: 'prompt', hotkey }
+    return t
+  }
+  const t = focusTable(ctx)
+  if (prompt.cancel) return t
+  // the stat gain: no way back, and no answer until the cursor lights one (updatePrompt)
+  delete t.B
+  if (!ctx.focus?.label) delete t.A
+  return t
 }
 
 const NEWGAME_EXTRA: Partial<Record<Button, Action>> = {
   X: k('*', 'Random'),
   Y: k('+', 'Recommended'),
+}
+
+/**
+ * Character creation: B is a step back, where crawl's Escape would abandon
+ * the game outright. The step is the screen's own (`Context.newgameBack`),
+ * and on the first screen there is none: leaving is the Orbrun menu's.
+ */
+function newgameTable(ctx: Context): Partial<Record<Button, Action>> {
+  const { B: _b, ...t } = { ...focusTable(ctx), ...NEWGAME_EXTRA }
+  if (ctx.newgameBack !== undefined) return { ...t, B: kc(ctx.newgameBack, 'Back') }
+  return t
 }
 
 /**
@@ -320,7 +372,6 @@ const NEWGAME_EXTRA: Partial<Record<Button, Action>> = {
 const MORE: Partial<Record<Button, Action>> = {
   A: situational(SPACE),
   B: kc(Keys.ESC, 'Skip'),
-  START: ENTER,
 }
 
 // B leaves, as it does everywhere else; X erases, RB puts a space
@@ -354,28 +405,86 @@ const SPECTATING: Partial<Record<Button, Action>> = {
   R3: { kind: 'ui', op: 'faceHostile' },
 }
 
+/**
+ * On a screen, the keyboard is a pad: the keys that stand for its buttons
+ * become those buttons, and go down the same path (`resolve`, the runner),
+ * so a key and the button it stands for can never do two different things.
+ *
+ * - Enter is A, the confirm, and Escape is B, the way back.
+ * - Space is A too, except over text to read, where it pages as crawl's own
+ *   scrollers do (menu-nav.ts `scrollKeyIntent`).
+ * - The arrows are the d-pad on a screen with a cursor. On the map, in an aim
+ *   and on the level map they stay the direction keys they are (keys.ts).
+ * - PageUp and PageDown are the bumpers on a cursor's list.
+ *
+ * Two screens pair them otherwise, on purpose:
+ * - a menu where rows are marked (drop, pickup, the shop): Enter takes what is
+ *   marked, as crawl's Enter does, so Enter is Start there; A and Space mark.
+ * - a yes/no: Enter stays crawl's, its default answer (the safe one), as the
+ *   card says; A is Yes and B is No whatever the default.
+ *
+ * Null leaves the key to what it is on its own: typed text, a hotkey, raw.
+ */
+export function screenKey(key: string, ctx: Context, scrollsText = false): { button: Button } | { dir: Dir8 } | null {
+  const mode = ctx.mode
+  const cursor = isFocusMode(ctx) || mode === 'menu'
+  const screen = cursor || mode === 'more' || mode === 'targeting' || mode === 'levelmap'
+  // a yes/no's Enter and Space are its default answer (prompt.cc `yesno`, `f_keyfilter`): mashing
+  // either through the --more-- before it lands on the safe answer, as in crawl
+  if (!screen || (mode === 'yesno' && (key === 'Enter' || key === ' '))) return null
+  switch (key) {
+    case 'Enter':
+      return { button: mode === 'menu' && ctx.menu?.multiselect ? 'START' : 'A' }
+    case 'Escape':
+      return { button: 'B' }
+    case ' ':
+      if (!cursor || scrollsText) return null
+      return { button: 'A' }
+    case 'ArrowUp':
+      return cursor ? { dir: 0 } : null
+    case 'ArrowRight':
+      return cursor ? { dir: 2 } : null
+    case 'ArrowDown':
+      return cursor ? { dir: 4 } : null
+    case 'ArrowLeft':
+      return cursor ? { dir: 6 } : null
+    // the bumpers page a cursor's list; a menu pages itself and text to read scrolls (menu-nav.ts)
+    case 'PageUp':
+      return isFocusMode(ctx) && !scrollsText ? { button: 'LB' } : null
+    case 'PageDown':
+      return isFocusMode(ctx) && !scrollsText ? { button: 'RB' } : null
+  }
+  return null
+}
+
+/** What a button does now, as a single press: the tap of a tap-or-hold. Null when it does nothing here. */
+export function buttonAction(button: Button, ctx: Context): Action | null {
+  const a = bindingTable(ctx)[button]
+  if (!a) return null
+  return a.kind === 'hold' ? a.tap : a
+}
+
 /** Table for the current context: what each face button does now. */
 export function bindingTable(ctx: Context): Partial<Record<Button, Action>> {
   if (isFocusMode(ctx)) {
     switch (ctx.mode) {
       case 'newgame':
-        return { ...FOCUS, ...NEWGAME_EXTRA }
+        return newgameTable(ctx)
       case 'yesno':
-        return ctx.prompt ? promptTable(ctx.prompt) : FOCUS
+        return promptTable(ctx.prompt ?? DEFAULT_YESNO, ctx)
       case 'prompt':
         // a prompt the parser made nothing of: the official client's own hints stay reachable
-        return ctx.prompt ? promptTable(ctx.prompt) : { ...FOCUS, X: k('*', 'List'), Y: k('?', 'Help') }
+        return ctx.prompt ? promptTable(ctx.prompt, ctx) : { ...focusTable(ctx), X: k('*', 'List'), Y: k('?', 'Help') }
       case 'dialog':
-        return { A: FOCUS.A, B: FOCUS.B, START: ENTER }
-      case 'popup': {
-        const t = ctx.popupActions?.length ? { ...FOCUS, X: POPUP_ACTION } : { ...FOCUS }
-        // Enter that does something of its own (joining at an altar) is Start's, and the bar names it
-        if (ctx.popupEnter) t.START = situational(kc(Keys.ENTER, ctx.popupEnter))
+        return { A: FOCUS.A, B: FOCUS.B }
+      case 'popup':
+        return ctx.popupActions?.length ? { ...focusTable(ctx), X: POPUP_ACTION } : focusTable(ctx)
+      default: {
+        // the focused item's second action (a skill row's "Set target") sits on Y while the cursor rests on one
+        const t = focusTable(ctx)
+        if (ctx.focus?.altLabel) t.Y = focus('altSelect')
         return t
       }
-      default:
-        // the focused item's second action (a skill row's "Set target") sits on Y while the cursor rests on one
-        return ctx.focus?.altLabel ? { ...FOCUS, Y: focus('altSelect') } : FOCUS
     }
   }
   switch (ctx.mode) {
@@ -387,11 +496,11 @@ export function bindingTable(ctx: Context): Partial<Record<Button, Action>> {
     case 'more':
       return MORE
     case 'menu':
-      return ctx.menu?.shop ? shopTable(ctx.menu.shop) : MENU
+      return ctx.menu?.shop ? shopTable(ctx.menu.shop, !!ctx.pageable) : menuTable(ctx.menu, ctx)
     case 'targeting':
-      return ctx.examining ? EXAMINE : TARGETING
+      return ctx.examining ? examineTable(ctx) : targetingTable(ctx)
     case 'levelmap':
-      return LEVELMAP
+      return levelmapTable(ctx)
     case 'text':
       return submitOnStartOnly(ctx.textTag) ? SKILL_TARGET_TEXT : TEXT
     case 'spectating':
@@ -401,6 +510,11 @@ export function bindingTable(ctx: Context): Partial<Record<Button, Action>> {
     default:
       return FOCUS
   }
+}
+
+/** The prompt up now, a yes/no's two answers when nothing was parsed (the bindings answer it all the same). */
+function promptOf(ctx: Context): ParsedPrompt | undefined {
+  return ctx.prompt ?? (ctx.mode === 'yesno' ? DEFAULT_YESNO : undefined)
 }
 
 /** What A does on a focus screen with nothing to focus: close a popup, confirm anything else. */
@@ -469,7 +583,7 @@ function isContextual(a: Action, ctx: Context): boolean {
       if (isQuiverCycle(a)) return ctx.mode === 'targeting' && !ctx.examining && !!ctx.readiedAction
       return a.contextual === true
     case 'prompt':
-      return !!ctx.prompt?.options.some((x) => x.hotkey.toLowerCase() === a.hotkey.toLowerCase())
+      return !!promptOf(ctx)?.options.some((x) => x.hotkey.toLowerCase() === a.hotkey.toLowerCase())
     case 'focus':
       // the cursor rests on something with a name of its own (a spell, Yes); the fallbacks are the table's
       return a.op === 'select' ? !!ctx.focus?.label : a.op === 'cancel' ? !!ctx.focus?.cancelLabel : a.op === 'altSelect' ? !!ctx.focus?.altLabel : false
@@ -624,7 +738,7 @@ export function actionLabel(a: Action, ctx: Context, button?: Button): string {
       return { next: 'Next', prev: 'Previous', pageNext: 'page down', pagePrev: 'page up', first: 'First', last: 'Last', select: 'select', altSelect: 'List', examine: 'Examine', toggle: 'toggle selected', cancel: 'exit', left: 'Left', right: 'Right' }[a.op]
     }
     case 'prompt': {
-      const o = ctx.prompt?.options.find((x) => x.hotkey.toLowerCase() === a.hotkey.toLowerCase())
+      const o = promptOf(ctx)?.options.find((x) => x.hotkey.toLowerCase() === a.hotkey.toLowerCase())
       // an answer read off the log wears the log's colour for it (context.ts `ParsedPrompt.options.colour`)
       if (o) return o.colour !== undefined ? colouredText(o.label, o.colour) : o.label
       return a.hotkey === 'Y' || a.hotkey === 'y' ? 'Yes' : a.hotkey === 'N' || a.hotkey === 'n' ? 'No' : a.hotkey

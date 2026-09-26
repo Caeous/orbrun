@@ -22,6 +22,7 @@
     "preview": "npm run preview -w apps/orbrun",
     "typecheck": "tsc -b",
     "test": "vitest run",
+    "e2e": "vitest run -c vitest.e2e.config.ts",
     "record": "node tools/record/record.mjs",
     "room:pack": "node tools/build/pack-room.mjs",
     "room:poster": "node tools/build/poster.mjs",

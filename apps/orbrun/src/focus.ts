@@ -211,6 +211,7 @@ export class FocusNav {
     return info
   }
 
+  /** `initial` -1: a new screen starts with nothing lit, and the first move lights its first item. */
   set(items: Focusable[], screen: string, opts: FocusOptions = {}, initial?: number, forceInitial = false) {
     const prev = this.current()
     const sameScreen = screen === this.screen && !!prev && !forceInitial
@@ -224,7 +225,7 @@ export class FocusNav {
         const id = prev.id ?? prev.label
         idx = items.findIndex((f) => (f.id ?? f.label) === id)
       }
-      if (idx < 0) idx = initial !== undefined && initial >= 0 && initial < items.length ? initial : 0
+      if (idx < 0 && initial !== -1) idx = initial !== undefined && initial >= 0 && initial < items.length ? initial : 0
     }
     this.index = idx
     this.paint(false)

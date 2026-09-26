@@ -25,7 +25,7 @@ import { VIEW_OPTIONS } from './servers'
 import { settingGroups, type SettingGroup } from './settings-rows'
 import { glyph, glyphName } from './glyphs'
 import type { Button, PadKind } from './gamepad'
-import { isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt } from './context'
+import { DEFAULT_YESNO, isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt } from './context'
 import type { InputDevice } from './game'
 import {
   cycleHeadersTarget,
@@ -34,7 +34,6 @@ import {
   lineUpTarget,
   menuClientHover,
   menuHasSections,
-  menuHoverSelectKey,
   menuKeyIntent,
   moreSwitchKeycode,
   parseMoreSwitches,
@@ -84,7 +83,7 @@ export interface TileRef {
   oy?: number
 }
 
-/** Joining a god from its description at an altar: its footer stop, and Start's chip. */
+/** Joining a god from its description at an altar: its footer stop, lit as the screen opens. */
 const GOD_JOIN = 'Join religion'
 
 /** An action a popup offers, in the order the pad's face buttons take them. */
@@ -495,36 +494,13 @@ export class Overlays {
   /** the prompt card (yes/no and multi-choice prompts; --more-- has none) and its focusables */
   private promptEl: HTMLElement | null = null
   private promptKey = ''
+  /** the prompt the card is for, whatever the device: its cursor's screen */
+  private promptScreen = ''
   private promptFocusables: Focusable[] = []
   /** where the cursor starts on a fresh card: the letter being moved on a letter picker, else the first chip */
   private promptInitial = 0
   /** one row of chips walked linearly, or the letter picker's grid */
   private promptFocusOpts: FocusOptions = { wrap: true, linear: true }
-  /**
-   * The keyboard has moved the cursor on the current prompt. Until then Enter
-   * and Escape stay raw, as in the official client: a yes/no in the message
-   * pane takes both as its default answer (prompt.cc `yesno`, `f_keyfilter`),
-   * which a client-side "Yes" under Enter would override.
-   */
-  /**
-   * The keyboard has moved the focus layer's cursor on the screen it is on:
-   * only then does its Enter fire the focused item on a prompt card or a
-   * popup. Before that the key stays raw, so the server's own Enter applies
-   * (a yes/no's default answer, a popup's Enter, such as joining at an altar
-   * from the god's description). Cleared whenever the cursor is reseated on a
-   * rebuilt or a new screen (`syncFocus`).
-   */
-  private keyArmed = false
-  /**
-   * A choice prompt whose Enter means nothing to the server fires its lit
-   * chip on Enter before any arrow: item-use.cc `_item_swap_prompt` ("you
-   * must remove one of the following items") reads only its letters, so a
-   * raw Enter did nothing under a lit chip. A yes/no keeps Enter for its
-   * default answer, a prompt that lists Enter keeps it as that choice, and
-   * the stat gain, which cannot be cancelled, keeps it too, so mashing Enter
-   * through the level-up's --more-- never spends the point.
-   */
-  private promptEnterFires = false
   /** newgame: the server's `button_focus` at the last build, so a move of its own re-seats our cursor and an echo of ours does not */
   private newgameFocus = ''
   /** bumped whenever either focus set is rebuilt, so syncFocus re-seats the cursor once */
@@ -586,6 +562,21 @@ export class Overlays {
     return !!this.popupTop && SCROLLER_POPUPS.has(this.popupTop.type)
   }
 
+  /**
+   * The top overlay has more than it shows, so the bumpers have a page to
+   * turn: a menu's list or a popup's text taller than its box, or a cursor's
+   * list (the skills screen, the new-game grid) longer than a page of it.
+   */
+  pageable(ctx: Context): boolean {
+    const over = (el: HTMLElement | null | undefined) => !!el && el.scrollHeight > el.clientHeight + 1
+    if (ctx.mode === 'menu' && ctx.menu?.menu.type !== 'crt') return over(this.menuBody()?.body)
+    if (ctx.mode === 'popup' || ctx.mode === 'ended') {
+      if (over(this.popupScrollBody())) return true
+    }
+    const rows = this.nav.options.pageRows
+    return !!rows && this.nav.count > rows
+  }
+
   /** Actions the top popup offers, in pad order (A, X, Y, LT, RT). */
   popupActions(): { key: string; label: string }[] {
     return this.actions.map((a) => ({ key: a.key, label: a.label }))
@@ -636,6 +627,9 @@ export class Overlays {
     // renderer registers over the one before, so the last to register wins.
     // a `ui_cutoff` hid what was up when it arrived (state.ts applyCutoff), as game.js handle_set_ui_cutoff does
     menus.forEach((m, i) => {
+      // crawl's own Yes/No menu (tag `prompt`): the player's yes/no card asks it (updatePrompt); a spectator,
+      // who has no card, sees the menu as it is
+      if (m.tag === 'prompt' && !this.hooks.watching()) return
       const el = this.renderMenu(state, m, i === menus.length - 1)
       if (m.hidden) el.classList.add('hidden')
       this.root.append(el)
@@ -832,8 +826,23 @@ export class Overlays {
       this.menuMore = updateMore
       this.hovered = menu.last_hovered
       if (menu.tag === GAME_MENU_TAG) this.seatGameMenu(menu)
+      else this.seatArrowsHover(menu)
     }
     return el
+  }
+
+  /**
+   * An arrows-select menu up with nothing hovered: the cursor goes on its
+   * first row. Without MF_INIT_HOVER (the inventory `i`, drop, pickup, the
+   * one end.cc shows on death) crawl seats no hover, and a page change
+   * (invent.cc `cycle_page`) can drop it again, so Enter selects nothing
+   * (menu.cc `process_selection` keeps an empty selection's menu) and A had
+   * nothing to take but the way out. Seated, A and Enter take the lit row.
+   */
+  private seatArrowsHover(menu: MenuState) {
+    if (!(menu.flags & MenuFlag.ARROWS_SELECT) || menu.last_hovered >= 0 || this.hooks.watching()) return
+    const first = this.hoverable(menu)[0]
+    if (first !== undefined) this.setHover(menu, first, false, false)
   }
 
   /**
@@ -1137,43 +1146,22 @@ export class Overlays {
   }
 
   /**
-   * A keyboard key while a server menu is up: menu.js menu_keydown_handler /
-   * menu_keypress_handler, which the official client runs before anything
-   * reaches the server. Returns true when the key was the menu's (consumed);
-   * false leaves it raw, exactly as there.
+   * A keyboard key while a server menu is up, past the ones that are the
+   * pad's buttons (bindings.ts `screenKey`: Enter, Escape, Space, the arrows
+   * go down the pad's path): menu.js menu_keydown_handler /
+   * menu_keypress_handler's paging keys (PageUp, Home, `<`, Shift+arrows),
+   * which the official client runs before anything reaches the server, and
+   * the letter of Orbrun's own row on the game menu, which reaches it from
+   * anywhere as a server row's hotkey does. Returns true when the key was the
+   * menu's (consumed); false leaves it raw, exactly as there.
    */
   menuKey(state: GameState, ev: NavKeyLike): boolean {
     const menu = topMenu(state)
     // a menu a `ui_cutoff` hid takes no keys (menu.js menu_keydown_handler: the top popup `:hidden` returns)
     if (!menu || menu.hidden || menu.type === 'crt' || menu !== this.menuTop) return false
-    // left and right walk the more line's switches while the cursor is on them (they are the server's on the rows)
-    if (this.menuFooterIndex >= 0 && !ev.ctrlKey && !ev.altKey && !ev.shiftKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
-      this.menuFooterStep(menu, ev.key === 'ArrowRight')
-      return true
-    }
-    // on a more-line switch, space and Enter fire it (the switch's own key goes to the server)
-    if (this.menuFooterIndex >= 0 && !ev.ctrlKey && !ev.altKey && !ev.shiftKey && (ev.key === ' ' || ev.key === 'Enter')) {
-      this.sendMoreSwitch(this.menuFooter[this.menuFooterIndex].key)
-      return true
-    }
-    // Orbrun's row on the game menu: Enter and space fire it, and its letter reaches
-    // it from anywhere on the menu, as a server row's hotkey reaches the server
-    const plain = !ev.ctrlKey && !ev.altKey && !ev.shiftKey
-    if (this.menuExtra && plain && ((this.menuExtraOn && (ev.key === 'Enter' || ev.key === ' ')) || ev.key === GAME_MENU_ROW_KEY)) {
+    if (this.menuExtra && !ev.ctrlKey && !ev.altKey && !ev.shiftKey && ev.key === GAME_MENU_ROW_KEY) {
       this.openGameMenuRow()
       return true
-    }
-    // the cursor is Orbrun's on every menu the server did not flag ARROWS_SELECT
-    // (menu-nav menuClientHover): space (and Enter, off the shop) fire the hovered
-    // row, sending the letter the row printed, exactly as the pad's A does
-    if (menuHoverSelectKey(menu, ev)) {
-      const hk = menu.items[menu.last_hovered]?.hotkeys?.[0]
-      if (hk !== undefined) {
-        this.hooks.send(cm.key(hk))
-        return true
-      }
-      // no row under the cursor yet: the key is not the cursor's, so it falls
-      // through to what it otherwise means (space pages, Enter goes to the server)
     }
     const intent = menuKeyIntent(menu, ev)
     if (!intent) return false
@@ -1373,14 +1361,12 @@ export class Overlays {
           this.sendMoreSwitch(this.menuFooter[this.menuFooterIndex].key)
           break
         }
-        const it = menu.items[this.hovered]
-        const hk = it?.hotkeys?.[0]
-        // the shop's letters mark (or, in examine mode, describe) the row, as its help says; Enter there buys
-        if (menu.tag === 'shop' && hk !== undefined) this.hooks.send(cm.key(hk))
-        // a single-select arrows menu with no row under the cursor (no MF_INIT_HOVER: the inventory, and the
-        // one end.cc shows on death): Enter is the server's no-op there (menu.cc CMD_MENU_SELECT, process_selection
-        // keeps an empty selection's menu), so A leaves as Esc does. Not on a multiselect, where Esc drops the marks
-        else if (arrows && !multi && this.hovered < 0) this.hooks.send(cm.key(27))
+        const hk = menu.items[this.hovered]?.hotkeys?.[0]
+        // what a click on the row does (renderMenu): an arrows menu acts on its hover, Space marking on a
+        // multiselect (the shop's marks too) and Enter taking it on the rest. A single-select arrows menu with
+        // no row under the cursor (seatArrowsHover seats one wherever there is a row) has nothing to take:
+        // Enter is the server's no-op there (menu.cc CMD_MENU_SELECT), so A leaves as Esc does
+        if (arrows && !multi && this.hovered < 0) this.hooks.send(cm.key(27))
         else if (arrows) this.hooks.send(cm.key(multi ? 32 : 13))
         else if (hk !== undefined) this.hooks.send(cm.key(hk))
         else this.hooks.send(cm.key(13))
@@ -1436,11 +1422,19 @@ export class Overlays {
     let newgame: { screen: string; initial: number; force: boolean } | undefined
     const items: Focusable[] = []
     let row = 0
-    const actions = (text: string) => {
+    /**
+     * Where the cursor starts: on the first of crawl's own verbs (the actions
+     * line: "(p)ut on, (d)rop, ..."), which is what the screen is for, or on
+     * nothing, so A and Enter close it as crawl's Enter does, and the first
+     * move lights the first stop. What is lit is what A does.
+     */
+    let initial = -1
+    const actions = (text: string, lit = true) => {
       if (!text) return
       const a = h('div', { class: 'actions', html: clickifyActions(text) })
       const spans = Array.from(a.querySelectorAll('[data-hotkey]')) as HTMLElement[]
       const parsed = parseActions(text)
+      if (lit && initial < 0 && spans.length) initial = items.length
       const r = row++
       spans.forEach((sp, i) => {
         const key = sp.dataset.hotkey || ''
@@ -1492,8 +1486,9 @@ export class Overlays {
         const text = typeof p.state.text === 'string' ? (p.state.text as string) : str('text')
         el.append(h('div', { class: 'body', html: formattedStringToHtml(text) }))
         if (str('more')) el.append(h('div', { class: 'more', html: formattedStringToHtml(str('more')) }))
-        // the keys a scroller answers to but never prints: a row of them, so the pad has them
-        actions(scrollerActions(str('tag'), text, str('text')))
+        // the keys a scroller answers to but never prints: a row of them, so the pad has them; they are
+        // the reader's to go to, not what the screen is for, so nothing is lit on them at first
+        actions(scrollerActions(str('tag'), text, str('text')), false)
         break
       }
       case 'describe-spell': {
@@ -1558,7 +1553,10 @@ export class Overlays {
         else describeBody(panes[cur] || '', cur === 0 ? spellsOf(d.spellset) : [])
         const prompt = typeof p.state.prompt === 'string' ? '<br>' + formattedStringToHtml(p.state.prompt as string) : ''
         if (p.type === 'describe-god') {
-          el.append(this.godFooter(names, cur, d.is_altar ? str('service_fee') : null, items, row++, prompt))
+          const foot = this.godFooter(names, cur, d.is_altar ? str('service_fee') : null, items, row++, prompt)
+          el.append(foot.el)
+          // at an altar, joining is what the screen is for
+          if (foot.join >= 0) initial = foot.join
           actions(str('actions'))
           break
         }
@@ -1660,47 +1658,47 @@ export class Overlays {
         )
       }
       if (newgame) this.registerFocus(newgame.screen, items, { pageRows: NEWGAME_PAGE_ROWS }, newgame.initial, newgame.force)
-      else this.registerFocus('popup:' + p.type, items, {})
+      // a popup of its own: a redraw of it keeps the cursor, the next one (another god's) starts where it should
+      else this.registerFocus('popup:' + p.type + ':' + this.popupId(p), items, {}, initial)
     }
     return el
   }
 
   /**
    * A god's footer (ui-layouts.js describe_god: "!/^: Overview | Powers |
-   * Wrath", and at an altar "J/Enter: join religion"). Each pane name is a
-   * stop of its own, and so is joining, so the cursor walks the footer and A
-   * picks one; the official footer is keys only, and `!` / `^` only cycle
-   * forward, so a pane further on is that many presses. `fee` is null away
-   * from an altar.
+   * Wrath", and at an altar "J/Enter: join religion"). The pane names are one
+   * stop, as a monster's are (`paneAction`): A turns to the next pane, and a
+   * click on a name goes straight to it. Joining is a stop of its own, and
+   * where the cursor starts (`join`, -1 away from an altar). `fee` is null
+   * away from an altar.
    */
-  private godFooter(names: string[], cur: number, fee: string | null, items: Focusable[], row: number, prompt: string): HTMLElement {
+  private godFooter(names: string[], cur: number, fee: string | null, items: Focusable[], row: number, prompt: string): { el: HTMLElement; join: number } {
     const foot = h('div', { class: 'footer', html: '<b class="fg3">!</b>/<b class="fg3">^</b>:&nbsp;' })
+    const panes = h('span', { class: 'pane-switch' })
     names.forEach((n, i) => {
-      if (i) foot.append(' | ')
+      if (i) panes.append(' | ')
       const sp = i === cur ? h('b', { class: 'fg15' }, n) : h('span', null, n)
-      const send = () => {
+      sp.addEventListener('click', (ev) => {
+        ev.stopPropagation()
         for (let k = (i - cur + names.length) % names.length; k > 0; k--) this.hooks.send(cm.input('!'))
-      }
-      sp.addEventListener('click', send)
-      foot.append(sp)
-      items.push({ label: n, el: sp, activate: send, row, col: i, id: 'pane:' + n })
+      })
+      panes.append(sp)
     })
+    foot.append(panes)
+    const next = () => this.hooks.send(cm.input('!'))
+    items.push({ label: names.join(' | '), el: panes, activate: next, row, col: 0, id: 'panes' })
+    let join = -1
     if (fee !== null) {
       foot.append('\u00a0\u00a0')
-      const join = h('span', { html: '<b class="fg3">J</b>/<b class="fg3">Enter</b>: join religion' + escapeHtml(fee) })
+      const el = h('span', { html: '<b class="fg3">J</b>/<b class="fg3">Enter</b>: join religion' + escapeHtml(fee) })
       const send = () => this.hooks.send(cm.key(Keys.ENTER))
-      join.addEventListener('click', send)
-      foot.append(join)
-      items.push({ label: GOD_JOIN, el: join, activate: send, row, col: names.length, id: 'join' })
+      el.addEventListener('click', send)
+      foot.append(el)
+      join = items.length
+      items.push({ label: GOD_JOIN, el, activate: send, row, col: 1, id: 'join' })
     }
     if (prompt) foot.insertAdjacentHTML('beforeend', prompt)
-    return foot
-  }
-
-  /** What Enter does on the top popup when it is more than a confirm (joining at an altar), for Start's chip. */
-  popupEnter(): string | undefined {
-    const p = this.popupTop
-    return p?.type === 'describe-god' && (p.data as Record<string, unknown>).is_altar ? GOD_JOIN : undefined
+    return { el: foot, join }
   }
 
   private spellset(books: SpellBook[], items: Focusable[], nextRow: () => number, colour = false): HTMLElement {
@@ -1906,6 +1904,15 @@ export class Overlays {
 
   // ------------------------------------------------------------ focus layer
 
+  private popupIds = new WeakMap<Popup, number>()
+  private nextPopupId = 0
+  /** Each popup's own number, for the cursor's screen: the state object lives as long as the popup is up. */
+  private popupId(p: Popup): number {
+    let id = this.popupIds.get(p)
+    if (id === undefined) this.popupIds.set(p, (id = ++this.nextPopupId))
+    return id
+  }
+
   /** A renderer's focusables for the top overlay; the last registration of a build wins. */
   private registerFocus(screen: string, items: Focusable[], opts: FocusOptions, initial = 0, force = false) {
     this.focusables = items
@@ -1918,89 +1925,99 @@ export class Overlays {
 
   /**
    * The prompt card: a yes/no or multi-choice prompt (parsed by the context
-   * from the prompt channel, only while the server says one is up) in the
-   * middle of the view: the question and one chip per answer, nothing of the
-   * message log, which stays in its pane. Each chip wears what fires it on
-   * the device that spoke last, as the action bar does (hud.ts renderBar):
-   * after the pad, the button (`promptButtons`: only a yes/no has them, a
-   * choice prompt's chips are bare and the d-pad and A pick one), after the
-   * keyboard or the mouse the hotkey as a key cap. A choice
-   * prompt that is nothing but its options (`promptLead`) prints no question
-   * line: the chips are the question, headed by its verb, so the card never
-   * says the same thing twice. The cursor walks the chips too. Called every
-   * frame; it rebuilds only when the prompt or the device changes. `--more--`
-   * has no card at all: the message pane prints its bare more row and the
-   * world goes behind the pause vignette (hud.ts renderMessages), the bar carries the `--more--` chip,
-   * and only crawl's own keys continue: A (space), B (Escape), Start (Enter)
-   * (bindings.ts MORE).
+   * from the prompt channel, or from the yes/no menu crawl asks in a browser,
+   * only while the server says one is up) in the middle of the view: the
+   * question and one chip per answer, nothing of the message log, which stays
+   * in its pane. Each chip wears what fires it on the device that spoke last,
+   * as the action bar does (hud.ts renderBar): after the pad, the button
+   * (`promptButtons`), after the keyboard or the mouse the hotkey as a key cap.
+   * A choice prompt that is nothing but its options (`promptLead`) prints no
+   * question line: the chips are the question, headed by its verb.
+   *
+   * A yes/no has no cursor: A is Yes and B is No, whatever crawl's default
+   * is, and the keyboard's Enter is that default, which its chip says. A
+   * choice prompt is a row the cursor walks, lit on its first chip; the stat
+   * gain, which cannot be taken back, starts with nothing lit, so a press
+   * carried over from the --more-- before it spends nothing. Called every
+   * frame; it rebuilds when the prompt or the device changes, and a change of
+   * device keeps the cursor where it was (the screen is the prompt's alone).
+   * `--more--` has no card at all (bindings.ts MORE).
    */
   updatePrompt(mode: Mode, prompt: ParsedPrompt | undefined, device: InputDevice = 'pad') {
-    let key = ''
+    let screen = ''
     let chips: { label: string; hotkey: string; colour?: number; send: () => void; cancel?: boolean }[] = []
     let text = ''
     let lead: string | null = null
     let buttons = new Map<string, Button>()
     let letters: ParsedPrompt | null = null
-    let enterFires = false
+    let yesno = false
+    let dflt: string | undefined
+    let unlit = false
     if (mode === 'yesno' || mode === 'prompt') {
-      const p: ParsedPrompt | undefined = prompt ?? (mode === 'yesno' ? { text: '', options: [{ hotkey: 'Y', label: 'Yes' }, { hotkey: 'N', label: 'No' }], yesno: true, cancel: true } : undefined)
+      const p: ParsedPrompt | undefined = prompt ?? (mode === 'yesno' ? DEFAULT_YESNO : undefined)
       if (p && p.options.length) {
         text = p.text
         // a yes/no's text is the question, its Yes and No are not in it; a choice prompt's may be only its options
         lead = p.yesno ? null : promptLead(text)
-        key = mode + '|' + device + '|' + text + '|' + (p.letters ? p.letters + '|' + (p.from ?? '') + '|' : '') + p.options.map((o) => o.hotkey + '=' + o.label + (o.held ? ':' + o.held : '')).join(',')
+        screen = mode + '|' + text + '|' + (p.letters ? p.letters + '|' + (p.from ?? '') + '|' : '') + p.options.map((o) => o.hotkey + '=' + o.label + (o.held ? ':' + o.held : '')).join(',')
         // Tab and Enter are keys, not text (context.ts NAMED_KEYS)
         chips = p.options.map((o) => ({ label: o.label, hotkey: o.hotkey, colour: o.colour, send: () => this.hooks.send(o.hotkey === '\t' || o.hotkey === '\r' ? cm.key(o.hotkey.charCodeAt(0)) : cm.input(o.hotkey)), cancel: o.hotkey.toLowerCase() === 'n' && p.yesno }))
         buttons = promptButtons(p)
         letters = p.letters ? p : null
-        enterFires = !p.yesno && !p.letters && p.cancel && !p.options.some((o) => o.hotkey === '\r')
+        yesno = p.yesno
+        dflt = p.default
+        unlit = !p.cancel
       }
     }
+    const key = screen && screen + '|' + device
     if (key === this.promptKey) return
+    const sameScreen = !!screen && screen === this.promptScreen
     this.promptKey = key
+    this.promptScreen = screen
     this.promptEl?.remove()
     this.promptEl = null
     this.promptFocusables = []
-    this.promptInitial = 0
-    this.keyArmed = false
-    this.promptEnterFires = enterFires
-    this.focusGen++
+    this.promptInitial = unlit ? -1 : 0
+    if (!sameScreen) this.focusGen++
     if (!key) return
     const padKind = this.hooks.padKind?.() ?? 'xbox'
     const pad = device === 'pad'
-    const el = h('div', { class: 'prompt-card' + (pad ? '' : ' kbd') + (enterFires ? ' armed' : ''), 'data-client': '1' })
+    const el = h('div', { class: 'prompt-card' + (pad ? '' : ' kbd'), 'data-client': '1' })
     if (text && lead === null) el.append(h('div', { class: 'text' }, text))
     if (letters) {
       this.letterGrid(el, letters, chips)
-      this.root.append(el)
-      this.promptEl = el
-      return
+    } else {
+      this.promptFocusOpts = { wrap: true, linear: true }
+      const rowEl = h('div', { class: 'chips' })
+      if (lead) rowEl.append(h('span', { class: 'lead' }, lead))
+      chips.forEach((c, i) => {
+        const binding = buttons.get(c.hotkey)
+        // Keep the No option and its binding, but never advertise B.
+        const b = binding === 'B' ? undefined : binding
+        const keyName = c.hotkey === '\t' ? 'Tab' : c.hotkey === '\r' ? 'Enter' : c.hotkey
+        // a label that already spells its key ("(S)trength") needs no cap beside it: the key would read twice
+        const spelled = c.label.includes('(' + c.hotkey + ')')
+        const caps: Element[] = pad ? (b ? [glyph(b, padKind)] : []) : spelled ? [] : [h('kbd', null, keyName)]
+        // the keyboard's Enter is crawl's default answer: the chip it takes says so
+        if (!pad && c.hotkey === dflt) caps.push(h('kbd', { class: 'default' }, 'Enter'))
+        const title = pad ? (b ? glyphName(b, padKind) : c.label) : 'Press ' + keyName + (c.hotkey === dflt ? ' or Enter' : '')
+        const chip = h('span', { class: 'chip' + (b ? ' ' + b : '') + (c.hotkey === dflt ? ' default' : ''), title }, ...caps, h('span', { class: 'label' }, c.label))
+        chip.addEventListener('click', c.send)
+        rowEl.append(chip)
+        // a yes/no's answers are on A and B, not under a cursor
+        if (yesno) return
+        // one row of chips; the card is linear, so up/down walk it as well as left/right
+        const item: Focusable = { label: c.label, el: chip, activate: c.send, row: 0, col: i, id: 'chip:' + i }
+        // the bar names the focused answer on A in the log's own colour (bindings.ts actionLabel)
+        if (c.colour !== undefined) item.colour = c.colour
+        this.promptFocusables.push(item)
+      })
+      el.append(rowEl)
     }
-    this.promptFocusOpts = { wrap: true, linear: true }
-    const rowEl = h('div', { class: 'chips' })
-    if (lead) rowEl.append(h('span', { class: 'lead' }, lead))
-    chips.forEach((c, i) => {
-      const binding = buttons.get(c.hotkey)
-      // Keep the No option and its binding, but never advertise B.
-      const b = binding === 'B' ? undefined : binding
-      // after the pad a choice chip wears nothing: the cursor marks it and A sends it
-      const keyName = c.hotkey === '\t' ? 'Tab' : c.hotkey === '\r' ? 'Enter' : c.hotkey
-      // a label that already spells its key ("(S)trength") needs no cap beside it: the key would read twice
-      const spelled = c.label.includes('(' + c.hotkey + ')')
-      const cap = pad ? (b ? glyph(b, padKind) : null) : spelled ? null : h('kbd', null, keyName)
-      const title = pad ? (b ? glyphName(b, padKind) : c.label) : 'Press ' + keyName
-      const chip = h('span', { class: 'chip' + (b ? ' ' + b : ''), title }, cap, h('span', { class: 'label' }, c.label))
-      chip.addEventListener('click', c.send)
-      rowEl.append(chip)
-      // one row of chips; the card is linear, so up/down walk it as well as left/right
-      const item: Focusable = { label: c.label, el: chip, activate: c.send, row: 0, col: i, cancel: c.cancel, id: 'chip:' + i }
-      // the bar names the focused answer on A in the log's own colour (bindings.ts actionLabel)
-      if (c.colour !== undefined) item.colour = c.colour
-      this.promptFocusables.push(item)
-    })
-    el.append(rowEl)
     this.root.append(el)
     this.promptEl = el
+    // the same prompt drawn for another device: the cursor stays on the chip it was on
+    if (sameScreen) this.nav.set(this.promptFocusables, 'prompt:' + screen, this.promptFocusOpts, this.promptInitial)
   }
 
   /**
@@ -2013,8 +2030,7 @@ export class Overlays {
    * that hold something are marked too. Over the inventory a line under the
    * grid names what the lit letter holds, following the cursor, so the
    * player sees what a swap would displace before pressing. A physical
-   * keyboard types the letter as it always did: the card only walks after an
-   * arrow (`promptArmed`).
+   * keyboard types the letter as it always did.
    */
   private letterGrid(el: HTMLElement, p: ParsedPrompt, chips: { label: string; hotkey: string; send: () => void }[]) {
     const COLS = 13
@@ -2045,7 +2061,7 @@ export class Overlays {
   /** Which focus set the mode reads: the card for prompts, the top overlay otherwise. */
   private focusSet(ctx: Context): { items: Focusable[]; screen: string; opts: FocusOptions; initial: number; force: boolean } {
     if (ctx.mode === 'yesno' || ctx.mode === 'prompt') {
-      return { items: this.promptFocusables, screen: 'prompt:' + this.promptKey, opts: this.promptFocusOpts, initial: this.promptInitial, force: false }
+      return { items: this.promptFocusables, screen: 'prompt:' + this.promptScreen, opts: this.promptFocusOpts, initial: this.promptInitial, force: false }
     }
     return { items: this.focusables, screen: this.focusScreen, opts: this.focusOpts, initial: this.focusInitial, force: this.focusForce }
   }
@@ -2059,7 +2075,6 @@ export class Overlays {
     }
     if (this.focusSynced === this.focusGen) return
     this.focusSynced = this.focusGen
-    this.keyArmed = false
     const set = this.focusSet(ctx)
     this.nav.set(set.items, set.screen, set.opts, set.initial, set.force)
   }
@@ -2071,65 +2086,18 @@ export class Overlays {
   }
 
   /**
-   * A focus operation from the pad. With nothing under the cursor the op
-   * falls back to the key the official client would send: Esc to close a
+   * A focus operation, from the pad or from a key that stands for a pad
+   * button (bindings.ts `screenKey`): one path for both. With nothing lit the
+   * op falls back to the key the official client would send: Esc to close a
    * popup or cancel, Enter to confirm, the arrow to scroll or move.
    */
   focusOp(state: GameState, ctx: Context, op: FocusOp) {
     this.pointerLive = false
     if (ctx.mode === 'menu' && ctx.menu?.menu.type !== 'crt') return this.menuOp(state, op)
-    if (!this.focusKeyOp(ctx, op, false)) this.focusFallbackKey(ctx, op)
-  }
-
-  /**
-   * A keyboard key in a focus mode. Consumed only when the screen has a
-   * client-owned cursor and the op moved or fired it; otherwise the key stays
-   * raw, as in the official client. On a prompt the arrows arm the cursor
-   * first: Enter fires the focused chip only after one (or at once, on a
-   * prompt that ignores Enter: `promptEnterFires`, or on a describe popup's
-   * lit verb: `popupVerbLit`; `enter` says the select is
-   * a fresh Enter rather than space or a repeat), and Escape is always raw (a
-   * yes/no takes both as its default answer, see `promptArmed`).
-   */
-  focusKey(state: GameState, ctx: Context, op: FocusOp, enter = false): boolean {
-    void state
-    this.pointerLive = false
-    return this.focusKeyOp(ctx, op, true, enter)
-  }
-
-  private focusKeyOp(ctx: Context, op: FocusOp, keyboard: boolean, enter = false): boolean {
-    const set = this.focusSet(ctx)
-    if (keyboard && !this.nav.count) return false
-    const prompt = set.items === this.promptFocusables
-    // a prompt card and a popup: Enter is the server's until an arrow has moved the cursor (`keyArmed`);
-    // on a prompt any arrow arms it, on a popup only one the cursor took (the others scroll the text)
-    if (keyboard && prompt) {
-      if (op === 'cancel' || op === 'pageNext' || op === 'pagePrev') return false
-      if (op === 'select' && !this.keyArmed && !(enter && this.promptEnterFires)) return false
-      if (op !== 'select') {
-        this.keyArmed = true
-        this.promptEl?.classList.add('armed')
-      }
-    } else if (keyboard && ctx.mode === 'popup') {
-      if (op === 'select' && !this.keyArmed && !(enter && this.popupVerbLit())) return false
-      if (op !== 'select' && op !== 'cancel') {
-        const moved = this.focusKeyMove(op)
-        if (moved) this.keyArmed = true
-        return moved
-      }
-    }
-    return this.focusKeyMove(op)
-  }
-
-  /**
-   * The cursor sits on a verb of a describe popup's actions line ("(p)ut on"):
-   * a fresh Enter fires it before any arrow. The server's Enter there only
-   * closes the popup (describe.cc: `key_exits_popup(key, true)` takes CK_ENTER),
-   * so the lit verb loses nothing; a spell entry, a pane switch and a god's
-   * join keep Enter raw.
-   */
-  private popupVerbLit(): boolean {
-    return !!this.popupTop?.type.startsWith('describe-') && !!this.nav.current()?.id?.startsWith('act:')
+    // text to read with nothing lit: up, down and the bumpers read it; left and right light the row of keys under it
+    const reading = ctx.mode === 'popup' && this.popupScrolls && !this.nav.current() && (op === 'next' || op === 'prev' || op === 'pageNext' || op === 'pagePrev')
+    // on a popup the cursor takes up and down only where it can move; at an edge they scroll the text
+    if (reading || !this.focusKeyMove(op)) this.focusFallbackKey(ctx, op)
   }
 
   private focusKeyMove(op: FocusOp): boolean {
@@ -2160,6 +2128,8 @@ export class Overlays {
   }
 
   private focusFallbackKey(ctx: Context, op: FocusOp) {
+    // a yes/no has no cursor: its answers are A and B (bindings.ts promptTable), and nothing moves
+    if (ctx.mode === 'yesno') return
     // a popup that scrolls on the client (describe screens, help, the game-over
     // text) takes the moves itself, as the arrows and PgUp / PgDn do on a keyboard
     if (ctx.mode === 'popup' || ctx.mode === 'ended') {

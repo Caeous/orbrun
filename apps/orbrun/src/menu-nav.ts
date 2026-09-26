@@ -224,28 +224,12 @@ export function moreSwitchKeycode(key: string): number {
  * moves the hover with up / down on all of them, as the pad's d-pad already
  * did, and tells the server where it is with `menu_hover` — which is what the
  * official client sends when the mouse crosses a row, so no menu is surprised
- * by it. `menuHoverSelectKey` fires the row the cursor is on.
- *
- * The one thing this cannot do is take a flag away: on an ARROWS_SELECT menu
- * the server acts on its own hover, so space and Enter stay raw there.
+ * by it. Enter and Space fire the row the cursor is on, as the pad's A does
+ * (bindings.ts `screenKey`, Overlays.menuOp).
  */
 export function menuClientHover(menu: Pick<MenuState, 'tag' | 'flags'>): boolean {
   void menu
   return true
-}
-
-/**
- * The key that fires the hovered row on a menu whose hover is the client's
- * alone: space and Enter, both, since the server would do nothing with
- * either. The exceptions are ARROWS_SELECT menus, where the server selects on
- * its own hover and both keys must reach it raw, and the shop's Enter, which
- * its own help line binds to "buy marked items".
- */
-export function menuHoverSelectKey(menu: Pick<MenuState, 'tag' | 'flags'>, ev: NavKeyLike): boolean {
-  if (ev.altKey || ev.ctrlKey || ev.shiftKey) return false
-  if (menu.flags & MenuFlag.ARROWS_SELECT) return false
-  if (ev.key === ' ') return true
-  return ev.key === 'Enter' && menu.tag !== 'shop'
 }
 
 /**

@@ -2520,9 +2520,9 @@ canvas.minimap.hidden {
   outline: 1px solid rgba(255, 212, 92, 0.6);
   border-color: transparent;
 }
-/* the keyboard has taken the cursor: Enter now fires the lit chip */
-.prompt-card.armed .chip.focused {
-  outline-width: 2px;
+/* the keyboard's Enter is crawl's default answer on a yes/no: its chip carries the key */
+.prompt-card .chip kbd.default {
+  margin-left: 0.25em;
 }
 /* a client menu's footer (overlays.ts clientFooter) carries both a pad and a keyboard reading of its controls;
    the stack's device class (setDevice) shows the one for the device that spoke last, the keyboard's by default */

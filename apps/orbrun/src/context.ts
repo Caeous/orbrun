@@ -44,6 +44,8 @@ export interface ParsedPrompt {
    */
   options: { hotkey: string; label: string; held?: string; colour?: number }[]
   yesno: boolean
+  /** the answer crawl's own Enter gives (a yes/no's default), when it has one */
+  default?: string
   /**
    * A letter picker: the prompt wants one letter, and the options are every
    * inventory letter (adjust.cc `adjust_item`, `_adjust_spell`,
@@ -71,6 +73,16 @@ export interface MenuContext {
   arrowsSelect: boolean
   multiselect: boolean
   wrap: boolean
+  /** the menu filters on Ctrl-F (MF_ALLOW_FILTER) */
+  filter: boolean
+  /** two or more sections, headed by their titles: the bumpers jump between them (menu.cc `cycle_headers`) */
+  sections: boolean
+  /** some row is marked: Enter would take something (a multiselect's accept does nothing with none) */
+  anyMarked: boolean
+  /** the key the menu's own help is on, when it names one ("_ for help"); absent, it has none */
+  helpKey?: string
+  /** a row picked takes effect at once (the known-items menu's autopickup): nothing is marked, nothing accepted */
+  togglesAtOnce?: boolean
   /** the shop menu (tag `shop`): what its letters, `$` and Enter do right now */
   shop?: ShopContext
 }
@@ -106,8 +118,6 @@ export interface Context {
   popupType?: string
   /** Actions the top popup offers (describe-item verbs, pane switches), in pad order. Filled by the app from the overlays. */
   popupActions?: { key: string; label: string }[]
-  /** What Enter does on the top popup when it is more than a confirm (joining at an altar). Filled by the app from the overlays. */
-  popupEnter?: string
   /**
    * The focus layer's cursor over the top overlay (popup, prompt, CRT screen,
    * dialog): what A and B would do. Filled by the app from the overlays; absent
@@ -135,6 +145,25 @@ export interface Context {
   textTag?: string
   /** the pane's `--more--` row as printed (the server's `more_text` when it sent one), in more mode */
   moreText?: string
+  /**
+   * The top overlay has more than fits: a list longer than its box, text
+   * taller than its popup. The bumpers page only then. Filled by the app from
+   * the overlays, which measure it.
+   */
+  pageable?: boolean
+  /** monsters in view, of any attitude: what look mode's `+` and `-` cycle */
+  monstersInView: number
+  /** an aim that can change what it throws: crawl's hint names `Q - select action` (a fire, not a spell) */
+  aimQuiver?: boolean
+  /** the level map's cursor stands where the player does: travelling there, or finding them, is nowhere to go */
+  mapCursorHome?: boolean
+  /**
+   * Character creation's way back, as the screen offers it (newgame.cc): the
+   * weapon screen's "return to character choice" on Backspace, or a species or
+   * background screen's "Space - Change species" once the other is chosen,
+   * which starts the pair over. Absent on the first screen: nothing to go back to.
+   */
+  newgameBack?: number
 }
 
 /** the message pane's untagged text is the page's white (styles.css `.messages`) */
@@ -182,11 +211,10 @@ export function deriveMode(state: GameState): Mode {
   if (state.textInput) return 'text'
   if (state.dialog) return 'dialog'
   if (state.inputMode === MouseMode.MORE) return 'more'
-  // prompt.cc `yesno`: inside a layout or with `prompt_menu`, the question is
-  // the server's own arrows-select menu (tag `prompt`, Yes/No rows, hover on
-  // the default). That is a menu like any other: the cursor walks it and A
-  // picks. Only a yes/no asked in the message pane is `yesno`.
-  if (state.inputMode === MouseMode.YESNO) return topMenu(state)?.tag === 'prompt' ? 'menu' : 'yesno'
+  // prompt.cc `yesno`, however crawl asks it: in the message pane, in a menu's footer (the shop's
+  // purchase), or as its own Yes/No menu (tag `prompt`, which `prompt_menu`, on for every browser,
+  // makes of every yes/no). One card answers them all (overlays.ts updatePrompt)
+  if (state.inputMode === MouseMode.YESNO) return 'yesno'
   // an overlay a `ui_cutoff` hid is not up: the ctrl-f results stay on crawl's stack while the level map
   // they open shows (stash.cc `on_single_selection` → `show_map`), and menu.js ignores keys for a hidden menu
   const popup = topPopup(state)
@@ -439,8 +467,45 @@ export function promptLead(text: string): string | null {
  * spell its choices another way (`listedPrompt`), or want a bare letter
  * (`letterPrompt`).
  */
+/** A yes/no's own default, spelled in its question: `(y/N)` is No, `(Y/n)` Yes. */
+const YESNO_DEFAULT_RE = /\((?:(Y)\/n|y\/(N))\)/
+
+/**
+ * A yes/no crawl asks with a menu of its own: tag `prompt`, the question in
+ * its title, Yes / No (and Always) rows with their hotkeys (`Y` and `y`), the
+ * hover on the default (prompt.cc `yesno` with `prompt_menu`); or a question
+ * in the footer of the menu that is up (`yesno(nullptr)`: the shop's
+ * "Purchase items for 40 gold? (y/N)"), which the message log never shows.
+ */
+function menuYesno(menu: MenuState): ParsedPrompt | undefined {
+  if (menu.tag === 'prompt') {
+    const options: ParsedPrompt['options'] = []
+    let dflt: string | undefined
+    menu.items.forEach((it, i) => {
+      const hk = it?.hotkeys?.[0]
+      if (hk === undefined) return
+      const k = String.fromCharCode(hk)
+      options.push({ hotkey: k, label: formattedStringToText(it!.text ?? '').replace(/^\s*\S\s+-\s+/, '').trim() || k })
+      if (i === menu.last_hovered) dflt = k
+    })
+    if (!options.length) return undefined
+    const p: ParsedPrompt = { text: formattedStringToText(menu.title?.text ?? '').trim(), options, yesno: true, cancel: true }
+    if (dflt) p.default = dflt
+    return p
+  }
+  const text = formattedStringToText(menu.more ?? '').trim()
+  const d = YESNO_DEFAULT_RE.exec(text)
+  if (!d) return undefined
+  return { text, options: [{ hotkey: 'Y', label: 'Yes' }, { hotkey: 'N', label: 'No' }], yesno: true, cancel: true, default: d[1] ? 'Y' : 'N' }
+}
+
 function parsePrompt(state: GameState): ParsedPrompt | undefined {
   const yesnoMode = state.inputMode === MouseMode.YESNO
+  const menu = topMenu(state)
+  if (yesnoMode && menu) {
+    const p = menuYesno(menu)
+    if (p) return p
+  }
   const promptMode = state.inputMode === MouseMode.PROMPT || (state.inputMode === MouseMode.NORMAL && rawKeyPrompt(state))
   if (!yesnoMode && !promptMode) return undefined
   const lines = state.messages.lines
@@ -459,7 +524,10 @@ function parsePrompt(state: GameState): ParsedPrompt | undefined {
     if (yesnoMode && !YESNO_NAG_RE.test(text)) {
       if (PICKUP_YESNO_RE.test(text)) options.push({ hotkey: 'y', label: 'Yes' }, { hotkey: 'n', label: 'No' })
       else options.push({ hotkey: 'Y', label: 'Yes' }, { hotkey: 'N', label: 'No' })
-      return { text, options, yesno: true, cancel: true }
+      const p: ParsedPrompt = { text, options, yesno: true, cancel: true }
+      const d = YESNO_DEFAULT_RE.exec(text)
+      if (d) p.default = d[1] ? 'Y' : 'N'
+      return p
     }
     if (!promptMode) continue
     if (LETTER_RE.test(text)) return letterPrompt(state, lines, i, text)
@@ -477,8 +545,26 @@ function parsePrompt(state: GameState): ParsedPrompt | undefined {
     }
     if (options.length) return { text, options, yesno: false, cancel: !STAT_GAIN_RE.test(text) }
   }
-  return promptMode ? listedPrompt(lines) : undefined
+  if (promptMode) return listedPrompt(lines)
+  // a yes/no whose question the log does not show still has its two answers
+  return yesnoMode ? { ...DEFAULT_YESNO, options: DEFAULT_YESNO.options.slice() } : undefined
 }
+
+/** A yes/no's answers when nothing names them: prompt.cc `yesno` takes Y and N, whatever the rc (uppercase always counts). */
+export const DEFAULT_YESNO: ParsedPrompt = { text: '', options: [{ hotkey: 'Y', label: 'Yes' }, { hotkey: 'N', label: 'No' }], yesno: true, cancel: true }
+
+const MARKED_RE = /^\s*\S\s[+#]\s/
+
+/**
+ * The known-items menu, `\\` (invent.cc `KnownMenu`, tag `inventory` like the
+ * pack's): picking a row toggles its autopickup there and then, and its `+`
+ * says autopickup is on, not that the row is marked. There is nothing to
+ * accept, select all or describe.
+ */
+const KNOWN_ITEMS_RE = /^Recognised items\./
+
+/** The help a menu offers, as its title or footer names the key: "(_ for help)", "[?] help"; none named, none sent. */
+const MENU_HELP_RE = /\(([_?]) for help\)|\[<?\w*>?\s*([_?])\s*<?\/?\w*>?\]\s*help/
 
 function menuContext(state: GameState): MenuContext | undefined {
   const menu = topMenu(state)
@@ -490,7 +576,16 @@ function menuContext(state: GameState): MenuContext | undefined {
     if (!it) continue
     if ((it.level ?? 2) === 2 && (menu.tag === 'use_item' || (it.hotkeys && it.hotkeys.length) || arrowsSelect)) hoverable.push(i)
   }
-  const ctx: MenuContext = { menu, hoverable, arrowsSelect, multiselect: !!(menu.flags & 0x0004), wrap: !!(menu.flags & 0x0080) }
+  let blocks = 0
+  for (let i = 0; i < menu.items.length; i++) if ((menu.items[i]?.level ?? 2) < 2 && (i === 0 || (menu.items[i - 1]?.level ?? 2) >= 2)) blocks++
+  // a marked row says so between its letter and its text: `a + club`, `a # 3 darts` for some of a stack (menu.cc
+  // MenuEntry::get_text); `q` is what the row holds, not what is marked
+  const known = KNOWN_ITEMS_RE.test(formattedStringToText(menu.title?.text ?? ''))
+  const anyMarked = !known && menu.items.some((it) => !!it && MARKED_RE.test(formattedStringToText(it.text ?? '')))
+  const help = MENU_HELP_RE.exec(formattedStringToText((menu.title?.text ?? '') + '\n' + (menu.more ?? '') + '\n' + (menu.alt_more ?? '')))
+  const ctx: MenuContext = { menu, hoverable, arrowsSelect, multiselect: !!(menu.flags & 0x0004), wrap: !!(menu.flags & 0x0080), filter: !!(menu.flags & 0x0100), sections: blocks >= 2, anyMarked }
+  if (help) ctx.helpKey = help[1] ?? help[2]
+  if (known) ctx.togglesAtOnce = true
   if (menu.tag === 'shop') ctx.shop = shopContext(menu)
   return ctx
 }
@@ -542,14 +637,25 @@ export function readiedAction(quiverDesc: string | undefined): string | undefine
   return text && text !== 'Nothing quivered' ? text : undefined
 }
 
+/** The new-game screen's own button back (`Context.newgameBack`): Backspace's, or a Space that changes the other choice. */
+function newgameBack(d: Record<string, unknown> | undefined): number | undefined {
+  // a species or background button has one `label`; the weapon screen's rows have `labels`, a column each
+  const sub = (d?.['sub-items'] as { buttons?: { hotkey?: number; label?: string; labels?: string[] }[] } | undefined)?.buttons ?? []
+  const said = (b: { label?: string; labels?: string[] }) => formattedStringToText([b.label ?? '', ...(b.labels ?? [])].join(' '))
+  if (sub.some((b) => b.hotkey === 8)) return 8
+  if (sub.some((b) => b.hotkey === 32 && /Space - Change /.test(said(b)))) return 32
+  return undefined
+}
+
 export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer: Layer): Context {
   const mode = deriveMode(state)
   const ahead = targetFor(scene, cellAhead(scene, cam.facing), false)
   const under = targetFor(scene, cellUnder(scene), true, floorItemsLabel(state))
   // what autofight would attack: a plant is hostile-attitude firewood and counts for nothing (scene `isThreat`)
-  const hostiles = monstersInView(scene).filter(isThreat).length
+  const inView = monstersInView(scene)
+  const hostiles = inView.filter(isThreat).length
   const p = state.player
-  const ctx: Context = { mode, layer, ahead, under, hostilesInView: hostiles, readiedAction: readiedAction(p.quiver_desc) }
+  const ctx: Context = { mode, layer, ahead, under, hostilesInView: hostiles, monstersInView: inView.length, readiedAction: readiedAction(p.quiver_desc) }
   if (p.hp < p.hp_max || p.mp < p.mp_max) ctx.injured = true
   if (mode === 'yesno' || mode === 'prompt') ctx.prompt = parsePrompt(state)
   if (mode === 'more') ctx.moreText = state.messages.moreText || '--more--'
@@ -559,7 +665,19 @@ export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer
   }
   if (mode === 'crt') ctx.crtTag = 'crt'
   if (mode === 'text' && state.textInput?.tag) ctx.textTag = state.textInput.tag
+  if (mode === 'levelmap') {
+    const c = state.cursors[0]
+    ctx.mapCursorHome = !c || (c.x === scene.player.x && c.y === scene.player.y)
+  }
   if (mode === 'targeting') {
+    // directn.cc: a fire's aim prints "Q - select action" in its hint; a spell's does not, and cycles nothing
+    for (let i = state.messages.lines.length - 1; i >= 0 && i >= state.messages.lines.length - 6; i--) {
+      const t = formattedStringToText(state.messages.lines[i].text)
+      if (t.startsWith('Press: ')) {
+        ctx.aimQuiver = t.includes('select action')
+        break
+      }
+    }
     const c = state.cursors[0]
     if (c) {
       const onPlayer = c.x === scene.player.x && c.y === scene.player.y
@@ -568,5 +686,9 @@ export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer
     }
   }
   if (mode === 'popup' || mode === 'newgame') ctx.popupType = topPopup(state)?.type
+  if (mode === 'newgame') {
+    const back = newgameBack(topPopup(state)?.data as Record<string, unknown> | undefined)
+    if (back !== undefined) ctx.newgameBack = back
+  }
   return ctx
 }

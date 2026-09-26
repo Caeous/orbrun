@@ -7,6 +7,9 @@ import { HOLD_MS, type Action } from '../src/bindings'
 import type { Context } from '../src/context'
 import type { Button, PadEvent } from '../src/gamepad'
 
+/** An inventory with sections: X describes its rows and the bumpers jump between them. */
+const SECTIONED = { menu: { tag: 'inventory', items: [], flags: 0 } as never, hoverable: [], arrowsSelect: true, multiselect: false, wrap: false, filter: false, sections: true, anyMarked: false }
+
 /** Exercise the real input routing without constructing a WebGL renderer or connecting. */
 function harness() {
   const held = new Set<Button>()
@@ -106,6 +109,8 @@ describe('direct game input', () => {
   it('a tap-or-hold outside command mode still acts: Y in an aim cycles the quiver either way', () => {
     const h = harness()
     h.ctx.mode = 'targeting'
+    // a fire's aim, which has a quiver to cycle (crawl's hint names "Q - select action")
+    h.ctx.aimQuiver = true
     h.event({ type: 'press', button: 'Y', t: 0 })
     h.screen.fireHolds(100)
     expect(h.execute).not.toHaveBeenCalled()
@@ -147,6 +152,8 @@ describe('direct game input', () => {
         const expected: Action = mode === 'menu' ? { kind: 'menu', op: 'cancel' }
           : mode === 'targeting' || mode === 'levelmap' ? { kind: 'keys', seq: [{ key: 27 }], label: 'Cancel' }
           : mode === 'more' ? { kind: 'keys', seq: [{ key: 27 }], label: 'Skip' }
+          // a yes/no's B is its No, whatever crawl's default
+          : mode === 'yesno' ? { kind: 'prompt', hotkey: 'N' }
           : { kind: 'focus', op: 'cancel' }
         expect(h.execute).toHaveBeenCalledExactlyOnceWith(expected)
         h.ctx.mode = 'command'
@@ -162,6 +169,7 @@ describe('direct game input', () => {
       const h = harness()
       h.overlays.hasClientOverlay = client
       h.ctx.mode = client ? 'command' : 'menu'
+      h.ctx.menu = SECTIONED
       h.event({ type: 'press', button: 'LB', t: 0 })
       if (client) expect(h.overlays.clientOverlayInput).toHaveBeenCalledExactlyOnceWith('bumperPrev')
       else expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'menu', op: 'sectionPrev' })
@@ -178,6 +186,7 @@ describe('direct game input', () => {
     for (const held of [100, HOLD_MS * 2]) {
       const h = harness()
       h.ctx.mode = 'menu'
+      h.ctx.menu = SECTIONED
       h.event({ type: 'press', button: 'X', t: 0 })
       expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'menu', op: 'examine' })
       h.execute.mockClear()

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { initialState, reduce, MouseMode, Keys, type ClientMessage, type GameState } from '@orbrun/webtiles'
 import { Overlays } from '../src/overlays'
 import { deriveContext, type Context } from '../src/context'
-import { actionLabel } from '../src/bindings'
+import { actionLabel, buttonAction, resolve, screenKey } from '../src/bindings'
 import useItem from './fixtures/menus/menu-use_item-1.json'
 import pickup from './fixtures/menus/menu-pickup-1.json'
 import inventory from './fixtures/menus/menu-inventory-1.json'
@@ -55,7 +55,22 @@ function setup() {
   }
   const k = (key: string, over: Partial<KeyboardEvent> = {}) => ({ key, code: '', shiftKey: false, ctrlKey: false, altKey: false, ...over })
   const hovered = () => Array.from(host.querySelectorAll('li')).findIndex((li) => li.classList.contains('hovered'))
-  return { ov, st, sent, host, frame, open, k, hovered }
+  /**
+   * A key as the game screen takes it: Enter, Escape, Space and the arrows are the pad's buttons and
+   * d-pad (bindings.ts screenKey), down the pad's path; the rest go to the menu's own keys (menuKey).
+   * True when the key was taken.
+   */
+  const key = (name: string, over: Partial<KeyboardEvent> = {}): boolean => {
+    const ctx = deriveContext(st, scene, cam, 'micro')
+    const plain = !over.shiftKey && !over.ctrlKey && !over.altKey
+    const sk = plain ? screenKey(name, ctx) : null
+    if (!sk) return ov.menuKey(st, k(name, over))
+    const a = 'button' in sk ? buttonAction(sk.button, ctx) : resolve({ type: 'dir', dir: sk.dir, source: 'dpad' }, ctx)
+    if (a?.kind === 'menu') ov.menuOp(st, a.op)
+    else if (a?.kind === 'keys') for (const x of a.seq) sent.push('key' in x ? { msg: 'key', keycode: x.key } : { msg: 'input', text: x.text })
+    return true
+  }
+  return { ov, st, sent, host, frame, open, k, hovered, key }
 }
 
 beforeEach(() => {
@@ -90,28 +105,28 @@ const hoveredRow = (host: HTMLElement) => Array.from(host.querySelectorAll('li')
 
 describe('a server menu on the keyboard', () => {
   it('down and up move the hover through the selectable rows and tell the server with menu_hover, never with a key', async () => {
-    const { ov, st, sent, frame, open, k, hovered, host } = setup()
+    const { ov, st, sent, frame, open, k, hovered, host, key } = setup()
     open(useItem)
     const ctx = frame()
     expect(ctx.mode).toBe('menu')
     await new Promise((r) => requestAnimationFrame(() => r(null)))
     expect(hovered()).toBe(1) // the server opened it on `a`
-    expect(ov.menuKey(st, k('ArrowDown'))).toBe(true)
+    expect(key('ArrowDown')).toBe(true)
     expect(hovered()).toBe(2)
     expect(sent).toEqual([{ msg: 'menu_hover', hover: 2, mouse: false }])
     sent.length = 0
-    expect(ov.menuKey(st, k('ArrowUp'))).toBe(true)
+    expect(key('ArrowUp')).toBe(true)
     expect(hovered()).toBe(1)
     // up from the first row: onto the last switch of the more line, the tail of the ring
     // ([<w>!</w>] read|quaff|evoke and [<w>?</w>] describe selected, UseItemMenu's help)
-    expect(ov.menuKey(st, k('ArrowUp'))).toBe(true)
+    expect(key('ArrowUp')).toBe(true)
     expect(hovered()).toBe(-1)
     expect(Array.from(host.querySelectorAll('.more .more-hot')).findIndex((e) => e.classList.contains('hovered'))).toBe(1)
     expect(sent).toEqual([{ msg: 'menu_hover', hover: 1, mouse: false }])
     expect(sent.some((m) => m.msg === 'key')).toBe(false)
   })
   it('Home and End hover the first and last selectable row', () => {
-    const { ov, st, sent, frame, open, k, hovered } = setup()
+    const { ov, st, sent, frame, open, k, hovered, key } = setup()
     open(useItem)
     frame()
     ov.menuKey(st, k('End'))
@@ -120,24 +135,33 @@ describe('a server menu on the keyboard', () => {
     expect(hovered()).toBe(1) // the header at 0 cannot take the hover
     expect(sent.map((m) => m.msg)).toEqual(['menu_hover', 'menu_hover'])
   })
-  it('the keys the official client leaves to the server stay raw', () => {
-    const { ov, st, sent, frame, open, k } = setup()
+  it('the keys the official client leaves to the server reach it as the same keys, down the pad\'s path', () => {
+    const { ov, st, sent, frame, open, k, key } = setup()
     open(useItem)
     frame()
-    expect(ov.menuKey(st, k('ArrowLeft'))).toBe(false)
-    expect(ov.menuKey(st, k('ArrowRight'))).toBe(false)
-    expect(ov.menuKey(st, k('Enter'))).toBe(false)
-    expect(ov.menuKey(st, k('Escape'))).toBe(false)
+    // left and right are the server's on the rows (invent.cc cycle_page, cycle_mode), as the d-pad's are
+    expect(key('ArrowLeft')).toBe(true)
+    expect(key('ArrowRight')).toBe(true)
+    // Enter takes the hovered row, as crawl's own Enter does on an arrows menu; Escape leaves
+    expect(key('Enter')).toBe(true)
+    expect(key('Escape')).toBe(true)
+    expect(sent).toEqual([
+      { msg: 'key', keycode: Keys.CK_LEFT },
+      { msg: 'key', keycode: Keys.CK_RIGHT },
+      { msg: 'key', keycode: Keys.ENTER },
+      { msg: 'key', keycode: Keys.ESC },
+    ])
+    // letters and anything with Ctrl are crawl's own
     expect(ov.menuKey(st, k('a'))).toBe(false)
     expect(ov.menuKey(st, k('-'))).toBe(false) // use_item: `-` unwields
-    expect(ov.menuKey(st, k('ArrowDown', { ctrlKey: true }))).toBe(false)
-    expect(sent).toEqual([])
+    expect(key('ArrowDown', { ctrlKey: true })).toBe(false)
   })
-  it('space in a multiselect menu is the toggle, so it stays raw', () => {
-    const { ov, st, frame, open, k } = setup()
+  it('space in a multiselect menu marks the hovered row, as A does; the paging keys still page', () => {
+    const { ov, st, sent, frame, open, k, key } = setup()
     open(pickup)
     frame()
-    expect(ov.menuKey(st, k(' '))).toBe(false)
+    expect(key(' ')).toBe(true)
+    expect(sent.at(-1)).toEqual({ msg: 'key', keycode: Keys.SPACE })
     expect(ov.menuKey(st, k('PageDown'))).toBe(true)
   })
   it('the pad pages on the client too, and select on a hovered row sends Enter in an arrows menu', () => {
@@ -150,28 +174,25 @@ describe('a server menu on the keyboard', () => {
     ov.menuOp(st, 'select')
     expect(sent.at(-1)).toEqual({ msg: 'key', keycode: Keys.ENTER })
   })
-  it('select with no row under the cursor leaves a single-select arrows menu, as Esc does (the death inventory)', () => {
-    // end.cc end_game shows display_inventory (invent.cc): MF_SINGLESELECT | MF_ARROWS_SELECT without MF_INIT_HOVER, so it
-    // opens with last_hovered -1, where Enter is a no-op on the server (menu.cc CMD_MENU_SELECT: process_selection
-    // keeps the menu for an empty selection); the recorded menu-inventory-1 opens the same way before its menu_scroll
+  it('a single-select arrows menu that opens with nothing hovered (the inventory) seats the cursor on its first row, so A opens that item', () => {
+    // invent.cc display_inventory: MF_SINGLESELECT | MF_ARROWS_SELECT without MF_INIT_HOVER, so it opens with
+    // last_hovered -1, where Enter is a no-op on the server (menu.cc CMD_MENU_SELECT: process_selection keeps the
+    // menu for an empty selection); the recorded menu-inventory-1 opens the same way before its menu_scroll
     const { ov, st, sent, frame } = setup()
     reduce(st, inventory.msgs[0] as never)
     const ctx = frame()
-    expect(st.menus[0]!.last_hovered).toBe(-1)
-    expect(actionLabel({ kind: 'menu', op: 'select' }, ctx)).toBe('exit')
-    ov.menuOp(st, 'select')
-    expect(sent.at(-1)).toEqual({ msg: 'key', keycode: 27 })
-    // with a row under the cursor, select is Enter again, and reads as the keyhelp's select
-    ov.menuOp(st, 'next')
-    expect(actionLabel({ kind: 'menu', op: 'select' }, frame())).toBe('select')
+    // row 0 is the Hand Weapons header: the first item is row 1, and the server is told
+    expect(st.menus[0]!.last_hovered).toBe(1)
+    expect(sent).toContainEqual(expect.objectContaining({ msg: 'menu_hover', hover: 1 }))
+    expect(actionLabel({ kind: 'menu', op: 'select' }, ctx)).toBe('select')
     ov.menuOp(st, 'select')
     expect(sent.at(-1)).toEqual({ msg: 'key', keycode: Keys.ENTER })
   })
-  it('select with no row under the cursor stays raw on a multiselect menu, where Esc would drop the marks', () => {
+  it('a multiselect arrows menu that opens with nothing hovered (pickup) seats the cursor too, so A toggles the first row', () => {
     const { ov, st, sent, frame } = setup()
     reduce(st, pickup.msgs[0] as never)
     frame()
-    expect(st.menus[0]!.last_hovered).toBe(-1) // pickup: MF_MULTISELECT | MF_ARROWS_SELECT, no MF_INIT_HOVER
+    expect(st.menus[0]!.last_hovered).toBeGreaterThanOrEqual(0) // pickup: MF_MULTISELECT | MF_ARROWS_SELECT, no MF_INIT_HOVER
     ov.menuOp(st, 'select')
     expect(sent.at(-1)).toEqual({ msg: 'key', keycode: 32 })
   })
@@ -224,7 +245,7 @@ describe('a server menu on the keyboard', () => {
     // the pickup menu's help line is [Up|Down] select  [Esc] exit  [.|Space] toggle
     // selected: only [Esc] names a single key, so it alone is a switch, and it is the tail
     // of the ring, so up from the first row reaches it ([XXX], the scroll position, is not one)
-    const { ov, st, frame, open, k, host } = setup()
+    const { ov, st, frame, open, k, host, key } = setup()
     open(pickup)
     frame()
     await new Promise((r) => requestAnimationFrame(() => r(null)))
@@ -232,14 +253,14 @@ describe('a server menu on the keyboard', () => {
     expect(switches().map((e) => e.textContent)).toEqual(['[Esc] exit'])
     ov.menuKey(st, k('Home'))
     expect(hoveredRow(host)).toBeGreaterThanOrEqual(0)
-    expect(ov.menuKey(st, k('ArrowUp'))).toBe(true)
+    expect(key('ArrowUp')).toBe(true)
     expect(hoveredRow(host)).toBe(-1)
     expect(switches()[0].classList.contains('hovered')).toBe(true)
   })
   it('a menu the server left without ARROWS_SELECT still walks its rows, and space or Enter fires the hovered one', () => {
     // most menus carry MF_ARROWS_SELECT now, but not all (the shop, and anything older):
     // the cursor is Orbrun's there, so space and Enter must fire the row it sits on
-    const { ov, st, sent, frame, k, host } = setup()
+    const { ov, st, sent, frame, k, host, key } = setup()
     const row = (letter: string, text: string) => ({ text: `${letter} - ${text}`, hotkeys: [letter.charCodeAt(0)], level: 2 })
     reduce(st, {
       msg: 'menu',
@@ -254,40 +275,41 @@ describe('a server menu on the keyboard', () => {
     } as never)
     frame()
     expect(hoveredRow(host)).toBe(0)
-    expect(ov.menuKey(st, k('ArrowDown'))).toBe(true)
+    expect(key('ArrowDown')).toBe(true)
     expect(hoveredRow(host)).toBe(1)
     sent.length = 0
-    expect(ov.menuKey(st, k(' '))).toBe(true)
+    expect(key(' ')).toBe(true)
     expect(sent).toEqual([{ msg: 'key', keycode: 'b'.charCodeAt(0) }])
     sent.length = 0
-    // Enter fires it too: only the shop keeps Enter for itself (it buys what is marked)
-    expect(ov.menuKey(st, k('Enter'))).toBe(true)
+    // Enter fires it too, as A does; only a menu of marks keeps Enter for taking what is marked
+    expect(key('Enter')).toBe(true)
     expect(sent).toEqual([{ msg: 'key', keycode: 'b'.charCodeAt(0) }])
   })
   it('the shop hovers rows with up and down, though the server set no ARROWS_SELECT, and space fires the hovered row', () => {
     // shopping.cc ShopMenu: MF_MULTISELECT | MF_QUIET_SELECT | MF_ALLOW_FORMATTING | MF_INIT_HOVER,
     // so the official client only scrolls on the arrows and every row must be typed by letter
-    const { ov, st, sent, frame, k, hovered } = setup()
+    const { ov, st, sent, frame, k, hovered, key } = setup()
     openShop(st)
     frame()
     expect(hovered()).toBe(0)
-    expect(ov.menuKey(st, k('ArrowDown'))).toBe(true)
+    expect(key('ArrowDown')).toBe(true)
     expect(hovered()).toBe(1)
     expect(sent).toEqual([{ msg: 'menu_hover', hover: 1, mouse: false }])
     sent.length = 0
     // space marks the hovered row: the letter the row printed, as the pad's A sends it
-    expect(ov.menuKey(st, k(' '))).toBe(true)
+    expect(key(' ')).toBe(true)
     expect(sent).toEqual([{ msg: 'key', keycode: 'b'.charCodeAt(0) }])
     sent.length = 0
-    // Enter stays the server's: the shop's help binds it to buying what is marked
-    expect(ov.menuKey(st, k('Enter'))).toBe(false)
-    expect(ov.menuKey(st, k('ArrowUp'))).toBe(true)
+    // Enter is the shop's buy (Start: it takes what is marked); with nothing marked there is nothing to buy
+    expect(key('Enter')).toBe(true)
+    expect(sent).toEqual([])
+    expect(key('ArrowUp')).toBe(true)
     expect(hovered()).toBe(0)
     expect(sent).toEqual([{ msg: 'menu_hover', hover: 0, mouse: false }])
   })
     it('the cursor walks off the last row onto the more line\'s switches, and space fires the one it sits on', async () => {
     // ShopMenu::update_help prints [Esc] exit, [!] buy|examine items, [/] sort and [Enter] buy marked items
-    const { ov, st, sent, frame, k, host } = setup()
+    const { ov, st, sent, frame, k, host, key } = setup()
     openShop(st)
     frame()
     await new Promise((r) => requestAnimationFrame(() => r(null)))
@@ -295,45 +317,46 @@ describe('a server menu on the keyboard', () => {
     const marked = () => switches().findIndex((e) => e.classList.contains('hovered'))
     expect(switches().map((e) => e.textContent)).toEqual(['[Esc] exit', '[!] buy|examine items', '[/] sort (default)', '[Enter] buy marked items'])
     // down through the rows, then off the last one onto the first switch
-    ov.menuKey(st, k('ArrowDown'))
-    ov.menuKey(st, k('ArrowDown'))
+    key('ArrowDown')
+    key('ArrowDown')
     expect(marked()).toBe(-1)
     sent.length = 0
-    expect(ov.menuKey(st, k('ArrowDown'))).toBe(true)
+    expect(key('ArrowDown')).toBe(true)
     expect(marked()).toBe(0)
     expect(Array.from(host.querySelectorAll('li.hovered'))).toHaveLength(0)
     expect(sent).toEqual([]) // nothing to tell the server: the switches are the client's
     // right and down both walk them
-    ov.menuKey(st, k('ArrowRight'))
+    key('ArrowRight')
     expect(marked()).toBe(1)
-    expect(ov.menuKey(st, k('Enter'))).toBe(true)
+    // Space (A) fires the lit switch; on a shop Enter is the buy, whatever is lit
+    expect(key(' ')).toBe(true)
     expect(sent).toEqual([{ msg: 'input', text: '!' }])
     sent.length = 0
     // Esc and Enter switches send the key they name, not a character
-    ov.menuKey(st, k('ArrowUp'))
+    key('ArrowUp')
     expect(marked()).toBe(0)
-    expect(ov.menuKey(st, k(' '))).toBe(true)
+    expect(key(' ')).toBe(true)
     expect(sent).toEqual([{ msg: 'key', keycode: 27 }])
     sent.length = 0
     // up from the first switch goes back to the last row
-    expect(ov.menuKey(st, k('ArrowUp'))).toBe(true)
+    expect(key('ArrowUp')).toBe(true)
     expect(marked()).toBe(-1)
     expect(hoveredRow(host)).toBe(2)
     // the server's hover never left that row while the cursor was on the more line, so it is told nothing
     expect(sent).toEqual([])
   })
   it('rows and switches are one ring: down off the last switch comes back to the top, up from the first row to the last switch', async () => {
-    const { ov, st, frame, k, host } = setup()
+    const { ov, st, frame, k, host, key } = setup()
     openShop(st)
     frame()
     await new Promise((r) => requestAnimationFrame(() => r(null)))
     const marked = () => Array.from(host.querySelectorAll('.more .more-hot')).findIndex((e) => e.classList.contains('hovered'))
     // up from the first row lands on the last switch, [Enter] buy marked items
     expect(hoveredRow(host)).toBe(0)
-    ov.menuKey(st, k('ArrowUp'))
+    key('ArrowUp')
     expect(marked()).toBe(3)
     // and down off it comes round to the first row
-    ov.menuKey(st, k('ArrowDown'))
+    key('ArrowDown')
     expect(marked()).toBe(-1)
     expect(hoveredRow(host)).toBe(0)
   })
