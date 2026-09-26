@@ -262,7 +262,10 @@ function targetFor(scene: Scene, cell: SceneCell | undefined, isUnder: boolean, 
 
 const HOTKEY_RE = /\(([A-Za-z0-9?*!.,])\)/g
 
-const YESNO_RE = /\[Y\/N\]|\(y\/n\)|\(Y\/n\)|\(y\/N\)|\[y\/n\]/i
+/** items.cc `pickup`: "Pick up X? ((y)es/(n)o/(a)ll/(m)enu/*?g,/q)" reads its own keys, lowercase, under MOUSE_MODE_YESNO */
+const PICKUP_YESNO_RE = /\(y\)es\/\(n\)o/
+/** prompt.cc `yesno`: what it prints after a wrong key; the question is the line before */
+const YESNO_NAG_RE = /\[Y\]es or \[N\]o(, or \[A\]lways)? only, please\.$/
 
 /** adjust.cc: the second prompt of `=`, for every kind; only the item one adds prompt_invent_item's "(? for menu, Esc to quit)" */
 const LETTER_RE = /^Adjust to which letter\?/
@@ -449,8 +452,13 @@ function parsePrompt(state: GameState): ParsedPrompt | undefined {
     LISTED_RE.lastIndex = 0
     if (LISTED_RE.test(text)) continue
     const options: ParsedPrompt['options'] = []
-    if (yesnoMode && YESNO_RE.test(text)) {
-      options.push({ hotkey: 'y', label: 'Yes' }, { hotkey: 'n', label: 'No' })
+    // prompt.cc `yesno` prints the question bare (no "(y/n)"), and a call that
+    // passes allow_lowercase false (leaving the Dungeon: main.cc) takes only an
+    // uppercase Y; uppercase is right for every call, so the answers are Y and N.
+    // Pickup's prompt is not `yesno` and takes only lowercase.
+    if (yesnoMode && !YESNO_NAG_RE.test(text)) {
+      if (PICKUP_YESNO_RE.test(text)) options.push({ hotkey: 'y', label: 'Yes' }, { hotkey: 'n', label: 'No' })
+      else options.push({ hotkey: 'Y', label: 'Yes' }, { hotkey: 'N', label: 'No' })
       return { text, options, yesno: true, cancel: true }
     }
     if (!promptMode) continue

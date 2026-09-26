@@ -307,8 +307,8 @@ describe('prompt card', () => {
     ov.focusOp(st, ctx, 'select')
     ov.focusOp(st, ctx, 'cancel')
     expect(sent).toEqual([
-      { msg: 'input', text: 'y' },
-      { msg: 'input', text: 'n' },
+      { msg: 'input', text: 'Y' },
+      { msg: 'input', text: 'N' },
     ])
     sent.length = 0
     // Enter and Escape are the server's (its default answer) until an arrow has moved the cursor
@@ -319,7 +319,31 @@ describe('prompt card', () => {
     expect(host.querySelector('.prompt-card.armed')).not.toBeNull()
     expect(ov.focusKey(st, ctx, 'cancel')).toBe(false)
     expect(ov.focusKey(st, ctx, 'select')).toBe(true)
-    expect(sent).toEqual([{ msg: 'input', text: 'n' }])
+    expect(sent).toEqual([{ msg: 'input', text: 'N' }])
+  })
+  it("leaving the Dungeon: the bare question is a yes/no, and A answers with the uppercase Y it insists on", () => {
+    const { ov, st, sent, frame, host } = setup()
+    // main.cc: yesno(prompt, false, 'n') prints the question with no "(y/n)" and refuses a lowercase y
+    reduce(st, { msg: 'msgs', messages: [{ text: '<white>Are you sure you want to leave the Dungeon? This will make you lose the game! <lightgrey>', channel: 2 }] })
+    reduce(st, { msg: 'input_mode', mode: MouseMode.YESNO })
+    let ctx = frame()
+    expect(ctx.mode).toBe('yesno')
+    expect(host.querySelector('.prompt-card .text')?.textContent).toContain('Are you sure you want to leave the Dungeon?')
+    ov.focusOp(st, ctx, 'select')
+    expect(sent).toEqual([{ msg: 'input', text: 'Y' }])
+    // a wrong key's nag is not the question: the card keeps asking it
+    reduce(st, { msg: 'msgs', messages: [{ text: '<lightred>Uppercase [Y]es or [N]o only, please.</lightred>', channel: 2 }] })
+    ctx = frame()
+    expect(host.querySelector('.prompt-card .text')?.textContent).toContain('Are you sure you want to leave the Dungeon?')
+  })
+  it("pickup's own prompt reads lowercase keys: its Yes and No stay lowercase", () => {
+    const { ov, st, sent, frame } = setup()
+    // items.cc pickup: getch_ck under MOUSE_MODE_YESNO, taking 'y' but not 'Y'
+    reduce(st, { msg: 'msgs', messages: [{ text: 'Pick up a dagger? ((y)es/(n)o/(a)ll/(m)enu/*?g,/q)', channel: 2 }] })
+    reduce(st, { msg: 'input_mode', mode: MouseMode.YESNO })
+    const ctx = frame()
+    ov.focusOp(st, ctx, 'select')
+    expect(sent).toEqual([{ msg: 'input', text: 'y' }])
   })
   it('a choice prompt that ignores Enter (the ring swap): a fresh Enter fires the lit chip at once, space and a repeat stay raw', () => {
     const { ov, st, sent, frame, host } = setup()
@@ -410,7 +434,7 @@ describe('prompt card', () => {
     reduce(st, { msg: 'msgs', messages: [{ text: '<white>Really attack? (y/n)', channel: 2 }] })
     reduce(st, { msg: 'input_mode', mode: MouseMode.YESNO })
     ctx = frame()
-    expect(ctx.prompt?.options).toEqual([{ hotkey: 'y', label: 'Yes' }, { hotkey: 'n', label: 'No' }])
+    expect(ctx.prompt?.options).toEqual([{ hotkey: 'Y', label: 'Yes' }, { hotkey: 'N', label: 'No' }])
   })
   it('a letter picker: "Adjust to which letter?" lays out every inventory letter, starting on the one being moved; A sends the lit letter', () => {
     const { ov, st, sent, frame, host } = setup()

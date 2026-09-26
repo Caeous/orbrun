@@ -1943,7 +1943,7 @@ export class Overlays {
     let letters: ParsedPrompt | null = null
     let enterFires = false
     if (mode === 'yesno' || mode === 'prompt') {
-      const p: ParsedPrompt | undefined = prompt ?? (mode === 'yesno' ? { text: '', options: [{ hotkey: 'y', label: 'Yes' }, { hotkey: 'n', label: 'No' }], yesno: true, cancel: true } : undefined)
+      const p: ParsedPrompt | undefined = prompt ?? (mode === 'yesno' ? { text: '', options: [{ hotkey: 'Y', label: 'Yes' }, { hotkey: 'N', label: 'No' }], yesno: true, cancel: true } : undefined)
       if (p && p.options.length) {
         text = p.text
         // a yes/no's text is the question, its Yes and No are not in it; a choice prompt's may be only its options
