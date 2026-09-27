@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { blocksExplore, cellKey, emptyScene, cellAhead, isThreat, nearestBlocker, nearestHostile, rotateDir, yawToDir, dirToYaw, cellLayoutEquals, sceneLayoutEquals, shadeOf, MEMORY_SHADE, type Billboard, type SceneCell, type Scene } from '../src/index.js'
+import { autofightTarget, blocksExplore, cellKey, emptyScene, cellAhead, isThreat, nearestBlocker, nearestHostile, rotateDir, yawToDir, dirToYaw, cellLayoutEquals, sceneLayoutEquals, shadeOf, MEMORY_SHADE, type Billboard, type SceneCell, type Scene } from '../src/index.js'
 
 function cell(x: number, y: number, kind: SceneCell['kind'], visibility: SceneCell['visibility'] = 'visible'): SceneCell {
   return {
@@ -91,6 +91,26 @@ describe('explore blockers (nearby-danger.cc i_feel_safe)', () => {
     expect(nearestHostile(s)).toBe(rat)
     s.billboards = [plant]
     expect(nearestHostile(s)).toBeNull()
+  })
+
+  it('autofightTarget ranks as compare_monster_info: distance, then injury, then threat, then the scan order', () => {
+    const s = emptyScene()
+    s.playerOnLevel = true
+    s.player = { x: 5, y: 5 }
+    const floor = (x: number, y: number): SceneCell => ({ x, y, kind: 'floor', visibility: 'visible', occluder: false, floorTile: 1, flags: { water: false, lava: false, excluded: false, travelTrail: false, newStair: false, cursor: false } })
+    for (let y = 0; y < 11; y++) for (let x = 0; x < 11; x++) s.cells.set(cellKey(x, y), floor(x, y))
+    const east = bb(6, 5, 'hostile')
+    const southWest = bb(4, 6, 'hostile')
+    const far = { ...bb(8, 5, 'hostile'), damage: 'almost_dead', threat: 'nasty' } as Billboard
+    s.billboards.push(east, far, southWest)
+    // a tie: get_target scans west to east, so the south-west one
+    expect(autofightTarget(s)).toBe(southWest)
+    east.threat = 'tough'
+    expect(autofightTarget(s)).toBe(east)
+    southWest.damage = 'lightly_damaged'
+    expect(autofightTarget(s)).toBe(southWest)
+    s.billboards = [far, bb(4, 5, 'hostile', true)]
+    expect(autofightTarget(s)).toBe(far)
   })
 })
 

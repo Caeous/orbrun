@@ -572,6 +572,53 @@ export function nearestHostile(scene: Scene): Billboard | null {
   return nearestOf(scene, monstersInView(scene).filter(isThreat))
 }
 
+const WOUND_ORDER: readonly WoundLevel[] = ['uninjured', 'lightly_damaged', 'moderately_damaged', 'heavily_damaged', 'severely_damaged', 'almost_dead']
+const THREAT_ORDER = ['trivial', 'easy', 'tough', 'nasty'] as const
+
+/**
+ * `autofight.lua compare_monster_info`'s ranking of a threat, as far as the
+ * client can see it, most important first: distance (melee `can_attack` is
+ * being within one cell, so distance covers it), injury, threat, orc
+ * priest/wizard. It leaves out `safe` and the stab flags, which the client
+ * has no data for. Compared lexically, and higher wins.
+ */
+function autofightRank(scene: Scene, b: Billboard): number[] {
+  const dist = Math.max(Math.abs(b.x - scene.player.x), Math.abs(b.y - scene.player.y))
+  const injury = b.damage ? WOUND_ORDER.indexOf(b.damage) : 0
+  const threat = Math.max(0, THREAT_ORDER.indexOf(b.threat as (typeof THREAT_ORDER)[number]))
+  const orc = b.name === 'orc priest' || b.name === 'orc wizard' ? 1 : 0
+  return [-dist, injury, threat, orc]
+}
+
+/**
+ * Compares two threats in `compare_monster_info` order: > 0 when `a` ranks
+ * above `b`, 0 on a tie.
+ */
+export function compareAutofight(scene: Scene, a: Billboard, b: Billboard): number {
+  const ra = autofightRank(scene, a)
+  const rb = autofightRank(scene, b)
+  for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i]
+  return 0
+}
+
+/**
+ * The threat autofight picks. `get_target` scans columns west to east, each
+ * north to south, and replaces its pick only with a monster that ranks
+ * strictly higher, so a tie goes to the westernmost, then the northernmost.
+ */
+export function autofightTarget(scene: Scene): Billboard | null {
+  let best: Billboard | null = null
+  for (const b of monstersInView(scene).filter(isThreat)) {
+    if (!best) {
+      best = b
+      continue
+    }
+    const c = compareAutofight(scene, b, best)
+    if (c > 0 || (c === 0 && (b.x < best.x || (b.x === best.x && b.y < best.y)))) best = b
+  }
+  return best
+}
+
 /**
  * Whether a monster stops autoexplore and travel. `nearby-danger.cc`
  * `i_feel_safe` collects every visible monster `mons_is_safe` rejects: not

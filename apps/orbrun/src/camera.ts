@@ -13,7 +13,8 @@ import {
   monstersInView,
   nearestBlocker,
   isThreat,
-  nearestHostile,
+  autofightTarget,
+  compareAutofight,
   normalizeYaw,
   REST_PITCH,
   rotateDir,
@@ -365,10 +366,10 @@ export class CameraController {
   }
 
   /**
-   * Face the threat: the nearest visible hostile autofight would attack
-   * (`isThreat`: never a plant). Once chosen, the camera
-   * stays on that monster until it leaves view or another hostile gets
-   * strictly closer, so equidistant monsters don't make the view flicker.
+   * Face the threat: the hostile autofight would attack (`autofightTarget`;
+   * never a plant). Once chosen, the camera stays on that monster until it
+   * leaves view or autofight would rank another strictly higher, so monsters
+   * that tie don't make the view flicker.
    * While an autofight walk is closing on it (`autofight`), the hold is
    * firmer: see `threat`.
    */
@@ -414,10 +415,11 @@ export class CameraController {
    * that turns up or edges closer meanwhile does not swing the view off the
    * one we are heading for. The hold ends when the threat is reached or
    * leaves view, when another hostile is already in reach, or when any other
-   * move is made (`stopClosing`).
+   * move is made (`stopClosing`). A tie is not held here: the press faces
+   * the one crawl's own scan picks.
    */
   autofight(scene: Scene): boolean {
-    const m = this.threat(scene)
+    const m = this.threat(scene, true)
     if (!m) {
       this.stopClosing()
       return false
@@ -446,24 +448,26 @@ export class CameraController {
   private closing = false
 
   /**
-   * The threat: the held monster while it is no farther than the nearest
-   * hostile, else the nearest. Closing on it (an autofight walk), the held
+   * The threat: the held monster while autofight ranks it level with its own
+   * pick (`compareAutofight`), else that pick; `exact` (a Tab) takes the
+   * pick even over a tie. Closing on it (an autofight walk), the held
    * monster stays the threat even with another hostile strictly closer, until
    * it is reached or gone. The one exception is a hostile already in reach:
    * `autofight.lua compare_monster_info` ranks `can_attack` above
    * `distance`, so the next Tab swings at that one, and the camera faces it.
    */
-  private threat(scene: Scene): Billboard | null {
-    const nearest = nearestHostile(scene)
-    if (!nearest) {
+  private threat(scene: Scene, exact = false): Billboard | null {
+    const best = autofightTarget(scene)
+    if (!best) {
       this.threatId = undefined
       this.closing = false
       return null
     }
     const held = this.threatId === undefined ? undefined : monstersInView(scene).find((b) => isThreat(b) && monsterId(b) === this.threatId)
     if (!held) this.closing = false
-    const near = kingMoves(scene, nearest)
-    const m = held && (kingMoves(scene, held) <= near || (this.closing && near > 1)) ? held : nearest
+    const near = kingMoves(scene, best)
+    const keep = held && ((!exact && compareAutofight(scene, best, held) <= 0) || (this.closing && near > 1))
+    const m = keep ? held : best
     if (kingMoves(scene, m) <= 1) this.closing = false
     this.threatId = monsterId(m)
     return m

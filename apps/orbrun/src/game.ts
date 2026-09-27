@@ -1,5 +1,5 @@
 import { cm, mapKey, MouseMode, UiState, keyMessage, type ClientMessage, type GameMessage, type GameState } from '@orbrun/webtiles'
-import { cellKey, dirFromDelta, isThreat, nearestHostile, type Billboard, type CellKey, type MapRenderer, type Scene, type SceneCursor } from '@orbrun/scene'
+import { autofightTarget, cellKey, dirFromDelta, isThreat, type Billboard, type CellKey, type MapRenderer, type Scene, type SceneCursor } from '@orbrun/scene'
 import { linesSince, namedInWarnings, namedMonster } from './warnings'
 import { Render3d } from '@orbrun/render-3d'
 import { viewmodelFor } from '@orbrun/scene-webtiles'
@@ -1686,7 +1686,7 @@ export class GameScreen {
         break
       case 'faceHostile': {
         const scene = this.session.scene
-        const m = nearestHostile(scene)
+        const m = autofightTarget(scene)
         if (m) this.faceBillboard(m)
         else this.hud.status('No hostiles in view')
         break

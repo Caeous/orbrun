@@ -153,6 +153,33 @@ describe('camera facing while travelling', () => {
     expect(c.facing).toBe(7)
   })
 
+  it('beside two hostiles, Tab faces the one autofight swings at, not the one held', () => {
+    const s = sceneFrom(['.....', '.....', '..@..', '.....', '.....'])
+    hostile(s, 3, 2, 1)
+    const c = cam(0)
+    c.faceHostile(s)
+    expect(c.facing).toBe(2)
+    // a second one beside us to the west: level with the held one, so the view stays put
+    hostile(s, 1, 2, 2)
+    c.faceHostile(s)
+    expect(c.facing).toBe(2)
+    // but get_target's scan finds the western one first and keeps it on a tie
+    expect(c.autofight(s)).toBe(true)
+    expect(c.facing).toBe(6)
+    // the eastern one is wounded: compare_monster_info ranks injury, so it is the target
+    s.billboards[0].damage = 'lightly_damaged'
+    expect(c.autofight(s)).toBe(true)
+    expect(c.facing).toBe(2)
+    // threat only breaks an injury tie: the wounded one stays the target over a nastier one
+    s.billboards[1].threat = 'nasty'
+    expect(c.autofight(s)).toBe(true)
+    expect(c.facing).toBe(2)
+    // healed, the nastier one ranks strictly higher: the held view turns to it too
+    s.billboards[0].damage = 'uninjured'
+    c.faceHostile(s)
+    expect(c.facing).toBe(6)
+  })
+
   it('an autofight walk keeps closing on its threat, whatever gets closer meanwhile', () => {
     // a gnoll three cells east; Tab walks toward it
     const s = sceneFrom(['.......', '.......', '.......', '...@...', '.......', '.......', '.......'])
