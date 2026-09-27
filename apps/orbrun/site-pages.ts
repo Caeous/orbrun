@@ -458,7 +458,7 @@ function aboutMain(dom: Dom): string {
   <ul class="promises">
     <li>Your browser talks to the DCSS server you pick, over an encrypted WebSocket, as the official client does.</li>
     <li>Your password goes only in the login message and is never stored. A saved login keeps the server’s token, as WebTiles keeps a cookie.</li>
-    <li>orbrun.app counts page views anonymously: no cookies, no fingerprinting, nothing about your game.</li>
+    <li>orbrun.app counts page views anonymously: no cookies, no fingerprinting, no names. A game counts as its server and version, nothing more.</li>
   </ul>
 </section>
 

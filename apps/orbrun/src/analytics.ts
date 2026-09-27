@@ -8,6 +8,13 @@
  * own snippet puts it in the page source); it is a build-time variable so the
  * repo does not pin one deployment's site id.
  *
+ * What it reports of an address is the path alone: the beacon drops the query
+ * and the fragment (its `cleanLocation`). That is why an address says who
+ * after the `#` (servers.ts formatRoute): a game is counted as
+ * `/play/cdi/dcss-0.34`, never as the player. With the Navigation API (every
+ * Chromium, so a Deck too) it counts the address rewritten in place as well
+ * as the one pushed, so a game is counted however it was started.
+ *
  * The script is loaded `defer`, after the app has its DOM, so measurement never
  * costs a frame of the game.
  */

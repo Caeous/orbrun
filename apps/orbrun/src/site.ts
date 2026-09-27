@@ -68,7 +68,7 @@ export const PAGES: Page[] = [
 /** the front end's screens that belong to no server; a settings group is its name in lower case (settings-rows.ts) */
 export const MENU_PATH = /^(settings(\/[a-z]+)?|settings\/controls\/gamepad|accounts(\/add(\/server)?)?|watch(\/add)?)$/
 
-/** the verbs of an address that names a server (`/watch/cdi/bob`); which servers there are is the device's business */
+/** the verbs of an address that names a server (`/watch/cdi`, `/play/cdi/dcss-0.34`); which servers there are is the device's business */
 const SERVER_VERBS = new Set(['login', 'register', 'play', 'watch'])
 
 function segments(pathname: string): string[] {

@@ -656,14 +656,19 @@ export function findServer(idOrHost: string): ServerInfo | null {
 
 /**
  * What the URL says we should be doing. The path names it, the verb first,
- * then the server, then who: `/play/cdi/orbrun/dcss-0.34`, `/watch/cdi` (the
+ * then the server, then the game: `/play/cdi/dcss-0.34`, `/watch/cdi` (the
  * Watch screen: the server's lobby roster, the official client's `#lobby`),
- * `/watch/cdi/bob`, `/login/cdi/orbrun`, so a link opens the same thing on
- * another device. Watching needs no account, so its address names none: it is
- * the chosen account's when that is on the same server. Games on this device
- * drop their `offline-` (`/play/offline/Marc/0.34`). The front end's own screens have addresses too
- * (`/settings/camera`, `/accounts/add`); the bare root is the home screen. The About pages are the site's, not
- * the app's (site.ts): `openPage` goes to them.
+ * `/login/cdi`, so a link opens the same thing on another device. Who is
+ * after the `#`: `/play/cdi/dcss-0.34#orbrun`, `/watch/cdi#bob`,
+ * `/login/cdi#orbrun`. The fragment never leaves the browser, so the page
+ * view the site counts (analytics.ts) names nobody, and a copied link still
+ * does. Watching needs no account, so its address names none: it is the
+ * chosen account's when that is on the same server. Games on this device are
+ * named as CDI names its own (`/play/offline/dcss-0.34#Marc`, `dcss-git` for
+ * trunk), so a game reads the same played here or there. The front end's own
+ * screens have addresses too (`/settings/camera`, `/accounts/add`); the bare
+ * root is the home screen. The About pages are the site's, not the app's
+ * (site.ts): `openPage` goes to them.
  * (`watch`'s `username` is the player being watched, not the account's own.)
  */
 export type Route =
@@ -684,8 +689,20 @@ export interface MenuRoute {
   username?: string
 }
 
-/** what every game id on this device starts with (@orbrun/offline channelOf), which its address leaves out */
+/** what every game id on this device starts with (@orbrun/offline channelOf), which its address says as CDI would */
 const DEVICE_GAME = 'offline-'
+
+/** a game on this device in an address: `offline-0.34` is `dcss-0.34`, `offline-trunk` CDI's `dcss-git` */
+function deviceGameAddress(gameId: string): string {
+  const slot = gameId.startsWith(DEVICE_GAME) ? gameId.slice(DEVICE_GAME.length) : gameId
+  return 'dcss-' + (slot === 'trunk' ? 'git' : slot)
+}
+
+/** the game on this device an address names; the bare slot (`0.34`, `trunk`) is how older addresses said it */
+function deviceGameAt(game: string): string {
+  const slot = game.toLowerCase().replace(/^dcss-/, '')
+  return DEVICE_GAME + (slot === 'git' ? 'trunk' : slot)
+}
 
 function decode(s: string): string {
   try {
@@ -706,8 +723,14 @@ function chosenOn(serverId: string): Account | null {
   return chosen?.serverId === serverId ? chosen : null
 }
 
+/** the only account on `serverId`, when there is just the one: who a play address that names nobody is for */
+function onlyAccountOn(serverId: string): Account | null {
+  const on = listAccounts().filter((a) => a.serverId === serverId)
+  return on.length === 1 ? on[0] : null
+}
+
 export function parseRoute(href: string = window.location.href): Route {
-  const { pathname } = new URL(href)
+  const { pathname, hash } = new URL(href)
   // split before decoding, so a `/` in a name (`%2F`) stays in it; an empty segment (`//`, a trailing `/`) says nothing
   const parts = pathname.split('/').filter(Boolean).map(decode)
   if (!parts.length) return { kind: 'home' }
@@ -718,21 +741,25 @@ export function parseRoute(href: string = window.location.href): Route {
   if (!server) return { kind: 'home' }
   const serverId = server.id
   const what = verb.toLowerCase()
+  // who: after the `#`; addresses from before that said it in the path (`/play/cdi/orbrun/dcss-0.34`, `/watch/cdi/bob`)
+  const tagged = hash.length > 1 ? decode(hash.slice(1)) : null
   if ((what === 'login' || what === 'register') && rest.length <= 1) {
-    const named = rest[0]
+    const named = rest[0] ?? tagged
     return { kind: 'menu', path: what, serverId, ...(named ? { username: knownAccount(serverId, named)?.username ?? named } : {}) }
   }
-  if (what === 'play' && rest.length === 2) {
-    const [named, game] = rest
-    const account = knownAccount(serverId, named)
-    // an account this device does not have: its login, to add it
-    if (!account) return { kind: 'menu', path: 'login', serverId, username: named }
-    return { kind: 'play', account, gameId: server.offline ? DEVICE_GAME + game : game }
+  if (what === 'play' && (rest.length === 1 || rest.length === 2)) {
+    const game = rest[rest.length - 1]
+    const named = rest.length === 2 ? rest[0] : tagged
+    const account = named ? knownAccount(serverId, named) : (chosenOn(serverId) ?? onlyAccountOn(serverId))
+    // an account this device does not have, or no telling which: its login, to add it or pick
+    if (!account) return { kind: 'menu', path: 'login', serverId, ...(named ? { username: named } : {}) }
+    return { kind: 'play', account, gameId: server.offline ? deviceGameAt(game) : game }
   }
   // nobody else plays on this device
   if (what !== 'watch' || server.offline || rest.length > 1) return { kind: 'home' }
-  if (!rest.length) return { kind: 'lobby', serverId, account: chosenOn(serverId) }
-  return { kind: 'watch', serverId, account: chosenOn(serverId), username: rest[0] }
+  const watched = rest[0] ?? tagged
+  if (!watched) return { kind: 'lobby', serverId, account: chosenOn(serverId) }
+  return { kind: 'watch', serverId, account: chosenOn(serverId), username: watched }
 }
 
 /** a path of names, each encoded whole: a space, `/`, `?`, `#` or `%` in one stays in it */
@@ -740,9 +767,9 @@ function pathOf(...parts: string[]): string {
   return '/' + parts.map(encodeURIComponent).join('/')
 }
 
-/** a game on this device in an address */
-function deviceGame(gameId: string): string {
-  return gameId.startsWith(DEVICE_GAME) ? gameId.slice(DEVICE_GAME.length) : gameId
+/** who, after the `#`, encoded whole as a path's names are */
+function tagOf(name: string | undefined): string {
+  return name ? '#' + encodeURIComponent(name) : ''
 }
 
 /**
@@ -752,19 +779,13 @@ function deviceGame(gameId: string): string {
  * address bar could not put one back, so a Play must not drop them.
  */
 export function formatRoute(r: Route): string {
-  const where =
-    r.kind === 'home'
-      ? '/'
-      : r.kind === 'menu'
-        ? r.serverId
-          ? pathOf(r.path, r.serverId, ...(r.username ? [r.username] : []))
-          : '/' + r.path
-        : r.kind === 'lobby'
-          ? pathOf('watch', r.serverId)
-          : r.kind === 'play'
-            ? pathOf('play', r.account.serverId, r.account.username, r.account.serverId === OFFLINE_SERVER.id ? deviceGame(r.gameId) : r.gameId)
-            : pathOf('watch', r.serverId, r.username)
-  return where + window.location.search
+  const q = window.location.search
+  if (r.kind === 'home') return '/' + q
+  if (r.kind === 'menu') return (r.serverId ? pathOf(r.path, r.serverId) : '/' + r.path) + q + tagOf(r.serverId ? r.username : undefined)
+  if (r.kind === 'lobby') return pathOf('watch', r.serverId) + q
+  if (r.kind === 'watch') return pathOf('watch', r.serverId) + q + tagOf(r.username)
+  const { serverId, username } = r.account
+  return pathOf('play', serverId, serverId === OFFLINE_SERVER.id ? deviceGameAddress(r.gameId) : r.gameId) + q + tagOf(username)
 }
 
 /**

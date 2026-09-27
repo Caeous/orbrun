@@ -24,7 +24,7 @@ describe('the site’s pages', () => {
 
   it('tells pages from the app’s screens from nothing at all', () => {
     for (const p of ['/', '/about', '/about/new', '/about/steam']) expect(addressKind(p), p).toBe('page')
-    for (const p of ['/settings', '/settings/camera', '/accounts/add', '/watch', '/watch/cdi', '/watch/cdi/bob', '/play/cdi/orbrun/dcss-0.34', '/login/cdi', '/register/cko'])
+    for (const p of ['/settings', '/settings/camera', '/accounts/add', '/watch', '/watch/cdi', '/watch/cdi/bob', '/play/cdi/dcss-0.34', '/play/cdi/orbrun/dcss-0.34', '/login/cdi', '/register/cko'])
       expect(addressKind(p), p).toBe('app')
     for (const p of ['/wp-admin', '/about/nope', '/about/controls', '/about/how-it-works', '/index.php', '/play', '/settings/controls/gamepad/x']) expect(addressKind(p), p).toBe('none')
   })

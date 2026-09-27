@@ -123,7 +123,8 @@ Your rc options are read from the server for each account, server and game
 version. Orbrun never caches or overrides them.
 
 The hosted site at orbrun.app counts page views anonymously (no cookies, no
-fingerprinting, nothing about your game) and relays the tile data your
+fingerprinting, no names: a game counts as its server and version, like
+/play/cdi/dcss-0.34) and relays the tile data your
 browser needs from the server you picked. Your game traffic never passes
 through it.
 

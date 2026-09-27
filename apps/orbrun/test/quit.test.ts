@@ -43,7 +43,7 @@ describe('quitting', () => {
     expect(canQuit()).toBe(true)
     history.replaceState(null, '', '/?fullscreen=0')
     expect(canQuit()).toBe(false)
-    history.replaceState(null, '', '/play/cdi/orbrun/dcss-web-trunk?fullscreen=1')
+    history.replaceState(null, '', '/play/cdi/dcss-web-trunk?fullscreen=1#orbrun')
     expect(canQuit()).toBe(true)
   })
 
