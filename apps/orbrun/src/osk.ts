@@ -102,7 +102,17 @@ export class Osk {
 
   /** Show the keyboard for `target`, appended to `container`. */
   attach(target: OskTarget, container: Element) {
+    // a keyboard newly shown starts on its first key; one following its field across a
+    // rebuild keeps its place, within the rows it has now (a prompt's extras row comes and goes)
+    if (!this.el) {
+      this.row = 0
+      this.col = 0
+      this.shift = false
+    }
     this.target = target
+    const rows = this.rows()
+    if (this.row >= rows.length) this.row = 0
+    this.col = Math.min(this.col, rows[this.row].length - 1)
     this.el?.remove()
     this.el = null
     container.append(this.render())

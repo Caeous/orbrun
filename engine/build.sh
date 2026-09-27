@@ -7,9 +7,9 @@
 #
 # No crawl version is pinned here. trunk is upstream's master; stable is the
 # newest stone_soup-* release branch, looked up on upstream at build time.
-# Each build lands in dist/builds/<commit>/, its gamedata in
-# dist/gamedata/<commit>/, and dist/<channel>/engine.json (a ref's in
-# dist/<ref>/) points at them (pointer.mjs).
+# Each build lands in dist/builds/<commit>-<recipe>/ (recipe.mjs), its
+# gamedata in dist/gamedata/<commit>/, and dist/<channel>/engine.json (a
+# ref's in dist/<ref>/) points at them (pointer.mjs).
 #
 # Needs emsdk active (em++ on PATH), node with JSPI (25+), python3 with
 # PyYAML, and what a native `make WEBTILES=y` needs. ENGINE_WORK moves the
@@ -56,7 +56,11 @@ build() {
     commit=$(resolve "$name")
     slug=$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '-')
     src=$WORK/$slug
-    out=$ENGINE/dist/builds/$commit
+    # the recipe too: a rebuild of the same commit with new patches is a new
+    # build, at a new URL, which devices download and no cache mistakes for
+    # the old one
+    build=$commit-$(node "$ENGINE/recipe.mjs")
+    out=$ENGINE/dist/builds/$build
 
     # A different commit starts from a clean tree; the same one keeps its
     # build outputs and only resets the patched sources.
@@ -112,11 +116,17 @@ build() {
         cp -R webserver/game_data/static "$ENGINE/dist/gamedata/$commit"
         version=$(git describe --tags --long "$commit" 2>/dev/null || echo "$commit")
         old=$(sed -n 's/.*"commit":"\([0-9a-f]*\)".*/\1/p' "$ENGINE/dist/$slug/engine.json" 2>/dev/null || true)
+        oldbuild=$(sed -n 's/.*"build":"\([0-9a-f-]*\)".*/\1/p' "$ENGINE/dist/$slug/engine.json" 2>/dev/null || true)
         node "$ENGINE/pointer.mjs" "$ENGINE/dist" "$slug" "$commit" "$version" "$(cat wasm/build/dat-stamp)"
         # the build this channel pointed at before, unless another channel still does
         if [ -n "$old" ] && [ "$old" != "$commit" ] && ! grep -qs "\"commit\":\"$old\"" "$ENGINE"/dist/*/engine.json; then
-            rm -rf "$ENGINE/dist/builds/$old" "$ENGINE/dist/gamedata/$old"
+            rm -rf "$ENGINE/dist/gamedata/$old"
         fi
+        for b in "$old" "$oldbuild"; do
+            if [ -n "$b" ] && [ "$b" != "$build" ] && ! grep -qs "\"build\":\"$b\"" "$ENGINE"/dist/*/engine.json; then
+                rm -rf "$ENGINE/dist/builds/$b"
+            fi
+        done
         echo "engine $name $version -> $out"
     )
 }

@@ -3,7 +3,8 @@
  * forwards it) or at /<path> (the Worker's own address), the nightly start of
  * its own build, and an email when that build fails or publishes.
  *
- * The files under a commit never change meaning, so they are cached for good;
+ * The files under a build (its commit and recipe) or a commit's gamedata never
+ * change meaning, so they are cached for good;
  * a channel's engine.json is what moves, so it is always asked again.
  */
 interface Env {
@@ -38,7 +39,7 @@ function publishedDuring(deployed: string, started: string, stopped?: string | n
   return t > Date.parse(started) && (!stopped || t <= Date.parse(stopped))
 }
 
-const IMMUTABLE = /^\/(builds|gamedata)\/[0-9a-f]{40}\//
+const IMMUTABLE = /^\/(builds\/[0-9a-f]{40}-[0-9a-f]{16}|gamedata\/[0-9a-f]{40})\//
 
 /**
  * Types Cloudflare compresses on the way out. crawl.data and prewarm.bin are

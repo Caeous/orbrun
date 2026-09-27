@@ -3,17 +3,19 @@ import { EngineStore, ENGINE_CACHE, type EngineInfo } from '../src/index.js'
 
 const BASE = 'https://orbrun.test/engine/'
 
-/** A build of `commit`: two engine files and a gamedata file, `size` bytes each. */
-function build(channel: string, commit: string, version: string, size = 10): EngineInfo {
+/** A build of `commit`: two engine files and a gamedata file, `size` bytes each. `recipe` puts the build under its own directory, as pointer.mjs does. */
+function build(channel: string, commit: string, version: string, size = 10, recipe?: string): EngineInfo {
+  const dir = recipe ? `${commit}-${recipe}` : commit
   return {
     channel,
     commit,
+    ...(recipe ? { build: dir } : {}),
     version,
     stamp: '1',
     gamedata: commit,
     files: [
-      [`builds/${commit}/crawl.js`, size],
-      [`builds/${commit}/crawl.wasm`, size],
+      [`builds/${dir}/crawl.js`, size],
+      [`builds/${dir}/crawl.wasm`, size],
       [`gamedata/${commit}/main.png`, size],
     ],
   }
@@ -175,6 +177,19 @@ describe('EngineStore', () => {
 
     await next.store.played('offline-trunk')
     expect(next.store.note('offline-trunk')).toBeNull()
+  })
+
+  it('downloads a rebuild of the same commit with a new recipe, and plays it from its own directory', async () => {
+    const s = setup()
+    s.pub.publish(build('trunk', 'bb', '0.35-a0-9-gbb', 10, 'r1'))
+    await s.store.played('offline-trunk')
+    await s.store.update()
+
+    s.pub.publish(build('trunk', 'bb', '0.35-a0-9-gbb', 10, 'r2'))
+    const next = setup({ caches: s.caches, pub: s.pub })
+    await next.store.update()
+    expect(next.store.engineBase((await next.store.channels())[0])).toBe(`${BASE}builds/bb-r2/`)
+    expect(s.caches.files()).toEqual(['builds/bb-r2/crawl.js', 'builds/bb-r2/crawl.wasm', 'gamedata/bb/main.png'])
   })
 
   it('stops for a game, keeps every whole file, and picks up where it stopped', async () => {

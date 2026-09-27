@@ -221,4 +221,15 @@ describe('a level built in chunks', () => {
     while (sliced.hasPending) sliced.continue_(4)
     expectSameGeometry(sliced, fresh(scene), 'a build in slices')
   })
+
+  it('still finishes a build cut short when the level changes before it is done', () => {
+    let clock = 0
+    const sliced = new LevelMesher(() => (clock += 10))
+    sliced.update(new LevelGrid(seen(20)), ctx, 4)
+    expect(sliced.hasPending).toBe(true)
+    const next = seen(21)
+    sliced.update(new LevelGrid(next), ctx, 4)
+    while (sliced.hasPending) sliced.continue_(4)
+    expectSameGeometry(sliced, fresh(next), 'a build cut short, then another')
+  })
 })

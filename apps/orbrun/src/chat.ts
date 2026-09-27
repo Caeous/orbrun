@@ -35,7 +35,9 @@ export class Chat {
   private loginText = h('div', { class: 'chat_login_text', style: { display: 'none' } }, 'Log in to chat')
   private hooks: ChatHooks
   private newMessages = 0
-  private rendered = 0
+  /** the log drawn from, and the last line of it drawn */
+  private log: GameState['chat'] | null = null
+  private last: GameState['chat'][number] | null = null
   private lastRev = -1
   /** the visibility switches as last written (`update`) */
   private lastVis = -1
@@ -102,20 +104,24 @@ export class Chat {
     const sp = state.spectators
     const n = sp?.count ?? 0
     this.countEl.textContent = `${n} ${n === 1 ? 'spectator' : 'spectators'}`
-    this.specList.innerHTML = sp?.names || '&nbsp;'
-    // lines: the reducer keeps the log bounded, so a shrink means a fresh game
-    if (state.chat.length < this.rendered) {
+    this.specList.innerHTML = sp?.names ? serverHtml(sp.names) : '&nbsp;'
+    // lines: a fresh game is a fresh log. The reducer drops the oldest line
+    // past 500, so the next line to draw is found after the last one drawn,
+    // not by count.
+    if (state.chat !== this.log) {
       clear(this.history)
-      this.rendered = 0
+      this.log = state.chat
+      this.last = null
       this.newMessages = 0
       this.updateMessageCount()
     }
     const box = this.historyBox
     const atBottom = Math.abs(box.scrollHeight - box.scrollTop - box.clientHeight) < 1.0
-    for (; this.rendered < state.chat.length; this.rendered++) {
-      const line = state.chat[this.rendered]
+    const from = this.last ? state.chat.lastIndexOf(this.last) + 1 : 0
+    for (let i = from; i < state.chat.length; i++) {
+      const line = state.chat[i]
       // chat.js receive_message: the server's html, with urls in the message span made into links
-      const wrap = h('div', { html: line.html })
+      const wrap = h('div', { html: serverHtml(line.html) })
       for (const m of Array.from(wrap.querySelectorAll('.chat_msg'))) m.innerHTML = linkify(m.textContent || '')
       this.history.insertAdjacentHTML('beforeend', wrap.innerHTML + '<br>')
       if (this.body.style.display === 'none' && !line.meta) {
@@ -123,6 +129,7 @@ export class Chat {
         this.updateMessageCount()
       }
     }
+    this.last = state.chat.at(-1) ?? null
     if (atBottom) box.scrollTop = box.scrollHeight
   }
 
@@ -289,6 +296,31 @@ export class Chat {
       this.close()
     }
   }
+}
+
+/**
+ * A server's chat or spectator html, kept to its text and its spans' classes
+ * (sender, message, colours). chat.js inserts it whole, but there the page is
+ * the server's own site; here every server's page is one site, holding every
+ * account's login token, so no server's markup may run in it. Parsed in a
+ * document of its own, where nothing loads or runs.
+ */
+export function serverHtml(html: string): string {
+  const body = new DOMParser().parseFromString(`<body>${html}`, 'text/html').body
+  const walk = (node: Node): string => {
+    let out = ''
+    for (const c of Array.from(node.childNodes)) {
+      if (c.nodeType === Node.TEXT_NODE) out += escapeHtml(c.textContent ?? '')
+      else if (c.nodeType === Node.ELEMENT_NODE) {
+        const el = c as Element
+        const inner = walk(el)
+        const cls = el.getAttribute('class')
+        out += el.tagName === 'SPAN' ? `<span${cls ? ` class="${escapeHtml(cls)}"` : ''}>${inner}</span>` : inner
+      }
+    }
+    return out
+  }
+  return walk(body)
 }
 
 /** linkify (chat.js): urls in a chat line become links; everything else is escaped text. */

@@ -19,14 +19,16 @@ import type { SaveBook } from './saves.js'
  * links carry the save info a server with `show_save_info` shows (SaveBook).
  */
 
-/** One playable engine build (engine/dist/builds/<commit>/), as a game the lobby offers. */
+/** One playable engine build (engine/dist/builds/<build>/), as a game the lobby offers. */
 export interface OfflineChannel {
   /** The game id `play` names, e.g. `offline-0.34`, `offline-trunk`. */
   id: string
   /** The name the lobby shows, e.g. `DCSS 0.34`: a version or `trunk`, which the client sorts rows by. */
   label: string
-  /** The crawl commit built, which names its files. */
+  /** The crawl commit built. */
   commit: string
+  /** The directory its files sit under: the commit and the recipe (channels `buildOf`). */
+  build?: string
   /** The gamedata version `game_client` announces: a directory under the connection's gamedataBase. */
   gamedata: string
   /** Where this build keeps its saves (engine/wasm/pre.js `saveDir`). */

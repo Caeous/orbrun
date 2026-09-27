@@ -20,7 +20,7 @@ const built = ['stable', 'trunk'].filter((c) => existsSync(join(DIST, c, 'engine
 
 /** Runs an engine in this process, as the worker would. */
 const inProcess: EngineLauncher = (channel, args, events) => {
-  const dir = join(DIST, 'builds', channel.commit)
+  const dir = join(DIST, 'builds', channel.build ?? channel.commit)
   let engine: RunningEngine | null = null
   const queued: (() => void)[] = []
   startEngine({

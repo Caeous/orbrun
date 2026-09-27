@@ -1,11 +1,11 @@
-import { CHANNEL_NAMES, channelOf, hasSaves, releaseOf, slotOf, type EngineInfo } from './channels.js'
+import { buildOf, CHANNEL_NAMES, channelOf, hasSaves, releaseOf, slotOf, type EngineInfo } from './channels.js'
 import type { OfflineChannel } from './server.js'
 
 /**
  * The engine builds kept on this device, and their updates.
  *
  * Every file is kept in Cache Storage under the URL it is served at, and
- * builds are served under their commit (engine/pointer.mjs), so a new build
+ * builds are served under their commit and recipe (engine/pointer.mjs), so a new build
  * downloads beside the one being played and never mixes with it. A build is
  * installed once every file of it is here; until then the one before plays.
  * The page's service worker (apps/orbrun/public/sw.js) answers the engine's
@@ -51,7 +51,7 @@ export type EngineNote =
   | { kind: 'updated' | 'new'; version: string | null }
 
 export interface EngineStoreOptions {
-  /** The engine base, as an absolute URL ending in `/`: `<base><channel>/engine.json`, `<base>builds/<commit>/`. */
+  /** The engine base, as an absolute URL ending in `/`: `<base><channel>/engine.json`, `<base>builds/<build>/`. */
   base: string
   /** Where builds are kept; with none (node, an insecure page) nothing is, and every game plays from the network. */
   caches?: CacheStorage
@@ -102,7 +102,7 @@ export class EngineStore {
 
   /** Where a build's engine files are. */
   engineBase(channel: OfflineChannel): string {
-    return `${this.o.base}builds/${channel.commit}/`
+    return `${this.o.base}builds/${channel.build ?? channel.commit}/`
   }
 
   /** What a game's row says about its build, if anything: how far its download is, or that it is new. */
@@ -255,9 +255,9 @@ export class EngineStore {
         s.wanted.includes(slot) ||
         // a new release, where this device plays the one before it
         (!!release && !!newest && compareReleases(release, newest) > 0)
-      if (!kept || s.installed[slot]?.commit === info.commit) continue
-      if (!(await this.download(cache, slot, info))) return
       const before = s.installed[slot]
+      if (!kept || (before && buildOf(before) === buildOf(info))) continue
+      if (!(await this.download(cache, slot, info))) return
       s.installed[slot] = { ...info, news: before ? 'updated' : release && newest ? 'new' : undefined }
       s.wanted = s.wanted.filter((w) => w !== slot)
       await this.save()
@@ -341,12 +341,15 @@ export class EngineStore {
   /** Drop the files of every build nothing installed or published points at any more. */
   private async sweep(cache: Cache, s: State) {
     if (this.busy()) return
-    const commits = new Set([...Object.values(s.installed), ...Object.values(s.published)].map((i) => i.commit))
-    const builds = this.url('builds/')
-    const gamedata = this.url('gamedata/')
+    const infos = [...Object.values(s.installed), ...Object.values(s.published)]
+    const keep = new Map([
+      [this.url('builds/'), new Set(infos.map(buildOf))],
+      [this.url('gamedata/'), new Set(infos.map((i) => i.gamedata))],
+    ])
     for (const req of await cache.keys()) {
-      const under = req.url.startsWith(builds) ? builds : req.url.startsWith(gamedata) ? gamedata : null
-      if (under && !commits.has(req.url.slice(under.length).split('/')[0])) await cache.delete(req)
+      for (const [under, names] of keep) {
+        if (req.url.startsWith(under) && !names.has(req.url.slice(under.length).split('/')[0])) await cache.delete(req)
+      }
     }
   }
 }

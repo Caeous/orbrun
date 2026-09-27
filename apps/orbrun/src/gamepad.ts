@@ -173,13 +173,23 @@ export class GamepadInput {
       pad = woke
     }
     this.connected = !!pad
-    if (!pad) return
+    if (!pad) {
+      // unplugged, or its link dropped: what it held is let go and its sticks come to
+      // rest, or a held button would stay held and a pushed right stick turn the camera for good
+      this.read(now, [], [])
+      return
+    }
     this.kind = detectKind(pad.id)
     const { buttons, axes } = standardView(pad)
+    this.read(now, buttons, axes)
+  }
+
+  /** One frame of a pad's buttons and sticks, in the standard layout. */
+  private read(now: number, buttons: boolean[], axes: number[]) {
     // buttons
-    for (let i = 0; i < BUTTON_INDEX.length && i < buttons.length; i++) {
+    for (let i = 0; i < BUTTON_INDEX.length; i++) {
       const b = BUTTON_INDEX[i]
-      const down = buttons[i]
+      const down = !!buttons[i]
       const was = this.pressed.has(b)
       if (down && !was) {
         this.pressed.set(b, now)

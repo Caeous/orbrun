@@ -29,9 +29,8 @@ if (!process.argv[2]) {
 
 // a channel's directory holds only its engine.json, which names the build
 const arg = resolve(process.argv[2])
-const dist = existsSync(join(arg, 'engine.json'))
-  ? join(arg, '..', 'builds', JSON.parse(readFileSync(join(arg, 'engine.json'), 'utf8')).commit)
-  : arg
+const pointer = existsSync(join(arg, 'engine.json')) ? JSON.parse(readFileSync(join(arg, 'engine.json'), 'utf8')) : null
+const dist = pointer ? join(arg, '..', 'builds', pointer.build ?? pointer.commit) : arg
 const factory = (await import(join(dist, 'crawl.js'))).default
 const wasmBinary = readFileSync(join(dist, 'crawl.wasm'))
 const data = readFileSync(join(dist, 'crawl.data'))

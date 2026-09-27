@@ -4,7 +4,7 @@ import { initialState, reduce, UiState } from '@orbrun/webtiles'
 import { emptyScene, type SceneCursor } from '@orbrun/scene'
 import { GameScreen } from '../src/game'
 import { RendererPark } from '../src/park'
-import { deriveMode } from '../src/context'
+import { deriveContext, deriveMode } from '../src/context'
 
 /**
  * A level map opened from the ctrl-f results (stash.cc `on_single_selection`
@@ -78,5 +78,19 @@ describe('the level map opened from the ctrl-f results', () => {
     reduce(st, { msg: 'ui_cutoff', cutoff: -1 })
     expect(deriveMode(st)).toBe('menu')
     expect(st.cursors[2]).toBeNull()
+  })
+})
+
+describe('the level map cursor away from the player', () => {
+  it('is what the pad travels to (CURSOR_MAP is id 2)', () => {
+    const st = initialState()
+    st.phase = 'playing'
+    reduce(st, { msg: 'ui_state', state: UiState.VIEW_MAP })
+    const scene = { player: { x: 0, y: 0 }, cells: new Map(), billboards: [], playerOnLevel: true } as never
+    const cam = { facing: 0 } as never
+    reduce(st, { msg: 'cursor', id: 2, loc: { x: 0, y: 0 } })
+    expect(deriveContext(st, scene, cam, 'micro').mapCursorHome).toBe(true)
+    reduce(st, { msg: 'cursor', id: 2, loc: { x: 2, y: 1 } })
+    expect(deriveContext(st, scene, cam, 'micro').mapCursorHome).toBe(false)
   })
 })

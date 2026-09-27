@@ -299,7 +299,10 @@ export class LevelMesher {
     const full = this.full || !this.builtRange || globals !== this.builtGlobals
     this.full = false
     this.builtGlobals = globals
-    const chunks = new Set<number>()
+    // what the last build ran out of budget for is still owed: builtCells already speaks
+    // for its scene, so no diff below would find those chunks again
+    const chunks = new Set<number>(this.pending?.chunks)
+    this.pending = null
     const markRect = (r: Rect) => {
       if (r.right < r.left || r.bottom < r.top) return
       for (let cz = Math.floor((r.top - LEVEL_REACH) / LEVEL_CHUNK); cz <= Math.floor((r.bottom + LEVEL_REACH) / LEVEL_CHUNK); cz++)

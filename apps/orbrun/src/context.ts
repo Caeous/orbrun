@@ -666,7 +666,8 @@ export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer
   if (mode === 'crt') ctx.crtTag = 'crt'
   if (mode === 'text' && state.textInput?.tag) ctx.textTag = state.textInput.tag
   if (mode === 'levelmap') {
-    const c = state.cursors[0]
+    // the map's own cursor (tileweb.cc load_dungeon: CURSOR_MAP), not the mouse's
+    const c = state.cursors[2] ?? state.cursors[0]
     ctx.mapCursorHome = !c || (c.x === scene.player.x && c.y === scene.player.y)
   }
   if (mode === 'targeting') {

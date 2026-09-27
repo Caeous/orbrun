@@ -40,7 +40,14 @@ Module['preRun'] = (Module['preRun'] || []).concat(function () {
         return;
     FS.mount(IDBFS, {}, dir);
     addRunDependency('bridge-idbfs');
-    FS.syncfs(true, function () {
+    FS.syncfs(true, function (err) {
+        // A load that failed must not boot: crawl would find no save, roll a
+        // new character, and its first persist would sync the empty dir over
+        // the saves still in IndexedDB.
+        if (err) {
+            abort('wasm bridge: loading saves from IndexedDB failed: ' + err);
+            return;
+        }
         // Host hook, called after hydration and before main(): the host
         // seeds the pre-baked caches (dist/prewarm/) into the dir here, so
         // first boot skips the in-engine cache build. Async (may fetch);

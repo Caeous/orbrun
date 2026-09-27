@@ -2,7 +2,7 @@
 //
 // Answers requests for an engine build or its gamedata from the engine cache,
 // and keeps what it had to fetch: a first game played online installs its
-// build as it goes. Builds are served under their commit, so a file kept is
+// build as it goes. Builds are served under their commit and recipe, so a file kept is
 // never stale. Every other request goes to the network untouched.
 //
 // Registered as sw.js?base=<engine base>, the path the builds are served

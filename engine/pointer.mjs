@@ -22,7 +22,9 @@ function walk(dir) {
   )
 }
 
-const files = [join(dist, 'builds', commit), join(dist, 'gamedata', commit)]
+// the build sits under its commit and recipe (build.sh), its gamedata under the commit alone
+const build = `${commit}-${recipe()}`
+const files = [join(dist, 'builds', build), join(dist, 'gamedata', commit)]
   .flatMap(walk)
   .sort()
   .map((f) => [relative(dist, f).split('\\').join('/'), statSync(f).size])
@@ -30,5 +32,5 @@ const files = [join(dist, 'builds', commit), join(dist, 'gamedata', commit)]
 mkdirSync(join(dist, channel), { recursive: true })
 writeFileSync(
   join(dist, channel, 'engine.json'),
-  JSON.stringify({ channel, commit, version, stamp, gamedata: commit, recipe: recipe(), files }) + '\n',
+  JSON.stringify({ channel, commit, build, version, stamp, gamedata: commit, recipe: recipe(), files }) + '\n',
 )

@@ -146,3 +146,27 @@ describe('an unmapped pad is read in the standard layout', () => {
     expect(held(standardView(raw(15, [0, 0, 0, 0, -1, -1, 0, 0], [])))).toEqual([])
   })
 })
+
+describe('a pad that goes away', () => {
+  it('lets go of what it held and settles its look', () => {
+    const gp = new GamepadInput()
+    const events: PadEvent[] = []
+    gp.on((e) => events.push(e))
+    const pad = fakePad([0, 0, 0.8, 0])
+    ;(pad.buttons[0] as { pressed: boolean }).pressed = true
+    vi.stubGlobal('navigator', { getGamepads: () => [pad] })
+    gp.poll(0)
+    expect(gp.isLooking).toBe(true)
+    expect(gp.isHeld('A')).toBe(true)
+    vi.stubGlobal('navigator', { getGamepads: () => [null] })
+    gp.poll(16)
+    expect(gp.connected).toBe(false)
+    expect(gp.isLooking).toBe(false)
+    expect(gp.isHeld('A')).toBe(false)
+    expect(events).toContainEqual({ type: 'release', button: 'A', t: 16, held: 16 })
+    expect(events.at(-1)).toEqual({ type: 'look', dx: 0, dy: 0 })
+    const n = events.length
+    gp.poll(32)
+    expect(events.length).toBe(n)
+  })
+})
