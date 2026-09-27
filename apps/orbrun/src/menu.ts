@@ -76,6 +76,8 @@ export interface FrontHooks {
   session?(server: ServerInfo, username: string | null): Session | null
   /** whether a connection that just closed will be opened again on its own (asked as the close lands) */
   retrying?(): boolean
+  /** whether a connection that just closed was closed by the browser keeping the page for Back, and is reopened as it comes back: nothing to say */
+  parked?(): boolean
   /**
    * The chosen account's connection again, when another has taken its place (the login of an account being
    * added opens one of its own): asked as its screens, home and Accounts, come back up
@@ -1615,7 +1617,7 @@ export class FrontEnd {
         // a drop the app is already retrying says so; one it is not (the server closed it) says why. Only a screen
         // that stands on the connection says it: one that does not (the server list, the settings) is not redrawn,
         // so the words would wait there and turn up on the next screen, long after the connection was back
-        const says = this._view === 'login' || this._view === 'register' || this._view === 'home' || this._view === 'watch' || this._view === 'accounts'
+        const says = !this.hooks.parked?.() && (this._view === 'login' || this._view === 'register' || this._view === 'home' || this._view === 'watch' || this._view === 'accounts')
         if (says) this.error = this.hooks.retrying?.() ? 'Connection lost. Reconnecting…' : 'Connection closed: ' + e.reason
         if (this._view === 'login' || this._view === 'register') this.goHome()
         else if (says) {

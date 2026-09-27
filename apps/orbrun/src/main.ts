@@ -262,7 +262,13 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
     if (e.type === 'open') retries = 0
     // the connection dropped (the network went, the device slept, the server restarted): out of a game to the
     // menu; on the menu, open it again, waiting longer each time the server does not answer
-    if (e.type === 'closed' && s === session) scheduleRetry(s)
+    if (e.type === 'closed' && s === session) {
+      // the page is coming back from the back-forward cache (`parked`): after the other listeners, so the menu
+      // still sees it parked and says nothing; while the page is still away, its return does it
+      if (parked) {
+        if (!away) setTimeout(() => restore(s))
+      } else scheduleRetry(s)
+    }
     if (e.type === 'open' || e.type === 'closed') lobby?.refresh()
   })
   return s
@@ -413,6 +419,48 @@ document.addEventListener('visibilitychange', () => {
   if (away >= AWAY_MS) suspect(false)
 })
 
+/**
+ * A page left for another (the About pages are the site's, a page load
+ * away) may be kept in the browser's back-forward cache, and Back brings it
+ * back as it was, but for the socket: Safari closes it on the way in, and the
+ * close lands as the page comes back. That is no drop, and nothing is said of
+ * it: the connection is made again at once (`restore`). `away` holds while
+ * the page is in the cache; `parked` until the close it owes has landed, or
+ * the socket turns out to have lived through it (`PARK_MS`).
+ */
+let parked = false
+let away = false
+/** how long after its return a parked page waits for the close before taking the socket as alive */
+const PARK_MS = 3000
+
+window.addEventListener('pagehide', (ev) => {
+  if (!ev.persisted) return
+  parked = away = true
+})
+
+window.addEventListener('pageshow', (ev) => {
+  if (!ev.persisted) return
+  away = false
+  lastBeat = Date.now()
+  const s = session
+  if (s?.closed) restore(s)
+  else
+    setTimeout(() => {
+      if (!session?.closed) parked = false
+    }, PARK_MS)
+})
+
+/** A connection the back-forward cache closed, again: a game is gone back into as after any drop; the front end's reopens now. */
+function restore(s: Session) {
+  if (!parked) return
+  parked = false
+  if (s !== session) return
+  if (game || boot) return scheduleRetry(s)
+  clearRetry()
+  retries = 0
+  reconnect(s)
+}
+
 /** whether a dropped connection will be tried again on its own */
 function retrying(): boolean {
   return retry !== null
@@ -509,6 +557,7 @@ function frontEnd(): FrontEnd {
       },
       session: (server: ServerInfo, username: string | null) => sessionOn(server, username),
       retrying,
+      parked: () => parked,
       warm: rewarm,
       ping: (server: ServerInfo) => pingServer(server),
       logout(account: Account) {
