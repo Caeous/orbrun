@@ -220,7 +220,7 @@ export class FrontEnd {
     host.append(this.root)
     this.root.addEventListener('focusin', this.onNativeFocus)
     this.roomView = new RoomView(this.root)
-    // an offline build downloading, or just switched in, is said on its game's row
+    // an offline build checked for, downloading, or new is said on its game's row
     this.unwatchEngines = engines.onChange(() => {
       if (this._view === 'home') this.showHome()
     })
@@ -586,10 +586,10 @@ export class FrontEnd {
     if (!m) return
     const t = (text ?? '') + (fine ? '\n' + fine : '')
     if (m.dataset.said === t) return
-    // a redraw (the roster's count changing under the cursor) hands a fresh line the same words:
-    // they stand as they were, without playing the fade-in again
-    const same = t === this.said
-    this.said = t
+    // a redraw (the roster's count changing under the cursor, a download's small print counting up) hands a
+    // fresh line the same words: they stand as they were, without playing the fade-in again
+    const same = (text ?? '') === this.said
+    this.said = text ?? ''
     m.dataset.said = t
     replace(m, text ?? '', ...(fine ? [h('span', { class: 'fine' }, fine)] : []))
     m.classList.remove('said')
@@ -924,7 +924,7 @@ export class FrontEnd {
             hint: server.offline
               ? (save?.hint ?? `A new character in ${g.label}, on this device.`) + engineHint(engines.note(g.id))
               : (save?.hint ?? `A new game of ${g.label} on ${server.host}.`),
-            fine: server.offline ? engineBuild(engines.build(g.id)) : undefined,
+            fine: server.offline ? engineBuild(engines.build(g.id), engines.note(g.id)) : undefined,
             fn: () => this.connectTo(account, { kind: 'play', gameId: g.id }),
           })
         }
@@ -1932,13 +1932,12 @@ function serverWhere(sv: ServerInfo): string {
 }
 
 /**
- * What an offline game's row says about its build, under the label: how far a download is, or once, until the
- * next game, that it was just switched in. Nothing otherwise: a build that is here and current says nothing.
+ * What an offline game's row says about its build, under the label: once, until the next game, that it is a new
+ * release. Its downloads are said beside its version (`engineBuild`).
  */
 function engineSub(note: EngineNote | null): string | null {
-  if (!note) return null
-  if ('percent' in note) return `${note.kind}… ${note.percent}%`
-  return note.version ? `${note.kind} · ${note.version}` : note.kind
+  if (note?.kind !== 'new') return null
+  return note.version ? `new · ${note.version}` : 'new'
 }
 
 /** The message line's word on the same, after the row's own hint. */
@@ -1950,10 +1949,12 @@ function engineHint(note: EngineNote | null): string {
 
 /**
  * Which build an offline game plays, in the message line's small print: crawl's version less its commit hash
- * (`0.35-a0-1079`).
+ * (`0.35-a0-1079`), and beside it a look for an update or how far a download is.
  */
-function engineBuild(info: EngineInfo | null): string | undefined {
-  return info?.version.replace(/-g[0-9a-f]+$/, '')
+function engineBuild(info: EngineInfo | null, note: EngineNote | null): string | undefined {
+  const version = info?.version.replace(/-g[0-9a-f]+$/, '')
+  const doing = note?.kind === 'checking' ? 'checking for updates…' : note && 'percent' in note ? `${note.kind}… ${note.percent}%` : null
+  return [version, doing].filter(Boolean).join(' · ') || undefined
 }
 
 /**

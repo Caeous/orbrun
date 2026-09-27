@@ -153,7 +153,7 @@ describe('EngineStore', () => {
     expect(await s.ids()).toEqual([])
   })
 
-  it('downloads an update beside the build it replaces, switches to it once whole, and says so until the next game', async () => {
+  it('looks for an update, downloads it beside the build it replaces, and switches to it once whole, saying nothing after', async () => {
     const s = setup()
     s.pub.publish(build('trunk', 'bb', '0.35-a0-9-gbb'))
     await s.store.played('offline-trunk')
@@ -162,6 +162,7 @@ describe('EngineStore', () => {
     const next = setup({ caches: s.caches, pub: s.pub })
     s.pub.publish(build('trunk', 'cc', '0.35-a0-10-gcc'))
     const during: unknown[] = []
+    next.store.onChange(() => during.push(next.store.note('offline-trunk')))
     next.pub.onFile(async () => {
       during.push(next.store.note('offline-trunk'))
       // the build being replaced is still the one Play starts
@@ -170,17 +171,16 @@ describe('EngineStore', () => {
       during.push(next.store.build('offline-trunk')?.version)
     })
     await next.store.update()
+    expect(during).toContainEqual({ kind: 'checking' })
     expect(during).toContainEqual({ kind: 'updating', percent: 0 })
     expect(during).toContain('bb')
     expect(during).toContain('0.35-a0-9-gbb')
     expect(next.store.build('offline-trunk')?.version).toBe('0.35-a0-10-gcc')
     expect((await next.store.channels())[0].commit).toBe('cc')
-    expect(next.store.note('offline-trunk')).toEqual({ kind: 'updated', version: null })
+    // its version is the word that it changed
+    expect(next.store.note('offline-trunk')).toBeNull()
     // the old build's files are gone
     expect(s.caches.files()).toEqual(['builds/cc/crawl.js', 'builds/cc/crawl.wasm', 'gamedata/cc/main.png'])
-
-    await next.store.played('offline-trunk')
-    expect(next.store.note('offline-trunk')).toBeNull()
   })
 
   it('downloads a rebuild of the same commit with a new recipe, and plays it from its own directory', async () => {

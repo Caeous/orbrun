@@ -31,8 +31,8 @@ const CHECK_EVERY_MS = 10 * 60 * 1000
 const CHECK_TIMEOUT_MS = 8000
 
 interface Installed extends EngineInfo {
-  /** What to say about it on its row, until the next game starts: an update switched in, or a new release. */
-  news?: 'updated' | 'new'
+  /** What to say about it on its row, until the next game starts: a new release. An update switched in says nothing but its version. */
+  news?: 'new'
 }
 
 interface State {
@@ -46,9 +46,11 @@ interface State {
 
 /** What a game's row says about its build. */
 export type EngineNote =
+  /** looking for a newer build of one that is installed */
+  | { kind: 'checking' }
   | { kind: 'downloading' | 'updating'; percent: number }
   /** `version`: the release's own, `0.34.2`; null for trunk, whose versions say nothing to a player */
-  | { kind: 'updated' | 'new'; version: string | null }
+  | { kind: 'new'; version: string | null }
 
 export interface EngineStoreOptions {
   /** The engine base, as an absolute URL ending in `/`: `<base><channel>/engine.json`, `<base>builds/<build>/`. */
@@ -72,6 +74,8 @@ export class EngineStore {
   private reachable = new Set<string>()
   private checked: Promise<void> | null = null
   private checkedAt = 0
+  /** Whether a check for new builds is under way. */
+  private checking = false
   private progress = new Map<string, number>()
   private listeners = new Set<() => void>()
   private running: Promise<void> | null = null
@@ -105,13 +109,14 @@ export class EngineStore {
     return `${this.o.base}builds/${channel.build ?? channel.commit}/`
   }
 
-  /** What a game's row says about its build, if anything: how far its download is, or that it is new. */
+  /** What a game's row says about its build, if anything: that it is looking for an update, how far its download is, or that it is new. */
   note(id: string): EngineNote | null {
     const slot = id.replace(/^offline-/, '')
     const installed = this.stateNow?.installed[slot]
     const percent = this.progress.get(slot)
     if (percent !== undefined) return { kind: installed ? 'updating' : 'downloading', percent }
-    if (installed?.news) return { kind: installed.news, version: releaseOf(installed) ? installed.version.replace(/-.*/, '') : null }
+    if (installed?.news === 'new') return { kind: 'new', version: releaseOf(installed) ? installed.version.replace(/-.*/, '') : null }
+    if (installed && this.checking) return { kind: 'checking' }
     return null
   }
 
@@ -216,6 +221,8 @@ export class EngineStore {
       const s = await this.load()
       const before = JSON.stringify(s.published)
       const reached = this.reachable.size
+      this.checking = true
+      this.changed()
       await Promise.all(
         CHANNEL_NAMES.map(async (name) => {
           try {
@@ -236,10 +243,10 @@ export class EngineStore {
         }),
       )
       this.checkedAt = Date.now()
-      const published = JSON.stringify(s.published) !== before
-      if (published) await this.save()
-      // a build newly reached is newly offered, even one read before and kept in the record unchanged
-      if (published || this.reachable.size !== reached) this.changed()
+      this.checking = false
+      if (JSON.stringify(s.published) !== before) await this.save()
+      // a build newly reached is newly offered, even one read before and kept in the record unchanged; and the check is over
+      this.changed()
     })())
   }
 
@@ -260,7 +267,7 @@ export class EngineStore {
       const before = s.installed[slot]
       if (!kept || (before && buildOf(before) === buildOf(info))) continue
       if (!(await this.download(cache, slot, info))) return
-      s.installed[slot] = { ...info, news: before ? 'updated' : release && newest ? 'new' : undefined }
+      s.installed[slot] = { ...info, news: !before && release && newest ? 'new' : undefined }
       s.wanted = s.wanted.filter((w) => w !== slot)
       await this.save()
       this.changed()
