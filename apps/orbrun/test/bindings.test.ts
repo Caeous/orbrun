@@ -122,8 +122,8 @@ describe('focus modes share one binding set', () => {
     // the d-pad has nothing to walk
     expect(resolve({ type: 'dir', source: 'dpad', dir: 2 }, c)).toEqual({ kind: 'focus', op: 'right' })
   })
-  it('character creation: B is the screen\'s own step back, and absent on the first screen', () => {
-    expect(bindingTable(ctx({ mode: 'newgame' })).B).toBeUndefined()
+  it('character creation: B is the screen\'s own step back, and crawl\'s Escape on the first screen', () => {
+    expect(bindingTable(ctx({ mode: 'newgame' })).B).toMatchObject({ seq: [{ key: 27 }], label: 'Back' })
     expect(bindingTable(ctx({ mode: 'newgame', newgameBack: 32 })).B).toMatchObject({ seq: [{ key: 32 }], label: 'Back' })
     expect(bindingTable(ctx({ mode: 'newgame', newgameBack: 8 })).B).toMatchObject({ seq: [{ key: 8 }], label: 'Back' })
   })

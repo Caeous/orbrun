@@ -85,9 +85,6 @@ function letterOf(g: E2e, part: string): string {
 /** Darts in the pack, which crawl quivers as they are picked up, for `f`. */
 const quiverDarts = (g: E2e) => give(g, 'dart')
 
-/** Character creation: B steps back to the species and no further; leaving is the Orbrun menu's (Start), as a decision, not a lack */
-const NEW_GAME_OUT = "B steps back to the species and stops there: abandoning the character is the Orbrun menu's (Start)"
-
 export const SCENARIOS: Scenario[] = [
   // ---- menus
   { id: 'inventory', about: 'the pack, `i`: single-select, arrows, no initial hover', setup: (g) => g.key('i'), surface: 'menu:inventory' },
@@ -205,7 +202,7 @@ export const SCENARIOS: Scenario[] = [
   { id: 'look', about: 'look, `x`: targeting as examining', setup: (g) => g.key('x'), surface: 'targeting' },
   { id: 'level-map', about: 'the level map, `X`', setup: (g) => g.key('X'), surface: 'levelmap', idle: { LB: 'the player stands on the only up staircase: the cursor is already there' } },
   // ---- a new game
-  { id: 'new-game-species', about: 'the new-game species grid', args: ['-seed', '1', '-wizard'], newGame: true, setup: async () => {}, surface: 'popup:newgame-choice', noWayOut: NEW_GAME_OUT },
+  { id: 'new-game-species', about: 'the new-game species grid', args: ['-seed', '1', '-wizard'], newGame: true, setup: async () => {}, surface: 'popup:newgame-choice' },
   {
     id: 'new-game-background',
     about: 'the new-game background grid, after a species',
@@ -213,7 +210,6 @@ export const SCENARIOS: Scenario[] = [
     newGame: true,
     setup: (g) => g.raw('a'),
     surface: 'popup:newgame-choice',
-    noWayOut: NEW_GAME_OUT,
   },
   {
     id: 'new-game-random',

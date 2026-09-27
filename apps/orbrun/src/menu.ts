@@ -1950,12 +1950,10 @@ function engineHint(note: EngineNote | null): string {
 
 /**
  * Which build an offline game plays, in the message line's small print: crawl's version less its commit hash
- * (`0.35-a0-1079`), and the day it was built, since a trunk version alone says little of how recent it is.
+ * (`0.35-a0-1079`).
  */
 function engineBuild(info: EngineInfo | null): string | undefined {
-  if (!info) return undefined
-  const built = new Date(Number(info.stamp) * 1000)
-  return `${info.version.replace(/-g[0-9a-f]+$/, '')} · ${built.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`
+  return info?.version.replace(/-g[0-9a-f]+$/, '')
 }
 
 /**

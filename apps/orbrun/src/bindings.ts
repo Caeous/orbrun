@@ -352,13 +352,12 @@ const NEWGAME_EXTRA: Partial<Record<Button, Action>> = {
 
 /**
  * Character creation: B is a step back, where crawl's Escape would abandon
- * the game outright. The step is the screen's own (`Context.newgameBack`),
- * and on the first screen there is none: leaving is the Orbrun menu's.
+ * the choices made so far. The step is the screen's own (`Context.newgameBack`);
+ * on the first screen there is nothing to lose, so B is crawl's Escape there,
+ * out of character creation altogether.
  */
 function newgameTable(ctx: Context): Partial<Record<Button, Action>> {
-  const { B: _b, ...t } = { ...focusTable(ctx), ...NEWGAME_EXTRA }
-  if (ctx.newgameBack !== undefined) return { ...t, B: kc(ctx.newgameBack, 'Back') }
-  return t
+  return { ...focusTable(ctx), ...NEWGAME_EXTRA, B: kc(ctx.newgameBack ?? 27, 'Back') }
 }
 
 /**

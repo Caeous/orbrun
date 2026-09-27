@@ -92,6 +92,15 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     expect(screen(g).title).toMatch(/species/)
   })
 
+  it('character creation: B on the species leaves character creation, and so does Escape', async () => {
+    for (const input of ['B', 'Escape'] as const) {
+      const g = await at('new-game-species')
+      if (input === 'B') await g.press('B')
+      else await g.key('Escape')
+      expect(g.state().phase === 'playing' && screen(g).mode !== 'lobby', input).toBe(false)
+    }
+  })
+
   it('a menu of marks (pickup): A and Space mark the lit row, Enter and Start take what is marked', async () => {
     let g = await at('pickup')
     const club = () => Object.values(g.state().player.inv).some((it) => /club/.test(it?.name ?? ''))

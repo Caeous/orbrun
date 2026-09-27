@@ -836,9 +836,9 @@ describe('newgame', () => {
       { msg: 'key', keycode: 99 },
     ])
     sent.length = 0
-    // the first screen has no way back, and Escape would abandon the character: it is B, and B does nothing here
+    // the first screen has nothing to lose: Escape is B, and B is crawl's Escape, out of character creation
     expect(key('Escape', ctx)).toBe(true)
-    expect(sent).toEqual([])
+    expect(sent).toEqual([{ msg: 'key', keycode: 27 }])
   })
   it('the server\'s own focus re-seats the cursor; an echo of ours (from_client) does not', () => {
     const { ov, st, frame, focusedText } = setup()
