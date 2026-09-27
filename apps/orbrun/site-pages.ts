@@ -385,8 +385,7 @@ function aboutMain(dom: Dom): string {
   const g = (name: GlyphName, label: string) => glyphHtml(dom, name, label)
   return `<section class="hero stage">
   <picture>
-    <source media="(max-width: 700px)" srcset="${STILLS}/hero-portrait.webp" />
-    <img src="${STILLS}/hero-2560.webp" srcset="${STILLS}/hero-1280.webp 1280w, ${STILLS}/hero-2560.webp 2560w" sizes="100vw" alt="${esc(HERO_ALT)}" width="2560" height="1440" fetchpriority="high" />
+    <img src="${STILLS}/pad-bg.webp" alt="${esc(HERO_ALT)}" width="1920" height="1080" fetchpriority="high" />
   </picture>
   <div class="title">
     <h1><img src="/orb.png" alt="" width="32" height="32" />Orbrun</h1>
@@ -507,7 +506,7 @@ function aboutMain(dom: Dom): string {
  */
 const DOC_LOOK: Record<string, { still: string; tint: string; sub?: () => string }> = {
   '/about/new': { still: 'keys-bg', tint: 'depths', sub: () => latestRelease() },
-  '/about/steam': { still: 'pad-bg', tint: 'lair' },
+  '/about/steam': { still: 'account-bg', tint: 'abyss' },
 }
 
 /** the changelog's newest release, as its heading names it: "Version 0.2.1 · 2026-09-25" */

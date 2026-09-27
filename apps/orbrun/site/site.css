@@ -98,6 +98,7 @@ a[target='_blank']:not(.btn)::after { content: ' ↗'; font: 0.75em var(--mono);
 .hero.band::before { background: linear-gradient(to top, var(--bg) 0%, rgba(7, 7, 11, 0.7) 35%, rgba(7, 7, 11, 0.45) 75%, rgba(7, 7, 11, 0.7) 100%) }
 .hero.band.lair::before { background: linear-gradient(to top, var(--bg) 0%, rgba(26, 30, 8, 0.78) 35%, rgba(26, 30, 8, 0.55) 75%, rgba(7, 7, 11, 0.7) 100%) }
 .hero.band.depths::before { background: linear-gradient(to top, var(--bg) 0%, rgba(30, 18, 12, 0.76) 35%, rgba(30, 18, 12, 0.5) 75%, rgba(7, 7, 11, 0.7) 100%) }
+.hero.band.abyss::before { background: linear-gradient(to top, var(--bg) 0%, rgba(18, 12, 34, 0.76) 35%, rgba(18, 12, 34, 0.5) 75%, rgba(7, 7, 11, 0.7) 100%) }
 .hero.band .title { display: grid; justify-items: center }
 .hero.band .lede { max-width: var(--measure); margin: 1.4rem 0 0; color: var(--ink); opacity: 1; text-wrap: balance; text-shadow: 0 1px 12px #000 }
 
@@ -336,6 +337,8 @@ footer .links { display: flex; flex-wrap: wrap; gap: 1.25rem; margin-bottom: 0.8
   .bar nav { order: 1; flex: 1 0 100%; margin-left: 0; gap: 1.1rem; overflow-x: auto; scrollbar-width: none; padding-bottom: 0.2rem }
   .bar nav::-webkit-scrollbar { display: none }
   .bar .btn { margin-left: auto }
+  /* and About's bar keeps its name: Play alone on the top row reads as a gap */
+  .bar.nameless .brand { opacity: 1; pointer-events: auto }
   .hero { padding-bottom: 2.5rem }
   .hero::before { background: linear-gradient(to top, var(--bg) 0%, rgba(7, 7, 11, 0.9) 60%, rgba(7, 7, 11, 0.5) 100%) }
   .hero.band { min-height: 0; padding-top: calc(5rem + var(--bar)) }
