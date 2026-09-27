@@ -180,26 +180,41 @@ describe('camera facing while travelling', () => {
     expect(c.facing).toBe(6)
   })
 
-  it('an autofight walk keeps closing on its threat, whatever gets closer meanwhile', () => {
+  it('an autofight walk faces what the next Tab goes for: a farther newcomer leaves the view alone, a closer one takes it', () => {
     // a gnoll three cells east; Tab walks toward it
     const s = sceneFrom(['.......', '.......', '.......', '...@...', '.......', '.......', '.......'])
     hostile(s, 6, 3, 1)
     const c = cam(0)
     expect(c.autofight(s)).toBe(false)
     expect(c.facing).toBe(2)
-    // a rat turns up two cells north-west, strictly closer: the walk is not abandoned
-    hostile(s, 1, 1, 2)
-    c.faceHostile(s)
-    expect(c.facing).toBe(2)
     // the step lands (path-driven): still the gnoll
     s.player.x = 4
     c.faceAfterMove(s, 1, 0)
     expect(c.facing).toBe(2)
-    // the rat comes within reach: autofight swings at what it can hit (compare_monster_info: can_attack before distance)
+    // a rat turns up four cells west, farther than the gnoll: the view stays on the walk
+    hostile(s, 0, 3, 2)
+    c.faceHostile(s)
+    expect(c.facing).toBe(2)
+    // the rat closes to one cell nearer than the gnoll: autofight ranks distance, so the next Tab goes for it
     s.billboards[1].x = 3
-    s.billboards[1].y = 2
+    s.billboards[1].y = 1
     c.faceHostile(s)
     expect(c.facing).toBe(7)
+  })
+
+  it('"X comes into view" during an autofight walk faces the newcomer only if autofight would pick it', () => {
+    const s = sceneFrom(['.......', '.......', '.......', '...@...', '.......', '.......', '.......'])
+    hostile(s, 5, 3, 1)
+    const c = cam(0)
+    expect(c.autofight(s)).toBe(false)
+    // a newcomer behind us, farther than the gnoll: named in the message, but not turned to
+    hostile(s, 0, 3, 2)
+    c.faceBlocker(s, s.billboards[1])
+    expect(c.facing).toBe(2)
+    // outside an autofight walk the named monster is faced, as when explore stops for it
+    c.stopClosing()
+    c.faceBlocker(s, s.billboards[1])
+    expect(c.facing).toBe(6)
   })
 
   it('reaching the threat ends the hold: the nearest hostile rules again', () => {

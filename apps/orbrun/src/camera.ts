@@ -388,8 +388,13 @@ export class CameraController {
    * the monster the server named in its warning when the caller has one,
    * else the nearest blocker, a hostile before a neutral at the same
    * distance. The camera then tracks that monster as its threat.
+   *
+   * During an autofight walk nothing was stopped: "X comes into view" names
+   * a newcomer, but the next Tab goes where autofight ranks highest, so the
+   * camera faces that instead (the newcomer only if it is the new pick).
    */
   faceBlocker(scene: Scene, named: Billboard | null = null): boolean {
+    if (this.closing && this.faceHostile(scene)) return true
     const m = named ?? nearestBlocker(scene)
     if (!m) return false
     if (this.autofightOverridden) return true
@@ -411,12 +416,12 @@ export class CameraController {
    * Autofight was sent (Tab): face the threat. Returns true when the press
    * swings, the threat being within reach. Otherwise autofight walks one step
    * toward it (`autofight.lua attack`: `move_towards`), and the camera starts
-   * closing on that monster too: it is held through the walk, so a hostile
-   * that turns up or edges closer meanwhile does not swing the view off the
-   * one we are heading for. The hold ends when the threat is reached or
-   * leaves view, when another hostile is already in reach, or when any other
-   * move is made (`stopClosing`). A tie is not held here: the press faces
-   * the one crawl's own scan picks.
+   * closing with it. Through the walk the camera faces whatever the next Tab
+   * would go for (`threat`): a hostile that turns up farther away leaves the
+   * view alone, one that autofight ranks higher takes it, as it takes the
+   * walk. The walk ends when a threat is in reach or none is left, or when
+   * any other move is made (`stopClosing`). A tie is not held here: the
+   * press faces the one crawl's own scan picks.
    */
   autofight(scene: Scene): boolean {
     const m = this.threat(scene, true)
@@ -444,17 +449,14 @@ export class CameraController {
   }
 
   private threatId: number | undefined
-  /** an autofight walk is under way toward `threatId` */
+  /** an autofight walk is under way, toward whatever autofight picks */
   private closing = false
 
   /**
    * The threat: the held monster while autofight ranks it level with its own
-   * pick (`compareAutofight`), else that pick; `exact` (a Tab) takes the
-   * pick even over a tie. Closing on it (an autofight walk), the held
-   * monster stays the threat even with another hostile strictly closer, until
-   * it is reached or gone. The one exception is a hostile already in reach:
-   * `autofight.lua compare_monster_info` ranks `can_attack` above
-   * `distance`, so the next Tab swings at that one, and the camera faces it.
+   * pick (`compareAutofight`), else that pick. A Tab (`exact`) and an
+   * autofight walk under way take the pick even over a tie: the view is on
+   * what the next Tab goes for.
    */
   private threat(scene: Scene, exact = false): Billboard | null {
     const best = autofightTarget(scene)
@@ -464,9 +466,7 @@ export class CameraController {
       return null
     }
     const held = this.threatId === undefined ? undefined : monstersInView(scene).find((b) => isThreat(b) && monsterId(b) === this.threatId)
-    if (!held) this.closing = false
-    const near = kingMoves(scene, best)
-    const keep = held && ((!exact && compareAutofight(scene, best, held) <= 0) || (this.closing && near > 1))
+    const keep = held && !exact && !this.closing && compareAutofight(scene, best, held) <= 0
     const m = keep ? held : best
     if (kingMoves(scene, m) <= 1) this.closing = false
     this.threatId = monsterId(m)
