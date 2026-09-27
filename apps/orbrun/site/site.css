@@ -312,7 +312,11 @@ footer .links { display: flex; flex-wrap: wrap; gap: 1.25rem; margin-bottom: 0.8
 .prompts .glyph { font-size: 1.15rem; vertical-align: 0 }
 
 @media (max-width: 680px) {
-  .bar nav { display: none }
+  /* the pages drop to a row of their own under the brand and Play, scrolling sideways if they must */
+  :root { --bar: 5.5rem }
+  .bar { flex-wrap: wrap; align-content: center; gap: 0.7rem 1rem }
+  .bar nav { order: 1; flex: 1 0 100%; margin-left: 0; gap: 1.1rem; overflow-x: auto; scrollbar-width: none; padding-bottom: 0.2rem }
+  .bar nav::-webkit-scrollbar { display: none }
   .bar .btn { margin-left: auto }
   .hero { padding-bottom: 2.5rem }
   .hero::before { background: linear-gradient(to top, var(--bg) 0%, rgba(7, 7, 11, 0.9) 60%, rgba(7, 7, 11, 0.5) 100%) }
