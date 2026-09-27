@@ -437,8 +437,8 @@ export class Overlays {
    */
   private menuFooter: MoreSwitchEl[] = []
   private menuFooterIndex = -1
-  /** the menu the footer cursor belongs to, so a rebuild of the same menu keeps it */
-  private menuFooterTag = ''
+  /** the menu the footer cursor belongs to, so a rebuild of the same menu keeps it and a menu opened after (even one with the same tag) starts on its rows */
+  private menuFooterOf: MenuState | null = null
   /**
    * Orbrun's own row on the game menu, and the server item it is drawn above
    * (the separator before Quit). It sits inside the menu's list but is kept
@@ -998,8 +998,8 @@ export class Overlays {
    * the menu stands.
    */
   private markMoreSwitches(more: HTMLElement, menu: MenuState) {
-    if (this.menuFooterTag !== menu.tag) {
-      this.menuFooterTag = menu.tag
+    if (this.menuFooterOf !== menu) {
+      this.menuFooterOf = menu
       this.menuFooterIndex = -1
     }
     this.menuFooter = this.hotSwitches(more)

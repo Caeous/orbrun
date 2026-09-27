@@ -220,11 +220,13 @@ export class EngineStore {
         CHANNEL_NAMES.map(async (name) => {
           try {
             const res = await this.fetch(this.url(`${name}/engine.json`), { cache: 'no-store', signal: AbortSignal.timeout(CHECK_TIMEOUT_MS) })
-            if (!res.ok) {
+            if (res.status === 404) {
               // the channel is not published (any more)
               delete s.published[name]
               return
             }
+            // a server in trouble says nothing about what is published: what was read last stands
+            if (!res.ok) return
             const info = (await res.json()) as EngineInfo
             s.published[name] = info
             this.reachable.add(slotOf(info))

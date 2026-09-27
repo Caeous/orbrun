@@ -330,6 +330,11 @@ const DIGITS_RE = /\((\d)-(\d)[,)]/
  * to? (Tab/Enter - D:3, ? - help) ", and reads one key).
  */
 const LISTED_RE = /\(([A-Za-z0-9])\) (\S+)/g
+/** Whether a line lists `(K) Name` choices; LISTED_RE is global, so each test starts from the line's beginning */
+const listsChoices = (text: string) => {
+  LISTED_RE.lastIndex = 0
+  return LISTED_RE.test(text)
+}
 /** god-prayer.cc `_prompt_ecu_worship`: the faded altar's prompt, whose gods are listed on its own line */
 const ECU_ALTAR_RE = /^This altar belongs to /
 
@@ -381,7 +386,7 @@ function listedPrompt(lines: { text: string; channel?: number }[]): ParsedPrompt
   }
   // a menu in the message pane: its rows are the prompt-channel lines just before the prompt, in their order
   let first = at
-  while (first > 0 && lines[first - 1].channel === CH_PROMPT && LISTED_RE.test(formattedStringToText(lines[first - 1].text))) first--
+  while (first > 0 && lines[first - 1].channel === CH_PROMPT && listsChoices(formattedStringToText(lines[first - 1].text))) first--
   for (let i = first; i < at; i++) listed(lines[i].text)
   // or on the prompt line itself: the faded altar's "(a) Trog, (b) Okawaru or (c) Yredelemnul"
   listed(lines[at].text)
@@ -514,8 +519,7 @@ function parsePrompt(state: GameState): ParsedPrompt | undefined {
     // a `(D) Dungeon` list printed around a prompt is not the prompt (recorded lines carry the channel; hand-made ones may not)
     if (l.channel !== undefined && l.channel !== CH_PROMPT) continue
     const text = formattedStringToText(l.text)
-    LISTED_RE.lastIndex = 0
-    if (LISTED_RE.test(text)) continue
+    if (listsChoices(text)) continue
     const options: ParsedPrompt['options'] = []
     // prompt.cc `yesno` prints the question bare (no "(y/n)"), and a call that
     // passes allow_lowercase false (leaving the Dungeon: main.cc) takes only an

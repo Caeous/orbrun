@@ -664,6 +664,20 @@ describe('prompt card', () => {
     ctx = frame('keyboard')
     expect(Array.from(host.querySelectorAll('.prompt-card .chip kbd')).map((c) => c.textContent)).toEqual(['D', 'T', 'L', 'O', 'S', 'Tab', '?'])
   })
+  it('the travel menu keeps every row when its last row is shorter than where the one before stopped matching', () => {
+    const { st, frame } = setup()
+    reduce(st, {
+      msg: 'msgs',
+      messages: [
+        { text: '(D) Dungeon             (T) Temple              (L) Lair                ', channel: 2 },
+        { text: '(O) Orcish Mines        (S) Snake Pit           (V) Vaults              ', channel: 2 },
+        { text: '(E) Elf', channel: 2 },
+        { text: 'Where to? (Tab/Enter - D:3, ? - help) ', channel: 2 },
+      ],
+    })
+    reduce(st, { msg: 'input_mode', mode: MouseMode.PROMPT })
+    expect(frame().prompt?.options.map((o) => o.hotkey)).toEqual(['D', 'T', 'L', 'O', 'S', 'V', 'E', '\t', '?'])
+  })
   it('the faded altar: its gods and Enter are the chips, off a prompt the server never left NORMAL for', () => {
     const { st, frame, host, ov, sent } = setup()
     reduce(st, { msg: 'input_mode', mode: MouseMode.COMMAND })

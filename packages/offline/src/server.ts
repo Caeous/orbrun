@@ -98,7 +98,8 @@ interface Game {
 
 export class OfflineServer {
   private game: Game | null = null
-  private starting = false
+  /** a game on its way in, while the channels are read; cleared when the player leaves before it is up */
+  private starting: object | null = null
   private loggedIn = false
   private user: string
   /** The game links last sent. */
@@ -149,7 +150,10 @@ export class OfflineServer {
         return
       case 'go_lobby':
         if (g) void this.stop()
-        else this.o.emit([{ msg: 'go_lobby' }])
+        else {
+          this.starting = null
+          this.o.emit([{ msg: 'go_lobby' }])
+        }
         return
       case 'pong':
       case 'watch':
@@ -181,14 +185,17 @@ export class OfflineServer {
 
   /** The connection closed: save the game in progress, if any, and end it. */
   shutdown(): Promise<void> {
+    this.starting = null
     return this.game ? this.stop() : Promise.resolve()
   }
 
   private async play(id: string) {
     if (this.game || this.starting) return
-    this.starting = true
+    const start = (this.starting = {})
     const channel = (await this.builtChannels()).find((c) => c.id === id)
-    this.starting = false
+    // the player left (or the connection closed) while the channels were read
+    if (this.starting !== start) return
+    this.starting = null
     if (this.game) return
     if (!channel) {
       this.o.emit([{ msg: 'game_ended', reason: 'error', message: `No offline game "${id}".` }, { msg: 'go_lobby' }])

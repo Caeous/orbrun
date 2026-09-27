@@ -356,6 +356,25 @@ describe('a server menu on the keyboard', () => {
     // the server's hover never left that row while the cursor was on the more line, so it is told nothing
     expect(sent).toEqual([])
   })
+  it('a shop left from its [Esc] exit switch opens again on its rows, not on the switch', async () => {
+    const { st, frame, host, key } = setup()
+    openShop(st)
+    frame()
+    await new Promise((r) => requestAnimationFrame(() => r(null)))
+    const marked = () => Array.from(host.querySelectorAll('.more .more-hot')).findIndex((e) => e.classList.contains('hovered'))
+    key('ArrowDown')
+    key('ArrowDown')
+    key('ArrowDown')
+    expect(marked()).toBe(0)
+    reduce(st, { msg: 'close_menu' } as never)
+    frame()
+    // the next shop has the same tag
+    openShop(st)
+    frame()
+    await new Promise((r) => requestAnimationFrame(() => r(null)))
+    expect(marked()).toBe(-1)
+    expect(hoveredRow(host)).toBe(0)
+  })
   it('past the end of a line, sideways crosses into the next column, on whatever line holds it', async () => {
     const { st, frame, host, key } = setup()
     // the shop in the screenshot: [/] sort alone on the bottom line, under [Esc] exit, with [!] buy|examine items to the right

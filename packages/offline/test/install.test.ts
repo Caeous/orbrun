@@ -43,6 +43,8 @@ function publisher() {
   const channels = new Map<string, EngineInfo>()
   const fetched: string[] = []
   let online = true
+  /** a status every engine.json answers with instead, as a server in trouble would */
+  let pointerStatus = 0
   /** file path → bytes short of its size, to cut a download off */
   const cut = new Map<string, number>()
   let onFile: (path: string) => void = () => {}
@@ -51,6 +53,7 @@ function publisher() {
     const path = String(input).slice(BASE.length)
     const pointer = /^(\w+)\/engine\.json$/.exec(path)
     if (pointer) {
+      if (pointerStatus) return new Response('', { status: pointerStatus })
       const info = channels.get(pointer[1])
       return info ? Response.json(info) : new Response('', { status: 404 })
     }
@@ -67,6 +70,7 @@ function publisher() {
     publish: (info: EngineInfo) => channels.set(info.channel, info),
     offline: () => (online = false),
     online: () => (online = true),
+    pointerStatus: (status: number) => (pointerStatus = status),
     onFile: (f: (path: string) => void) => (onFile = f),
   }
 }
@@ -211,6 +215,24 @@ describe('EngineStore', () => {
     await s.store.update()
     expect(s.pub.fetched.slice(2)).toEqual(['builds/bb/crawl.wasm', 'gamedata/bb/main.png'])
     expect(await s.ids()).toEqual(['offline-trunk'])
+  })
+
+  it('keeps a channel and its download when engine.json answers with a server error, not a 404', async () => {
+    const s = setup()
+    s.pub.publish(build('trunk', 'bb', '0.35-a0-9-gbb'))
+    await s.store.played('offline-trunk')
+    s.pub.onFile((path) => {
+      if (path.endsWith('crawl.wasm')) s.setBusy(true)
+    })
+    await s.store.update()
+    expect(s.caches.files()).toEqual(['builds/bb/crawl.js'])
+
+    s.pub.onFile(() => {})
+    s.pub.pointerStatus(503)
+    const again = setup({ caches: s.caches, pub: s.pub })
+    await again.store.update()
+    expect(again.caches.files()).toContain('builds/bb/crawl.js')
+    expect(s.pub.fetched.filter((p) => p === 'builds/bb/crawl.js')).toHaveLength(1)
   })
 
   it('never installs a file that was cut short', async () => {

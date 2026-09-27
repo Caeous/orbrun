@@ -130,6 +130,21 @@ describe('OfflineServer game', () => {
     expect(s.flat()).toEqual([{ msg: 'game_started' }, { msg: 'game_client', version: 'bb22', content: '' }])
   })
 
+  it('starts no engine when the connection closes, or the player goes back, while the channels are still being read', async () => {
+    for (const leave of ['close', 'go_lobby'] as const) {
+      let ready!: (c: OfflineChannel[]) => void
+      const s = setup(() => new Promise((r) => (ready = r)))
+      s.server.receive({ msg: 'play', game_id: 'offline-trunk' })
+      await tick()
+      if (leave === 'close') await s.server.shutdown()
+      else s.server.receive({ msg: 'go_lobby' })
+      ready([STABLE, TRUNK])
+      await tick()
+      expect(s.engine()).toBeNull()
+      expect(s.names()).not.toContain('game_started')
+    }
+  })
+
   it("keeps each profile's saves in a directory of its own, the default profile's where saves were before profiles", async () => {
     const s = setup()
     s.server.receive({ msg: 'token_login', cookie: 'offline:Sam' })
