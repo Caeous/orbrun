@@ -230,7 +230,7 @@ function structuredData(page: Page): string {
 
 function head(page: Page, css: string): string {
   // About's card is its hero, a still of a real game; the documents' is the room they stand in (both 1200×630, tools/build/cards.mjs)
-  const card = page.path === '/about' ? { src: '/about/card.jpg', alt: HERO_ALT + CARD_WORDS } : { src: '/room/card.jpg', alt: POSTER_ALT + CARD_WORDS }
+  const card = page.path === '/about' ? { src: '/about/card.jpg', alt: CARD_ALT + CARD_WORDS } : { src: '/room/card.jpg', alt: POSTER_ALT + CARD_WORDS }
   const title = esc(page.title)
   const description = esc(page.description)
   return `<head>
@@ -280,8 +280,11 @@ function bar(page: Page): string {
 </header>`
 }
 
-/** About's hero, a still of Lair:3 */
-const HERO_ALT = 'First person on Lair:3: a cane toad on the left and a catoblepas on the right, blood on the grass between them, a polearm held in the lower corner'
+/** About's hero, a still of Depths:1 */
+const HERO_ALT = 'First person on Depths:1: an open door in a stone wall, monsters coming through it from the room beyond, a shield and a sword held in the lower corners'
+
+/** About's social card, a still of Lair:3 under the name */
+const CARD_ALT = 'First person on Lair:3: a cane toad on the left and a catoblepas on the right, blood on the grass between them, a polearm held in the lower corner'
 
 /** where the About page's stills are (public/about, taken in testbed/film.html from recorded games, the HUD left out; the Deck's screen is the one with it, deckHtml) */
 const STILLS = '/about'
