@@ -339,9 +339,9 @@ describe('prompt card', () => {
     expect(host.querySelector('.prompt-card .focused')).toBeNull()
     expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('Yes')
     expect(actionLabel(bindingTable(ctx).B!, ctx)).toBe('No')
-    // Yes advertises A; No keeps its binding without a B hint
-    expect(Array.from(host.querySelectorAll('.prompt-card .chip')).map((c) => c.className)).toEqual(['chip A', 'chip default'])
-    expect(host.querySelectorAll('.prompt-card .chip')[1].querySelector('svg')).toBeNull()
+    // Yes wears A and No wears B
+    expect(Array.from(host.querySelectorAll('.prompt-card .chip')).map((c) => c.className)).toEqual(['chip A', 'chip B default'])
+    expect(host.querySelectorAll('.prompt-card .chip')[1].querySelector('svg')).not.toBeNull()
     // a yes/no's question is not its answers: the text stays over the chips
     expect(host.querySelector('.prompt-card .text')?.textContent).toBe('Really attack? (y/N)')
     press('A', ctx)

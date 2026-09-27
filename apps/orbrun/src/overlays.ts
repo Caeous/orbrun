@@ -2027,9 +2027,7 @@ export class Overlays {
       const rowEl = h('div', { class: 'chips' })
       if (lead) rowEl.append(h('span', { class: 'lead' }, lead))
       chips.forEach((c, i) => {
-        const binding = buttons.get(c.hotkey)
-        // Keep the No option and its binding, but never advertise B.
-        const b = binding === 'B' ? undefined : binding
+        const b = buttons.get(c.hotkey)
         const keyName = c.hotkey === '\t' ? 'Tab' : c.hotkey === '\r' ? 'Enter' : c.hotkey
         // a label that already spells its key ("(S)trength") needs no cap beside it: the key would read twice
         const spelled = c.label.includes('(' + c.hotkey + ')')
