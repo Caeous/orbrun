@@ -65,6 +65,9 @@ a[target='_blank']:not(.btn)::after { content: ' ↗'; font: 0.75em var(--mono);
 .brand { display: flex; align-items: center; gap: 0.45rem; color: var(--ink); text-decoration: none; font: 700 1.6rem/1 var(--gothic) }
 .brand img, .hero h1 img { image-rendering: pixelated; filter: drop-shadow(0 0 5px rgba(185, 120, 31, 0.75)) drop-shadow(0 0 12px rgba(139, 63, 176, 0.45)) }
 .brand img { width: 1.35rem; height: 1.35rem }
+/* About's own name stands in the hero: the bar's shows once that one has scrolled under it (site.js) */
+.bar.nameless .brand { opacity: 0; pointer-events: none; transition: opacity 0.25s }
+.bar.nameless.named .brand { opacity: 1; pointer-events: auto }
 .bar nav { display: flex; gap: 1.25rem; margin-left: auto }
 .bar nav a { color: var(--ink-dim); text-decoration: none; white-space: nowrap }
 .bar nav a:hover, .bar nav a[aria-current] { color: var(--ink) }
@@ -104,14 +107,14 @@ a[target='_blank']:not(.btn)::after { content: ' ↗'; font: 0.75em var(--mono);
 .hero.stage picture { position: absolute; inset: 0 0 auto; height: var(--still); z-index: -2 }
 .hero.stage picture img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated }
 .hero.stage::before { inset: 0 0 auto; height: var(--still); background:
-  linear-gradient(to top, var(--bg) 0%, rgba(7, 7, 11, 0.6) 8%, rgba(7, 7, 11, 0.28) 22%, rgba(7, 7, 11, 0.22) 80%, rgba(7, 7, 11, 0.6) 100%),
+  linear-gradient(to top, var(--bg) 0%, rgba(30, 18, 12, 0.65) 10%, rgba(30, 18, 12, 0.5) 24%, rgba(30, 18, 12, 0.43) 76%, rgba(7, 7, 11, 0.65) 100%),
   radial-gradient(ellipse 38% 44% at 50% 55%, rgba(7, 7, 11, 0.72), rgba(7, 7, 11, 0.38) 60%, transparent) }
 @media (max-width: 700px) {
-  .hero.stage { --still: min(155.5vw, 82vh); padding-top: calc(var(--still) * 0.74) }
-  /* the portrait still keeps its monster in the middle and the title stands below it, so the shade goes under the title instead */
+  .hero.stage { --still: min(155.5vw, 82vh); padding-top: calc(var(--still) * 0.56) }
+  /* the portrait still keeps its monster in the middle and the title stands just under it, as wide, so the shade goes under the title */
   .hero.stage::before { background:
-    linear-gradient(to top, var(--bg) 0%, rgba(7, 7, 11, 0.6) 8%, rgba(7, 7, 11, 0.28) 22%, rgba(7, 7, 11, 0.22) 80%, rgba(7, 7, 11, 0.6) 100%),
-    radial-gradient(ellipse 70% 16% at 50% 84%, rgba(7, 7, 11, 0.72), rgba(7, 7, 11, 0.38) 60%, transparent) }
+    linear-gradient(to top, var(--bg) 0%, rgba(30, 18, 12, 0.65) 10%, rgba(30, 18, 12, 0.5) 24%, rgba(30, 18, 12, 0.43) 76%, rgba(7, 7, 11, 0.65) 100%),
+    radial-gradient(ellipse 70% 18% at 50% 62%, rgba(7, 7, 11, 0.86), rgba(7, 7, 11, 0.5) 60%, transparent) }
 }
 /* the hero is an act like the rest: the name where a label stands, a line of small capitals, a sentence, then the way in */
 .hero.stage .title { display: grid; justify-items: center; gap: 0 }
@@ -120,6 +123,21 @@ a[target='_blank']:not(.btn)::after { content: ' ↗'; font: 0.75em var(--mono);
 .hero.stage .tag { margin: 0.9rem 0 2.2rem; font: 400 clamp(0.95rem, 1.6vw, 1.1rem)/1.55 var(--mono); letter-spacing: 0.02em; color: var(--ink-dim); text-shadow: 0 1px 8px #000 }
 .hero.stage .actions { justify-content: center }
 .hero.stage .small-print { margin-top: 1.6rem; letter-spacing: 0.04em }
+/* the still is veiled in the Depths' own brown, as the acts that stand on Depths stills are, if lighter: it is the page's first picture.
+   Above a phone's width, the name stands under the doorway, between the shield and the sword, leaving what comes through it in the clear.
+   The still always spans the width and is cropped top and bottom about its middle, so the name is placed from the middle and
+   sized by the width, as the still is: it keeps its place in the picture at any size (text never below a readable floor) */
+@media (min-width: 701px) {
+  .hero.stage { padding-top: calc(var(--still) / 2 + 1.1vw) }
+  .hero.stage h1 { font-size: 9.4vw }
+  .hero.stage .tag { margin: 1vw 0 2.4vw; font-size: max(0.78rem, 1.22vw) }
+  .hero.stage .actions { gap: 0.9vw }
+  .hero.stage .btn { font-size: max(0.75rem, 1vw); padding: 0.78em 1.39em }
+  .hero.stage .small-print { margin-top: 1.8vw; font-size: max(0.65rem, 0.83vw) }
+  .hero.stage::before { background:
+    linear-gradient(to top, var(--bg) 0%, rgba(30, 18, 12, 0.65) 10%, rgba(30, 18, 12, 0.5) 24%, rgba(30, 18, 12, 0.43) 76%, rgba(7, 7, 11, 0.65) 100%),
+    radial-gradient(20vw 12vw at 50% calc(50% + 12vw), rgba(7, 7, 11, 0.8), rgba(7, 7, 11, 0.45) 60%, transparent) }
+}
 
 .act { position: relative; isolation: isolate; display: grid; justify-items: center; gap: 2.2rem; padding: 6rem var(--gutter) }
 .act + .act:not(.field) { padding-top: 2rem }

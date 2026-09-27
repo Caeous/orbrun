@@ -281,7 +281,7 @@ function bar(page: Page): string {
 }
 
 /** About's hero, a still of Depths:1 */
-const HERO_ALT = 'First person on Depths:1: an open door in a stone wall, monsters coming through it from the room beyond, a shield and a sword held in the lower corners'
+const HERO_ALT = 'First person on Depths:1: an open door in a stone wall, a monster in the room beyond it, a shield and a sword held in the lower corners'
 
 /** About's social card, a still of Lair:3 under the name */
 const CARD_ALT = 'First person on Lair:3: a cane toad on the left and a catoblepas on the right, blood on the grass between them, a polearm held in the lower corner'

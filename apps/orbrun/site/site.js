@@ -49,8 +49,13 @@
   const hero = document.querySelector('.hero')
   // About's hero has words under the still: the bar takes its ground once they reach it, not once the whole hero is gone
   const words = hero?.querySelector('.title')
-  const ground = () =>
+  // About's name is the bar's while it is on screen: the bar's own shows once it has gone under the bar
+  const name = hero?.classList.contains('stage') ? hero.querySelector('h1') : null
+  const ground = () => {
     bar.classList.toggle('solid', !hero || (words ?? hero).getBoundingClientRect()[words ? 'top' : 'bottom'] <= bar.offsetHeight)
+    if (name) bar.classList.toggle('named', name.getBoundingClientRect().bottom <= bar.offsetHeight)
+  }
+  if (name) bar.classList.add('nameless')
   addEventListener('scroll', ground, { passive: true })
   addEventListener('resize', ground, { passive: true })
   ground()
