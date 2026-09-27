@@ -45,6 +45,18 @@ steps that put Orbrun there, artwork included.
   moves. Add it to Steam as a non-Steam game, or install it as an app from the
   browser.
 
+## The minimap
+
+The minimap in the corner is the WebTiles 2D game in miniature. It uses the
+same tiles, drawn the same way, as the official client's dungeon view, so
+everything on it looks exactly as it does there. If you know the 2D view,
+you already know how to read it.
+
+Only two things differ. The map turns with you, so the way you face is
+always up, and an N on its rim shows where north is. And it is round, centred
+on you. Settings has how many tiles it shows and how big each one is drawn.
+Click it, or press `X`, for the full level map.
+
 ## Controls
 
 ### Keyboard
@@ -127,6 +139,19 @@ fingerprinting, no names: a game counts as its server and version, like
 /play/cdi/dcss-0.34) and relays the tile data your
 browser needs from the server you picked. Your game traffic never passes
 through it.
+
+## Support the people who run it
+
+Orbrun is only a client. The game is DCSS, made by a team of volunteers, and
+every online game is played on a server that someone pays for and looks
+after. Orbrun takes no money; if you want to give some, give it to them.
+
+- **CDI** (crawl.dcss.io) is funded through its admin's
+  [Patreon](https://www.patreon.com/gammafunk).
+- **CBR2** is funded through its admin's
+  [Patreon](https://www.patreon.com/zureal).
+- **DCSS** itself has no donation page. Bug reports, playtesting and code on
+  [GitHub](https://github.com/crawl/crawl) are how its players give back.
 
 ## How it was built
 

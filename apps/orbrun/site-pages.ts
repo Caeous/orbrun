@@ -344,6 +344,10 @@ const FAQ: { q: string; a: string }[] = [
     a: 'Yes. They live on the server, with your macros, morgues and scoreboard entries. Orbrun reads your rc options from the server each time and never overrides them.',
   },
   {
+    q: 'Is the minimap the same as in WebTiles?',
+    a: 'Yes. It is the WebTiles 2D view in miniature, with the same tiles drawn the same way. It turns with you so the way you face is up, with an N on its rim for north.',
+  },
+  {
     q: 'Can I switch back to WebTiles?',
     a: 'Any time. Save and exit from the Orbrun menu and continue in WebTiles: it is the same game on the same server.',
   },
@@ -404,7 +408,8 @@ function aboutMain(dom: Dom): string {
   <p class="say">Orbrun is a WebTiles client, not a port. Log in to CDI, CDO or any public server with the account you already have. Your saves, macros, morgues and scoreboard entries stay on the server, and a new release works the day a server runs it.</p>
 </section>
 
-<section class="act">
+<section class="act field dungeon">
+  ${still('branch-bg', '', 1920, 1080).replace('alt=""', 'alt="" class="ground"')}
   ${label('every-branch', 'Every branch', 'Drawn from the server’s own tiles')}
   <div class="branches">
     <figure>${still('branch-dungeon', 'A centaur with a bow in a dark stone hall', 900, 1200)}<figcaption><b>D:14</b>The Dungeon</figcaption></figure>
@@ -413,6 +418,15 @@ function aboutMain(dom: Dom): string {
     <figure>${still('branch-abyss', 'The Abyss: crystal walls on a blue floor under a violet sky', 900, 1200)}<figcaption><b>Abyss:3</b>The Abyss</figcaption></figure>
   </div>
   <p class="say">Every level is built around you from the tiles the server sends: the walls, the floor, the monsters and the items you would see from above. The map, the monster list, the stats and the message log are all still there. Anything the server does not publish is left undrawn, never guessed.</p>
+</section>
+
+<section class="act">
+  ${label('a-2d-minimap', 'A 2D minimap', 'In the tiles you know')}
+  <figure class="minimap-shot">
+    ${still('minimap', 'First person on Dungeon:14: a cave hall with a crowd of allies and a demon ahead, and in the top-right corner the minimap, the level drawn in the 2D tiles of WebTiles, the same crowd on it', 960, 720)}
+    <figcaption>Dungeon:14, with the minimap in the corner: the level in WebTiles’ own 2D tiles.</figcaption>
+  </figure>
+  <p class="say">The minimap in the corner is drawn in the same 2D tiles as WebTiles, so the level reads at a glance the way it always has. It turns with you, with an N on its rim for north. Click it, or press <kbd>X</kbd>, for the full level map.</p>
 </section>
 
 <section class="act field lair">
@@ -436,10 +450,10 @@ function aboutMain(dom: Dom): string {
 <section class="act field depths">
   ${still('keys-bg', '', 1920, 1080).replace('alt=""', 'alt="" class="ground"')}
   ${label('the-keyboard-you-know', 'The keyboard you know', 'With one change')}
-  <div class="keycaps" aria-label="k steps forward, h and l turn, j steps back">
-    <span class="cap"><kbd>k</kbd><small>forward</small></span>
+  <div class="keycaps" aria-label="h turns left, j steps back, k steps forward, l turns right">
     <span class="cap"><kbd>h</kbd><small>turn left</small></span>
     <span class="cap"><kbd>j</kbd><small>back</small></span>
+    <span class="cap"><kbd>k</kbd><small>forward</small></span>
     <span class="cap"><kbd>l</kbd><small>turn right</small></span>
   </div>
   <p class="say">Direction keys follow the way you face. Every other key goes to the server untouched, in the same modes, with the same results as on WebTiles.</p>
@@ -447,19 +461,26 @@ function aboutMain(dom: Dom): string {
 
 <section class="act">
   ${label('and-more', 'And more', 'Wherever you play')}
-  <div class="pair">
+  <div class="pair trio">
     <figure>${still('grid-offline', 'A bullfrog between yellow rock walls in the Lair, a polearm in hand', 1200, 750)}<figcaption><h3>Offline</h3>The current release or trunk runs in your browser with no server at all, and your saves stay on your device.</figcaption></figure>
     <figure>${still('grid-spectate', 'A red one-eyed imp and another imp in a corridor, more monsters behind', 1200, 750)}<figcaption><h3>Spectate</h3>Watch any game on the server in first person, from a link you can share.</figcaption></figure>
+    <figure>${still('grid-hands', 'A demon close ahead on Dungeon:14, seen over a shield in the left hand and a staff in the right, allies behind it', 1200, 750)}<figcaption><h3>In hand</h3>What you wield is in your hands: your weapon on the right, your shield or orb on the left, each drawn from its own tile.</figcaption></figure>
   </div>
 </section>
 
-<section class="act">
+<section class="act field abyss">
+  ${still('account-bg', '', 1920, 1080).replace('alt=""', 'alt="" class="ground"')}
   ${label('your-account', 'Your account stays yours', 'No Orbrun account · nothing stored')}
   <ul class="promises">
     <li>Your browser talks to the DCSS server you pick, over an encrypted WebSocket, as the official client does.</li>
     <li>Your password goes only in the login message and is never stored. A saved login keeps the server’s token, as WebTiles keeps a cookie.</li>
     <li>orbrun.app counts page views anonymously: no cookies, no fingerprinting, no names. A game counts as its server and version, nothing more.</li>
   </ul>
+</section>
+
+<section class="act">
+  ${label('support-the-servers', 'Support the servers', 'Free to play · not free to run')}
+  <p class="say">Every online game is played on a server a volunteer pays for and looks after, and DCSS itself is made by volunteers. If you want to give something back, <a href="https://www.patreon.com/gammafunk">support CDI</a> or <a href="https://www.patreon.com/zureal">support CBR2</a> on Patreon, and report bugs or contribute to <a href="https://github.com/crawl/crawl">DCSS on GitHub</a>.</p>
 </section>
 
 <section class="act">

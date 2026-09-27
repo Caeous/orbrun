@@ -118,11 +118,13 @@ describe('the site’s pages', () => {
     expect(Array.from(doc.querySelectorAll('.label h2'), (h) => h.textContent)).toEqual([
       '@The real game',
       '@Every branch',
+      '@A 2D minimap',
       '@Made for a controller',
       '@On the Steam Deck',
       '@The keyboard you know',
       '@And more',
       '@Your account stays yours',
+      '@Support the servers',
       '@Questions',
     ])
     // every still the page names is one the site ships

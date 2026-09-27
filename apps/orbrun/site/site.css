@@ -138,7 +138,9 @@ a[target='_blank']:not(.btn)::after { content: ' ↗'; font: 0.75em var(--mono);
 .act.field { overflow: hidden; padding-block: 7rem }
 .act.field > img.ground { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated }
 .act.field::before { content: ''; position: absolute; inset: 0; z-index: -1 }
+.act.field.dungeon::before { background: linear-gradient(var(--bg), rgba(12, 22, 14, 0.74) 30%, rgba(12, 22, 14, 0.74) 70%, var(--bg)) }
 .act.field.lair::before { background: linear-gradient(var(--bg), rgba(26, 30, 8, 0.72) 30%, rgba(26, 30, 8, 0.72) 70%, var(--bg)) }
+.act.field.abyss::before { background: linear-gradient(var(--bg), rgba(18, 12, 34, 0.76) 30%, rgba(18, 12, 34, 0.76) 70%, var(--bg)) }
 .act.field.depths::before { background: linear-gradient(var(--bg), rgba(30, 18, 12, 0.66) 30%, rgba(30, 18, 12, 0.66) 70%, var(--bg)) }
 .act.field .say { color: var(--ink) }
 
@@ -179,7 +181,11 @@ a[target='_blank']:not(.btn)::after { content: ' ↗'; font: 0.75em var(--mono);
 .cap kbd { display: grid; place-items: center; width: 4.2rem; height: 4.2rem; font: 700 1.8rem var(--mono); color: var(--ink); background: linear-gradient(#26222f, #15131b); border: 1px solid rgba(233, 226, 208, 0.25); border-bottom-width: 5px; border-radius: 8px; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5) }
 
 /* two more things, each a still over a line */
+.minimap-shot { width: min(100%, 44rem); margin: 0 }
+.minimap-shot img { display: block; width: 100%; height: auto; image-rendering: pixelated; border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6) }
+.minimap-shot figcaption { padding-top: 0.7rem; text-align: center; font: 0.78rem var(--mono); color: var(--ink-dim) }
 .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; width: min(100%, 68rem) }
+.pair.trio { grid-template-columns: repeat(3, minmax(0, 1fr)) }
 .pair figure { margin: 0; display: grid; gap: 0.9rem; align-content: start }
 .pair img { width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; image-rendering: pixelated; border: 1px solid var(--line); background: var(--stone) }
 .pair figcaption { font-size: 0.98rem; color: var(--ink-dim) }
@@ -212,7 +218,7 @@ a[target='_blank']:not(.btn)::after { content: ' ↗'; font: 0.75em var(--mono);
 @media (max-width: 900px) {
   .branches { grid-template-columns: repeat(2, minmax(0, 1fr)) }
   .padboard { grid-template-columns: repeat(2, minmax(0, 1fr)) }
-  .pair { grid-template-columns: 1fr }
+  .pair, .pair.trio { grid-template-columns: 1fr }
   .deck { width: 150vw; margin-inline: calc(50% - 75vw) }
 }
 @media (max-width: 560px) {
