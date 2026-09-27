@@ -10,6 +10,7 @@ import type { Session } from './session'
 import { CameraController } from './camera'
 import { deriveContext, deriveMode, type Context } from './context'
 import { HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, type Action, type CommandCategory, type RelDir } from './bindings'
+import type { CommandMenu } from './command-menu'
 import { Runner, type LastStep } from './runner'
 import { Hud, rcFont } from './hud'
 import { GridHost } from './grid/host'
@@ -1297,22 +1298,38 @@ export class GameScreen {
     this.needsRender = true
   }
 
+  /** One of the menu keys (MENU_KEYS): it opens that menu, and closes it again as the button does. */
+  private menuKey(menu: CommandMenu | 'system') {
+    const open = this.overlays.openMenu
+    if (this.session.watching) {
+      // a spectator has the Orbrun menu only, as the pad's Start
+      if (menu !== 'system') return
+      if (open === 'system') this.overlays.clientOverlayInput('close')
+      else if (!this.overlays.hasClientOverlay) this.uiOp('system')
+      return
+    }
+    if (open === menu) this.overlays.clientOverlayInput('close')
+    // from the map, or from another of the four, the key goes straight to its own menu
+    else if (this.ctx.mode === 'command' && (!this.overlays.hasClientOverlay || open)) this.uiOp(menu === 'battle' ? 'commands' : menu)
+    else if (this.overlays.hasClientOverlay) this.overlays.clientOverlayInput('close')
+    // elsewhere the Orbrun menu opens where Start opens it, and nowhere Start means something else
+    else if (menu === 'system') { const a = buttonAction('START', this.ctx); if (a?.kind === 'ui' && a.op === 'system') this.uiOp('system') }
+    // off the map F2 is the Select button there: the palette for the screen
+    else if (menu === 'travel') this.overlays.showPalette(this.ctx.mode === 'targeting' || this.ctx.mode === 'levelmap' || this.ctx.mode === 'menu' ? this.ctx.mode : 'command')
+  }
+
   private onKeyDown(ev: KeyboardEvent) {
     this.wake()
     const target = ev.target as HTMLElement | null
     // a key typed into a field is still the keyboard speaking (a server prompt's on-screen keyboard goes away for it)
     this.inputFrom('keyboard')
     if (target && isTextEntry(target)) return
-    // F2 is Orbrun's own: the player's commands. A bare F1 goes on to Crawl (keys.ts CODES), which binds it
-    // to CMD_GAME_MENU alongside `~`, so it opens the usual WebTiles game menu.
-    if (ev.key === 'F2' && !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey) {
+    // F2–F5 are Orbrun's own: the pad's four menus, so a player can rebind a button (or anything) to them. A bare
+    // F1 goes on to Crawl (keys.ts CODES), which binds it to CMD_GAME_MENU alongside `~`; crawl binds none of these.
+    const menu = !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey ? MENU_KEYS[ev.key] : undefined
+    if (menu) {
       ev.preventDefault()
-      if (!ev.repeat && !this.session.watching) {
-        // the keyboard's Select: it toggles, as the button does
-        if (this.overlays.hasClientOverlay) this.overlays.clientOverlayInput('close')
-        else if (this.ctx.mode === 'command') this.overlays.showCommands((a) => this.runner.execute(a), 'travel')
-        else this.overlays.showPalette(this.ctx.mode === 'targeting' || this.ctx.mode === 'levelmap' || this.ctx.mode === 'menu' ? this.ctx.mode : 'command')
-      }
+      if (!ev.repeat) this.menuKey(menu)
       return
     }
     if (this.overlays.hasClientOverlay) {
@@ -1695,6 +1712,9 @@ export class GameScreen {
     else if (op === 'disconnect') this.hooks.onSystem('disconnect')
   }
 }
+
+/** The keys for the pad's four menus: F2 Select's travel, F3 LB's actions, F4 Y's gear, F5 Start's Orbrun menu. */
+const MENU_KEYS: Record<string, CommandMenu | 'system'> = { F2: 'travel', F3: 'battle', F4: 'equipment', F5: 'system' }
 
 /** Degrees to radians: the Camera angle setting is degrees, every camera is radians. */
 function radians(deg: number): number {

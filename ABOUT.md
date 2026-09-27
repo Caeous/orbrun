@@ -59,12 +59,18 @@ keys are relative to where you are facing.
 | `j` / `↓` and the diagonals | step back, strafe |
 | Shift + direction | run |
 | Ctrl + direction | attack |
+| F2 | travel menu (Select) |
+| F3 | actions menu (LB) |
+| F4 | gear menu (Y) |
+| F5 | Orbrun menu (Start) |
 | F12 | chat |
 
 All other keys go straight to the server. Menus, prompts, targeting and text
 input take the same keys, in the same modes, with the same results as on
-WebTiles. Orbrun's own menu (character, settings, controls, save and exit) is
-on the HUD; while spectating, Escape opens it.
+WebTiles. The F-keys open the gamepad's four menus, so a button remapped to
+one (on a Steam Deck, say) opens it too; press the key again to close it.
+Orbrun's own menu (character, settings, controls, save and exit) is F5;
+while spectating, Escape opens it too.
 
 ### Gamepad (standard mapping)
 

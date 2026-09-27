@@ -17,12 +17,12 @@ function harness() {
   const send = vi.fn()
   const step = vi.fn()
   const ctx: Context = { mode: 'command', layer: 'micro', ahead: { kind: 'none', label: '' }, under: { kind: 'none', label: '' }, hostilesInView: 0 }
-  const overlays = { hasClientOverlay: false, clientOverlayInput: vi.fn(), showCommands: vi.fn(), showPalette: vi.fn(), menuKey: () => false, focusInfo: () => null }
+  const overlays = { hasClientOverlay: false, openMenu: null as string | null, clientOverlayInput: vi.fn(), showCommands: vi.fn(), showPalette: vi.fn(), showSystem: vi.fn(), menuKey: () => false, focusInfo: () => null }
   const state = initialState()
   const hints = new GamepadHints()
   const screen = Object.assign(Object.create(GameScreen.prototype), {
     ctx, hooks: { settings: () => ({}), gamepad: { isHeld: (b: Button) => held.has(b) } },
-    session: { watching: false, state }, runner: { execute, send, step }, overlays, padHints: hints,
+    session: { watching: false, state, server: {} }, runner: { execute, send, step }, overlays, padHints: hints,
     chat: { capturing: false }, pressTimes: new Map(), holdFired: new Set(), tapArmed: new Set(),
     holding: null,
     // This input-only harness bypasses the constructor and has no frame loop or renderer.
@@ -321,6 +321,40 @@ describe('direct game input', () => {
     expect(h.send).not.toHaveBeenCalled()
     for (const key of ['q', 'r', 'z', 'm', 'g', 'G', '>', '<']) h.screen.onKeyDown(new KeyboardEvent('keydown', { key, cancelable: true }))
     expect(h.send.mock.calls.map(([m]) => m.text ?? m.keycode)).toEqual(['q', 'r', 'z', 'm', 'g', 'G', '>', '<'])
+  })
+
+  it('F2 to F5 open the four menus the pad opens, each key closing its own and switching from another', () => {
+    const h = harness()
+    const press = (key: string) => {
+      const ev = new KeyboardEvent('keydown', { key, code: key, cancelable: true })
+      h.screen.onKeyDown(ev)
+      expect(ev.defaultPrevented).toBe(true)
+    }
+    press('F3')
+    expect(h.overlays.showCommands).toHaveBeenLastCalledWith(expect.any(Function), 'battle')
+    press('F4')
+    expect(h.overlays.showCommands).toHaveBeenLastCalledWith(expect.any(Function), 'equipment')
+    press('F5')
+    expect(h.overlays.showSystem).toHaveBeenCalledOnce()
+    // Travel is open: F3 goes to the actions, F2 closes Travel
+    h.overlays.hasClientOverlay = true
+    h.overlays.openMenu = 'travel'
+    press('F3')
+    expect(h.overlays.showCommands).toHaveBeenLastCalledWith(expect.any(Function), 'battle')
+    expect(h.overlays.clientOverlayInput).not.toHaveBeenCalled()
+    press('F2')
+    expect(h.overlays.clientOverlayInput).toHaveBeenCalledExactlyOnceWith('close')
+    expect(h.send).not.toHaveBeenCalled()
+  })
+
+  it('off the map the menu keys open only what the pad opens there', () => {
+    const h = harness()
+    h.ctx.mode = 'targeting'
+    for (const key of ['F3', 'F4']) h.screen.onKeyDown(new KeyboardEvent('keydown', { key, code: key, cancelable: true }))
+    expect(h.overlays.showCommands).not.toHaveBeenCalled()
+    h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'F2', code: 'F2', cancelable: true }))
+    expect(h.overlays.showPalette).toHaveBeenCalledExactlyOnceWith('targeting')
+    expect(h.send).not.toHaveBeenCalled()
   })
 
   it('a direction letter reaches a prompt raw, and is a facing-relative step only in command mode', () => {

@@ -549,6 +549,14 @@ export class Overlays {
     return !!this.clientOverlay
   }
 
+  /** Which of the four menus is open (showCommands' lists, or the Orbrun menu), so its key can close it again. */
+  get openMenu(): CommandMenu | 'system' | null {
+    const o = this.clientOverlay
+    if (o?.kind === 'system') return 'system'
+    const remember = o?.el.dataset.remember
+    return remember?.startsWith('commands:') ? (remember.slice('commands:'.length) as CommandMenu) : null
+  }
+
   /**
    * The text field the pad can type into, when one is up: a server text
    * prompt, a menu filter (Ctrl-F title_prompt) or the seed field. Context

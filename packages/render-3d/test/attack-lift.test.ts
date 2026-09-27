@@ -54,6 +54,21 @@ describe('the attack lift', () => {
       r.destroy()
     })
   }
+  it('survives a frame whose clock is earlier than the attack (rAF stamps the frame start)', () => {
+    const now = 1000 // ms: the attack is stamped at 1 s
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const { r } = stubbed({ motion: true, viewmodel: true }, tiles)
+    r.setCamera(makeCamera(2, 2))
+    r.setScene(room())
+    r.attack()
+    r.render(1 - 0.008)
+    expect(r.animating).toBe(true)
+    r.render(1 + 0.1)
+    expect(r.animating).toBe(true)
+    r.render(1 + 1)
+    expect(r.animating).toBe(false)
+    r.destroy()
+  })
   it('is no cue at all with motion off', () => {
     const { r } = stubbed({ motion: false }, tiles)
     r.attack()

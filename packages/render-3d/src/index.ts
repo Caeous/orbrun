@@ -1100,9 +1100,10 @@ export class Render3d implements MapRenderer {
     return this.opts.viewmodel && !!this.viewmodel && (!!this.viewmodel.weapon || !!this.viewmodel.offhand)
   }
 
+  /** A lift stamped after the frame's clock (an attack handled after rAF's timestamp) has not begun yet: at rest, not over. */
   private liftEnvelope(t: number): number {
-    if (t < 0 || t >= VM_LIFT_S) return NaN
-    const u = t / VM_LIFT_S
+    if (t >= VM_LIFT_S) return NaN
+    const u = Math.max(0, t) / VM_LIFT_S
     return u < 0.3 ? u / 0.3 : 1 - (u - 0.3) / 0.7
   }
 
