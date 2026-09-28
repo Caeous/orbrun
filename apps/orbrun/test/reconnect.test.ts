@@ -173,3 +173,58 @@ describe('asking whether a socket is still there', () => {
     expect(sock.msgs.filter((m) => m === 'get_rc')).toHaveLength(1)
   })
 })
+
+describe('reading and writing the rc file', () => {
+  beforeEach(() => {
+    store.clear()
+    FakeSocket.made = []
+  })
+
+  it('reads the file a game names, and writes it back with set_rc', async () => {
+    const { s, handle } = await make()
+    const sock = FakeSocket.made[0]
+    sock.opens()
+    handle({ msg: 'login_success', username: 'orbrun' })
+    const file = s.readRc('dcss-0.34', 5000)
+    expect(JSON.parse(sock.sent.at(-1)!)).toEqual({ msg: 'get_rc', game_id: 'dcss-0.34' })
+    handle({ msg: 'rcfile_contents', game_id: 'dcss-0.34', contents: 'show_more = false\n' })
+    await expect(file).resolves.toBe('show_more = false\n')
+    expect(s.state.lobby.rcfile).toBeFalsy()
+    s.writeRc('dcss-0.34', 'a = b\n')
+    expect(JSON.parse(sock.sent.at(-1)!)).toEqual({ msg: 'set_rc', game_id: 'dcss-0.34', contents: 'a = b\n' })
+  })
+
+  it('gives each answer to the question about its game, and a late one to no one', async () => {
+    vi.useFakeTimers()
+    try {
+      const { s, handle } = await make()
+      FakeSocket.made[0].opens()
+      handle({ msg: 'login_success', username: 'orbrun' })
+      const slow = s.readRc('dcss-0.34', 5000)
+      vi.advanceTimersByTime(5000)
+      await expect(slow).resolves.toBeNull()
+      // a save read back after the first read gave up: the first read's answer, when it lands, is not the save's
+      const trunk = s.readRc('dcss-git', 5000)
+      const after = s.readRc('dcss-0.34', 5000)
+      handle({ msg: 'rcfile_contents', game_id: 'dcss-0.34', contents: 'before' })
+      handle({ msg: 'rcfile_contents', game_id: 'dcss-git', contents: 'trunk' })
+      handle({ msg: 'rcfile_contents', game_id: 'dcss-0.34', contents: 'after' })
+      await expect(trunk).resolves.toBe('trunk')
+      await expect(after).resolves.toBe('after')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('answers null without a login, and on a close', async () => {
+    const { s, handle } = await make()
+    const sock = FakeSocket.made[0]
+    sock.opens()
+    await expect(s.readRc('dcss-0.34', 5000)).resolves.toBeNull()
+    expect(sock.msgs).not.toContain('get_rc')
+    handle({ msg: 'login_success', username: 'orbrun' })
+    const file = s.readRc('dcss-0.34', 5000)
+    sock.close()
+    await expect(file).resolves.toBeNull()
+  })
+})

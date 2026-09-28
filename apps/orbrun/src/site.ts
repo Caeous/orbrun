@@ -74,6 +74,9 @@ const SERVER_VERBS = new Set(['login', 'register', 'play', 'watch'])
 /** an account's Other versions, under Accounts: `/accounts/versions/cdi` */
 export const VERSIONS_PATH = 'accounts/versions'
 
+/** an account's rc file, under Accounts: `/accounts/rc/cdi/dcss-0.34`, and a player on this device's `/accounts/rc/offline` */
+export const RC_PATH = 'accounts/rc'
+
 function segments(pathname: string): string[] {
   return pathname.split('/').filter(Boolean)
 }
@@ -101,6 +104,7 @@ export function addressKind(pathname: string): 'page' | 'app' | 'none' {
   if (MENU_PATH.test(parts.join('/').toLowerCase())) return 'app'
   if (parts.length >= 2 && SERVER_VERBS.has(parts[0].toLowerCase())) return 'app'
   if (parts.length === 3 && parts.slice(0, 2).join('/').toLowerCase() === VERSIONS_PATH) return 'app'
+  if ((parts.length === 3 || parts.length === 4) && parts.slice(0, 2).join('/').toLowerCase() === RC_PATH) return 'app'
   return 'none'
 }
 

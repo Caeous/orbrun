@@ -18,6 +18,8 @@ export interface EngineOptions {
   /** Where saves, morgues and caches live. One per channel: IDBFS names its database after it. */
   saveDir: string
   args: string[]
+  /** Text files to put in place before main(), by absolute path: the rc file the args name. Outside the save dir, they last as long as the engine. */
+  files?: Record<string, string>
   /** One flush of the engine's output: newline-terminated JSON lines, `*`-prefixed for the server. */
   onOutput(text: string): void
   onExit(code: number): void
@@ -117,6 +119,10 @@ export async function startEngine(o: EngineOptions): Promise<RunningEngine> {
     },
     preRun: [
       (m) => {
+        for (const [path, text] of Object.entries(o.files ?? {})) {
+          m.FS?.mkdirTree(path.slice(0, path.lastIndexOf('/')) || '/')
+          m.FS?.writeFile(path, text)
+        }
         if (early && m.FS) {
           m.FS.mkdirTree(o.saveDir)
           seed(m.FS, o.saveDir, early)

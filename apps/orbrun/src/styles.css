@@ -737,9 +737,12 @@ a.item.beside {
 .frame.menu-frame .menu-actions:has(.beside + .beside) {
   grid-template-columns: minmax(0, 1fr) max-content max-content;
 }
-/* a release's three modes beside it (Other versions: seed, sprint, tutorial) take a fourth */
+/* beside a release on Other versions: its rc file, then its modes (seed, sprint, tutorial), up to a fifth column */
 .frame.menu-frame .menu-actions:has(.beside + .beside + .beside) {
   grid-template-columns: minmax(0, 1fr) max-content max-content max-content;
+}
+.frame.menu-frame .menu-actions:has(.beside + .beside + .beside + .beside) {
+  grid-template-columns: minmax(0, 1fr) max-content max-content max-content max-content;
 }
 .frame.menu-frame .menu-actions .line {
   display: contents;
@@ -812,6 +815,9 @@ a.item.beside {
 }
 .frame.menu-frame .item.beside + .item.beside + .item.beside {
   grid-column: 4;
+}
+.frame.menu-frame .item.beside + .item.beside + .item.beside + .item.beside {
+  grid-column: 5;
 }
 .frame.menu-frame .item.beside .label {
   font-size: var(--menu-note-size);
@@ -993,6 +999,48 @@ a.item.beside {
   scrollbar-width: thin;
   scrollbar-color: rgba(191, 191, 191, 0.25) transparent;
   line-height: 1.55;
+}
+/* the rc file (menu.ts showRc): a box of text as wide as the rows under it */
+.frame.menu-frame.rc-list {
+  overflow: hidden auto;
+}
+.frame.menu-frame .item.text-item {
+  grid-column: 1 / -1;
+  display: block;
+  padding: 0;
+  margin: 0.4rem 0 0.6rem;
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+}
+.frame.menu-frame .item.text-item:is(.focused, :focus-within) {
+  outline-color: var(--gold);
+}
+.frame.menu-frame .rc-text {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: min(22rem, 45vh);
+  resize: vertical;
+  margin: 0;
+  padding: 0.8rem 1rem;
+  border: 0;
+  border-radius: 0;
+  background: rgba(6, 5, 10, 0.88);
+  color: var(--color-15);
+  caret-color: var(--color-15);
+  font-family: var(--mono);
+  font-size: var(--menu-note-size);
+  line-height: 1.45;
+  white-space: pre;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(191, 191, 191, 0.25) transparent;
+  outline: none;
+  tab-size: 4;
+}
+.frame.menu-frame .rc-text[readonly] {
+  color: var(--ink-dim);
 }
 .doc-scroll .doc-wait,
 .doc-scroll .doc-failed {

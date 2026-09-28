@@ -96,7 +96,7 @@ export function inProcessEngine(extraArgs: string[] = []): InProcessEngine {
       void worker?.terminate()
       worker = null
     },
-    launch: (ch, args, events) => {
+    launch: (ch, args, events, rootFiles) => {
       launched = true
       running = true
       const w = new Worker(join(import.meta.dirname, 'engine-worker.mjs'))
@@ -132,7 +132,7 @@ export function inProcessEngine(extraArgs: string[] = []): InProcessEngine {
         events.error(String(err))
       })
       void build(ch.commit).then((b) =>
-        w.postMessage({ type: 'start', glue: b.glue, dir: b.dir, saveDir: ch.saveDir, args: [...args, ...QUIET, ...extraArgs], files: e.files, module: b.module }),
+        w.postMessage({ type: 'start', glue: b.glue, dir: b.dir, saveDir: ch.saveDir, args: [...args, ...QUIET, ...extraArgs], files: e.files, rootFiles, module: b.module }),
       )
       const control = (json: string) => {
         if (worker !== w) return

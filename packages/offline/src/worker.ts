@@ -7,7 +7,7 @@
 import { startEngine, type EngineFile, type EngineFactory, type RunningEngine } from './engine.js'
 
 export type ToWorker =
-  | { type: 'start'; base: string; saveDir: string; args: string[] }
+  | { type: 'start'; base: string; saveDir: string; args: string[]; files?: Record<string, string> }
   | { type: 'control'; json: string }
   | { type: 'keys'; text: string }
 
@@ -50,6 +50,7 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
       },
       saveDir: m.saveDir,
       args: m.args,
+      files: m.files,
       onOutput: (text) => scope.postMessage({ type: 'output', text }),
       onExit: (code) => scope.postMessage({ type: 'exit', code }),
       onLog: (line) => console.debug('[engine]', line),

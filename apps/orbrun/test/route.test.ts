@@ -98,6 +98,29 @@ describe('routes', () => {
     for (const path of ['versions/cdi', 'accounts/versions', 'accounts/versions/nowhere', 'accounts/versions/cdi/orbrun']) expect(parseRoute(base + path), path).toEqual({ kind: 'home' })
   })
 
+  it('gives an account’s rc file an address: the game that reads it on a server, none on this device', () => {
+    const rc = { kind: 'menu', path: 'accounts/rc', serverId: 'cdi', username: 'orbrun', gameId: 'dcss-0.34' } as const
+    expect(formatRoute(rc)).toBe('/accounts/rc/cdi/dcss-0.34#orbrun')
+    expect(parseRoute(base + 'accounts/rc/cdi/dcss-0.34#ORBRUN')).toEqual(rc)
+    expect(parseRoute(base + 'Accounts/RC/CDI/dcss-0.34#orbrun')).toEqual(rc)
+    // the only account on cdi
+    expect(parseRoute(base + 'accounts/rc/cdi/dcss-0.34')).toEqual(rc)
+    expect(parseRoute(base + 'accounts/rc/cdi/dcss-0.34#stranger')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
+    // a server's file is always some game's
+    for (const path of ['rc/cdi', 'accounts/rc', 'accounts/rc/cdi', 'accounts/rc/nowhere/dcss-0.34', 'accounts/rc/cdi/dcss-0.34/more']) expect(parseRoute(base + path), path).toEqual({ kind: 'home' })
+    // offline is not offered under test (servers.ts offlineOffered)
+    vi.stubEnv('MODE', 'development')
+    const marc: Account = { serverId: 'offline', username: 'Marc' }
+    store.set('orbrun.accounts', JSON.stringify([orbrun, marc]))
+    const device = { kind: 'menu', path: 'accounts/rc', serverId: 'offline', username: 'Marc' } as const
+    expect(formatRoute(device)).toBe('/accounts/rc/offline#Marc')
+    expect(parseRoute(base + 'accounts/rc/offline#marc')).toEqual(device)
+    expect(parseRoute(base + 'accounts/rc/offline')).toEqual(device)
+    // a player on this device has one file for every game: an address naming one is not the file's
+    expect(parseRoute(base + 'accounts/rc/offline/dcss-0.34#Marc')).toEqual({ kind: 'home' })
+    vi.unstubAllEnvs()
+  })
+
   it('ignores paths it does not know', () => {
     for (const path of ['nowhere', 'play', 'play/cdi', 'play/cdi#orbrun', 'play/cdi/orbrun/dcss-0.34/more', 'watch/nowhere.example', 'watch/cdi/bob/more', 'lobby/cdi', 'about', 'about/new', 'login/cdi/orbrun/more'])
       expect(parseRoute(base + path)).toEqual({ kind: 'home' })

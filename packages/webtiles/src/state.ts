@@ -581,6 +581,13 @@ export interface GameLink {
   save?: string
   /** true when the lobby offers no link for this game: its save slot holds another game type ("slot full") */
   disabled?: boolean
+  /**
+   * The game whose `(edit rc)` opens the rc file this one reads: the first
+   * game of its rc directory (game_links.html puts the link on that one
+   * only, and the games after it share the file until the next link). The
+   * id to `get_rc` and `set_rc` with. Absent when the lobby offers no link.
+   */
+  rc?: string
 }
 
 export interface LobbyState {
@@ -875,14 +882,17 @@ function mergeCells(state: GameState, cells: MapCell[]) {
  * on the bracket text when there is one; a game whose slot another game type
  * holds ("[slot full]") has no link at all, and its id is only known from the
  * `(edit rc)` link's `data-game_id`, which the first game of an rc directory
- * carries.
+ * carries. That link says which rc file each game reads (`GameLink.rc`).
  */
 function parseGameLinks(html: string): GameLink[] {
   const out: GameLink[] = []
+  /** the rc file of the games since the last `(edit rc)` link */
+  let rcOf: string | undefined
   for (const block of topLevelSpans(html)) {
     const ids = [...block.matchAll(/href=["']#play-([^"']+)["']/gi)].map((m) => decodeURIComponent(m[1]))
     const rc = /data-game_id=["']([^"']+)["']/i.exec(block)
     const id = ids[0] ?? (rc ? decodeURIComponent(rc[1]) : null)
+    if (rc) rcOf = decodeURIComponent(rc[1])
     if (!id) continue
     // the nested span: "[save]", linked or not
     const inner = /<span[^>]*>\s*(?:<a[^>]*>)?\s*\[([^\]]*)\]\s*(?:<\/a>)?\s*<\/span>/i.exec(block)
@@ -896,6 +906,7 @@ function parseGameLinks(html: string): GameLink[] {
     if (!nameLink) text = text.slice(Math.max(text.lastIndexOf(':'), text.lastIndexOf('|')) + 1).trim()
     if (!text) continue
     const link: GameLink = { id, label: text }
+    if (rcOf) link.rc = rcOf
     if (inner) {
       link.save = htmlText(inner[1])
       if (!ids.length) link.disabled = true

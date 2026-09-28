@@ -496,18 +496,18 @@ describe('ui_cutoff hides what is up when it arrives, not what comes after', () 
 describe('set_game_links', () => {
   const fixture = JSON.parse(readFileSync(join(here, 'fixtures', 'set-game-links.json'), 'utf8')) as { msgs: ServerMessage[] }
 
-  it('reads every game as a plain link before the saves are checked', () => {
+  it('reads every game as a plain link before the saves are checked, each with the rc file the (edit rc) before it opens', () => {
     const st = initialState()
     reduce(st, fixture.msgs[0])
     expect(st.lobby.games).toEqual([
-      { id: 'dcss-web-trunk', label: 'DCSS trunk' },
-      { id: 'seeded-web-trunk', label: 'Seeded trunk' },
-      { id: 'sprint-web-trunk', label: 'Sprint trunk' },
-      { id: 'tut-web-trunk', label: 'Tutorial trunk' },
-      { id: 'dcss-web-0.34', label: 'DCSS 0.34' },
-      { id: 'seeded-web-0.34', label: 'Seeded 0.34' },
-      { id: 'sprint-web-0.34', label: 'Sprint 0.34' },
-      { id: 'dcss-web-0.33', label: 'DCSS 0.33' },
+      { id: 'dcss-web-trunk', label: 'DCSS trunk', rc: 'dcss-web-trunk' },
+      { id: 'seeded-web-trunk', label: 'Seeded trunk', rc: 'dcss-web-trunk' },
+      { id: 'sprint-web-trunk', label: 'Sprint trunk', rc: 'dcss-web-trunk' },
+      { id: 'tut-web-trunk', label: 'Tutorial trunk', rc: 'dcss-web-trunk' },
+      { id: 'dcss-web-0.34', label: 'DCSS 0.34', rc: 'dcss-web-0.34' },
+      { id: 'seeded-web-0.34', label: 'Seeded 0.34', rc: 'dcss-web-0.34' },
+      { id: 'sprint-web-0.34', label: 'Sprint 0.34', rc: 'dcss-web-0.34' },
+      { id: 'dcss-web-0.33', label: 'DCSS 0.33', rc: 'dcss-web-0.33' },
     ])
   })
 
@@ -517,15 +517,15 @@ describe('set_game_links', () => {
     reduce(st, fixture.msgs[1])
     const by = new Map(st.lobby.games.map((g) => [g.id, g]))
     // a save to continue: the link moves from the name to the bracket text
-    expect(by.get('dcss-web-trunk')).toEqual({ id: 'dcss-web-trunk', label: 'DCSS trunk', save: 'orbruntest, a level 3 Minotaur Berserker of Trog' })
+    expect(by.get('dcss-web-trunk')).toEqual({ id: 'dcss-web-trunk', label: 'DCSS trunk', save: 'orbruntest, a level 3 Minotaur Berserker of Trog', rc: 'dcss-web-trunk' })
     // a game whose slot another game type holds: greyed, no link; its id comes from nowhere, so it is not listed
     expect(by.has('seeded-web-trunk')).toBe(false)
     // a save another session has open: still linked
-    expect(by.get('dcss-web-0.34')).toEqual({ id: 'dcss-web-0.34', label: 'DCSS 0.34', save: 'playing' })
-    expect(by.get('seeded-web-0.34')).toEqual({ id: 'seeded-web-0.34', label: 'Seeded 0.34', save: 'playing' })
+    expect(by.get('dcss-web-0.34')).toEqual({ id: 'dcss-web-0.34', label: 'DCSS 0.34', save: 'playing', rc: 'dcss-web-0.34' })
+    expect(by.get('seeded-web-0.34')).toEqual({ id: 'seeded-web-0.34', label: 'Seeded 0.34', save: 'playing', rc: 'dcss-web-0.34' })
     // nothing saved: a plain link
-    expect(by.get('dcss-web-0.33')).toEqual({ id: 'dcss-web-0.33', label: 'DCSS 0.33' })
-    expect(by.get('sprint-web-trunk')).toEqual({ id: 'sprint-web-trunk', label: 'Sprint trunk' })
+    expect(by.get('dcss-web-0.33')).toEqual({ id: 'dcss-web-0.33', label: 'DCSS 0.33', rc: 'dcss-web-0.33' })
+    expect(by.get('sprint-web-trunk')).toEqual({ id: 'sprint-web-trunk', label: 'Sprint trunk', rc: 'dcss-web-trunk' })
     // the rows the home screen shows keep the save with the game
     const rows = gameLinkRows(st.lobby.games)
     expect(rows.trunk.map((g) => g.save)).toEqual(['orbruntest, a level 3 Minotaur Berserker of Trog'])
@@ -540,18 +540,18 @@ describe('set_game_links', () => {
     reduce(st, cdi.msgs[0])
     expect(st.lobby.games.some((g) => g.save || g.disabled)).toBe(false)
     expect(st.lobby.games.slice(0, 9)).toEqual([
-      { id: 'dcss-0.34', label: 'DCSS 0.34' },
-      { id: 'seeded-0.34', label: 'Custom seed 0.34' },
-      { id: 'spr-0.34', label: 'Sprint 0.34' },
-      { id: 'tut-0.34', label: 'Tutorial 0.34' },
-      { id: 'dcss-git', label: 'DCSS trunk' },
-      { id: 'seeded-git', label: 'Custom seed trunk' },
-      { id: 'spr-git', label: 'Sprint trunk' },
-      { id: 'tut-git', label: 'Tutorial trunk' },
-      { id: 'dcss-0.33', label: 'DCSS 0.33' },
+      { id: 'dcss-0.34', label: 'DCSS 0.34', rc: 'dcss-0.34' },
+      { id: 'seeded-0.34', label: 'Custom seed 0.34', rc: 'dcss-0.34' },
+      { id: 'spr-0.34', label: 'Sprint 0.34', rc: 'dcss-0.34' },
+      { id: 'tut-0.34', label: 'Tutorial 0.34', rc: 'dcss-0.34' },
+      { id: 'dcss-git', label: 'DCSS trunk', rc: 'dcss-git' },
+      { id: 'seeded-git', label: 'Custom seed trunk', rc: 'dcss-git' },
+      { id: 'spr-git', label: 'Sprint trunk', rc: 'dcss-git' },
+      { id: 'tut-git', label: 'Tutorial trunk', rc: 'dcss-git' },
+      { id: 'dcss-0.33', label: 'DCSS 0.33', rc: 'dcss-0.33' },
     ])
     expect(st.lobby.games).toHaveLength(24)
-    expect(st.lobby.games.at(-1)).toEqual({ id: 'tut-0.30', label: 'Tutorial 0.30' })
+    expect(st.lobby.games.at(-1)).toEqual({ id: 'tut-0.30', label: 'Tutorial 0.30', rc: 'dcss-0.30' })
     const rows = gameLinkRows(st.lobby.games)
     expect(rows.latestVersion).toBe('0.34')
     expect(rows.latest.map((g) => g.id)).toEqual(['dcss-0.34'])
@@ -593,12 +593,12 @@ describe('set_game_links', () => {
     const st = initialState()
     reduce(st, fixture.msgs[2])
     expect(st.lobby.games).toEqual([
-      { id: 'dcss-web-0.34', label: 'DCSS 0.34' },
-      { id: 'seeded-web-0.34', label: 'Seeded 0.34' },
-      { id: 'sprint-web-0.34', label: 'Sprint 0.34' },
-      { id: 'dcss-web-trunk', label: 'DCSS trunk', save: 'orbrun, a level 9 Gnoll Fighter of Okawaru' },
-      { id: 'sprint-web-trunk', label: 'Sprint trunk' },
-      { id: 'dcss-web-0.33', label: 'DCSS 0.33' },
+      { id: 'dcss-web-0.34', label: 'DCSS 0.34', rc: 'dcss-web-0.34' },
+      { id: 'seeded-web-0.34', label: 'Seeded 0.34', rc: 'dcss-web-0.34' },
+      { id: 'sprint-web-0.34', label: 'Sprint 0.34', rc: 'dcss-web-0.34' },
+      { id: 'dcss-web-trunk', label: 'DCSS trunk', save: 'orbrun, a level 9 Gnoll Fighter of Okawaru', rc: 'dcss-web-trunk' },
+      { id: 'sprint-web-trunk', label: 'Sprint trunk', rc: 'dcss-web-trunk' },
+      { id: 'dcss-web-0.33', label: 'DCSS 0.33', rc: 'dcss-web-0.33' },
     ])
     const rows = gameLinkRows(st.lobby.games)
     expect(rows.latestVersion).toBe('0.34')
@@ -606,12 +606,12 @@ describe('set_game_links', () => {
     expect(rows.trunk.map((g) => g.save)).toEqual(['orbrun, a level 9 Gnoll Fighter of Okawaru'])
   })
 
-  it('keeps a slot-full game whose id the (edit rc) link carries, unlinked', () => {
+  it('keeps a slot-full game whose id the (edit rc) link carries, unlinked, and the rc file it opens', () => {
     const st = initialState()
     reduce(st, {
       msg: 'set_game_links',
       content: '<span class="fg7"><br>DCSS trunk<span>[slot full]</span><a href="javascript:" class="edit_rc_link" data-game_id="dcss-web-trunk">(edit rc)</a></span>',
     } as ServerMessage)
-    expect(st.lobby.games).toEqual([{ id: 'dcss-web-trunk', label: 'DCSS trunk', save: 'slot full', disabled: true }])
+    expect(st.lobby.games).toEqual([{ id: 'dcss-web-trunk', label: 'DCSS trunk', save: 'slot full', disabled: true, rc: 'dcss-web-trunk' }])
   })
 })

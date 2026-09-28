@@ -1,6 +1,7 @@
 import type { ClientMessage, CloseReason, Connection, ServerMessage, TrafficEvent, Unsubscribe } from '@orbrun/webtiles'
 import { OfflineServer, type EngineLauncher, type OfflineChannel } from './server.js'
 import type { SaveBook } from './saves.js'
+import type { RcBook } from './rc.js'
 import type { FromWorker, ToWorker } from './worker.js'
 
 export interface LocalWasmConnectionOptions {
@@ -14,6 +15,8 @@ export interface LocalWasmConnectionOptions {
   username?: string
   /** What the game links say of the saves on this device (OfflineServer `saves`). */
   saves?: SaveBook
+  /** Each profile's rc file (OfflineServer `rcs`). */
+  rcs?: RcBook
   /** Runs an engine; a Web Worker per game by default. */
   launch?: EngineLauncher
   onDiagnostic?: (text: string, detail?: unknown) => void
@@ -115,6 +118,7 @@ export class LocalWasmConnection implements Connection {
       launch: this.o.launch ?? workerLauncher(this.o.engineBase),
       username: this.o.username,
       saves: this.o.saves,
+      rcs: this.o.rcs,
       emit: (msgs) => this.deliver(msgs),
       onDiagnostic: this.o.onDiagnostic,
     })
@@ -146,7 +150,7 @@ export class LocalWasmConnection implements Connection {
 
 /** Runs each game's engine in its own module Web Worker. */
 export function workerLauncher(engineBase: (channel: OfflineChannel) => string): EngineLauncher {
-  return (channel, args, events) => {
+  return (channel, args, events, files) => {
     const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
     const post = (m: ToWorker) => worker.postMessage(m)
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
@@ -164,7 +168,7 @@ export function workerLauncher(engineBase: (channel: OfflineChannel) => string):
       worker.terminate()
       events.error(e.message || 'the offline engine failed to load')
     }
-    post({ type: 'start', base: new URL(engineBase(channel), location.href).href, saveDir: channel.saveDir, args })
+    post({ type: 'start', base: new URL(engineBase(channel), location.href).href, saveDir: channel.saveDir, args, files })
     return {
       control: (json) => post({ type: 'control', json }),
       keys: (text) => post({ type: 'keys', text }),

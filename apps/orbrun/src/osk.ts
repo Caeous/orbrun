@@ -167,7 +167,7 @@ export class Osk {
       keys.append(line)
     })
     const input = this.target?.input
-    const value = input ? (input.type === 'password' ? '•'.repeat(input.value.length) : input.value) : ''
+    const value = !input ? '' : input.type === 'password' ? '•'.repeat(input.value.length) : input instanceof HTMLTextAreaElement ? caretLine(input) : input.value
     el.prepend(h('div', { class: 'preview' }, value || ' '))
     el.append(keys, this.hintLine())
     this.el = el
@@ -254,3 +254,11 @@ export class Osk {
   }
 }
 
+
+/** A box of text shows only the line being typed on: the whole file would not fit over the keyboard. */
+function caretLine(t: HTMLTextAreaElement): string {
+  const at = t.selectionStart ?? t.value.length
+  const start = t.value.lastIndexOf('\n', at - 1) + 1
+  const end = t.value.indexOf('\n', at)
+  return t.value.slice(start, end < 0 ? undefined : end)
+}

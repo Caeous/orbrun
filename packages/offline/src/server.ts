@@ -1,6 +1,7 @@
 import type { ClientMessage, ServerMessage } from '@orbrun/webtiles'
 import { DEFAULT_PROFILE, profileSaveDir } from './channels.js'
 import type { SaveBook } from './saves.js'
+import { RC_PATH, type RcBook } from './rc.js'
 
 /**
  * What a WebTiles server does around the game, for a game that runs on this
@@ -17,6 +18,8 @@ import type { SaveBook } from './saves.js'
  * account's, which skips crawl's main menu (`name_bypasses_menu`): a profile
  * is one character, which Play resumes if saved and starts if not. The game
  * links carry the save info a server with `show_save_info` shows (SaveBook).
+ * A profile has one rc file for every game (RcBook), which crawl is started
+ * with, as a server starts it with the account's.
  */
 
 /** One playable engine build (engine/dist/builds/<build>/), as a game the lobby offers. */
@@ -48,7 +51,8 @@ export interface EngineEvents {
   error(message: string): void
 }
 
-export type EngineLauncher = (channel: OfflineChannel, args: string[], events: EngineEvents) => EngineHandle
+/** `files`: text files to put in place before crawl starts, by absolute path (the rc file at RC_PATH). */
+export type EngineLauncher = (channel: OfflineChannel, args: string[], events: EngineEvents, files?: Record<string, string>) => EngineHandle
 
 export interface OfflineServerOptions {
   /** The builds on offer, or how to find them: asked again at each Play, so a build installed since is the one played. */
@@ -58,6 +62,8 @@ export interface OfflineServerOptions {
   username?: string
   /** What the game links say of each profile's saves; none, and they say nothing. */
   saves?: SaveBook
+  /** Each profile's rc file; none, and every profile has an empty one. */
+  rcs?: RcBook
   emit(msgs: ServerMessage[]): void
   onDiagnostic?(text: string, detail?: unknown): void
 }
@@ -142,8 +148,17 @@ export class OfflineServer {
       case 'register':
         this.o.emit([{ msg: 'register_fail', reason: 'Offline play needs no account.' }])
         return
+      // the profile's one file, whichever game it is asked for (RcBook)
       case 'get_rc':
-        this.o.emit([{ msg: 'rcfile_contents', game_id: msg.game_id, contents: '' }])
+        this.o.emit([{ msg: 'rcfile_contents', game_id: msg.game_id, contents: this.o.rcs?.read(this.user) ?? '' }])
+        return
+      case 'set_rc':
+        // no answer, as a server gives none: a write that failed is found by reading the file back
+        try {
+          if (typeof msg.contents === 'string') this.o.rcs?.write(this.user, msg.contents)
+        } catch (err) {
+          this.o.onDiagnostic?.('the rc file could not be saved', err)
+        }
         return
       case 'play':
         void this.play(String(msg.game_id))
@@ -214,14 +229,17 @@ export class OfflineServer {
       ended: false,
     }
     this.game = game
-    game.engine = this.o.launch({ ...channel, saveDir: game.saveDir }, ['-headless', '-webtiles-socket', 'bridge', '-name', this.user], {
+    const args = ['-headless', '-webtiles-socket', 'bridge', '-name', this.user]
+    const rc = this.o.rcs?.read(this.user)
+    if (rc) args.push('-rc', RC_PATH)
+    game.engine = this.o.launch({ ...channel, saveDir: game.saveDir }, args, {
       output: (text) => this.output(game, text),
       exit: (code) => this.ended(game, code),
       error: (message) => {
         game.exitReason = { type: 'error', message }
         this.ended(game, -1)
       },
-    })
+    }, rc ? { [RC_PATH]: rc } : undefined)
     // the socket connection a server makes to the new process (connection.py)
     game.engine.control(JSON.stringify({ msg: 'attach', primary: true }))
     // A server sends game_client when crawl names its client_path, which only

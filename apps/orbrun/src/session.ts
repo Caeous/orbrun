@@ -11,7 +11,7 @@ import {
 import { loadGamedata, browserIo, type Gamedata } from '@orbrun/gamedata'
 import { buildScene } from '@orbrun/scene-webtiles'
 import { emptyScene, type Scene } from '@orbrun/scene'
-import { LocalWasmConnection, browserSaveBook } from '@orbrun/offline'
+import { LocalWasmConnection, browserRcBook, browserSaveBook } from '@orbrun/offline'
 import { engines } from './engines'
 import type { ServerInfo } from './servers'
 import { gamedataBaseFor, getToken, setToken } from './servers'
@@ -90,6 +90,13 @@ export class Session {
   private unwatchEngines: (() => void) | null = null
   /** a `probe` waiting on its answer */
   private probing: { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> } | null = null
+  /**
+   * The `get_rc`s sent and not yet answered, oldest first: a server answers
+   * each, in order, naming the game (ws_handler.py `get_rc`). One given up on
+   * keeps its place with no one to tell, so its late answer is not taken for
+   * a newer question's (a save read back, getting the file from before it).
+   */
+  private rcAsks: { gameId: string; answer: ((contents: string | null) => void) | null }[] = []
 
   /** `conn`: a connection made elsewhere (the e2e harness's in-process engine); by default the server's own. */
   constructor(server: ServerInfo, username: string | null = null, conn?: Connection) {
@@ -104,6 +111,7 @@ export class Session {
             engineBase: (c) => engines.engineBase(c),
             gamedataBase: gamedataBaseFor(server),
             saves: browserSaveBook(),
+            rcs: browserRcBook(),
             onDiagnostic,
           })
         : new RemoteConnection({
@@ -137,6 +145,7 @@ export class Session {
       this.closed = true
       this.loggingIn = false
       this.endProbe(false)
+      for (const a of this.rcAsks.splice(0)) a.answer?.(null)
       // a load for a connection that is gone: stop it, and let the messages it was holding go with it
       this.loadAbort?.abort()
       this.loadAbort = null
@@ -228,8 +237,40 @@ export class Session {
     if (!this.conn.open || !this.state.lobby.username || !gameId) return Promise.resolve(false)
     return new Promise((resolve) => {
       this.probing = { resolve, timer: setTimeout(() => this.endProbe(false), ms) }
-      this.send(cm.getRc(gameId))
+      this.askRc(gameId, (contents) => this.endProbe(contents !== null))
     })
+  }
+
+  /**
+   * The account's rc file for `gameId` (the game its lobby's `(edit rc)`
+   * names, GameLink `rc`), or null when there is no answer within `ms`: no
+   * login, no socket, a game the server does not know. A server with no file
+   * yet answers empty. The file never reaches the state.
+   */
+  readRc(gameId: string, ms: number): Promise<string | null> {
+    if (!this.conn.open || !this.state.lobby.username) return Promise.resolve(null)
+    return new Promise((resolve) => {
+      const ask = this.askRc(gameId, (contents) => {
+        clearTimeout(timer)
+        resolve(contents)
+      })
+      const timer = setTimeout(() => {
+        ask.answer = null
+        resolve(null)
+      }, ms)
+    })
+  }
+
+  /** Save the account's rc file for `gameId`. A server says nothing back, whether it wrote it or not: read it back to know. */
+  writeRc(gameId: string, contents: string) {
+    this.send(cm.setRc(gameId, contents))
+  }
+
+  private askRc(gameId: string, answer: (contents: string | null) => void) {
+    const ask = { gameId, answer: answer as ((contents: string | null) => void) | null }
+    this.rcAsks.push(ask)
+    this.send(cm.getRc(gameId))
+    return ask
   }
 
   private endProbe(ok: boolean) {
@@ -241,9 +282,11 @@ export class Session {
   }
 
   private handle(m: ServerMessage) {
-    // a probe's answer is the probe's: nothing else asked for the rc file, and a load in progress must not hold it
-    if (m.msg === 'rcfile_contents' && this.probing) {
-      this.endProbe(true)
+    // an answer is its question's (a probe, or the rc editor), and a load in progress must not hold it
+    if (m.msg === 'rcfile_contents' && this.rcAsks.length) {
+      const at = this.rcAsks.findIndex((a) => a.gameId === m.game_id)
+      const [ask] = this.rcAsks.splice(at < 0 ? 0 : at, 1)
+      ask.answer?.(typeof m.contents === 'string' ? m.contents : '')
       return
     }
     if (m.msg === 'login_success' || m.msg === 'login_fail') this.loggingIn = false

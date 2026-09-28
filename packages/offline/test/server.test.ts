@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import { gameLinkRows, initialState, reduce, type ServerMessage } from '@orbrun/webtiles'
-import { OfflineServer, channelOf, deleteProfileSaves, saveDesc, type EngineEvents, type OfflineChannel, type SaveBook } from '../src/index.js'
+import { OfflineServer, RC_PATH, browserRcBook, channelOf, deleteProfileSaves, saveDesc, type EngineEvents, type OfflineChannel, type RcBook, type SaveBook } from '../src/index.js'
 
 const STABLE = channelOf({ channel: 'stable', commit: 'aa', version: '0.34.1-4-g0e95e087e2', stamp: '1', gamedata: 'aa11', files: [] })
 const TRUNK = channelOf({ channel: 'trunk', commit: 'bb', version: '0.35-a0-1079-ga0251cc2b5', stamp: '2', gamedata: 'bb22', files: [] })
 
 /** A server with a fake engine: what it was sent, and a hand on its output. */
-function setup(channels: OfflineChannel[] | (() => Promise<OfflineChannel[]>) = [STABLE, TRUNK], saves?: SaveBook) {
+function setup(channels: OfflineChannel[] | (() => Promise<OfflineChannel[]>) = [STABLE, TRUNK], saves?: SaveBook, rcs?: RcBook) {
   const out: ServerMessage[][] = []
-  const sent: { control: string[]; keys: string[]; terminated: boolean; args: string[]; channel: OfflineChannel } = {
+  const sent: { control: string[]; keys: string[]; terminated: boolean; args: string[]; channel: OfflineChannel; files?: Record<string, string> } = {
     control: [],
     keys: [],
     terminated: false,
@@ -20,11 +20,13 @@ function setup(channels: OfflineChannel[] | (() => Promise<OfflineChannel[]>) = 
     channels,
     username: 'Kai',
     saves,
+    rcs,
     emit: (msgs) => out.push(msgs),
-    launch: (channel, args, ev) => {
+    launch: (channel, args, ev, files) => {
       events = ev
       sent.args = args
       sent.channel = channel
+      sent.files = files
       return {
         control: (j) => sent.control.push(j),
         keys: (t) => sent.keys.push(t),
@@ -116,6 +118,73 @@ describe('OfflineServer lobby', () => {
     const links = s.flat().filter((m) => m.msg === 'set_game_links')
     expect(links).toHaveLength(2)
     expect(String(links[1].content)).toContain('offline-trunk')
+  })
+})
+
+/** A localStorage of its own: node has none. */
+function memoryStorage(): Storage {
+  const m = new Map<string, string>()
+  return {
+    get length() {
+      return m.size
+    },
+    key: (i: number) => [...m.keys()][i] ?? null,
+    getItem: (k: string) => m.get(k) ?? null,
+    setItem: (k: string, v: string) => void m.set(k, String(v)),
+    removeItem: (k: string) => void m.delete(k),
+    clear: () => m.clear(),
+  }
+}
+
+describe('OfflineServer rc file', () => {
+  it('keeps one file per profile, whichever game it is asked for, and says nothing back to a save', async () => {
+    const rcs = browserRcBook(memoryStorage())
+    const s = setup(undefined, undefined, rcs)
+    s.server.receive({ msg: 'token_login', cookie: 'offline:Kai' })
+    await tick()
+    s.out.length = 0
+    s.server.receive({ msg: 'get_rc', game_id: 'offline-0.34' })
+    s.server.receive({ msg: 'set_rc', game_id: 'offline-0.34', contents: 'show_more = false\n' })
+    s.server.receive({ msg: 'get_rc', game_id: 'offline-trunk' })
+    expect(s.flat()).toEqual([
+      { msg: 'rcfile_contents', game_id: 'offline-0.34', contents: '' },
+      { msg: 'rcfile_contents', game_id: 'offline-trunk', contents: 'show_more = false\n' },
+    ])
+    // names match in any case, as accounts do
+    expect(rcs.read('kai')).toBe('show_more = false\n')
+    expect(rcs.read('Ann')).toBe('')
+  })
+
+  it('starts crawl with the profile’s file, and with none when it has none', async () => {
+    const rcs = browserRcBook(memoryStorage())
+    const bare = setup(undefined, undefined, rcs)
+    bare.server.receive({ msg: 'play', game_id: 'offline-0.34' })
+    await tick()
+    expect(bare.sent.args).toEqual(['-headless', '-webtiles-socket', 'bridge', '-name', 'Kai'])
+    expect(bare.sent.files).toBeUndefined()
+    rcs.write('Kai', 'autopickup = $?!+"/%\n')
+    const s = setup(undefined, undefined, rcs)
+    s.server.receive({ msg: 'play', game_id: 'offline-0.34' })
+    await tick()
+    expect(s.sent.args).toEqual(['-headless', '-webtiles-socket', 'bridge', '-name', 'Kai', '-rc', RC_PATH])
+    expect(s.sent.files).toEqual({ [RC_PATH]: 'autopickup = $?!+"/%\n' })
+    // an emptied file is no file
+    rcs.write('Kai', '')
+    expect(rcs.read('Kai')).toBe('')
+  })
+
+  it('goes with its profile', async () => {
+    const storage = memoryStorage()
+    vi.stubGlobal('localStorage', storage)
+    try {
+      browserRcBook(storage).write('Kai', 'a = b')
+      browserRcBook(storage).write('Ann', 'c = d')
+      await deleteProfileSaves('kai', { databases: async () => [] } as unknown as IDBFactory)
+      expect(browserRcBook(storage).read('Kai')).toBe('')
+      expect(browserRcBook(storage).read('Ann')).toBe('c = d')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 

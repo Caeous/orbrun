@@ -131,15 +131,15 @@ describe('cached game list', () => {
     expect(getGames('cao')).toEqual([{ id: 'dcss-web-trunk', label: 'trunk' }])
   })
 
-  it('keeps id, label and the save the lobby reported, nothing else', () => {
+  it('keeps id, label, the save the lobby reported and the rc file the game reads, nothing else', () => {
     setGames('cdi', [
       { id: 'g', label: 'G', extra: 1 } as never,
-      { id: 't', label: 'T', save: 'orbruntest, a level 3 Minotaur Berserker of Trog' },
+      { id: 't', label: 'T', save: 'orbruntest, a level 3 Minotaur Berserker of Trog', rc: 'g' },
       { id: 'f', label: 'F', save: 'slot full', disabled: true },
     ])
     expect(getGames('cdi')).toEqual([
       { id: 'g', label: 'G' },
-      { id: 't', label: 'T', save: 'orbruntest, a level 3 Minotaur Berserker of Trog' },
+      { id: 't', label: 'T', save: 'orbruntest, a level 3 Minotaur Berserker of Trog', rc: 'g' },
       { id: 'f', label: 'F', save: 'slot full', disabled: true },
     ])
   })

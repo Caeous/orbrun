@@ -1,5 +1,6 @@
 import type { OfflineChannel } from './server.js'
 import { forgetSaveNotes } from './saves.js'
+import { forgetRc } from './rc.js'
 
 /** A channel's engine.json (engine/build.sh, engine/pointer.mjs): the build it points at. */
 export interface EngineInfo {
@@ -79,7 +80,8 @@ async function saveDatabases(idb: IDBFactory): Promise<string[]> {
 
 /**
  * Delete a profile's saves in every slot: the IndexedDB database each slot's
- * directory is (profileSaveDir), and what was noted of them (saves.ts).
+ * directory is (profileSaveDir), what was noted of them (saves.ts), and its
+ * rc file (rc.ts).
  * Settles once every delete has, whether it went through or not; a database
  * still open elsewhere (a game in another tab) goes when that closes.
  */
@@ -90,6 +92,7 @@ export async function deleteProfileSaves(profile: string, idb: IDBFactory = inde
     return p === DEFAULT_PROFILE.toLowerCase() ? at < 0 : at >= 0 && name.slice(at + 1) === p
   }
   forgetSaveNotes(mine)
+  forgetRc(profile)
   await Promise.all(
     (await saveDatabases(idb)).filter(mine).map(
       (name) =>

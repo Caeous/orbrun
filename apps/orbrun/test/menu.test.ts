@@ -923,7 +923,7 @@ describe('the front end: accounts and servers', () => {
       localStorage.setItem('orbrun.accounts', JSON.stringify([marc, orbrun]))
       const { screen } = make()
       screen.showAccounts()
-      expect(labels(screen)).toEqual(['Back', 'Marc', '(delete)', 'orbrun · CDI', '(other versions)', '(log out)', 'Add an account'])
+      expect(labels(screen)).toEqual(['Back', 'Marc', '(edit rc)', '(delete)', 'orbrun · CDI', '(other versions)', '(log out)', 'Add an account'])
       expect(sub(screen, 'Marc')).toBe('on this device')
       // and the home screen's account row names it as the account list does: the name alone
       localStorage.setItem('orbrun.account', JSON.stringify(marc))
@@ -1299,6 +1299,216 @@ describe('the front end: Play and Watch', () => {
     pick(screen, 'orbrun · CDI')
     pad(screen, 'RB')
     expect(screen.view).toBe('accounts')
+  })
+})
+
+describe('the front end: the rc file', () => {
+  beforeEach(() => {
+    store.clear()
+    document.body.replaceChildren()
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+  })
+
+  /** A session on CDI whose server keeps rc files: `files` by the game that names each, as ws_handler.py does. */
+  function withRc(files: Record<string, string>, keeps = true) {
+    const s = fakeSession(cdi, 'orbrun', {
+      username: 'orbrun',
+      complete: true,
+      games: [
+        { id: 'dcss-web-trunk', label: 'DCSS trunk', rc: 'dcss-web-trunk' },
+        { id: 'sprint-web-trunk', label: 'Sprint trunk', rc: 'dcss-web-trunk' },
+        { id: 'dcss-web-0.34', label: 'DCSS 0.34', rc: 'dcss-web-0.34' },
+        { id: 'sprint-web-0.34', label: 'Sprint 0.34', rc: 'dcss-web-0.34' },
+        { id: 'tut-web-0.34', label: 'Tutorial 0.34', rc: 'dcss-web-0.34' },
+      ],
+    })
+    const readRc = vi.fn(async (id: string) => files[id] ?? '')
+    const writeRc = vi.fn((id: string, text: string) => {
+      if (keeps) files[id] = text
+    })
+    Object.assign(s, { readRc, writeRc })
+    return { s, readRc, writeRc }
+  }
+
+  const settle = () => new Promise((r) => setTimeout(r, 0))
+  const box = (screen: FrontEnd) => screen.root.querySelector('textarea.rc-text') as HTMLTextAreaElement
+  const note = (screen: FrontEnd) => screen.root.querySelector('.brand > .hint, .brand > .error')?.textContent ?? null
+
+  function type(t: HTMLTextAreaElement, text: string) {
+    t.value += text
+    t.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  it('stands beside each release on Other versions, and opens the file the lobby names, with who else reads it', async () => {
+    const { s, readRc } = withRc({ 'dcss-web-0.34': 'autopickup = $?!+"/%\n' })
+    const { screen, at } = make(() => s)
+    screen.showOtherVersions({ serverId: 'cdi', username: 'orbrun' })
+    expect(labels(screen)).toEqual(['Back', 'DCSS trunk', '(edit rc)', '(sprint)', 'DCSS 0.34', '(edit rc)', '(sprint)', '(tutorial)'])
+    // the rc file is the first thing right of a release, in the same column on every row
+    press(screen, 'ArrowRight')
+    expect(focused(screen)).toBe('rc:dcss-web-trunk')
+    ;(screen.root.querySelector('[data-focus="rc:dcss-web-0.34"]') as HTMLElement).click()
+    expect(screen.view).toBe('rc')
+    expect(readRc).toHaveBeenCalledWith('dcss-web-0.34', expect.any(Number))
+    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'accounts/rc', serverId: 'cdi', username: 'orbrun', gameId: 'dcss-web-0.34' })
+    expect(screen.root.querySelector('.lede')?.textContent).toBe('orbrun on CDI · DCSS 0.34 · Sprint 0.34 and Tutorial 0.34 read it too')
+    expect(sub(screen, 'Save')).toBe('reading…')
+    await settle()
+    expect(box(screen).value).toBe('autopickup = $?!+"/%\n')
+    expect(box(screen).readOnly).toBe(false)
+    expect(sub(screen, 'Save')).toBe('no changes')
+    expect(focused(screen)).toBe('rc:text')
+    // the guide for the release's own options
+    expect((screen.root.querySelector('[data-focus="rc:guide"]') as HTMLAnchorElement).href).toBe('https://github.com/crawl/crawl/blob/stone_soup-0.34/crawl-ref/docs/options_guide.txt')
+  })
+
+  it('goes into the box on Enter and out on Esc, saves on Ctrl+S, and only calls it saved once it reads back', async () => {
+    const files = { 'dcss-web-0.34': 'autopickup = $?!+"/%\n' }
+    const { s, writeRc, readRc } = withRc(files)
+    const { screen } = make(() => s)
+    screen.open({ kind: 'menu', path: 'accounts/rc', serverId: 'cdi', username: 'orbrun', gameId: 'dcss-web-0.34' })
+    await settle()
+    const t = box(screen)
+    // on the box, the arrows are the cursor's
+    press(screen, 'ArrowDown')
+    expect(focused(screen)).toBe('rc:save')
+    press(screen, 'ArrowUp')
+    expect(focused(screen)).toBe('rc:text')
+    press(screen, 'Enter')
+    expect(document.activeElement).toBe(t)
+    // in it, every key is the text's
+    expect(press(screen, 'ArrowDown', t)).toBe(false)
+    expect(press(screen, 'j', t)).toBe(false)
+    expect(press(screen, 'Enter', t)).toBe(false)
+    type(t, 'autopickup_exceptions += <useless_item\n')
+    expect(sub(screen, 'Save')).toBe('unsaved changes')
+    const ev = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true })
+    Object.defineProperty(ev, 'target', { value: t })
+    expect(screen.key(ev)).toBe(true)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(writeRc).toHaveBeenCalledWith('dcss-web-0.34', 'autopickup = $?!+"/%\nautopickup_exceptions += <useless_item\n')
+    expect(sub(screen, 'Save')).toBe('saving…')
+    await settle()
+    // read back, the same
+    expect(readRc).toHaveBeenCalledTimes(2)
+    expect(sub(screen, 'Save')).toBe('no changes')
+    expect(note(screen)).toBe('Saved on crawl.dcss.io. It counts from the next game you start or continue.')
+    // the caret stayed in the box across the redraw
+    expect(document.activeElement).toBe(box(screen))
+    expect(press(screen, 'Escape', t)).toBe(true)
+    expect(document.activeElement).not.toBe(t)
+    expect(focused(screen)).toBe('rc:text')
+    expect(screen.view).toBe('rc')
+  })
+
+  it('says so when the server does not keep a save, and keeps the text', async () => {
+    const { s } = withRc({ 'dcss-web-0.34': '' }, false)
+    const { screen } = make(() => s)
+    screen.open({ kind: 'menu', path: 'accounts/rc', serverId: 'cdi', username: 'orbrun', gameId: 'dcss-web-0.34' })
+    await settle()
+    type(box(screen), 'show_more = false\n')
+    pick(screen, 'Save')
+    await settle()
+    expect(note(screen)).toBe('crawl.dcss.io did not keep it. Your text is still here: try Save again.')
+    expect(box(screen).value).toBe('show_more = false\n')
+    expect(sub(screen, 'Save')).toBe('unsaved changes')
+  })
+
+  it('asks for a second Back before it drops changes, and comes back to the rc link it was opened from', async () => {
+    const { s } = withRc({ 'dcss-web-0.34': 'a = b\n' })
+    const { screen } = make(() => s)
+    screen.showOtherVersions({ serverId: 'cdi', username: 'orbrun' })
+    ;(screen.root.querySelector('[data-focus="rc:dcss-web-0.34"]') as HTMLElement).click()
+    await settle()
+    type(box(screen), 'c = d\n')
+    pad(screen, 'B')
+    expect(screen.view).toBe('rc')
+    expect(labels(screen)[0]).toBe('Back, without saving?')
+    pad(screen, 'B')
+    expect(screen.view).toBe('versions')
+    expect(focused(screen)).toBe('rc:dcss-web-0.34')
+    // nothing changed: one Back
+    ;(screen.root.querySelector('[data-focus="rc:dcss-web-0.34"]') as HTMLElement).click()
+    await settle()
+    expect(box(screen).value).toBe('a = b\n')
+    pad(screen, 'B')
+    expect(screen.view).toBe('versions')
+  })
+
+  it('types from a pad with the on-screen keyboard, a new line and all, and Y comes back out', async () => {
+    const { s } = withRc({ 'dcss-web-0.34': '' })
+    const { screen } = make(() => s, true)
+    screen.open({ kind: 'menu', path: 'accounts/rc', serverId: 'cdi', username: 'orbrun', gameId: 'dcss-web-0.34' })
+    await settle()
+    pad(screen, 'A')
+    expect(screen.root.querySelector('.osk')).not.toBeNull()
+    expect(screen.root.querySelector('.osk .extra')?.textContent).toContain('New line')
+    // the extras row is the first: its New line is where the keyboard starts
+    pad(screen, 'A')
+    expect(box(screen).value).toBe('\n')
+    pad(screen, 'Y')
+    expect(screen.root.querySelector('.osk')).toBeNull()
+    expect(focused(screen)).toBe('rc:text')
+    expect(sub(screen, 'Save')).toBe('unsaved changes')
+  })
+
+  it('puts the file back as the server has it on (revert)', async () => {
+    const { s } = withRc({ 'dcss-web-0.34': 'a = b\n' })
+    const { screen } = make(() => s)
+    screen.open({ kind: 'menu', path: 'accounts/rc', serverId: 'cdi', username: 'orbrun', gameId: 'dcss-web-0.34' })
+    await settle()
+    type(box(screen), 'oops')
+    pick(screen, '(revert)')
+    await settle()
+    expect(box(screen).value).toBe('a = b\n')
+    expect(sub(screen, 'Save')).toBe('no changes')
+  })
+
+  it('says it could not read the file, and offers to try again', async () => {
+    const { s, readRc } = withRc({})
+    readRc.mockResolvedValueOnce(null as unknown as string)
+    const { screen } = make(() => s)
+    screen.open({ kind: 'menu', path: 'accounts/rc', serverId: 'cdi', username: 'orbrun', gameId: 'dcss-web-0.34' })
+    await settle()
+    expect(note(screen)).toBe('No answer from crawl.dcss.io: your rc file could not be read.')
+    expect(box(screen).readOnly).toBe(true)
+    expect(sub(screen, 'Save')).toBe('not read')
+    pick(screen, '(try again)')
+    await settle()
+    expect(box(screen).readOnly).toBe(false)
+    expect(note(screen)).toBeNull()
+  })
+
+  it('gives a player on this device one file for every game, beside its name under Accounts', async () => {
+    vi.stubEnv('MODE', 'development')
+    try {
+      const marc: Account = { serverId: 'offline', username: 'Marc' }
+      localStorage.setItem('orbrun.accounts', JSON.stringify([marc]))
+      const s = fakeSession(OFFLINE_SERVER, 'Marc', { username: 'Marc', complete: true, games: [{ id: 'offline-0.34', label: 'DCSS 0.34' }] })
+      const readRc = vi.fn(async () => 'bold_brightens_foreground = true\n')
+      Object.assign(s, { readRc, writeRc: vi.fn() })
+      const { screen, at } = make(() => s)
+      screen.showAccounts()
+      pick(screen, '(edit rc)')
+      expect(screen.view).toBe('rc')
+      expect(readRc).toHaveBeenCalledWith('', expect.any(Number))
+      expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'accounts/rc', serverId: 'offline', username: 'Marc' })
+      expect(screen.root.querySelector('.lede')?.textContent).toBe('Marc · every game on this device')
+      await settle()
+      expect(box(screen).value).toBe('bold_brightens_foreground = true\n')
+      pad(screen, 'B')
+      expect(screen.view).toBe('accounts')
+      expect(focused(screen)).toBe('rc:offline/Marc')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('opens from its address only for an account on this device', () => {
+    const { s } = withRc({})
+    const { screen } = make(() => s)
+    screen.open({ kind: 'menu', path: 'accounts/rc', serverId: 'cdi', username: 'stranger', gameId: 'dcss-web-0.34' })
+    expect(screen.view).toBe('home')
   })
 })
 

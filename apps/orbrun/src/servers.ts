@@ -2,7 +2,7 @@ import type { HintMode } from './gamepad-hints'
 import type { GameLink } from '@orbrun/webtiles'
 import bundled from '../data/servers.json'
 import { canQuit } from './quit'
-import { MENU_PATH, titleAt, VERSIONS_PATH } from './site'
+import { MENU_PATH, RC_PATH, titleAt, VERSIONS_PATH } from './site'
 
 export interface ServerInfo {
   id: string
@@ -424,6 +424,7 @@ export function setGames(serverId: string, games: CachedGame[]) {
     const c: CachedGame = { id: g.id, label: g.label }
     if (g.save !== undefined) c.save = g.save
     if (g.disabled) c.disabled = true
+    if (g.rc) c.rc = g.rc
     return c
   })
   save(GAMES_KEY, all)
@@ -681,13 +682,16 @@ export type Route =
 /**
  * A front-end screen: `path` is one of MENU_PATH's, or `login`/`register`
  * on `serverId` (as `username`, when the address names one), or
- * `accounts/versions`, an account's Other versions (`username` always named).
+ * `accounts/versions`, an account's Other versions (`username` always named),
+ * or `accounts/rc`, an account's rc file: the one `gameId` reads on a server,
+ * the one every game reads on this device (no `gameId`).
  */
 export interface MenuRoute {
   kind: 'menu'
   path: string
   serverId?: string
   username?: string
+  gameId?: string
 }
 
 /** what every game id on this device starts with (@orbrun/offline channelOf), which its address says as CDI would */
@@ -747,6 +751,16 @@ export function parseRoute(href: string = window.location.href): Route {
     if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
     return { kind: 'menu', path: VERSIONS_PATH, serverId: server.id, username: account.username }
   }
+  // an account's rc file (`/accounts/rc/cdi/dcss-0.34#orbrun`): the game names the file on a server; a player on
+  // this device has one for every game (`/accounts/rc/offline#Marc`)
+  if ((parts.length === 3 || parts.length === 4) && parts.slice(0, 2).join('/').toLowerCase() === RC_PATH) {
+    const server = findServer(parts[2].toLowerCase())
+    if (!server || (parts.length === 4) === !!server.offline) return { kind: 'home' }
+    const named = hash.length > 1 ? decode(hash.slice(1)) : null
+    const account = named ? knownAccount(server.id, named) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
+    if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
+    return { kind: 'menu', path: RC_PATH, serverId: server.id, username: account.username, ...(server.offline ? {} : { gameId: parts[3] }) }
+  }
   const [verb, where, ...rest] = parts
   const server = where === undefined ? null : findServer(where.toLowerCase())
   if (!server) return { kind: 'home' }
@@ -792,7 +806,7 @@ function tagOf(name: string | undefined): string {
 export function formatRoute(r: Route): string {
   const q = window.location.search
   if (r.kind === 'home') return '/' + q
-  if (r.kind === 'menu') return (r.serverId ? pathOf(...r.path.split('/'), r.serverId) : '/' + r.path) + q + tagOf(r.serverId ? r.username : undefined)
+  if (r.kind === 'menu') return (r.serverId ? pathOf(...r.path.split('/'), r.serverId, ...(r.gameId ? [r.gameId] : [])) : '/' + r.path) + q + tagOf(r.serverId ? r.username : undefined)
   if (r.kind === 'lobby') return pathOf('watch', r.serverId) + q
   if (r.kind === 'watch') return pathOf('watch', r.serverId) + q + tagOf(r.username)
   const { serverId, username } = r.account

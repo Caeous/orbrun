@@ -3,7 +3,7 @@
 // once, which a suspended engine in the main thread never does, and games
 // can run side by side. Plain ESM: node runs it as it is.
 //
-// main -> worker: { type: 'start', glue, dir, saveDir, args, files, module }
+// main -> worker: { type: 'start', glue, dir, saveDir, args, files, rootFiles, module }
 //                 { type: 'control', json, seq }
 // worker -> main: { type: 'output', text } { type: 'idle', seq } { type: 'exit', code } { type: 'error', message } { type: 'log', line }
 
@@ -76,6 +76,11 @@ parentPort.on('message', async (m) => {
           const p = `${m.saveDir}/${path}`
           mm.FS.mkdirTree(p.slice(0, p.lastIndexOf('/')))
           mm.FS.writeFile(p, bytes)
+        }
+        // what the offline server puts in place by absolute path (the rc file), as engine.ts does
+        for (const [p, text] of Object.entries(m.rootFiles ?? {})) {
+          mm.FS.mkdirTree(p.slice(0, p.lastIndexOf('/')) || '/')
+          mm.FS.writeFile(p, text)
         }
       },
     ],

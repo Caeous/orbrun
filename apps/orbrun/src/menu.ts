@@ -1,4 +1,4 @@
-import { cm, gameLinkRows, gameVersionRows, type GameLink, type GameState, type LobbyEntry } from '@orbrun/webtiles'
+import { cm, gameLinkRows, gameLinkVersion, gameVersionRows, type GameLink, type GameState, type LobbyEntry } from '@orbrun/webtiles'
 import { settingsPanel } from './settings-panel'
 import { settingGroups, type SettingGroup } from './settings-rows'
 import { controlsSheet } from './controls-sheet'
@@ -24,7 +24,7 @@ export type Intent = { kind: 'play'; gameId: string } | { kind: 'watch'; usernam
  * shoulder buttons walk; the rest are the flows off them: the account and
  * server flows off the account row, the login and register forms.
  */
-export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'versions' | 'servers' | 'add-server' | 'login' | 'register' | 'exit' | 'doc'
+export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'versions' | 'rc' | 'servers' | 'add-server' | 'login' | 'register' | 'exit' | 'doc'
 
 const SECTIONS: View[] = ['home', 'watch', 'settings']
 
@@ -36,6 +36,29 @@ const DEVICE_MARKER = '#'
 
 /** the margin glyph for an account that is connected or on the way, in its line's colour */
 export const CONN_MARKER = '●'
+
+/** how long a server has to answer for an rc file before the editor says it did not */
+const RC_MS = 10_000
+
+/**
+ * The rc file on show (showRc): whose, and which. A server keeps one file per
+ * account and rc directory, named by the first game that reads it (GameLink
+ * `rc`); a player on this device has one for every game (`gameId` null).
+ */
+interface RcEdit {
+  account: Account
+  gameId: string | null
+  text: HTMLTextAreaElement
+  /** the file as the server has it, once read; the text differs from it when there is something to save */
+  saved: string | null
+  state: 'reading' | 'failed' | 'ready' | 'saving'
+  /** a read is out, or has been: a screen redrawn meanwhile does not ask again */
+  asked: boolean
+  /** what the last read or save came to, over the rows */
+  note: { text: string; error?: boolean } | null
+  /** Back was pressed once with changes unsaved: once more leaves without them */
+  leaving: boolean
+}
 
 /** A text file read through the shell's proxy; a status that is not success is the failure's words. */
 async function fetchText(url: string): Promise<string> {
@@ -114,6 +137,8 @@ interface Row {
   also?: { id: string; label: string; title?: string; fn?: () => void; href?: string }[]
   /** a text field: the row is the prompt, X (or a click) types into it */
   input?: HTMLInputElement
+  /** a file's worth of text (the rc file): the row is the box, Enter or A goes in to edit it and Esc or B comes out */
+  text?: HTMLTextAreaElement
   /** the way in: where the cursor starts on this screen. It reads like every other row — the cursor is the only thing that lights up. */
   main?: boolean
   /** a row that cannot be taken right now (a setting that means nothing under the others) */
@@ -177,6 +202,8 @@ export class FrontEnd {
   private deleting: Account | null = null
   /** whose Other versions are on show */
   private versionsOf: Account | null = null
+  /** the rc file on show */
+  private rc: RcEdit | null = null
   /** where the server list was opened from, so B retraces the way in: the accounts, or the front screen */
   private serversFrom: View = 'accounts'
   /** what the server list was opened for, which Add a server goes back to */
@@ -265,6 +292,7 @@ export class FrontEnd {
     if (ev.type === 'look') {
       // a document takes the right stick as its scroll; the room is looked around from every other screen
       if (this.docScroller) this.scrollDoc(ev.dy * 12)
+      else if (this._view === 'rc' && this.rc) this.rc.text.scrollTop += ev.dy * 12
       else this.roomView.look(ev.dx, ev.dy)
       return
     }
@@ -282,7 +310,7 @@ export class FrontEnd {
     }
     if ((ev.type === 'dir' || ev.type === 'dirRepeat') && ev.dir !== null) this.dir(ev.dir)
     else if (ev.type === 'press') {
-      if (ev.button === 'A') this.activate()
+      if (ev.button === 'A') this.activate(true)
       else if (ev.button === 'B') this.back()
       else if (ev.button === 'X') {
         // nothing to type into on the front screen: X is the settings there, as it opens the keyboard everywhere else
@@ -335,7 +363,8 @@ export class FrontEnd {
       const onFocus = f.onFocus
       f.onFocus = () => {
         onFocus?.()
-        if (document.activeElement !== target) target.focus({ preventScroll: true })
+        // a box being typed in keeps the caret: the row it stands in is the cursor's already
+        if (!target.contains(document.activeElement)) target.focus({ preventScroll: true })
       }
     }
     this.navItems = items
@@ -350,9 +379,22 @@ export class FrontEnd {
       }
       return false
     }
+    const target = ev.target as HTMLElement | null
+    // Ctrl+S (⌘S) saves the rc file, in the box or out of it, rather than the page
+    if (this._view === 'rc' && (ev.ctrlKey || ev.metaKey) && !ev.altKey && ev.key.toLowerCase() === 's') {
+      ev.preventDefault()
+      void this.saveRc()
+      return true
+    }
+    // in the box, every key is the text's but the one out of it
+    if (target instanceof HTMLTextAreaElement) {
+      if (ev.key !== 'Escape') return false
+      this.stopEditing()
+      ev.preventDefault()
+      return true
+    }
     // Browser shortcuts (including modified Enter on a link) belong to the browser.
     if (ev.ctrlKey || ev.altKey || ev.metaKey || ev.key === 'Tab') return false
-    const target = ev.target as HTMLElement | null
     const inInput = target instanceof HTMLInputElement
     const dir = navDir(ev, inInput)
     if (dir) {
@@ -410,10 +452,15 @@ export class FrontEnd {
     this.nav.move(d > 0 ? 'right' : 'left')
   }
 
-  private activate() {
+  /** Choose the row under the cursor. A box of text is gone into: with the on-screen keyboard from a pad, straight to its caret from a keyboard. */
+  private activate(fromPad = false) {
     const cur = this.nav.current()
     if (!cur) return
-    if (cur.el instanceof HTMLInputElement || cur.el instanceof HTMLTextAreaElement) this.openOsk()
+    const text = cur.el.querySelector('textarea')
+    if (text) {
+      if (fromPad) this.typeText(text)
+      else this.editText(text)
+    } else if (cur.el instanceof HTMLInputElement || cur.el instanceof HTMLTextAreaElement) this.openOsk()
     else cur.activate()
   }
 
@@ -424,11 +471,13 @@ export class FrontEnd {
       el.setRangeText('\n', el.selectionStart, el.selectionEnd, 'end')
       el.dispatchEvent(new Event('input', { bubbles: true }))
     } else if (el instanceof HTMLInputElement && el.form) el.form.requestSubmit()
-    else this.activate()
+    else this.activate(true)
   }
 
   /** Open the on-screen keyboard on the focused field, if the focus is on one. */
   private openOsk() {
+    const text = this.nav.current()?.el.querySelector('textarea')
+    if (text) return this.typeText(text)
     const el = this.focused
     if (!(el instanceof HTMLInputElement)) return
     const input = el
@@ -444,6 +493,27 @@ export class FrontEnd {
       },
       this.root,
     )
+  }
+
+  /** Into a box of text from a keyboard: the caret goes in, and the keys are the text's until Esc. */
+  private editText(text: HTMLTextAreaElement) {
+    if (text.readOnly) return
+    text.focus({ preventScroll: true })
+  }
+
+  /** Into a box of text from a pad: the on-screen keyboard, with a key for a new line; Y or B comes back out. */
+  private typeText(text: HTMLTextAreaElement) {
+    if (text.readOnly) return
+    this.osk.attach({ input: text, extras: [{ ch: '\n', label: 'New line' }], submit: () => this.stopEditing(), cancel: () => this.stopEditing() }, this.root)
+  }
+
+  /** Out of the box: the cursor is on its row again, and up and down move it. */
+  private stopEditing() {
+    this.osk.detach()
+    const cur = this.nav.current()
+    if (!cur) return
+    if (document.activeElement instanceof HTMLTextAreaElement) document.activeElement.blur()
+    cur.el.focus({ preventScroll: true })
   }
 
   /** The next or previous section: Play (the home screen), Watch, Settings. Inert off the sections and in a flow. */
@@ -479,7 +549,7 @@ export class FrontEnd {
       const a = this.versionsOf
       this.versionsOf = null
       this.showAccounts(a ? 'versions:' + a.serverId + '/' + a.username : undefined)
-    }
+    } else if (v === 'rc') this.leaveRc()
     else if (v === 'exit') {
       // the screen behind the dialog is still the one to show: it is drawn again as it was (the shape it was
       // drawn from is kept, so it comes back as a redraw and does not play its way in a second time)
@@ -507,6 +577,7 @@ export class FrontEnd {
     else if (this._view === 'watch') this.showWatch()
     else if (this._view === 'accounts') this.showAccounts()
     else if (this._view === 'versions' && this.versionsOf) this.showOtherVersions(this.versionsOf)
+    else if (this._view === 'rc' && this.rc) this.showRc(this.rc.account, this.rc.gameId)
   }
 
   /** A redraw on the next frame: a burst of messages (the roster on arrival) is drawn once. */
@@ -565,6 +636,10 @@ export class FrontEnd {
     if (root === 'accounts' && sub === 'versions') {
       const account = r.serverId && r.username ? listAccounts().find((a) => sameAccount(a, { serverId: r.serverId!, username: r.username! })) : null
       return account ? this.showOtherVersions(account) : this.showHome()
+    }
+    if (root === 'accounts' && sub === 'rc') {
+      const account = r.serverId && r.username ? listAccounts().find((a) => sameAccount(a, { serverId: r.serverId!, username: r.username! })) : null
+      return account ? this.showRc(account, r.gameId ?? null) : this.showHome()
     }
     if (root === 'settings') {
       const group = settingGroups().find((g) => g.group.toLowerCase() === sub)?.group
@@ -666,6 +741,12 @@ export class FrontEnd {
         return
       }
       chips = null
+      if (r.text) {
+        const box = h('div', { class: 'item text-item' + (r.gap ? ' gap' : ''), dataset: { focus: r.id }, 'aria-label': r.label }, r.text)
+        list.append(box)
+        items.push({ id: r.id, label: r.label, el: box, row: i, activate: () => this.editText(r.text!), onFocus: () => this.onRow(r, box) })
+        return
+      }
       if (r.input) {
         const field = h('label', { class: 'item field-item' + (r.gap ? ' gap' : ''), dataset: { focus: r.id } }, h('span', { class: 'marker' }), h('span', { class: 'label' }, r.label), r.input)
         r.input.dataset.focus = r.id
@@ -751,8 +832,8 @@ export class FrontEnd {
   private onRow(r: Row, el: HTMLElement) {
     this.say(r.hint === r.sub ? '' : r.hint, r.fine)
     if (r.input) r.input.focus()
-    else if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) (document.activeElement as HTMLElement).blur()
-    void el
+    // a field elsewhere lets go of the caret; the row's own box (clicked into) keeps it
+    else if ((document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) && !el.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
   }
 
   /** The chosen account, and its server, when both are known. */
@@ -1346,7 +1427,7 @@ export class FrontEnd {
           this.connectTo(a, undefined, false)
         },
         also: server.offline
-          ? this.profileDelete(a)
+          ? [{ id: 'rc:' + a.serverId + '/' + a.username, label: '(edit rc)', title: `${a.username}'s rc file: the options every game on this device starts with.`, fn: () => this.showRc(a, null) }, ...this.profileDelete(a)]
           : [
               { id: 'versions:' + a.serverId + '/' + a.username, label: '(other versions)', title: `Every version ${server.name} offers, with its Sprint, tutorial and seeded games.`, fn: () => this.showOtherVersions(a) },
               { id: 'logout:' + a.serverId + '/' + a.username, label: '(log out)', title: `Forget ${a.username}'s login on this device.`, fn: () => this.logout(a) },
@@ -1377,7 +1458,7 @@ export class FrontEnd {
    * beside it. Reached only from Accounts, and nothing picked here sticks: the home screen stays the latest
    * and trunk.
    */
-  showOtherVersions(a: Account) {
+  showOtherVersions(a: Account, focus?: string) {
     const server = findServer(a.serverId)
     if (!server || server.offline) return this.showAccounts()
     const again = this._view === 'versions' && !!this.versionsOf && sameAccount(this.versionsOf, a)
@@ -1402,20 +1483,171 @@ export class FrontEnd {
         id: 'play:' + game.id, label: game.label, sub: save?.sub ?? null, marker: '>',
         hint: save?.hint ?? `A new game of ${game.label} on ${server.host}.`,
         fn: play(game),
-        also: modes.map((m) => {
-          const saved = !!m.save && m.save !== 'playing' && m.save !== 'slot full'
-          return { id: 'play:' + m.id, label: `(${saved ? 'continue ' : ''}${modeName(m)})`, title: saved ? `Continue ${m.label}: ${m.save}.` : `A new game of ${m.label} on ${server.host}.`, fn: play(m) }
-        }),
+        also: [
+          // the release's rc file, as the lobby offers it beside the game (game_links.html `(edit rc)`): first, so it
+          // stands in the same column on every row, however many modes follow
+          ...(game.rc ? [{ id: 'rc:' + game.rc, label: '(edit rc)', title: `Your rc file for ${game.label}: the options crawl starts with${sharedRc(games ?? [], game.rc, ' — ')}.`, fn: () => this.showRc(a, game.rc!) }] : []),
+          ...modes.map((m) => {
+            const saved = !!m.save && m.save !== 'playing' && m.save !== 'slot full'
+            return { id: 'play:' + m.id, label: `(${saved ? 'continue ' : ''}${modeName(m)})`, title: saved ? `Continue ${m.label}: ${m.save}.` : `A new game of ${m.label} on ${server.host}.`, fn: play(m) }
+          }),
+        ],
       })
     }
     const notices: HTMLElement[] = []
     if (!versions) notices.push(h('div', { class: 'hint' }, !s.conn.open ? 'Connecting…' : lobby?.complete ? 'No games offered by this server.' : 'Loading game versions…'))
     const shape = JSON.stringify([rows.map((r) => [r.id, r.label, r.sub, r.also?.map((m) => m.label)]), notices.map((n) => n.textContent)])
-    if (again && this.shape.get('versions') === shape && !this.error) return
+    if (again && !focus && this.shape.get('versions') === shape && !this.error) return
     this.setView('versions', 'versions-list')
     this.at({ kind: 'menu', path: 'accounts/versions', serverId: server.id, username: a.username })
     this.shape.set('versions', shape)
-    this.list({ cls: 'versions-list' + (again ? ' still' : ''), title: `Other versions · ${server.name}`, lede: 'Every version the server offers, and its other modes.', rows, notices, focus: again ? this.nav.current()?.id : rows[1]?.id ?? BACK })
+    this.list({ cls: 'versions-list' + (again ? ' still' : ''), title: `Other versions · ${server.name}`, lede: 'Every version the server offers, and its other modes.', rows, notices, focus: focus ?? (again ? this.nav.current()?.id : rows[1]?.id ?? BACK) })
+  }
+
+  /**
+   * An account's rc file (client.js `edit_rc`): the options crawl starts
+   * with, as text to edit and save back. On a server it is the file of one
+   * rc directory, which several games read (its Sprint, tutorial…); on this
+   * device, one file for every game the player plays (@orbrun/offline
+   * RcBook). A save is read back before it is called saved: a server says
+   * nothing after `set_rc`, whether it wrote the file or not. Reached from
+   * Other versions, or from a device player's row under Accounts.
+   */
+  showRc(a: Account, gameId: string | null) {
+    const server = findServer(a.serverId)
+    if (!server || (!server.offline && !gameId)) return this.showAccounts()
+    const again = this._view === 'rc' && !!this.rc && sameAccount(this.rc.account, a) && this.rc.gameId === gameId
+    if (!again) {
+      const text = h('textarea', { class: 'rc-text', spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off', wrap: 'off', rows: 14, 'aria-label': 'rc file' })
+      text.readOnly = true
+      text.addEventListener('input', () => this.rcMarks())
+      this.rc = { account: a, gameId, text, saved: null, state: 'reading', asked: false, note: null, leaving: false }
+      // the file is the logged-in account's, so this is a switch to it, as Other versions is
+      setChosenAccount(a)
+    }
+    const rc = this.rc!
+    const s = this.ensureSession(server, a.username)
+    const loggedIn = s.conn.open && !!s.state.lobby.username
+    if (loggedIn && !rc.asked) void this.readRc()
+    const games = server.offline ? [] : (this.games(server, s) ?? [])
+    const game = games.find((g) => g.id === gameId)
+    const where = server.offline ? 'this device' : server.host
+    const notices: HTMLElement[] = []
+    if (rc.note) notices.push(h('div', { class: rc.note.error ? 'error' : 'hint' }, rc.note.text))
+    else if (rc.state === 'reading') notices.push(h('div', { class: 'hint' }, !s.conn.open ? 'Connecting…' : loggedIn || s.loggingIn ? `Reading your rc file from ${where}…` : `Log in to ${server.host} to read your rc file.`))
+    const pad = !!this.hooks.padConnected?.()
+    const version = server.offline ? null : game ? gameLinkVersion(game) : null
+    const guide = `https://github.com/crawl/crawl/blob/${version && version !== 'trunk' ? 'stone_soup-' + version : 'master'}/crawl-ref/docs/options_guide.txt`
+    const rows: Row[] = [
+      { id: BACK, label: 'Back', marker: '<', hint: server.offline ? 'Back to the accounts.' : 'Back to the versions.', fn: () => this.back() },
+      { id: 'rc:text', label: 'rc file', text: rc.text, hint: 'Crawl’s options, one to a line.' + (pad ? ' A to type, Y when done; the right stick scrolls.' : ' Enter to edit, Esc when done, Ctrl+S to save.') },
+      {
+        id: 'rc:save', label: 'Save', sub: rcWord(rc), hint: server.offline ? 'Keep it on this device. It counts from the next game you start or continue.' : `Save it on ${server.host}. It counts from the next game you start or continue.`,
+        fn: () => void this.saveRc(),
+        also: [
+          { id: 'rc:revert', label: rc.state === 'failed' ? '(try again)' : '(revert)', title: rc.state === 'failed' ? `Ask ${where} for the file again.` : `Put back the file as ${where} has it, and lose what was not saved.`, fn: () => void this.readRc(true) },
+          { id: 'rc:guide', label: '(options guide)', title: 'Every option crawl reads, in its own guide. Opens in a new tab.', href: guide },
+        ],
+      },
+    ]
+    const shape = JSON.stringify([rows.map((r) => [r.id, r.label, r.sub, r.hint, r.also?.map((m) => m.label)]), notices.map((n) => n.textContent), rc.state])
+    if (again && this.shape.get('rc') === shape && !this.error) return
+    // a redraw while typing: the box is the same element, and the caret goes back where it was
+    const typing = document.activeElement === rc.text
+    const [from, to] = [rc.text.selectionStart, rc.text.selectionEnd]
+    const scroll = rc.text.scrollTop
+    this.setView('rc', 'rc-list')
+    this.at({ kind: 'menu', path: 'accounts/rc', serverId: server.id, username: a.username, ...(gameId && !server.offline ? { gameId } : {}) })
+    this.shape.set('rc', shape)
+    rc.text.readOnly = rc.state === 'reading' || rc.state === 'failed'
+    const lede = server.offline ? `${a.username} · every game on this device` : `${a.username} on ${server.name}${game ? ' · ' + game.label : ''}${sharedRc(games, gameId!, ' · ')}`
+    this.list({ cls: 'rc-list' + (again ? ' still' : ''), title: 'rc file', lede, rows, notices, focus: again ? this.nav.current()?.id : 'rc:text' })
+    rc.text.scrollTop = scroll
+    if (typing) {
+      rc.text.focus({ preventScroll: true })
+      rc.text.setSelectionRange(from, to)
+    }
+    this.rcMarks()
+  }
+
+  /** What changed in the box, said without drawing the screen again (the caret stays put): Save's word, and Back's. */
+  private rcMarks() {
+    const rc = this.rc
+    if (!rc || this._view !== 'rc') return
+    const dirty = rc.saved !== null && rc.text.value !== rc.saved
+    if (!dirty) rc.leaving = false
+    const sub = this.root.querySelector('[data-focus="rc:save"] .sub')
+    if (sub) sub.textContent = rcWord(rc)
+    const back = this.root.querySelector(`[data-focus="${BACK}"] .label`)
+    if (back) back.textContent = rc.leaving ? 'Back, without saving?' : 'Back'
+  }
+
+  /** Ask for the file; `revert` puts it in the box over what was typed. */
+  private async readRc(revert = false) {
+    const rc = this.rc
+    const server = rc ? findServer(rc.account.serverId) : null
+    if (!rc || !server || rc.state === 'saving' || (rc.state === 'reading' && rc.asked)) return
+    const s = this.ensureSession(server, rc.account.username)
+    rc.asked = true
+    rc.state = 'reading'
+    rc.note = null
+    if (revert) this.showRc(rc.account, rc.gameId)
+    const contents = await s.readRc(rc.gameId ?? '', RC_MS)
+    if (this.rc !== rc) return
+    if (contents === null) {
+      rc.state = rc.saved === null ? 'failed' : 'ready'
+      rc.note = { text: `No answer from ${server.offline ? 'this device' : server.host}: your rc file could not be read.`, error: true }
+    } else {
+      // the first read fills the box; a later one (revert) replaces what was typed
+      rc.saved = contents
+      rc.text.value = contents
+      rc.state = 'ready'
+    }
+    this.showRc(rc.account, rc.gameId)
+  }
+
+  /** Save the box, then read it back: only a file that reads back the same is called saved. */
+  private async saveRc() {
+    const rc = this.rc
+    const server = rc ? findServer(rc.account.serverId) : null
+    if (!rc || !server || rc.state !== 'ready') return
+    const where = server.offline ? 'this device' : server.host
+    if (rc.text.value === rc.saved) {
+      rc.note = { text: `Nothing to save: this is the file as ${where} has it.` }
+      return this.showRc(rc.account, rc.gameId)
+    }
+    const s = this.ensureSession(server, rc.account.username)
+    const text = rc.text.value
+    const id = rc.gameId ?? ''
+    rc.state = 'saving'
+    rc.note = null
+    this.showRc(rc.account, rc.gameId)
+    s.writeRc(id, text)
+    const back = await s.readRc(id, RC_MS)
+    if (this.rc !== rc) return
+    rc.state = 'ready'
+    if (back === text) {
+      rc.saved = text
+      rc.leaving = false
+      rc.note = { text: `Saved${server.offline ? '' : ' on ' + server.host}. It counts from the next game you start or continue.` }
+    } else rc.note = { text: back === null ? `No answer from ${where}. Your text is still here: try Save again.` : `${where} did not keep it. Your text is still here: try Save again.`, error: true }
+    this.showRc(rc.account, rc.gameId)
+  }
+
+  /** Back out of the rc file, to where it was opened from; changes not saved ask for a second Back first. */
+  private leaveRc() {
+    const rc = this.rc
+    if (!rc) return this.showAccounts()
+    if (rc.saved !== null && rc.text.value !== rc.saved && !rc.leaving) {
+      rc.leaving = true
+      this.rcMarks()
+      this.say('Your changes are not saved. Back again leaves without them; Save keeps them.')
+      return
+    }
+    this.rc = null
+    const server = findServer(rc.account.serverId)
+    if (server?.offline) this.showAccounts('rc:' + rc.account.serverId + '/' + rc.account.username)
+    else this.showOtherVersions(rc.account, rc.gameId ? 'rc:' + rc.gameId : undefined)
   }
 
   /**
@@ -1664,7 +1896,7 @@ export class FrontEnd {
     this.session = session
     this.unsub = session.on((e) => {
       // every message redraws what changed, once a frame however many came
-      if ((e.type === 'state' || e.type === 'open') && (this._view === 'home' || this._view === 'watch' || this._view === 'accounts' || this._view === 'versions')) this.schedule()
+      if ((e.type === 'state' || e.type === 'open') && (this._view === 'home' || this._view === 'watch' || this._view === 'accounts' || this._view === 'versions' || this._view === 'rc')) this.schedule()
       if (e.type === 'state' && e.msg.msg === 'login_success' && (this._view === 'login' || this._view === 'register')) this.loggedIn(session)
       if (e.type === 'state' && e.msg.msg === 'login_fail' && this._view === 'login') this.showLogin()
       if (e.type === 'state' && e.msg.msg === 'register_fail' && this._view === 'register') this.showRegister()
@@ -1676,7 +1908,7 @@ export class FrontEnd {
         // a drop the app is already retrying says so; one it is not (the server closed it) says why. Only a screen
         // that stands on the connection says it: one that does not (the server list, the settings) is not redrawn,
         // so the words would wait there and turn up on the next screen, long after the connection was back
-        const says = !this.hooks.parked?.() && (this._view === 'login' || this._view === 'register' || this._view === 'home' || this._view === 'watch' || this._view === 'accounts' || this._view === 'versions')
+        const says = !this.hooks.parked?.() && (this._view === 'login' || this._view === 'register' || this._view === 'home' || this._view === 'watch' || this._view === 'accounts' || this._view === 'versions' || this._view === 'rc')
         if (says) this.error = this.hooks.retrying?.() ? 'Connection lost. Reconnecting…' : 'Connection closed: ' + e.reason
         if (this._view === 'login' || this._view === 'register') this.goHome()
         else if (says) {
@@ -1989,6 +2221,21 @@ function siteLink(sv: ServerInfo): NonNullable<Row['also']>[number] {
 }
 
 /** A mode's name beside its release: "Custom seed 0.34" is (seed), "Tutorial trunk" (tutorial). */
+/** What the Save row says of the file: where it stands against the one on the server. */
+function rcWord(rc: RcEdit): string {
+  if (rc.state === 'reading') return 'reading…'
+  if (rc.state === 'saving') return 'saving…'
+  if (rc.state === 'failed') return 'not read'
+  return rc.text.value === rc.saved ? 'no changes' : 'unsaved changes'
+}
+
+/** The other games that read the rc file `rc` names (GameLink `rc`), as words after `lead`; nothing when there are none. */
+function sharedRc(games: GameLink[], rc: string, lead: string): string {
+  const also = games.filter((g) => g.rc === rc && g.id !== rc && !g.disabled).map((g) => g.label)
+  if (!also.length) return ''
+  return `${lead}${also.length === 1 ? also[0] + ' reads it too' : also.slice(0, -1).join(', ') + ' and ' + also.at(-1) + ' read it too'}`
+}
+
 function modeName(g: GameLink): string {
   const text = `${g.label} ${g.id}`
   if (/seed/i.test(text)) return 'seed'

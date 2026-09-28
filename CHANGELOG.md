@@ -2,6 +2,10 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.4 — 2026-09-28
+
+- Edit your rc file in Orbrun: your options, autopickup rules and Lua, saved to the server. Find it under Accounts > (other versions) > (edit rc), or beside a player on this device, whose games read it too.
+
 ## 0.2.3 — 2026-09-28
 
 - Play older versions of the game, plus Sprint, the tutorial and seeded games: find them under Accounts > (other versions).
