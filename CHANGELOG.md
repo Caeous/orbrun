@@ -2,6 +2,10 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.3 — 2026-09-28
+
+- Play older versions of the game, plus Sprint, the tutorial and seeded games: find them under Accounts > (other versions).
+
 ## 0.2.2 — 2026-09-25
 
 - A new About page shows Orbrun in real games, from Lair to the Abyss; What’s new and Add to Steam match it.

@@ -1,4 +1,4 @@
-import { cm, gameLinkRows, type GameLink, type GameState, type LobbyEntry } from '@orbrun/webtiles'
+import { cm, gameLinkRows, gameVersionRows, type GameLink, type GameState, type LobbyEntry } from '@orbrun/webtiles'
 import { settingsPanel } from './settings-panel'
 import { settingGroups, type SettingGroup } from './settings-rows'
 import { controlsSheet } from './controls-sheet'
@@ -24,7 +24,7 @@ export type Intent = { kind: 'play'; gameId: string } | { kind: 'watch'; usernam
  * shoulder buttons walk; the rest are the flows off them: the account and
  * server flows off the account row, the login and register forms.
  */
-export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'servers' | 'add-server' | 'login' | 'register' | 'exit' | 'doc'
+export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'versions' | 'servers' | 'add-server' | 'login' | 'register' | 'exit' | 'doc'
 
 const SECTIONS: View[] = ['home', 'watch', 'settings']
 
@@ -175,6 +175,8 @@ export class FrontEnd {
   private adding: ServerInfo | null = null
   /** the offline profile whose Delete was pressed once, asking to be pressed again (profileDelete) */
   private deleting: Account | null = null
+  /** whose Other versions are on show */
+  private versionsOf: Account | null = null
   /** where the server list was opened from, so B retraces the way in: the accounts, or the front screen */
   private serversFrom: View = 'accounts'
   /** what the server list was opened for, which Add a server goes back to */
@@ -473,6 +475,11 @@ export class FrontEnd {
       else this.showHome()
     } else if (v === 'watch') this.goHome()
     else if (v === 'accounts') this.showHome()
+    else if (v === 'versions') {
+      const a = this.versionsOf
+      this.versionsOf = null
+      this.showAccounts(a ? 'versions:' + a.serverId + '/' + a.username : undefined)
+    }
     else if (v === 'exit') {
       // the screen behind the dialog is still the one to show: it is drawn again as it was (the shape it was
       // drawn from is kept, so it comes back as a redraw and does not play its way in a second time)
@@ -499,6 +506,7 @@ export class FrontEnd {
     if (this._view === 'home') this.showHome()
     else if (this._view === 'watch') this.showWatch()
     else if (this._view === 'accounts') this.showAccounts()
+    else if (this._view === 'versions' && this.versionsOf) this.showOtherVersions(this.versionsOf)
   }
 
   /** A redraw on the next frame: a burst of messages (the roster on arrival) is drawn once. */
@@ -553,6 +561,10 @@ export class FrontEnd {
       if (root === 'register' && this.adding && !server.offline) this.showRegister()
       else this.showLogin()
       return
+    }
+    if (root === 'accounts' && sub === 'versions') {
+      const account = r.serverId && r.username ? listAccounts().find((a) => sameAccount(a, { serverId: r.serverId!, username: r.username! })) : null
+      return account ? this.showOtherVersions(account) : this.showHome()
     }
     if (root === 'settings') {
       const group = settingGroups().find((g) => g.group.toLowerCase() === sub)?.group
@@ -906,7 +918,6 @@ export class FrontEnd {
       if (login === 'out') {
         rows.push({ id: 'login', label: 'Log in', sub: `as ${account.username}`, marker: '\\', main: true, gap: true, hint: `${server.host} asks who you are before it offers a game.`, fn: () => this.showLogin() })
       } else {
-        const last = getLast()
         const who = loggedIn ?? account.username
         const where = this.whereFor(server, who)
         // One row per version, in the lobby's own order: the latest release leads, always, then trunk. The row
@@ -914,10 +925,6 @@ export class FrontEnd {
         // the server says is waiting — a front screen that reshuffles itself is one you have to read before
         // pressing.
         const ordered = offered.map(({ game, version }) => ({ game, save: this.saveOf(game, version, who, s, where) }))
-        // Keep access to a last-played older version even when the normal list
-        // only shows the latest release, but never re-enable a disabled slot.
-        const previous = last?.serverId === server.id ? games?.find((g) => g.id === last.gameId && !g.disabled) : null
-        if (previous && !offered.some((o) => o.game === previous)) ordered.push({ game: previous, save: this.saveOf(previous, null, who, s, where) })
         const primary = ordered[0]
         for (const { game: g, save } of ordered) {
           rows.push({
@@ -1338,7 +1345,12 @@ export class FrontEnd {
           // a switch, not a return from a game: what the server said is waiting still stands
           this.connectTo(a, undefined, false)
         },
-        also: server.offline ? this.profileDelete(a) : [{ id: 'logout:' + a.serverId + '/' + a.username, label: '(log out)', title: `Forget ${a.username}'s login on this device.`, fn: () => this.logout(a) }],
+        also: server.offline
+          ? this.profileDelete(a)
+          : [
+              { id: 'versions:' + a.serverId + '/' + a.username, label: '(other versions)', title: `Every version ${server.name} offers, with its Sprint, tutorial and seeded games.`, fn: () => this.showOtherVersions(a) },
+              { id: 'logout:' + a.serverId + '/' + a.username, label: '(log out)', title: `Forget ${a.username}'s login on this device.`, fn: () => this.logout(a) },
+            ],
       })
     }
     // asked ahead, so the home screen an account is switched to comes up with its Continue already there, rather
@@ -1357,6 +1369,53 @@ export class FrontEnd {
     this.at({ kind: 'menu', path: 'accounts' })
     this.shape.set('accounts', shape)
     this.list({ cls: 'accounts-list' + (again ? ' still' : ''), title: 'Accounts', lede: 'The accounts on this device.', rows, focus: focus ?? (again ? this.nav.current()?.id : this.marks.get('accounts') ?? rows.find((r) => r.main)?.id) })
+  }
+
+  /**
+   * Everything an account's server offers, one row per release (trunk, then newest first): the plain game is
+   * the row, with its save when the server says so, and the modes (Sprint, the tutorial, a custom seed…) stand
+   * beside it. Reached only from Accounts, and nothing picked here sticks: the home screen stays the latest
+   * and trunk.
+   */
+  showOtherVersions(a: Account) {
+    const server = findServer(a.serverId)
+    if (!server || server.offline) return this.showAccounts()
+    const again = this._view === 'versions' && !!this.versionsOf && sameAccount(this.versionsOf, a)
+    this.versionsOf = a
+    // the links come only to a logged-in account, so this is a switch to it, as picking its row is
+    if (!again) setChosenAccount(a)
+    const s = this.ensureSession(server, a.username)
+    const lobby = s.conn.open ? s.state.lobby : null
+    const who = (lobby?.username || null) ?? a.username
+    const where = this.whereFor(server, who)
+    const games = this.games(server, s)
+    const versions = games?.length ? gameVersionRows(games) : null
+    const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back to the accounts.', fn: () => this.back() }]
+    const play = (g: GameLink) => () => {
+      this.versionsOf = null
+      this.connectTo(a, { kind: 'play', gameId: g.id })
+    }
+    for (const { version, game, modes } of versions ?? []) {
+      // a `.where` answers for its version's plain game only, never for a mode of it
+      const save = this.saveOf(game, version, who, s, where)
+      rows.push({
+        id: 'play:' + game.id, label: game.label, sub: save?.sub ?? null, marker: '>',
+        hint: save?.hint ?? `A new game of ${game.label} on ${server.host}.`,
+        fn: play(game),
+        also: modes.map((m) => {
+          const saved = !!m.save && m.save !== 'playing' && m.save !== 'slot full'
+          return { id: 'play:' + m.id, label: `(${saved ? 'continue ' : ''}${modeName(m)})`, title: saved ? `Continue ${m.label}: ${m.save}.` : `A new game of ${m.label} on ${server.host}.`, fn: play(m) }
+        }),
+      })
+    }
+    const notices: HTMLElement[] = []
+    if (!versions) notices.push(h('div', { class: 'hint' }, !s.conn.open ? 'Connecting…' : lobby?.complete ? 'No games offered by this server.' : 'Loading game versions…'))
+    const shape = JSON.stringify([rows.map((r) => [r.id, r.label, r.sub, r.also?.map((m) => m.label)]), notices.map((n) => n.textContent)])
+    if (again && this.shape.get('versions') === shape && !this.error) return
+    this.setView('versions', 'versions-list')
+    this.at({ kind: 'menu', path: 'accounts/versions', serverId: server.id, username: a.username })
+    this.shape.set('versions', shape)
+    this.list({ cls: 'versions-list' + (again ? ' still' : ''), title: `Other versions · ${server.name}`, lede: 'Every version the server offers, and its other modes.', rows, notices, focus: again ? this.nav.current()?.id : rows[1]?.id ?? BACK })
   }
 
   /**
@@ -1605,7 +1664,7 @@ export class FrontEnd {
     this.session = session
     this.unsub = session.on((e) => {
       // every message redraws what changed, once a frame however many came
-      if ((e.type === 'state' || e.type === 'open') && (this._view === 'home' || this._view === 'watch' || this._view === 'accounts')) this.schedule()
+      if ((e.type === 'state' || e.type === 'open') && (this._view === 'home' || this._view === 'watch' || this._view === 'accounts' || this._view === 'versions')) this.schedule()
       if (e.type === 'state' && e.msg.msg === 'login_success' && (this._view === 'login' || this._view === 'register')) this.loggedIn(session)
       if (e.type === 'state' && e.msg.msg === 'login_fail' && this._view === 'login') this.showLogin()
       if (e.type === 'state' && e.msg.msg === 'register_fail' && this._view === 'register') this.showRegister()
@@ -1617,7 +1676,7 @@ export class FrontEnd {
         // a drop the app is already retrying says so; one it is not (the server closed it) says why. Only a screen
         // that stands on the connection says it: one that does not (the server list, the settings) is not redrawn,
         // so the words would wait there and turn up on the next screen, long after the connection was back
-        const says = !this.hooks.parked?.() && (this._view === 'login' || this._view === 'register' || this._view === 'home' || this._view === 'watch' || this._view === 'accounts')
+        const says = !this.hooks.parked?.() && (this._view === 'login' || this._view === 'register' || this._view === 'home' || this._view === 'watch' || this._view === 'accounts' || this._view === 'versions')
         if (says) this.error = this.hooks.retrying?.() ? 'Connection lost. Reconnecting…' : 'Connection closed: ' + e.reason
         if (this._view === 'login' || this._view === 'register') this.goHome()
         else if (says) {
@@ -1927,6 +1986,16 @@ function exitTitle(reason: string, watched: string | null): string {
  */
 function siteLink(sv: ServerInfo): NonNullable<Row['also']>[number] {
   return { id: 'site:' + sv.id, label: '(site ↗)', title: `Open ${sv.host} in a new tab: the server's own page, with its news, rules and how to support it. Your game stays here.`, href: sv.http + '/' }
+}
+
+/** A mode's name beside its release: "Custom seed 0.34" is (seed), "Tutorial trunk" (tutorial). */
+function modeName(g: GameLink): string {
+  const text = `${g.label} ${g.id}`
+  if (/seed/i.test(text)) return 'seed'
+  if (/\bspr(int)?\b|^spr-/i.test(text)) return 'sprint'
+  if (/\btut(orial)?\b|^tut-/i.test(text)) return 'tutorial'
+  if (/\bzd\b|zot ?def/i.test(text)) return 'zot defence'
+  return g.label.replace(/\b(dcss|trunk|git|\d+\.\d+)\b/gi, '').trim().toLowerCase() || g.label
 }
 
 function serverWhere(sv: ServerInfo): string {

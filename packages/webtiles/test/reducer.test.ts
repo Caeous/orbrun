@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { initialState, reduce, floorItemsCount, floorItemsLabel, formattedStringToHtml, itemsUnderfoot, keyMessage, mapKey, latestGameLinks, gameLinkRows, MSGCH, type ServerMessage } from '../src/index.js'
+import { initialState, reduce, floorItemsCount, floorItemsLabel, formattedStringToHtml, itemsUnderfoot, keyMessage, mapKey, latestGameLinks, gameLinkRows, gameVersionRows, MSGCH, type ServerMessage } from '../src/index.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -557,6 +557,36 @@ describe('set_game_links', () => {
     expect(rows.latest.map((g) => g.id)).toEqual(['dcss-0.34'])
     expect(rows.trunk.map((g) => g.id)).toEqual(['dcss-git'])
     expect(rows.other).toEqual([])
+  })
+
+  it("groups CDI's links one row per release, trunk first, each with its modes beside it", () => {
+    const cdi = JSON.parse(readFileSync(join(here, 'fixtures', 'set-game-links-cdi.json'), 'utf8')) as { msgs: ServerMessage[] }
+    const st = initialState()
+    reduce(st, cdi.msgs[0])
+    const rows = gameVersionRows(st.lobby.games)
+    expect(rows.map((r) => [r.version, r.game.id])).toEqual([
+      ['trunk', 'dcss-git'],
+      ['0.34', 'dcss-0.34'],
+      ['0.33', 'dcss-0.33'],
+      ['0.32', 'dcss-0.32'],
+      ['0.31', 'dcss-0.31'],
+      ['0.30', 'dcss-0.30'],
+    ])
+    expect(rows[0].modes.map((g) => g.id)).toEqual(['seeded-git', 'spr-git', 'tut-git'])
+  })
+
+  it('leads a release with no plain game with its first mode, and leaves out a held slot', () => {
+    const rows = gameVersionRows([
+      { id: 'dcss-0.34', label: 'DCSS 0.34' },
+      { id: 'zd-0.17', label: 'Zot Defence 0.17' },
+      { id: 'dcss-0.33', label: 'DCSS 0.33', save: 'slot full', disabled: true },
+      { id: 'spr-0.33', label: 'Sprint 0.33' },
+    ])
+    expect(rows.map((r) => [r.game.id, r.modes.map((g) => g.id)])).toEqual([
+      ['dcss-0.34', []],
+      ['spr-0.33', []],
+      ['zd-0.17', []],
+    ])
   })
 
   it("reads the names past CDI's separators, entities and all", () => {

@@ -534,6 +534,11 @@ img.room-poster.up {
   flex-direction: column;
   gap: 0.6rem;
 }
+.frame.menu-frame .brand:has(.beside + .beside) {
+  /* two or more controls beside a row (an account's other versions and log out, a release's modes) take their
+     own width, not the row's: its name and the line under it keep the room they have without them */
+  width: 48rem;
+}
 .frame.menu-frame .brand .head {
   margin-bottom: 0.6rem;
 }
@@ -732,6 +737,10 @@ a.item.beside {
 .frame.menu-frame .menu-actions:has(.beside + .beside) {
   grid-template-columns: minmax(0, 1fr) max-content max-content;
 }
+/* a release's three modes beside it (Other versions: seed, sprint, tutorial) take a fourth */
+.frame.menu-frame .menu-actions:has(.beside + .beside + .beside) {
+  grid-template-columns: minmax(0, 1fr) max-content max-content max-content;
+}
 .frame.menu-frame .menu-actions .line {
   display: contents;
 }
@@ -741,6 +750,26 @@ a.item.beside {
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   width: 100%;
+}
+/* a phone has no room for two or more controls beside a row: they go on a line of their own under its
+   name, lined up with the text, so the name keeps the width it needs. One (a server's site) still fits */
+@media (max-width: 600px) {
+  .frame.menu-frame .menu-actions:has(.beside + .beside) {
+    display: flex;
+    flex-direction: column;
+  }
+  .frame.menu-frame .menu-actions:has(.beside + .beside) .line {
+    display: flex;
+  }
+  .frame.menu-frame .menu-actions .line:has(> .beside + .beside) {
+    flex-wrap: wrap;
+  }
+  .frame.menu-frame .menu-actions .line:has(> .beside + .beside) > .item:first-child {
+    flex: 1 0 100%;
+  }
+  .frame.menu-frame .menu-actions .line:has(> .beside + .beside) > .item:first-child + .item.beside {
+    margin-left: calc(var(--menu-label-inset) - 0.5rem);
+  }
 }
 .frame.menu-frame .menu-actions .line > .item:first-child .label {
   grid-area: 1 / 1;
@@ -780,6 +809,9 @@ a.item.beside {
 }
 .frame.menu-frame .item.beside + .item.beside {
   grid-column: 3;
+}
+.frame.menu-frame .item.beside + .item.beside + .item.beside {
+  grid-column: 4;
 }
 .frame.menu-frame .item.beside .label {
   font-size: var(--menu-note-size);

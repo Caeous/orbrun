@@ -60,6 +60,7 @@ interface Made {
   play: ReturnType<typeof vi.fn>
   logout: ReturnType<typeof vi.fn>
   page: ReturnType<typeof vi.fn>
+  at: ReturnType<typeof vi.fn>
 }
 
 const made: FrontEnd[] = []
@@ -87,9 +88,10 @@ function make(session?: (server: ServerInfo, username: string | null) => Session
   const play = vi.fn()
   const logout = vi.fn()
   const page = vi.fn()
-  const screen = new FrontEnd(host, { connect, session: (s, u) => session?.(s, u) ?? null, logout, play, watch, at: () => {}, page, padConnected: () => padConnected })
+  const at = vi.fn()
+  const screen = new FrontEnd(host, { connect, session: (s, u) => session?.(s, u) ?? null, logout, play, watch, at, page, padConnected: () => padConnected })
   made.push(screen)
-  return { screen, connect, watch, play, logout, page }
+  return { screen, connect, watch, play, logout, page, at }
 }
 
 /** The rows of the screen's list: the label of each item, in order (the roster's rows by player). */
@@ -921,7 +923,7 @@ describe('the front end: accounts and servers', () => {
       localStorage.setItem('orbrun.accounts', JSON.stringify([marc, orbrun]))
       const { screen } = make()
       screen.showAccounts()
-      expect(labels(screen)).toEqual(['Back', 'Marc', '(delete)', 'orbrun · CDI', '(log out)', 'Add an account'])
+      expect(labels(screen)).toEqual(['Back', 'Marc', '(delete)', 'orbrun · CDI', '(other versions)', '(log out)', 'Add an account'])
       expect(sub(screen, 'Marc')).toBe('on this device')
       // and the home screen's account row names it as the account list does: the name alone
       localStorage.setItem('orbrun.account', JSON.stringify(marc))
@@ -938,7 +940,7 @@ describe('the front end: accounts and servers', () => {
     const { screen, connect } = make()
     pick(screen, 'orbrun · CDI')
     expect(screen.view).toBe('accounts')
-    expect(labels(screen)).toEqual(['Back', 'orbrun · CDI', '(log out)', 'orbrun · CKO', '(log out)', 'Add an account'])
+    expect(labels(screen)).toEqual(['Back', 'orbrun · CDI', '(other versions)', '(log out)', 'orbrun · CKO', '(other versions)', '(log out)', 'Add an account'])
     expect(sub(screen, 'orbrun · CDI')).toContain('crawl.dcss.io')
     screen.root.querySelector<HTMLElement>('[data-focus="account:cko/orbrun"]')!.click()
     expect(connect).toHaveBeenCalledWith(cko, 'orbrun', undefined)
@@ -1131,22 +1133,56 @@ describe('the front end: Play and Watch', () => {
     expect(screen.root.textContent).not.toContain('Loading game versions…')
   })
 
-  it('keeps a last-played older version on the list, after the latest, and never offers a disabled slot', () => {
+  it('keeps older versions and other modes off home: they are the account\'s Other versions, and nothing picked there sticks', () => {
     const s = loggedIn()
     localStorage.setItem('orbrun.last', JSON.stringify({ serverId: 'cdi', gameId: 'dcss-web-0.33' }))
     s.state.lobby.games.push(
+      { id: 'sprint-web-0.34', label: 'Sprint 0.34' },
+      { id: 'dcss-web-0.32', label: 'DCSS 0.32' },
       { id: 'dcss-web-0.33', label: 'DCSS 0.33', save: 'orbrun, a level 5 Gargoyle Fighter' },
+      { id: 'tut-web-trunk', label: 'Tutorial trunk' },
+      { id: 'zd-0.17', label: 'Zot Defence 0.17' },
       { id: 'other-game', label: 'Other game', save: 'slot full', disabled: true },
     )
-    const { screen } = make(() => s)
-    // 0.33 is off the lobby's own rows (only the latest release and trunk are shown), and being the last played
-    // brings it back — at the end, where an old version belongs; the cursor stays on the latest release
-    expect(labels(screen).slice(0, 3)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Continue DCSS 0.33'])
-    expect(focused(screen)).toBe('play:dcss-web-0.34')
-    expect(labels(screen).some((label) => label.includes('Other game'))).toBe(false)
-    s.state.lobby.games.find((g) => g.id === 'dcss-web-0.33')!.disabled = true
-    screen.refresh()
+    const { screen, connect } = make(() => s)
+    // the last played is 0.33, and still the home screen is the latest release and trunk
+    expect(labels(screen).slice(0, 3)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch'])
+    pick(screen, 'orbrun · CDI')
+    expect(screen.view).toBe('accounts')
+    press(screen, 'ArrowRight')
+    expect(focused(screen)).toBe('versions:cdi/orbrun')
+    pad(screen, 'A')
+    expect(screen.view).toBe('versions')
+    // one row per release, trunk first, the modes beside it; a slot another game holds is not offered
+    expect(labels(screen)).toEqual(['Back', 'DCSS trunk', '(tutorial)', 'DCSS 0.34', '(sprint)', 'DCSS 0.33', 'DCSS 0.32', 'Zot Defence 0.17'])
+    expect(sub(screen, 'DCSS 0.33')).toBe('a level 5 Gargoyle Fighter')
+    expect(focused(screen)).toBe('play:dcss-web-trunk')
+    press(screen, 'ArrowRight')
+    expect(focused(screen)).toBe('play:tut-web-trunk')
+    pad(screen, 'A')
+    expect(connect).toHaveBeenLastCalledWith(cdi, 'orbrun', { kind: 'play', gameId: 'tut-web-trunk' })
+    pick(screen, 'orbrun · CDI')
+    pick(screen, '(other versions)')
+    expect(screen.view).toBe('versions')
+    pad(screen, 'B')
+    expect(screen.view).toBe('accounts')
+    expect(focused(screen)).toBe('versions:cdi/orbrun')
+    pad(screen, 'A')
+    pick(screen, 'DCSS 0.33')
+    expect(connect).toHaveBeenLastCalledWith(cdi, 'orbrun', { kind: 'play', gameId: 'dcss-web-0.33' })
+    expect(screen.view).toBe('home')
     expect(labels(screen)).not.toContain('Continue DCSS 0.33')
+  })
+
+  it('opens Other versions from its address, and says it while on show', () => {
+    const s = loggedIn()
+    const { screen, at } = make(() => s)
+    screen.open({ kind: 'menu', path: 'accounts/versions', serverId: 'cdi', username: 'orbrun' })
+    expect(screen.view).toBe('versions')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'accounts/versions', serverId: 'cdi', username: 'orbrun' })
+    // an account this device does not have: the home screen
+    screen.open({ kind: 'menu', path: 'accounts/versions', serverId: 'cdi', username: 'stranger' })
+    expect(screen.view).toBe('home')
   })
 
   it('Watch is the roster, by player, and a row picked spectates them', () => {

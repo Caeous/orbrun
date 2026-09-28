@@ -952,7 +952,7 @@ function topLevelSpans(html: string): string[] {
  * git/trunk builds, a numeric "0.34"-style string for stable releases, or
  * null when nothing recognisable is present.
  */
-function gameLinkVersion(g: GameLink): string | null {
+export function gameLinkVersion(g: GameLink): string | null {
   const text = `${g.label} ${g.id}`
   if (/\b(trunk|git)\b/i.test(text)) return 'trunk'
   const m = /\b(\d+\.\d+)\b/.exec(text)
@@ -1017,6 +1017,56 @@ export function gameLinkRows(games: GameLink[]): GameLinkRows {
     }
   }
   return rows
+}
+
+/** One release on the account's Other versions screen: its plain game, and the modes beside it. */
+export interface GameVersionRow {
+  /** "trunk", "0.34", or null for links with no version */
+  version: string | null
+  /** the plain game; a release with none (Zot Defence 0.17 alone) leads with its first mode */
+  game: GameLink
+  /** custom seed, Sprint, the tutorial, Zot Defence…, in the server's order */
+  modes: GameLink[]
+}
+
+/** A mode of play rather than a release's plain game: custom seed, Sprint, the tutorial, Zot Defence. */
+function isModeLink(g: GameLink): boolean {
+  return isHiddenGameLink(g) || /\b(zd|zotdef|zot def(ence|ense))\b|^zd-/i.test(`${g.label} ${g.id}`)
+}
+
+/**
+ * Every enabled link, one row per release: trunk, then the releases newest
+ * first, then anything unversioned the home screen does not already show.
+ * A slot another game holds is left out, as it is from the home screen.
+ */
+export function gameVersionRows(games: GameLink[]): GameVersionRow[] {
+  const rank = (v: string | null) => {
+    if (v === 'trunk') return 1e9
+    if (!v) return -1
+    const [a, b] = v.split('.').map(Number)
+    return a * 1000 + b
+  }
+  const shownOnHome = new Set(gameLinkRows(games).other)
+  const by = new Map<string | null, { plain: GameLink[]; modes: GameLink[] }>()
+  for (const g of games) {
+    if (g.disabled) continue
+    const v = gameLinkVersion(g)
+    const mode = isModeLink(g)
+    if (!v && !mode && shownOnHome.has(g)) continue
+    if (!by.has(v)) by.set(v, { plain: [], modes: [] })
+    by.get(v)![mode ? 'modes' : 'plain'].push(g)
+  }
+  const rows: GameVersionRow[] = []
+  for (const [version, { plain, modes }] of by) {
+    // unversioned links have nothing in common: each is a row of its own
+    if (version === null) for (const g of [...plain, ...modes]) rows.push({ version, game: g, modes: [] })
+    else {
+      const [game, ...rest] = [...plain, ...modes]
+      rows.push({ version, game, modes: rest })
+    }
+  }
+  // stable: unversioned rows keep the server's order, at the end
+  return rows.sort((a, b) => rank(b.version) - rank(a.version))
 }
 
 const PLAYER_KEYS_IGNORED = new Set(['msg', 'inv'])

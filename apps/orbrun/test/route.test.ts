@@ -86,6 +86,18 @@ describe('routes', () => {
     expect(parseRoute(base + 'login/cdi/ORBRUN')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'orbrun' })
   })
 
+  it('gives an account’s Other versions an address, named as a play address names who plays', () => {
+    const versions = { kind: 'menu', path: 'accounts/versions', serverId: 'cdi', username: 'orbrun' } as const
+    expect(formatRoute(versions)).toBe('/accounts/versions/cdi#orbrun')
+    expect(parseRoute(base + 'accounts/versions/cdi#ORBRUN')).toEqual(versions)
+    expect(parseRoute(base + 'Accounts/Versions/CDI#orbrun')).toEqual(versions)
+    // the only account on cdi
+    expect(parseRoute(base + 'accounts/versions/cdi')).toEqual(versions)
+    // an account this device does not have: its login, to add it
+    expect(parseRoute(base + 'accounts/versions/cdi#stranger')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
+    for (const path of ['versions/cdi', 'accounts/versions', 'accounts/versions/nowhere', 'accounts/versions/cdi/orbrun']) expect(parseRoute(base + path), path).toEqual({ kind: 'home' })
+  })
+
   it('ignores paths it does not know', () => {
     for (const path of ['nowhere', 'play', 'play/cdi', 'play/cdi#orbrun', 'play/cdi/orbrun/dcss-0.34/more', 'watch/nowhere.example', 'watch/cdi/bob/more', 'lobby/cdi', 'about', 'about/new', 'login/cdi/orbrun/more'])
       expect(parseRoute(base + path)).toEqual({ kind: 'home' })

@@ -2,7 +2,7 @@ import type { HintMode } from './gamepad-hints'
 import type { GameLink } from '@orbrun/webtiles'
 import bundled from '../data/servers.json'
 import { canQuit } from './quit'
-import { MENU_PATH, titleAt } from './site'
+import { MENU_PATH, titleAt, VERSIONS_PATH } from './site'
 
 export interface ServerInfo {
   id: string
@@ -680,7 +680,8 @@ export type Route =
 
 /**
  * A front-end screen: `path` is one of MENU_PATH's, or `login`/`register`
- * on `serverId` (as `username`, when the address names one).
+ * on `serverId` (as `username`, when the address names one), or
+ * `accounts/versions`, an account's Other versions (`username` always named).
  */
 export interface MenuRoute {
   kind: 'menu'
@@ -736,6 +737,16 @@ export function parseRoute(href: string = window.location.href): Route {
   if (!parts.length) return { kind: 'home' }
   const menu = parts.join('/').toLowerCase()
   if (MENU_PATH.test(menu)) return { kind: 'menu', path: menu }
+  // an account's Other versions (`/accounts/versions/cdi#orbrun`): who, as a play address says it; there are no
+  // versions to pick on this device
+  if (parts.length === 3 && parts.slice(0, 2).join('/').toLowerCase() === VERSIONS_PATH) {
+    const server = findServer(parts[2].toLowerCase())
+    if (!server || server.offline) return { kind: 'home' }
+    const named = hash.length > 1 ? decode(hash.slice(1)) : null
+    const account = named ? knownAccount(server.id, named) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
+    if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
+    return { kind: 'menu', path: VERSIONS_PATH, serverId: server.id, username: account.username }
+  }
   const [verb, where, ...rest] = parts
   const server = where === undefined ? null : findServer(where.toLowerCase())
   if (!server) return { kind: 'home' }
@@ -781,7 +792,7 @@ function tagOf(name: string | undefined): string {
 export function formatRoute(r: Route): string {
   const q = window.location.search
   if (r.kind === 'home') return '/' + q
-  if (r.kind === 'menu') return (r.serverId ? pathOf(r.path, r.serverId) : '/' + r.path) + q + tagOf(r.serverId ? r.username : undefined)
+  if (r.kind === 'menu') return (r.serverId ? pathOf(...r.path.split('/'), r.serverId) : '/' + r.path) + q + tagOf(r.serverId ? r.username : undefined)
   if (r.kind === 'lobby') return pathOf('watch', r.serverId) + q
   if (r.kind === 'watch') return pathOf('watch', r.serverId) + q + tagOf(r.username)
   const { serverId, username } = r.account

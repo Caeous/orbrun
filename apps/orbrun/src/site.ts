@@ -71,6 +71,9 @@ export const MENU_PATH = /^(settings(\/[a-z]+)?|settings\/controls\/gamepad|acco
 /** the verbs of an address that names a server (`/watch/cdi`, `/play/cdi/dcss-0.34`); which servers there are is the device's business */
 const SERVER_VERBS = new Set(['login', 'register', 'play', 'watch'])
 
+/** an account's Other versions, under Accounts: `/accounts/versions/cdi` */
+export const VERSIONS_PATH = 'accounts/versions'
+
 function segments(pathname: string): string[] {
   return pathname.split('/').filter(Boolean)
 }
@@ -97,6 +100,7 @@ export function addressKind(pathname: string): 'page' | 'app' | 'none' {
   const parts = segments(pathname)
   if (MENU_PATH.test(parts.join('/').toLowerCase())) return 'app'
   if (parts.length >= 2 && SERVER_VERBS.has(parts[0].toLowerCase())) return 'app'
+  if (parts.length === 3 && parts.slice(0, 2).join('/').toLowerCase() === VERSIONS_PATH) return 'app'
   return 'none'
 }
 
