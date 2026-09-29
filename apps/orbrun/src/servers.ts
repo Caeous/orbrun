@@ -30,13 +30,21 @@ export const OFFLINE_SERVER: ServerInfo = { id: 'offline', name: 'This device', 
 /**
  * Whether Offline is offered: everywhere but under test, where no engine is
  * served (the dev server serves a local engine/build.sh through
- * engine-files.ts, a deploy the published one through the ENGINE binding),
- * and in a browser without JSPI, which the engine blocks in while it waits
- * for the player (Firefox 151 has none, and a game there crashes at
- * start). Read on each call, so a test can stub the environment.
+ * engine-files.ts, a deploy the published one through the ENGINE binding).
+ * Read on each call, so a test can stub the environment.
  */
 export function offlineOffered(): boolean {
-  return import.meta.env.MODE !== 'test' && typeof (WebAssembly as { Suspending?: unknown }).Suspending === 'function'
+  return import.meta.env.MODE !== 'test'
+}
+
+/**
+ * Whether this browser can run the offline engine: it needs JSPI, which the
+ * engine blocks in while it waits for the player (Firefox 151 has none, and a
+ * game there crashes at start). Without it Offline is still offered, and asks
+ * for a newer browser where a game would start.
+ */
+export function offlineRuns(): boolean {
+  return typeof (WebAssembly as { Suspending?: unknown }).Suspending === 'function'
 }
 
 const KEY = 'orbrun.servers'

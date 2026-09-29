@@ -5,7 +5,7 @@ import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
 import { FocusNav, type Focusable } from './focus'
 import { RoomView } from './room/view'
-import { addAccount, addServer, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { addAccount, addServer, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, offlineRuns, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import type { Session } from './session'
 import { deleteProfileSaves, profileName, type EngineInfo, type EngineNote } from '@orbrun/offline'
@@ -33,6 +33,8 @@ const BACK = 'back'
 
 /** the margin glyph for a player on this device, where a server account has `\`: a wall, a place of its own */
 const DEVICE_MARKER = '#'
+/** What a browser that cannot run the offline engine (servers.ts offlineRuns) is asked to do. */
+const NEWER_BROWSER = 'This browser can’t run games on this device. Update it to its newest version to play here.'
 
 /** the margin glyph for an account that is connected or on the way, in its line's colour */
 export const CONN_MARKER = '●'
@@ -967,7 +969,7 @@ export class FrontEnd {
    */
   showHome() {
     // the home screen is where offline builds update: never under a game, never in the player's way
-    if (offlineOffered()) void engines.update()
+    if (offlineOffered() && offlineRuns()) void engines.update()
     this.adding = null
     this.watchOn = null
     this.hooks.warm?.()
@@ -1007,11 +1009,15 @@ export class FrontEnd {
         // pressing.
         const ordered = offered.map(({ game, version }) => ({ game, save: this.saveOf(game, version, who, s, where) }))
         const primary = ordered[0]
+        const stuck = server.offline && !offlineRuns()
+        if (stuck && ordered.length) notices.push(h('div', { class: 'notice' }, NEWER_BROWSER))
         for (const { game: g, save } of ordered) {
           rows.push({
             id: 'play:' + g.id, label: `${save ? 'Continue' : 'Play'} ${g.label}`,
-            sub: save?.sub ?? (g.save ? `[${g.save}]` : server.offline ? engineSub(engines.note(g.id)) : null), marker: '>', main: g === primary?.game,
-            hint: server.offline
+            sub: stuck ? 'needs a newer browser' : save?.sub ?? (g.save ? `[${g.save}]` : server.offline ? engineSub(engines.note(g.id)) : null), marker: '>', main: g === primary?.game, off: stuck,
+            hint: stuck
+              ? NEWER_BROWSER
+              : server.offline
               ? (save?.hint ?? `A new character in ${g.label}, on this device.`) + engineHint(engines.note(g.id))
               : (save?.hint ?? `A new game of ${g.label} on ${server.host}.`),
             fine: server.offline ? engineBuild(engines.build(g.id), engines.note(g.id)) : undefined,
@@ -1710,9 +1716,9 @@ export class FrontEnd {
       rows.push({
         id: 'server:' + OFFLINE_SERVER.id,
         label: OFFLINE_SERVER.name,
-        sub: serverWhere(OFFLINE_SERVER),
+        sub: offlineRuns() ? serverWhere(OFFLINE_SERVER) : 'needs a newer browser',
         marker: DEVICE_MARKER,
-        hint: 'Play with no server: a player on this device, with saved characters of its own.',
+        hint: 'Play with no server: a player on this device, with saved characters of its own.' + (offlineRuns() ? '' : ' ' + NEWER_BROWSER),
         fn: () => {
           this.adding = OFFLINE_SERVER
           this.showLogin()
@@ -1834,6 +1840,8 @@ export class FrontEnd {
     if (intent) this.lost = false
     const server = findServer(account.serverId)
     if (!server) return this.showHome()
+    // a game here would crash at start: the home screen asks for a newer browser instead (a reload of #play too)
+    if (server.offline && !offlineRuns()) intent = undefined
     const session = this.hooks.connect(server, account.username, intent)
     const last = getLast()
     if (!last || last.serverId !== server.id) setLast({ serverId: server.id, username: account.username })

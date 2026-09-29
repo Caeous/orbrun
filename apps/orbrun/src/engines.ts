@@ -1,5 +1,5 @@
 import { EngineStore } from '@orbrun/offline'
-import { ENGINE_BASE, offlineOffered } from './servers'
+import { ENGINE_BASE, offlineOffered, offlineRuns } from './servers'
 
 let busy: () => boolean = () => false
 
@@ -18,6 +18,6 @@ export const engines = new EngineStore({
  */
 export function keepEngines(gameUnderWay: () => boolean) {
   busy = gameUnderWay
-  if (!offlineOffered() || !('serviceWorker' in navigator)) return
+  if (!offlineOffered() || !offlineRuns() || !('serviceWorker' in navigator)) return
   navigator.serviceWorker.register(`/sw.js?base=${encodeURIComponent(ENGINE_BASE + '/')}`).catch(() => {})
 }

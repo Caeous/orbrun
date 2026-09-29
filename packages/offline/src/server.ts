@@ -20,7 +20,18 @@ import { RC_PATH, type RcBook } from './rc.js'
  * links carry the save info a server with `show_save_info` shows (SaveBook).
  * A profile has one rc file for every game (RcBook), which crawl is started
  * with, as a server starts it with the account's.
+ *
+ * A server's crawl is built with DGAMELAUNCH, which changes a few option
+ * defaults (initfile.cc `USING_DGL`); ours is not, so they are given as
+ * extra options (SERVER_DEFAULTS) that the profile's rc file still overrides.
  */
+
+/**
+ * The option defaults of a server build (initfile.cc `USING_DGL`) that a
+ * player notices: travel and rest arrive at their end in one update, not a
+ * step every 20ms, and a travel leaves its trail.
+ */
+const SERVER_DEFAULTS = ['travel_delay=-1', 'rest_delay=-1', 'show_travel_trail=true']
 
 /** One playable engine build (engine/dist/builds/<build>/), as a game the lobby offers. */
 export interface OfflineChannel {
@@ -230,6 +241,8 @@ export class OfflineServer {
     }
     this.game = game
     const args = ['-headless', '-webtiles-socket', 'bridge', '-name', this.user]
+    // read before the rc file, so the player's own options win
+    for (const opt of SERVER_DEFAULTS) args.push('-extra-opt-first', opt)
     const rc = this.o.rcs?.read(this.user)
     if (rc) args.push('-rc', RC_PATH)
     game.engine = this.o.launch({ ...channel, saveDir: game.saveDir }, args, {

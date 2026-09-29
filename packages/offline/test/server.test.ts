@@ -40,6 +40,9 @@ function setup(channels: OfflineChannel[] | (() => Promise<OfflineChannel[]>) = 
   return { server, out, sent, engine, flat, names }
 }
 
+// a server build's defaults (DGAMELAUNCH), read before the rc file so it still overrides them
+const SERVER_DEFAULT_ARGS = ['-extra-opt-first', 'travel_delay=-1', '-extra-opt-first', 'rest_delay=-1', '-extra-opt-first', 'show_travel_trail=true']
+
 const tick = () => new Promise((r) => setTimeout(r, 0))
 
 describe('OfflineServer lobby', () => {
@@ -160,13 +163,13 @@ describe('OfflineServer rc file', () => {
     const bare = setup(undefined, undefined, rcs)
     bare.server.receive({ msg: 'play', game_id: 'offline-0.34' })
     await tick()
-    expect(bare.sent.args).toEqual(['-headless', '-webtiles-socket', 'bridge', '-name', 'Kai'])
+    expect(bare.sent.args).toEqual(['-headless', '-webtiles-socket', 'bridge', '-name', 'Kai', ...SERVER_DEFAULT_ARGS])
     expect(bare.sent.files).toBeUndefined()
     rcs.write('Kai', 'autopickup = $?!+"/%\n')
     const s = setup(undefined, undefined, rcs)
     s.server.receive({ msg: 'play', game_id: 'offline-0.34' })
     await tick()
-    expect(s.sent.args).toEqual(['-headless', '-webtiles-socket', 'bridge', '-name', 'Kai', '-rc', RC_PATH])
+    expect(s.sent.args).toEqual(['-headless', '-webtiles-socket', 'bridge', '-name', 'Kai', ...SERVER_DEFAULT_ARGS, '-rc', RC_PATH])
     expect(s.sent.files).toEqual({ [RC_PATH]: 'autopickup = $?!+"/%\n' })
     // an emptied file is no file
     rcs.write('Kai', '')
@@ -194,7 +197,7 @@ describe('OfflineServer game', () => {
     s.server.receive({ msg: 'play', game_id: 'offline-trunk' })
     await tick()
     expect(s.sent.channel).toEqual({ ...TRUNK, saveDir: '/crawl-trunk~kai' })
-    expect(s.sent.args).toEqual(['-headless', '-webtiles-socket', 'bridge', '-name', 'Kai'])
+    expect(s.sent.args).toEqual(['-headless', '-webtiles-socket', 'bridge', '-name', 'Kai', ...SERVER_DEFAULT_ARGS])
     expect(s.sent.control).toEqual([JSON.stringify({ msg: 'attach', primary: true })])
     expect(s.flat()).toEqual([{ msg: 'game_started' }, { msg: 'game_client', version: 'bb22', content: '' }])
   })

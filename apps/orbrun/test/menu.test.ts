@@ -934,22 +934,27 @@ describe('the front end: accounts and servers', () => {
     }
   })
 
-  it('offers no players on this device in a browser without JSPI, where the engine cannot run', () => {
+  it('asks a browser without JSPI, where the engine cannot run, for a newer one rather than hiding this device', () => {
     vi.stubEnv('MODE', 'development')
+    // Firefox 151: no WebAssembly.Suspending
+    vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: undefined }))
     try {
       const marc: Account = { serverId: 'offline', username: 'Marc' }
       localStorage.setItem('orbrun.accounts', JSON.stringify([marc, orbrun]))
-      const offered = make().screen
-      offered.showAccounts()
-      expect(labels(offered)).toContain('Marc')
-      // Firefox 151: no WebAssembly.Suspending
-      vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: undefined }))
       const { screen } = make()
       screen.showAccounts()
-      expect(labels(screen)).not.toContain('Marc')
+      expect(labels(screen)).toContain('Marc')
       pick(screen, 'Add an account')
       expect(screen.view).toBe('servers')
-      expect(labels(screen)).not.toContain('This device')
+      expect(sub(screen, 'This device')).toBe('needs a newer browser')
+      // its home screen says why, and Play starts no game
+      localStorage.setItem('orbrun.account', JSON.stringify(marc))
+      const home = make((sv, u) => fakeSession(sv, u, { username: 'Marc', complete: true, games: [{ id: 'dcss-0.34', label: 'DCSS 0.34' }] }))
+      expect(home.screen.root.querySelector('.notice')?.textContent).toMatch(/Update it to its newest version/)
+      expect(sub(home.screen, 'Play DCSS 0.34')).toBe('needs a newer browser')
+      home.connect.mockClear()
+      pick(home.screen, 'Play DCSS 0.34')
+      expect(home.connect).toHaveBeenCalledWith(OFFLINE_SERVER, 'Marc', undefined)
     } finally {
       vi.unstubAllEnvs()
       vi.unstubAllGlobals()

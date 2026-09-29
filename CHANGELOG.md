@@ -2,6 +2,11 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.5 — 2026-09-28
+
+- Travel, explore and rest on this device jump straight to the end and leave a trail, as they do on a server. Your rc file can still change that.
+- Browsers that can't run the game on this device yet, such as older Firefox, ask you to update them instead of crashing.
+
 ## 0.2.4 — 2026-09-28
 
 - Edit your rc file in Orbrun: your options, autopickup rules and Lua, saved to the server. Find it under Accounts > (other versions) > (edit rc), or beside a player on this device, whose games read it too.
