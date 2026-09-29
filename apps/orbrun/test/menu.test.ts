@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { initialState, type GameState, type LobbyEntry } from '@orbrun/webtiles'
 import { accountConn, CONN_MARKER, FrontEnd, navDir, loginWord, exitReasonMessage, type Intent } from '../src/menu'
+import { engines } from '../src/engines'
 import { settingsPanel } from '../src/settings-panel'
 import type { Session } from '../src/session'
 import { XOM_SPLASHES } from '../src/splash'
@@ -958,6 +959,52 @@ describe('the front end: accounts and servers', () => {
     } finally {
       vi.unstubAllEnvs()
       vi.unstubAllGlobals()
+    }
+  })
+
+  it('says a saved game’s new build in its small print as soon as it is in, with nothing else on the screen changed', () => {
+    vi.stubEnv('MODE', 'development')
+    vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: function Suspending() {} }))
+    const info = (version: string) => ({ channel: 'trunk', commit: 'c', version, stamp: '1', gamedata: 'c', files: [] })
+    const build = vi.spyOn(engines, 'build').mockReturnValue(info('0.35-a0-1079-gaaaaaaa'))
+    // the home screen looks for builds as it comes up: nothing is published here
+    const update = vi.spyOn(engines, 'update').mockResolvedValue()
+    try {
+      const marc: Account = { serverId: 'offline', username: 'Marc' }
+      localStorage.setItem('orbrun.accounts', JSON.stringify([marc]))
+      localStorage.setItem('orbrun.account', JSON.stringify(marc))
+      const games = [{ id: 'offline-trunk', label: 'DCSS trunk', save: 'Marc, a level 1 Human Fighter' }]
+      const { screen } = make((sv, u) => fakeSession(sv, u, { username: 'Marc', complete: true, games }))
+      const fine = () => screen.root.querySelector('.menu-msg .fine')?.textContent
+      expect(fine()).toBe('0.35-a0-1079')
+      build.mockReturnValue(info('0.35-a0-1080-gbbbbbbb'))
+      screen.refresh()
+      expect(fine()).toBe('0.35-a0-1080')
+    } finally {
+      build.mockRestore()
+      update.mockRestore()
+      vi.unstubAllEnvs()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('says there is no connection to the chosen server while the device has no network, and nothing once it is back', () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    try {
+      localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+      localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+      const { screen } = make((sv, u) => fakeSession(sv, u, {}, false))
+      expect(screen.root.querySelector('.notice')?.textContent).toBe('No connection to crawl.dcss.io.')
+      expect(sub(screen, 'Watch')).toBe('no connection')
+      // the account stays the one chosen
+      expect(conn(screen)).toBe('orbrun · CDI')
+
+      onLine.mockReturnValue(true)
+      const back = make((sv, u) => fakeSession(sv, u, {}, false)).screen
+      expect(back.root.querySelector('.notice')).toBeNull()
+      expect(sub(back, 'Watch')).toBe('connecting…')
+    } finally {
+      onLine.mockRestore()
     }
   })
 

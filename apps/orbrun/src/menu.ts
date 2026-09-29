@@ -257,6 +257,17 @@ export class FrontEnd {
     this.unwatchEngines = engines.onChange(() => {
       if (this._view === 'home') this.showHome()
     })
+    // back online: a look for new builds that found no connection goes again, on the home screen now or the next time
+    // it comes up; and the home screen's word on the connection follows the network both ways
+    window.addEventListener(
+      'online',
+      () => {
+        engines.reconnected()
+        if (this._view === 'home') this.showHome()
+      },
+      { signal: this.aborter.signal },
+    )
+    window.addEventListener('offline', () => this._view === 'home' && this.showHome(), { signal: this.aborter.signal })
     this.showHome()
   }
 
@@ -1028,13 +1039,15 @@ export class FrontEnd {
       }
       const n = lobby?.entries.size ?? 0
       // nobody else plays on this device
-      if (!server.offline) rows.push({ id: 'watch', label: 'Watch', sub: open ? (lobby?.complete ? `${n} playing` : 'loading…') : 'connecting…', marker: '{', hint: `Look into the pool: who is playing on ${server.host} right now, and watch them.`, fn: () => this.showWatch() })
+      if (!server.offline) rows.push({ id: 'watch', label: 'Watch', sub: deviceOffline() ? 'no connection' : open ? (lobby?.complete ? `${n} playing` : 'loading…') : 'connecting…', marker: '{', hint: `Look into the pool: who is playing on ${server.host} right now, and watch them.`, fn: () => this.showWatch() })
       // the server's notices (client.html #account_restricted, #stale_processes_message, #force_terminate)
       if (lobby?.accountHold) notices.push(h('div', { class: 'notice' }, 'This account is being held for administrator approval. Until approved, community features and some game modes may be restricted, and games will not be visible to other players.'))
       // client.js lets any key cancel the purge and keep the old game; here the old game is nearly always this
       // player's own dropped one, and a stray press would leave Continue stuck, so no key cancels it
       if (lobby?.staleProcesses) notices.push(h('div', { class: 'notice' }, `Closing your last session on ${server.host}. Your game starts in about ${lobby.staleProcesses.timeout || 10} seconds.`))
       else if (this.lost) notices.push(h('div', { class: 'notice' }, 'Connection lost. Your game is saved: Continue picks it up.'))
+      // a socket can outlive the network by a while (a half-open one after a sleep): the network is what is said
+      else if (!server.offline && deviceOffline()) notices.push(h('div', { class: 'notice' }, `No connection to ${server.host}.`))
       if (s && lobby?.forceTerminate) {
         const answer = (yes: boolean) => {
           s.send(cm.forceTerminate(yes))
@@ -1074,7 +1087,8 @@ export class FrontEnd {
     // straight under Settings, and only where the browser left no way out of its own: a kiosk window on a
     // Deck, or an installed app (quit.ts). `<` is the way out, as it is out of the dungeon.
     if (canQuit()) rows.push({ id: 'quit', label: 'Quit', marker: '<', hint: 'Close Orbrun. A game in progress is kept on the server.', fn: () => this.quit() })
-    const shape = JSON.stringify([[...rows, ...utilities].map((r) => [r.id, r.label, r.sub, r.conn, r.main, !!r.also]), notices.map((n) => n.textContent)])
+    // the words under the cursor too: a saved game's row says its build's download only in its small print
+    const shape = JSON.stringify([[...rows, ...utilities].map((r) => [r.id, r.label, r.sub, r.hint, r.fine, r.conn, r.main, !!r.also]), notices.map((n) => n.textContent)])
     // a report to put up has its screen drawn first, however little of it changed: the dialog stands on it
     if (this._view === 'home' && this.shape.get('home') === shape && !this.error && !report) return
     // the screen under a dialog is drawn again as a redraw, not a fresh screen: it must not slide in behind it
@@ -1917,7 +1931,8 @@ export class FrontEnd {
         // that stands on the connection says it: one that does not (the server list, the settings) is not redrawn,
         // so the words would wait there and turn up on the next screen, long after the connection was back
         const says = !this.hooks.parked?.() && (this._view === 'login' || this._view === 'register' || this._view === 'home' || this._view === 'watch' || this._view === 'accounts' || this._view === 'versions' || this._view === 'rc')
-        if (says) this.error = this.hooks.retrying?.() ? 'Connection lost. Reconnecting…' : 'Connection closed: ' + e.reason
+        // with no network at all, the home screen's notice says so for as long as it lasts
+        if (says && !(this._view === 'home' && deviceOffline())) this.error = this.hooks.retrying?.() ? 'Connection lost. Reconnecting…' : 'Connection closed: ' + e.reason
         if (this._view === 'login' || this._view === 'register') this.goHome()
         else if (says) {
           this.shape.delete(this._view)
@@ -2175,6 +2190,11 @@ const LOGIN_WIDTH = Math.max(...LOGIN_WORDS.map((w) => w.length))
  * the way it ended calls for one. A normal end (death, win, quit, save) says
  * nothing of its own; a watched game's end always says whose it was.
  */
+/** Whether the browser says this device has no network at all: a server cannot be reached, and nothing will be until it does. */
+function deviceOffline(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false
+}
+
 export function exitReasonMessage(reason: string, watched: string | null): string | null {
   const tail = reason !== 'unknown' ? ` (${reason})` : ''
   if (watched) {

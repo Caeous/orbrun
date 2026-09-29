@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EngineStore, ENGINE_CACHE, type EngineInfo } from '../src/index.js'
 
 const BASE = 'https://orbrun.test/engine/'
@@ -42,6 +42,8 @@ function memoryCaches() {
 function publisher() {
   const channels = new Map<string, EngineInfo>()
   const fetched: string[] = []
+  /** every request made, answered or not */
+  let asked = 0
   let online = true
   /** a status every engine.json answers with instead, as a server in trouble would */
   let pointerStatus = 0
@@ -49,6 +51,7 @@ function publisher() {
   const cut = new Map<string, number>()
   let onFile: (path: string) => void = () => {}
   const fetchFn = (async (input: RequestInfo | URL) => {
+    asked++
     if (!online) throw new TypeError('Failed to fetch')
     const path = String(input).slice(BASE.length)
     const pointer = /^(\w+)\/engine\.json$/.exec(path)
@@ -66,6 +69,7 @@ function publisher() {
   return {
     fetch: fetchFn,
     fetched,
+    asked: () => asked,
     cut,
     publish: (info: EngineInfo) => channels.set(info.channel, info),
     offline: () => (online = false),
@@ -194,6 +198,71 @@ describe('EngineStore', () => {
     await next.store.update()
     expect(next.store.engineBase((await next.store.channels())[0])).toBe(`${BASE}builds/bb-r2/`)
     expect(s.caches.files()).toEqual(['builds/bb-r2/crawl.js', 'builds/bb-r2/crawl.wasm', 'gamedata/bb/main.png'])
+  })
+
+  describe('coming back online', () => {
+    const MINUTE = 60 * 1000
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    /** trunk bb installed, then a store opened with no connection, which looks for an update and reaches nothing; cc is published meanwhile */
+    async function offlineWithUpdate() {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      const s = setup()
+      s.pub.publish(build('trunk', 'bb', '0.35-a0-9-gbb'))
+      await s.store.played('offline-trunk')
+      await s.store.update()
+      s.pub.offline()
+      const next = setup({ caches: s.caches, pub: s.pub })
+      await next.store.update()
+      expect((await next.store.channels())[0].commit).toBe('bb')
+      s.pub.publish(build('trunk', 'cc', '0.35-a0-10-gcc'))
+      s.pub.online()
+      return next
+    }
+
+    it('looks again at once when the connection comes back, after a look that reached nothing', async () => {
+      const s = await offlineWithUpdate()
+      s.store.reconnected()
+      await s.store.update()
+      expect((await s.store.channels())[0].commit).toBe('cc')
+    })
+
+    it('looks again a minute after a look that reached nothing, not ten, with no word that the connection is back', async () => {
+      const s = await offlineWithUpdate()
+      vi.advanceTimersByTime(30 * 1000)
+      await s.store.update()
+      expect((await s.store.channels())[0].commit).toBe('bb')
+      vi.advanceTimersByTime(MINUTE)
+      await s.store.update()
+      expect((await s.store.channels())[0].commit).toBe('cc')
+    })
+
+    it('lets a look that was answered stand ten minutes, connection back or not', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      const s = setup()
+      s.pub.publish(build('trunk', 'bb', '0.35-a0-9-gbb'))
+      await s.store.played('offline-trunk')
+      await s.store.update()
+      s.pub.publish(build('trunk', 'cc', '0.35-a0-10-gcc'))
+      s.store.reconnected()
+      vi.advanceTimersByTime(5 * MINUTE)
+      await s.store.update()
+      expect((await s.store.channels())[0].commit).toBe('bb')
+      vi.advanceTimersByTime(6 * MINUTE)
+      await s.store.update()
+      expect((await s.store.channels())[0].commit).toBe('cc')
+    })
+
+    it('never looks again on its own while there is no connection: a row redrawn after a look that reached nothing asks nothing', async () => {
+      const s = await offlineWithUpdate()
+      s.pub.offline()
+      const asked = s.pub.asked()
+      for (let i = 0; i < 5; i++) await s.store.update()
+      expect(s.pub.asked()).toBe(asked)
+      expect(s.store.note('offline-trunk')).toBeNull()
+    })
   })
 
   it('stops for a game, keeps every whole file, and picks up where it stopped', async () => {

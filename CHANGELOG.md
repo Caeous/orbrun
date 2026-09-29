@@ -2,6 +2,12 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.6 — 2026-09-29
+
+- Orbrun opens with no connection once you've played a game on this device, so you can play offline anywhere.
+- Back online, the game on your device fetches its latest update right away, and a saved game's row shows the download and the new version as they happen.
+- With no internet, the home screen says there's no connection to your server, instead of saying it's reconnecting.
+
 ## 0.2.5 — 2026-09-28
 
 - Travel, explore and rest on this device jump straight to the end and leave a trail, as they do on a server. Your rc file can still change that.

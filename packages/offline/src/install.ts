@@ -28,6 +28,8 @@ const STATE = 'device.json'
 
 /** How long a check for new builds stands before the next one is made. */
 const CHECK_EVERY_MS = 10 * 60 * 1000
+/** How long a check that reached nothing stands: the connection may be back by the next screen. */
+const RETRY_MS = 60 * 1000
 const CHECK_TIMEOUT_MS = 8000
 
 interface Installed extends EngineInfo {
@@ -74,6 +76,8 @@ export class EngineStore {
   private reachable = new Set<string>()
   private checked: Promise<void> | null = null
   private checkedAt = 0
+  /** Whether the last check had an answer from anything, a server error included; a check with no connection had none. */
+  private heard = true
   /** Whether a check for new builds is under way. */
   private checking = false
   private progress = new Map<string, number>()
@@ -152,15 +156,16 @@ export class EngineStore {
   }
 
   /**
-   * Look for new builds (at most every ten minutes) and download what this
-   * device keeps, unless a game is running. Safe to call as often as a
-   * screen comes up: one run at a time, and a run gives way to a game.
+   * Look for new builds (at most every ten minutes, or every minute while
+   * the last look reached nothing) and download what this device keeps,
+   * unless a game is running. Safe to call as often as a screen comes up:
+   * one run at a time, and a run gives way to a game.
    */
   update(): Promise<void> {
     if (this.busy()) return Promise.resolve()
     return (this.running ??= (async () => {
       try {
-        if (Date.now() - this.checkedAt > CHECK_EVERY_MS) await this.check(true)
+        if (Date.now() - this.checkedAt > (this.heard ? CHECK_EVERY_MS : RETRY_MS)) await this.check(true)
         await this.sync()
       } catch {
         // no cache to keep builds in, or it refused: every game plays from the network
@@ -168,6 +173,14 @@ export class EngineStore {
         this.running = null
       }
     })())
+  }
+
+  /**
+   * The connection is back: if the last look for new builds reached nothing,
+   * the next `update` looks again at once, not a minute on.
+   */
+  reconnected() {
+    if (!this.heard) this.checkedAt = 0
   }
 
   /** Called when the games on offer, or what their rows say, change. */
@@ -221,12 +234,14 @@ export class EngineStore {
       const s = await this.load()
       const before = JSON.stringify(s.published)
       const reached = this.reachable.size
+      let answered = false
       this.checking = true
       this.changed()
       await Promise.all(
         CHANNEL_NAMES.map(async (name) => {
           try {
             const res = await this.fetch(this.url(`${name}/engine.json`), { cache: 'no-store', signal: AbortSignal.timeout(CHECK_TIMEOUT_MS) })
+            answered = true
             if (res.status === 404) {
               // the channel is not published (any more)
               delete s.published[name]
@@ -243,6 +258,7 @@ export class EngineStore {
         }),
       )
       this.checkedAt = Date.now()
+      this.heard = answered
       this.checking = false
       if (JSON.stringify(s.published) !== before) await this.save()
       // a build newly reached is newly offered, even one read before and kept in the record unchanged; and the check is over

@@ -22,6 +22,7 @@
     "gamedata-proxy.ts",
     "engine-files.ts",
     "site-pages.ts",
+    "shell.ts",
     "worker"
   ],
   "references": [

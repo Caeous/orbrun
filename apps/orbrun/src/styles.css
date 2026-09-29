@@ -1426,10 +1426,34 @@ a.item.beside {
   font-size: var(--menu-note-size);
   color: var(--color-8);
 }
-.frame.menu-frame .notice {
+/* a notice (the server's word, the connection) or an error (a login refused, a name taken): a line in the menu's own
+   voice, the size and parchment of its hints, set in the labels' column with a `!` in the cursor's, as the game marks
+   what needs reading. The mark carries the colour, gold for a notice and a muted red for an error, so a word that
+   comes and goes with the connection never shouts over the rows */
+.frame.menu-frame .notice,
+.frame.menu-frame .brand > .error {
+  position: relative;
+  margin: 0;
+  padding-left: var(--menu-label-inset);
+  max-width: calc(60ch + var(--menu-label-inset));
   font-family: var(--mono);
-  color: var(--color-14);
-  max-width: 60ch;
+  font-size: var(--menu-note-size);
+  font-weight: var(--text-weight);
+  letter-spacing: 0;
+  line-height: 1.5;
+  color: var(--ink);
+  text-shadow: 0 2px 8px #000;
+}
+.frame.menu-frame .notice::before,
+.frame.menu-frame .brand > .error::before {
+  content: '!';
+  position: absolute;
+  left: var(--menu-cursor-inset);
+  font-weight: bold;
+  color: var(--gold);
+}
+.frame.menu-frame .brand > .error::before {
+  color: #e0705f;
 }
 .frame.menu-frame .notice .actions {
   display: flex;

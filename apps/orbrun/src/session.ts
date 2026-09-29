@@ -12,7 +12,7 @@ import { loadGamedata, browserIo, type Gamedata } from '@orbrun/gamedata'
 import { buildScene } from '@orbrun/scene-webtiles'
 import { emptyScene, type Scene } from '@orbrun/scene'
 import { LocalWasmConnection, browserRcBook, browserSaveBook } from '@orbrun/offline'
-import { engines } from './engines'
+import { engines, keepSaves } from './engines'
 import type { ServerInfo } from './servers'
 import { gamedataBaseFor, getToken, setToken } from './servers'
 
@@ -125,6 +125,7 @@ export class Session {
     if (this.conn instanceof LocalWasmConnection) {
       const conn = this.conn
       this.unwatchEngines = engines.onChange(() => conn.channelsChanged())
+      keepSaves()
     }
     this.conn.onOpen(() => {
       // the account as it stands now, not as the session was made: a connection reopened after a drop logs in as
