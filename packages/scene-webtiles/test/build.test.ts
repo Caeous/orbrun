@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { initialState, reduce, type Monster, type ServerMessage } from '@orbrun/webtiles'
 import { loadGamedata, type Gamedata } from '@orbrun/gamedata'
 import { cellKey, emptyScene, monstersInView, type Scene } from '@orbrun/scene'
-import { buildScene, missingTileNames, CEILING_REACH, classifyFeature, stanceFor, standsFree, levelPresentation, isScenery, isVegetation, isExcludedFromList, monsterGroups, monsterSort, viewmodelFor, itemTileName } from '../src/index.js'
+import { buildScene, missingTileNames, CEILING_REACH, classifyFeature, stanceFor, standsFree, levelPresentation, gateFaces, isScenery, isVegetation, isExcludedFromList, monsterGroups, monsterSort, viewmodelFor, itemTileName } from '../src/index.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const gdRoot = join(here, 'fixtures', 'gamedata')
@@ -593,5 +593,25 @@ describe('itemTileName', () => {
       expect(w, n).toMatch(/^[a-z][a-z0-9 ]*$/)
     }
     expect(itemTileName(gd.main.baseName(gd.main.id('WPN_DAGGER_MAGIC')!))).toBe('dagger')
+  })
+})
+
+describe('gate faces', () => {
+  it('shows each side of a row of doors the gate piece a player standing there sees', async () => {
+    const gd = await fixtureGamedata()
+    const id = (n: string) => gd.dngn.id('DNGN_' + n)!
+    const [left, mid, right] = [id('GATE_CLOSED_LEFT'), id('GATE_CLOSED_MIDDLE'), id('GATE_CLOSED_RIGHT')]
+    // east–west: from the south as drawn, from the north the ends trade places
+    expect(gateFaces(gd, 'DNGN_GATE_CLOSED_LEFT')).toEqual({ n: right })
+    expect(gateFaces(gd, 'DNGN_GATE_CLOSED_MIDDLE')).toBeUndefined()
+    expect(gateFaces(gd, 'DNGN_GATE_CLOSED_RIGHT')).toEqual({ n: left })
+    // north–south: the top-down pieces become the upright ones on either side
+    expect(gateFaces(gd, 'DNGN_VGATE_CLOSED_UP')).toEqual({ w: left, e: right })
+    expect(gateFaces(gd, 'DNGN_VGATE_CLOSED_MIDDLE')).toEqual({ w: mid, e: mid })
+    expect(gateFaces(gd, 'DNGN_VGATE_CLOSED_DOWN')).toEqual({ w: right, e: left })
+    // every set keeps to its own art: runed, clear, crypt
+    expect(gateFaces(gd, 'DNGN_VGATE_RUNED_CLEAR_UP')).toEqual({ w: id('GATE_RUNED_CLEAR_LEFT'), e: id('GATE_RUNED_CLEAR_RIGHT') })
+    expect(gateFaces(gd, 'DNGN_VGATE_CLOSED_DOWN_CRYPT')).toEqual({ w: id('GATE_CLOSED_RIGHT_CRYPT'), e: id('GATE_CLOSED_LEFT_CRYPT') })
+    expect(gateFaces(gd, 'DNGN_CLOSED_DOOR')).toBeUndefined()
   })
 })

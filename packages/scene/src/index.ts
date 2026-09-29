@@ -111,6 +111,15 @@ export interface SceneCell {
   wallTile?: TileId
   wallStyle?: 'solid' | 'transparent'
   /**
+   * The tile a face shows instead of `wallTile`, by the side it faces. A
+   * closed door in a row of doors is a piece of crawl's gate art, drawn to be
+   * seen from above and from the south: seen from the north the left and
+   * right pieces trade places, and a gate running north–south has its own
+   * top-down pieces that read as nothing upright. Each face here is the
+   * horizontal piece a player standing on that side sees in that place.
+   */
+  faceTiles?: Partial<Record<'n' | 's' | 'w' | 'e', TileId>>
+  /**
    * Ceiling over this open cell when it differs from the level's: the base
    * tile of the walls nearest it, so a vault built of other masonry keeps its
    * own lid. Unset means `SceneLevel.ceilingTile`.
@@ -340,6 +349,8 @@ export function cellLayoutEquals(a: SceneCell, b: SceneCell): boolean {
   if (!sameIds(a.underlays, b.underlays) || !sameIds(a.overlays, b.overlays) || !sameIds(a.icons, b.icons)) return false
   if (!sameIds(a.wallOverlays, b.wallOverlays) || !sameIds(a.wallShadows, b.wallShadows) || !sameIds(a.shorelines, b.shorelines)) return false
   if (!sameIds(a.translucent, b.translucent)) return false
+  const fa = a.faceTiles, fb = b.faceTiles
+  if (fa !== fb && (fa?.n !== fb?.n || fa?.s !== fb?.s || fa?.w !== fb?.w || fa?.e !== fb?.e)) return false
   if (a.trail?.from !== b.trail?.from || a.trail?.to !== b.trail?.to) return false
   return true
 }

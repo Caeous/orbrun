@@ -513,6 +513,31 @@ function assignCeilings(
   }
 }
 
+const GATE_PIECE = /^DNGN_(V?)GATE_(.+)_(LEFT|MIDDLE|RIGHT|UP|DOWN)(_CRYPT)?$/
+
+/**
+ * The faces of a closed door in a row of doors (`SceneCell.faceTiles`).
+ * crawl picks each door's piece of gate art from the doors beside it
+ * (tilepick.cc `apply_variations`, `door_connect`): left, middle and right
+ * along a row running east–west, up, middle and down along one running
+ * north–south. The left piece is the west end as seen from the south; from
+ * the north it is on the viewer's right, so there it shows the right piece.
+ * A north–south gate wears the east–west pieces on its sides, the north end
+ * on the viewer's left from the west and on their right from the east.
+ */
+export function gateFaces(gd: Gamedata, name: string | undefined): SceneCell['faceTiles'] {
+  const m = GATE_PIECE.exec(name || '')
+  if (!m) return undefined
+  const [, v, set, part, crypt = ''] = m
+  const piece = (p: 'LEFT' | 'MIDDLE' | 'RIGHT') => gd.dngn.id(`DNGN_GATE_${set}_${p}${crypt}`)
+  const start = piece('LEFT'), mid = piece('MIDDLE'), end = piece('RIGHT')
+  if (start === undefined || mid === undefined || end === undefined) return undefined
+  if (part === 'MIDDLE') return v ? { w: mid, e: mid } : undefined
+  const first = part === 'LEFT' || part === 'UP'
+  if (v) return first ? { w: start, e: end } : { w: end, e: start }
+  return first ? { n: end } : { n: start }
+}
+
 function safeBase(gd: Gamedata, id: number): number {
   try {
     return gd.modules.wall.basetile(id)
@@ -657,6 +682,8 @@ function buildCell(mc: MapCell, gd: Gamedata): SceneCell | undefined {
       base.occluder = true
       base.featureTile = bgIdx
       base.wallTile = bgIdx
+      const faces = gateFaces(gd, name)
+      if (faces) base.faceTiles = faces
       base.feature = f
       base.stance = 'upright'
       base.label = f.state === 'closed' ? 'closed door' : f.state + ' door'

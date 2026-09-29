@@ -482,8 +482,8 @@ export class LevelMesher {
         if (isVoid && !(openN || openS || openW || openE) && DIAGONALS.every(([dx, dz]) => grid.isSolid(x + dx, y + dz))) continue
         const { fp, rect } = grid.footprintAt(x, y, fo, memo)
         if (!rect || fp.poly.length === 0) continue
-        const wt = !isVoid && cell?.wallTile !== undefined ? tileOf(cell.wallTile) : null
-        const black = isVoid || !wt
+        const wallT = !isVoid && cell?.wallTile !== undefined ? tileOf(cell.wallTile) : null
+        const black = isVoid || !wallT
         const acrossKey: Record<Dir, CellKey> = { n: cellKey(x, y - 1), s: cellKey(x, y + 1), w: cellKey(x - 1, y), e: cellKey(x + 1, y) }
         const facePoints = (d: Dir, t0: number, t1: number, depth: number, y0: number, y1 = 1): [number, number, number][] => {
           switch (d) {
@@ -506,10 +506,12 @@ export class LevelMesher {
         const emitFace = (d: Dir, t0: number, t1: number, depth: number, y0: number) => {
           const p = facePoints(d, t0, t1, depth, y0)
           const faceShade = d === 'n' || d === 's' ? 1 : SIDE_SHADE
-          if (black || !wt) {
+          if (black || !wallT) {
             voids.quad(p, { u0: 0, v0: 0, u1: 1, v1: 1 }, 0, { r: 0, g: 0, b: 0 })
             return
           }
+          const own = cell?.faceTiles?.[d]
+          const wt = (own !== undefined && tileOf(own)) || wallT
           const uv = { ...wt.uv, ...faceU(d, wt.uv, t0, t1) }
           uv.v1 = wt.uv.v1 - (wt.uv.v1 - wt.uv.v0) * y0
           get(wt.atlas).at(x, y).quad(p, uv, faceShade, tint, true)
@@ -597,11 +599,11 @@ export class LevelMesher {
           ]
           const chShade = (1 + SIDE_SHADE) / 2
           const nsDir: Dir = i >> 1 ? 's' : 'n'
-          const u = black || !wt ? null : faceU(nsDir, wt.uv, Math.min(C[0], A[0]), Math.max(C[0], A[0]))
-          if (black || !wt || !u) {
+          const u = black || !wallT ? null : faceU(nsDir, wallT.uv, Math.min(C[0], A[0]), Math.max(C[0], A[0]))
+          if (black || !wallT || !u) {
             voids.quad(ch, { u0: 0, v0: 0, u1: 1, v1: 1 }, 0, { r: 0, g: 0, b: 0 })
           } else {
-            get(wt.atlas).at(x, y).quad(ch, { ...wt.uv, ...u }, chShade, tint, true)
+            get(wallT.atlas).at(x, y).quad(ch, { ...wallT.uv, ...u }, chShade, tint, true)
           }
           const tri: [number, number][] = (i & 1) === i >> 1 ? [C, A, Bp, Bp] : [C, Bp, A, A]
           patch(tri, i >> 1 ? s : n)
