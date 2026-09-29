@@ -2492,6 +2492,11 @@ canvas.minimap.hidden {
   font-family: var(--mono);
 }
 
+/* WebTextArea tags every span bg0; the official page is black behind it, the popup here is not, so black is the panel's own */
+.crt .bg0 {
+  background: transparent;
+}
+
 /* one element per CRT line so a cursor marker can sit over a row, measured in ch */
 .crt .crt-line {
   position: relative;
