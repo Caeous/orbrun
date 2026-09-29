@@ -585,7 +585,7 @@ export const CHAMFER = 1 / 32
 export const WALL_INSET = 12 / 32
 export const defaultSettings: Settings = {
   renderer: '3d',
-  eyeHeight: 0.65,
+  eyeHeight: 0.6,
   fov: 85,
   restPitch: -5,
   uiScale: 1,

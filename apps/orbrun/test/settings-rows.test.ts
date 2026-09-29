@@ -63,7 +63,7 @@ describe('camera rows', () => {
   it('Camera height sets the eye', () => {
     const height = row('Camera height')
     expect(height.key).toBe('eyeHeight')
-    expect(settingValue(height)).toBe('0.65 cells')
+    expect(settingValue(height)).toBe('0.60 cells')
     expect(rowHint(height)).toMatch(/eyes/)
   })
 
@@ -71,10 +71,10 @@ describe('camera rows', () => {
     const height = row('Camera height')
     expect(EYE_HEIGHTS).toContain(defaultSettings.eyeHeight)
     adjustSetting(height, -1)
-    expect(getSettings().eyeHeight).toBe(0.6)
+    expect(getSettings().eyeHeight).toBe(0.55)
     saveSettings({ ...defaultSettings })
     adjustSetting(height, 1)
-    expect(getSettings().eyeHeight).toBe(0.7)
+    expect(getSettings().eyeHeight).toBe(0.65)
   })
 
   it('no row is ever off', () => {

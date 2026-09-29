@@ -65,7 +65,7 @@ export interface Render3dOptions {
   motion?: boolean
 }
 
-const EYE = 0.65
+const EYE = 0.6
 const EYE_MIN = 0.25
 const EYE_MAX = 0.9
 /**

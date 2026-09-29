@@ -1327,10 +1327,10 @@ function monsterHeight(mon: Monster, tile: number, gd: Gamedata): number {
   // low piles: an actor behind one should show over its top
   if (RUBBLE.test(name)) return 0.5
   let h = 0.55
-  if (hp >= 200) h = 0.95
-  else if (hp >= 100) h = 0.85
-  else if (hp >= 50) h = 0.72
-  else if (hp >= 20) h = 0.62
+  if (hp >= 200) h = 0.85
+  else if (hp >= 100) h = 0.75
+  else if (hp >= 50) h = 0.65
+  else if (hp >= 20) h = 0.55
   else if (hp >= 8) h = 0.5
   else h = 0.4
   const rect = gd.tile(tile)
