@@ -4,27 +4,27 @@ Notable changes to Orbrun, newest first.
 
 ## 0.2.7 — 2026-09-29
 
-- What's new opens right in Orbrun, from the title screen between your account and About, and works offline too. A dot says when there's something you haven't read yet.
-- What's new, your accounts, Settings and Watch now stand in scenes from real games, as the About pages do.
+- What's new is now in the app, on the title screen, and works offline. A dot marks anything unread.
+- What's new, Accounts, Settings and Watch now show scenes from real games.
 
 ## 0.2.6 — 2026-09-29
 
-- Orbrun opens with no connection once you've played a game on this device, so you can play offline anywhere.
-- Back online, the game on your device fetches its latest update right away, and a saved game's row shows the download and the new version as they happen.
-- With no internet, the home screen says there's no connection to your server, instead of saying it's reconnecting.
+- Once you've played on this device, Orbrun opens with no connection.
+- Back online, the game updates right away, and you can watch it download.
+- With no internet, the home screen says so instead of "reconnecting".
 
 ## 0.2.5 — 2026-09-28
 
-- Travel, explore and rest on this device jump straight to the end and leave a trail, as they do on a server. Your rc file can still change that.
-- Browsers that can't run the game on this device yet, such as older Firefox, ask you to update them instead of crashing.
+- Travel, explore and rest on this device skip to the end and leave a trail, like on a server.
+- Browsers that can't run offline games, like older Firefox, ask you to update instead of crashing.
 
 ## 0.2.4 — 2026-09-28
 
-- Edit your rc file in Orbrun: your options, autopickup rules and Lua, saved to the server. Find it under Accounts > (other versions) > (edit rc), or beside a player on this device, whose games read it too.
+- Edit your rc file in Orbrun: under Accounts > (other versions), or beside a player on this device.
 
 ## 0.2.3 — 2026-09-28
 
-- Play older versions of the game, plus Sprint, the tutorial and seeded games: find them under Accounts > (other versions).
+- Play older versions, Sprint, the tutorial and seeded games under Accounts > (other versions).
 
 ## 0.2.2 — 2026-09-25
 
