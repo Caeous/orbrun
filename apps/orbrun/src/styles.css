@@ -202,6 +202,54 @@ img.room-poster {
 img.room-poster.up {
   opacity: 1;
 }
+/* a place of the dungeon a screen stands in over the room (menu.ts Backdrop): a still of a real game, the site's own,
+   dimmed and tinted as the site's act on it is (site/site.css .act.field), fading in over the room and out again */
+.menu-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 500ms ease;
+}
+.menu-backdrop.up {
+  opacity: 1;
+}
+.menu-backdrop img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+.menu-backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.menu-backdrop[data-tint='depths']::after {
+  background: linear-gradient(rgba(7, 7, 11, 0.7), rgba(30, 18, 12, 0.45) 30%, rgba(30, 18, 12, 0.45) 70%, rgba(7, 7, 11, 0.85));
+}
+.menu-backdrop[data-tint='lair']::after {
+  background: linear-gradient(rgba(7, 7, 11, 0.7), rgba(26, 30, 8, 0.45) 30%, rgba(26, 30, 8, 0.45) 70%, rgba(7, 7, 11, 0.85));
+}
+.menu-backdrop[data-tint='dungeon']::after {
+  background: linear-gradient(rgba(7, 7, 11, 0.7), rgba(12, 22, 14, 0.5) 30%, rgba(12, 22, 14, 0.5) 70%, rgba(7, 7, 11, 0.85));
+}
+.menu-backdrop[data-tint='abyss']::after {
+  background: linear-gradient(rgba(7, 7, 11, 0.7), rgba(18, 12, 34, 0.4) 30%, rgba(18, 12, 34, 0.4) 70%, rgba(7, 7, 11, 0.85));
+}
+/* a still is no room: nothing to take hold of */
+.screen.home.covered {
+  cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-backdrop {
+    transition: none;
+  }
+}
+
 /* the room is taken hold of anywhere it shows, not only where the canvas is left bare (room/view.ts attachPointer): the whole screen offers the open hand, and the menus take their own cursor back */
 .screen.home {
   cursor: grab;
@@ -977,7 +1025,31 @@ a.item.beside {
 .about-links a {
   text-decoration: none;
 }
-/* a document (About, What's new, a morgue file): read in a region of its own under the head, as the roster is */
+/* something not yet seen (What's new since this release): a dot after the label, in the cursor's gold */
+.frame.menu-frame .item .dot {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-left: 0.45em;
+  /* centred on the lowercase letters, not riding above them */
+  vertical-align: middle;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(255, 212, 92, 0.7);
+  animation: dot-glow 2.4s ease-in-out infinite;
+}
+@keyframes dot-glow {
+  50% {
+    box-shadow: 0 0 2px rgba(255, 212, 92, 0.3);
+    opacity: 0.75;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .frame.menu-frame .item .dot {
+    animation: none;
+  }
+}
+/* a document (What's new, a morgue file): read in a region of its own under the head, as the roster is */
 .frame.menu-frame.doc-list {
   overflow: hidden auto;
 }
@@ -1137,6 +1209,91 @@ a.item.beside {
   color: var(--ink-dim);
   font-weight: 600;
 }
+/* What's new (menu.ts showNews, news.ts): the site's /about/new as a menu's rows, one a release, the cursor's
+   bar and @ on the one it stands on; its changes under its number and date, as a row's note is under its label */
+.frame.menu-frame.news-list .brand {
+  max-width: 48rem;
+}
+.frame.menu-frame.news-list .doc-scroll {
+  /* the releases' offsets are the scroller's (menu.ts stepNews) */
+  position: relative;
+  background: none;
+  margin-top: 0;
+  padding: 0;
+}
+.doc.news {
+  max-width: none;
+}
+.frame.menu-frame .doc.news .item.release {
+  display: block;
+  cursor: default;
+}
+/* the release's glyph and the cursor's @ stand on its number's line, not halfway down its changes: the middle of
+   that line is the row's top padding and half the line, whose height the number sets (h2 .ver below) */
+.frame.menu-frame .doc.news .item.release .marker,
+.frame.menu-frame .doc.news .item.release[data-marker]::after {
+  top: calc(0.7rem + var(--menu-action-size) * 0.6);
+}
+.doc.news .item.release h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.75rem;
+  margin: 0 0 0.3rem;
+  font: inherit;
+  color: inherit;
+}
+.doc.news h2 .sep {
+  display: none;
+}
+.doc.news h2 .ver {
+  font-size: var(--menu-action-size);
+  line-height: 1.2;
+  font-weight: 700;
+}
+.doc.news h2 .when {
+  font: 700 0.8rem var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.doc.news h2 .tag {
+  padding: 0.15rem 0.5rem;
+  font: 700 0.72rem var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #1a1204;
+  background: var(--gold);
+  border-radius: 4px;
+  text-shadow: none;
+}
+.doc.news h2 .tag.new {
+  color: var(--gold-bright);
+  background: none;
+  box-shadow: 0 0 0 1px var(--gold) inset;
+}
+.doc.news ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.doc.news li {
+  position: relative;
+  margin: 0.3rem 0;
+  padding-left: 1.2rem;
+  font-size: var(--menu-note-size);
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+.doc.news .item.release.focused li {
+  color: var(--ink);
+}
+.doc.news li::before {
+  content: '-';
+  position: absolute;
+  left: 0;
+  color: var(--color-8);
+}
 /* a phone, or a short window (a phone on its side, a small laptop): less air, the chips two to a line */
 @media (max-width: 600px), (max-height: 700px) {
   .frame.menu-frame {
@@ -1164,6 +1321,14 @@ a.item.beside {
   .frame.home-list .item.chip {
     flex: 1 1 calc(50% - 0.2rem);
     min-width: 0;
+  }
+  /* three to a line is too many for a phone: the account has a line of its own, What's new and About share the next */
+  .frame.home-list .home-utilities {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+  .frame.home-list .home-utilities .item[data-focus='account'] {
+    flex-basis: 100%;
   }
 }
 /* a phone on its side, or a handheld's 1280x800 at 150% (853x533): the head on one line, the menu right

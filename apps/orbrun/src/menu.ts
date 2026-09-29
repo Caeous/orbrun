@@ -16,6 +16,7 @@ import { Osk, oskPrompts } from './osk'
 import { glyph, glyphName, type GlyphName } from './glyphs'
 import { pickSplash } from './splash'
 import { canQuit, quit } from './quit'
+import { changelog, latestLine, markNewsSeen, newsDoc, newsSeen, newsUnread } from './news'
 
 /** What to do once a fresh connection is up: rejoin a game or a spectate. */
 export type Intent = { kind: 'play'; gameId: string } | { kind: 'watch'; username: string }
@@ -25,9 +26,25 @@ export type Intent = { kind: 'play'; gameId: string } | { kind: 'watch'; usernam
  * shoulder buttons walk; the rest are the flows off them: the account and
  * server flows off the account row, the login and register forms.
  */
-export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'versions' | 'rc' | 'servers' | 'add-server' | 'login' | 'register' | 'exit' | 'doc'
+export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'versions' | 'rc' | 'servers' | 'add-server' | 'login' | 'register' | 'exit' | 'doc' | 'news'
 
 const SECTIONS: View[] = ['home', 'watch', 'settings']
+
+/**
+ * A place of the dungeon a screen stands in, in place of the room: a still of
+ * a real game (public/about, the site's own), tinted as the site's page or act
+ * that stands on it is. What's new stands where the site's /about/new does;
+ * the account screens stand where About's "Your account stays yours" does,
+ * Settings where "Made for a controller" does, Watch where "Every branch" does.
+ */
+type Backdrop = { still: string; tint: 'depths' | 'abyss' | 'lair' | 'dungeon' }
+const NEWS_BACKDROP: Backdrop = { still: 'keys-bg', tint: 'depths' }
+const ACCOUNT_BACKDROP: Backdrop = { still: 'account-bg', tint: 'abyss' }
+const SETTINGS_BACKDROP: Backdrop = { still: 'pad-bg', tint: 'lair' }
+const WATCH_BACKDROP: Backdrop = { still: 'branch-bg', tint: 'dungeon' }
+
+/** about as long as a browser's smooth scroll takes: until then a scroll under way is taken to be where it is going */
+const GLIDE_MS = 500
 
 /** the way off a screen (`data-focus`) */
 const BACK = 'back'
@@ -148,6 +165,8 @@ interface Row {
   off?: boolean
   /** a group starts here: a little air above */
   gap?: boolean
+  /** something here not yet seen (What's new since this release): a dot after the label */
+  dot?: boolean
   /**
    * A small button in a row of them, rather than a line of its own: the
    * utilities under the way in, were they ever chips again.
@@ -240,6 +259,8 @@ export class FrontEnd {
   private docScroller: HTMLElement | null = null
   /** what the document goes back to: the screen it was opened from */
   private docFrom: (() => void) | null = null
+  /** where What's new is gliding to, until it gets there: a press on the way is measured from where it is going */
+  private gliding: { to: number; until: number } | null = null
   /**
    * the address last given to `at`: a redraw of the same screen says nothing, so an address the game has
    * written since (a Play pressed here) stands. The home screen is where a front end starts; the caller has
@@ -344,15 +365,51 @@ export class FrontEnd {
     else if (d === 6) this.side(-1)
   }
 
-  /** Up or down: a document scrolls, otherwise the cursor moves. */
+  /** Up or down: a document scrolls, otherwise the cursor moves (What's new's releases are rows). */
   private up(dir: 'up' | 'down') {
-    if (this.docScroller) this.scrollDoc(dir === 'up' ? -this.docStep() : this.docStep())
+    if (this._view === 'news') this.stepNews(dir)
+    else if (this.docScroller) this.scrollDoc(dir === 'up' ? -this.docStep() : this.docStep())
     else this.nav.move(dir)
   }
 
   /** one press of up or down on a document: a fifth of what is in view, never less than a line or two */
   private docStep(): number {
     return Math.max(48, Math.round((this.docScroller?.clientHeight ?? 0) / 5))
+  }
+
+  /**
+   * Up or down on What's new: the cursor moves from release to release, as
+   * down any menu, except that a release taller than the view reads through
+   * first, a step at a time, as a document does. Measured from where the view
+   * is going, so a press during a glide adds to it rather than cutting it short.
+   */
+  private stepNews(dir: 'up' | 'down') {
+    const el = this.docScroller
+    const cur = this.nav.current()?.el
+    if (el && cur?.classList.contains('release')) {
+      const top = this.gliding && performance.now() < this.gliding.until ? this.gliding.to : el.scrollTop
+      const bottom = top + el.clientHeight
+      const a = cur.offsetTop
+      const b = a + cur.offsetHeight
+      // only a release in view reads through: one scrolled away (the stick, a wheel) is simply left
+      if (b > top && a < bottom) {
+        if (dir === 'down' && b > bottom + 1) return this.glide(top + this.docStep())
+        if (dir === 'up' && a < top - 1) return this.glide(Math.max(a, top - this.docStep()))
+      }
+    }
+    this.nav.move(dir)
+  }
+
+  /** Scroll What's new to `to`, gliding there unless motion is reduced; where it is headed is kept while it gets there. */
+  private glide(to: number) {
+    const el = this.docScroller
+    if (!el) return
+    const max = el.scrollHeight - el.clientHeight
+    if (max > 0) to = Math.min(to, max)
+    to = Math.max(0, to)
+    const smooth = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    this.gliding = smooth ? { to, until: performance.now() + GLIDE_MS } : null
+    el.scrollTo({ top: to, behavior: smooth ? 'smooth' : 'auto' })
   }
 
   private scrollDoc(by: number) {
@@ -552,6 +609,7 @@ export class FrontEnd {
       else this.showHome()
     } else if (v === 'controls') this.showSettingsGroup('Controls')
     else if (v === 'settings-group') this.showSettings(this.settingsFrom ?? undefined)
+    else if (v === 'news') this.showHome()
     else if (v === 'doc') {
       const from = this.docFrom
       this.docFrom = null
@@ -611,6 +669,7 @@ export class FrontEnd {
     if (cur) this.marks.set(this._view, cur.id ?? cur.label)
     this.osk.detach()
     this.docScroller = null
+    this.gliding = null
     if (v !== this._view) this.shape.delete(v)
     this._view = v
     this.root.className = 'screen home ' + cls
@@ -664,7 +723,8 @@ export class FrontEnd {
       if (sub === 'add' && leaf === 'server') this.showAddServer('add')
       else if (sub === 'add') this.showServers('add')
       else this.showAccounts()
-    } else if (root === 'watch') {
+    } else if (root === 'whats-new') this.showNews()
+    else if (root === 'watch') {
       if (sub === 'add') this.showAddServer('watch')
       else this.showServers('watch')
     } else this.showHome()
@@ -672,10 +732,40 @@ export class FrontEnd {
 
   /** The screen's frame in the safe area, over the room; the room and its poster stay where they are. */
   private screen(cls: string, content: (HTMLElement | null)[]) {
-    const keep: HTMLElement[] = [this.roomView.poster, this.roomView.el]
+    const keep: HTMLElement[] = [this.roomView.poster, this.roomView.el, this.backdrop.el]
     for (const child of Array.from(this.root.children)) if (!keep.includes(child as HTMLElement)) child.remove()
     for (const el of keep) if (el.parentNode !== this.root) this.root.append(el)
+    this.stand(this.backdropFor())
     this.root.append(h('div', { class: 'frame menu-frame ' + cls }, ...content))
+  }
+
+  /** the still a screen can stand in over the room, kept from screen to screen so the account's screens share one without fading it in again */
+  private backdrop = (() => {
+    const img = h('img', { alt: '', draggable: 'false', decoding: 'async' })
+    return { el: h('div', { class: 'menu-backdrop', 'aria-hidden': 'true' }, img), img }
+  })()
+
+  /** where the screen on show stands: What's new, the account's screens, Settings and Watch in a still of their own, the rest in the room */
+  private backdropFor(): Backdrop | null {
+    const v = this._view
+    if (v === 'news') return NEWS_BACKDROP
+    if (v === 'accounts' || v === 'versions' || v === 'rc' || v === 'login' || v === 'register') return ACCOUNT_BACKDROP
+    if (v === 'settings' || v === 'settings-group' || v === 'controls') return SETTINGS_BACKDROP
+    if (v === 'servers' || v === 'add-server') return this.serversMode === 'add' ? ACCOUNT_BACKDROP : WATCH_BACKDROP
+    if (v === 'watch') return WATCH_BACKDROP
+    return null
+  }
+
+  /** Stand the screen in `b`, or back in the room; the room draws nothing while a still covers it, and cannot be taken hold of. */
+  private stand(b: Backdrop | null) {
+    const { el, img } = this.backdrop
+    this.root.classList.toggle('covered', !!b)
+    this.roomView.cover(!!b)
+    if (!b) return el.classList.remove('up')
+    const src = `/about/${b.still}.webp`
+    if (img.getAttribute('src') !== src) img.src = src
+    el.dataset.tint = b.tint
+    el.classList.add('up')
   }
 
   /** The head of a screen: its name and the line under it; the title screen has Xom's word beneath both. */
@@ -715,7 +805,7 @@ export class FrontEnd {
       'button',
       { type: 'button', class: 'item' + (r.main ? ' main' : '') + (r.off ? ' off' : '') + (r.gap && !r.chip ? ' gap' : '') + (r.chip ? ' chip' : '') + (r.conn ? ' conn conn-' + r.conn : ''), dataset: { focus: r.id, marker: dot ? CONN_MARKER : (r.marker ?? '') }, onclick: () => this.click(r) },
       h('span', { class: 'marker' }),
-      h('span', { class: 'label' }, r.label),
+      h('span', { class: 'label' }, r.label, r.dot ? h('span', { class: 'dot', role: 'img', 'aria-label': 'new' }) : null),
       r.sub ? h('span', { class: 'sub' }, r.sub, r.late ?? null) : null,
     )
   }
@@ -1083,15 +1173,17 @@ export class FrontEnd {
     // Only game actions in the main list; identity and information share a quiet footer.
     const accountRow = chosen ? rows.shift() : undefined
     const utilities: Row[] = accountRow ? [accountRow] : []
+    // What's new reads here, offline too, and says when there is something unread; the site has it as a page as well
+    utilities.push({ id: 'news', label: 'What’s new', marker: '!', dot: newsUnread(), hint: newsUnread() ? `What changed in Orbrun ${version}, and before.` : 'What changed in Orbrun, newest first.', fn: () => this.showNews() })
     // the About pages are the site's, not a screen of the app: web pages of their own, for a reader who has never played
-    utilities.push({ id: 'about', label: 'About & credits', marker: '?', hint: 'About Orbrun, what’s new, and the people behind the game.', fn: () => (this.hooks.page ?? openPage)('/about') })
+    utilities.push({ id: 'about', label: 'About & credits', marker: '?', hint: 'About Orbrun, and the people behind the game.', fn: () => (this.hooks.page ?? openPage)('/about') })
     const onPad = !!this.hooks.padConnected?.()
     rows.push({ id: 'settings', label: 'Settings', marker: '?', hint: 'Camera, controls, the HUD: kept on this device.' + (onPad ? ' (X)' : ''), fn: () => this.showSettings(() => this.showHome()) })
     // straight under Settings, and only where the browser left no way out of its own: a kiosk window on a
     // Deck, or an installed app (quit.ts). `<` is the way out, as it is out of the dungeon.
     if (canQuit()) rows.push({ id: 'quit', label: 'Quit', marker: '<', hint: 'Close Orbrun. A game in progress is kept on the server.', fn: () => this.quit() })
     // the words under the cursor too: a saved game's row says its build's download only in its small print
-    const shape = JSON.stringify([[...rows, ...utilities].map((r) => [r.id, r.label, r.sub, r.hint, r.fine, r.conn, r.main, !!r.also]), notices.map((n) => n.textContent)])
+    const shape = JSON.stringify([[...rows, ...utilities].map((r) => [r.id, r.label, r.sub, r.hint, r.fine, r.conn, r.main, !!r.also, !!r.dot]), notices.map((n) => n.textContent)])
     // a report to put up has its screen drawn first, however little of it changed: the dialog stands on it
     if (this._view === 'home' && this.shape.get('home') === shape && !this.error && !report) return
     // the screen under a dialog is drawn again as a redraw, not a fresh screen: it must not slide in behind it
@@ -1160,11 +1252,12 @@ export class FrontEnd {
    * "Loading…" until it does; one that fails says so, with the document's
    * link out as the way to it, when it has one.
    */
-  private showDoc(opts: { title: string; lede?: string; body: () => HTMLElement | Promise<HTMLElement>; from: () => void; links?: { label: string; href: string }[]; failed?: string }) {
-    this.setView('doc', 'doc-list')
+  private showDoc(opts: { title: string; lede?: string; body: () => HTMLElement | Promise<HTMLElement>; from: () => void; links?: { label: string; href: string }[]; failed?: string; view?: View; cls?: string; extra?: Focusable[]; focus?: string }) {
+    const cls = 'doc-list' + (opts.cls ? ' ' + opts.cls : '')
+    this.setView(opts.view ?? 'doc', cls)
     this.docFrom = opts.from
     const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back.', fn: () => this.back() }]
-    const extra: Focusable[] = []
+    const extra: Focusable[] = [...(opts.extra ?? [])]
     const below: HTMLElement[] = []
     const scroller = h('div', { class: 'doc-scroll' })
     let content: HTMLElement | Promise<HTMLElement>
@@ -1199,9 +1292,35 @@ export class FrontEnd {
       })
       below.push(links)
     }
-    this.list({ cls: 'doc-list', title: opts.title, lede: opts.lede ?? (this.hooks.padConnected?.() ? 'Up and down scroll it; so does the right stick.' : 'Up and down scroll it.'), rows, below, extra, focus: BACK })
-    // the list settles the cursor on Back, the one row: the document, not the cursor, is what up and down move
+    this.list({ cls, title: opts.title, lede: opts.lede ?? (this.hooks.padConnected?.() ? 'Up and down scroll it; so does the right stick.' : 'Up and down scroll it.'), rows, below, extra, focus: opts.focus ?? BACK })
+    // a document with no rows of its own leaves the cursor on Back: the document, not the cursor, is what up and down move
     this.docScroller = scroller
+  }
+
+  /** the release What's new was last read under before this visit to the front: every release since reads as New until the page is left for good */
+  private newsSince: string | null | undefined = undefined
+
+  /**
+   * What's new: the changelog, as the site's page has it, in a place of the
+   * dungeon of its own. Opening it is reading it: the dot on its row goes, and
+   * what came out since it was last read stays marked New while the front is up.
+   */
+  showNews() {
+    if (this.newsSince === undefined) this.newsSince = newsSeen()
+    markNewsSeen()
+    const doc = newsDoc(changelog, this.newsSince)
+    // each release a row under Back; the cursor opens on the newest, and a release it lands on glides to the top
+    const releases = Array.from(doc.querySelectorAll<HTMLElement>('.release[data-focus]'))
+    const extra: Focusable[] = releases.map((el, i) => ({
+      id: el.dataset.focus!, label: el.querySelector('.ver')?.textContent ?? '', el, row: i + 1, ownScroll: true,
+      activate: () => {},
+      onFocus: () => {
+        this.say('Up and down step through the releases.')
+        this.glide(i === 0 ? 0 : el.offsetTop)
+      },
+    }))
+    this.showDoc({ view: 'news', cls: 'news-list', title: 'What’s new', lede: latestLine(changelog), from: () => this.showHome(), body: () => doc, extra, focus: extra[0]?.id })
+    this.at({ kind: 'menu', path: 'whats-new' })
   }
 
   // ------------------------------------------------------------------ watch

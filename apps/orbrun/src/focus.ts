@@ -29,6 +29,8 @@ export interface Focusable {
   alt?: { label: string; activate(): void }
   /** the cursor arrived here by a move (not by a rebuild): the screen may follow it, as the new-game description does */
   onFocus?(): void
+  /** the screen brings the item into view itself (What's new glides a release to the top): the cursor does not */
+  ownScroll?: boolean
 }
 
 export type FocusDir = 'up' | 'down' | 'left' | 'right'
@@ -306,6 +308,6 @@ export class FocusNav {
   private paint(scroll: boolean) {
     for (let i = 0; i < this.items.length; i++) this.items[i].el.classList.toggle(FOCUS_CLASS, i === this.index)
     const cur = this.current()
-    if (cur && scroll) cur.el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    if (cur && scroll && !cur.ownScroll) cur.el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 }

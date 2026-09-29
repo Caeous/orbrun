@@ -2,6 +2,11 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.7 — 2026-09-29
+
+- What's new opens right in Orbrun, from the title screen between your account and About, and works offline too. A dot says when there's something you haven't read yet.
+- What's new, your accounts, Settings and Watch now stand in scenes from real games, as the About pages do.
+
 ## 0.2.6 — 2026-09-29
 
 - Orbrun opens with no connection once you've played a game on this device, so you can play offline anywhere.

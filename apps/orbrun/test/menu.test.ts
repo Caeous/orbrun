@@ -153,12 +153,12 @@ describe('the front end: the home screen', () => {
 
   it('with no account: leads with Play and keeps information outside the main actions', () => {
     const { screen } = make()
-    expect(labels(screen)).toEqual(['Play', 'Watch', 'Settings', 'About & credits'])
+    expect(labels(screen)).toEqual(['Play', 'Watch', 'Settings', 'What’s new', 'About & credits'])
     expect(focused(screen)).toBe('account')
     expect(screen.root.querySelector('.head .place')?.textContent).toBe('Orbrun')
     expect(screen.root.querySelector('.head .lede')?.textContent).toBe('An unofficial first\u2011person client for Dungeon\u00a0Crawl\u00a0Stone\u00a0Soup.')
     expect(XOM_SPLASHES.map((s) => s.text)).toContain(screen.root.querySelector('.head .splash')?.textContent)
-    expect(screen.root.querySelector('.home-footer')?.textContent).toBe('About & credits')
+    expect(screen.root.querySelector('.home-footer')?.textContent).toBe('What’s newAbout & credits')
     expect(screen.root.querySelectorAll('a')).toHaveLength(0)
     expect(sub(screen, 'Play')).toBeNull()
   })
@@ -170,8 +170,8 @@ describe('the front end: the home screen', () => {
     // a kiosk browser, as Steam launches it on a Deck: no tab, no chrome, so the menu is the way out
     vi.spyOn(window, 'matchMedia').mockImplementation((q: string) => ({ matches: q === '(display-mode: fullscreen)' }) as MediaQueryList)
     const kiosk = make().screen
-    expect(labels(kiosk)).toEqual(['Play', 'Watch', 'Settings', 'Quit', 'About & credits'])
-    expect(kiosk.root.querySelector('.home-footer')?.textContent).toBe('About & credits')
+    expect(labels(kiosk)).toEqual(['Play', 'Watch', 'Settings', 'Quit', 'What’s new', 'About & credits'])
+    expect(kiosk.root.querySelector('.home-footer')?.textContent).toBe('What’s newAbout & credits')
     const close = vi.spyOn(window, 'close').mockImplementation(() => {})
     pick(kiosk, 'Quit')
     expect(close).toHaveBeenCalled()
@@ -185,13 +185,13 @@ describe('the front end: the home screen', () => {
     const reserve = help.querySelector('.menu-msg-reserve')!
     const hints = Array.from(reserve.children, (el) => el.textContent)
     expect(reserve.getAttribute('aria-hidden')).toBe('true')
-    expect(hints).toHaveLength(4)
+    expect(hints).toHaveLength(5)
     expect(hints).toContain(live.textContent)
     const first = live.textContent
     press(screen, 'ArrowDown')
     expect(live.textContent).not.toBe(first)
     expect(hints).toContain(live.textContent)
-    expect(hints).toContain('About Orbrun, what’s new, and the people behind the game.')
+    expect(hints).toContain('About Orbrun, and the people behind the game.')
     expect(Array.from(reserve.children, (el) => el.textContent)).toEqual(hints)
   })
 
@@ -199,7 +199,7 @@ describe('the front end: the home screen', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     const { screen } = make()
-    expect(labels(screen)).toEqual(['Log in', 'Watch', 'Settings', 'orbrun · CDI', 'About & credits'])
+    expect(labels(screen)).toEqual(['Log in', 'Watch', 'Settings', 'orbrun · CDI', 'What’s new', 'About & credits'])
     expect(conn(screen)).toBe('orbrun · CDI')
     expect(focused(screen)).toBe('login')
   })
@@ -263,7 +263,7 @@ describe('the front end: the home screen', () => {
     const { screen } = make(() => s)
     // the latest release leads whatever was played last and whatever has a game waiting: the cursor is on the
     // same row every time the screen comes up
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Settings', 'orbrun · CDI', 'About & credits'])
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Settings', 'orbrun · CDI', 'What’s new', 'About & credits'])
     expect(sub(screen, 'Continue DCSS trunk')).toBe('a level 9 Minotaur Berserker of Trog')
     expect(sub(screen, 'Play DCSS 0.34')).toBeNull()
     expect(sub(screen, 'Watch')).toBe('1 playing')
@@ -562,7 +562,10 @@ describe('the front end: the home screen', () => {
     pad(screen, 'B')
     expect(focused(screen)).toBe('account')
     press(screen, 'ArrowRight')
+    expect(focused(screen)).toBe('news')
+    press(screen, 'ArrowRight')
     expect(focused(screen)).toBe('about')
+    press(screen, 'ArrowLeft')
     press(screen, 'ArrowLeft')
     expect(focused(screen)).toBe('account')
     press(screen, 'ArrowDown')
@@ -598,6 +601,92 @@ describe('the front end: the home screen', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+
+  it('keeps What’s new in the app, between the account and About, with a dot until it has been read', () => {
+    const newsDot = (screen: FrontEnd) => !!screen.root.querySelector('[data-focus="news"] .dot')
+    const { screen, at } = make()
+    expect(newsDot(screen)).toBe(true)
+    pick(screen, 'What’s new')
+    expect(screen.view).toBe('news')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'whats-new' })
+    expect(screen.root.querySelector('.head .place')?.textContent).toBe('What’s new')
+    expect(screen.root.querySelector('.head .lede')?.textContent).toMatch(new RegExp(`^Version ${version.replace(/\./g, '\\.')} · \\d{4}-\\d{2}-\\d{2}$`))
+    const first = screen.root.querySelector('.doc.news .release')!
+    expect(first.classList.contains('latest')).toBe(true)
+    expect(first.querySelector('h2 .ver')?.textContent).toBe(version)
+    expect(first.querySelector('h2 .tag')?.textContent).toBe('Latest')
+    // the changelog's opening line is the screen's lede, not a paragraph of it
+    expect(screen.root.querySelector('.doc.news > p')).toBeNull()
+    pad(screen, 'B')
+    expect(screen.view).toBe('home')
+    expect(focused(screen)).toBe('news')
+    expect(newsDot(screen)).toBe(false)
+    // read on this device, not only on this screen
+    expect(newsDot(make().screen)).toBe(false)
+  })
+
+  it('marks the releases since What’s new was last read as New, and opens at its own address', () => {
+    localStorage.setItem('orbrun.newsSeen', '0.2.4')
+    const { screen } = make()
+    expect(screen.root.querySelector('[data-focus="news"] .dot')).not.toBeNull()
+    screen.open({ kind: 'menu', path: 'whats-new' })
+    expect(screen.view).toBe('news')
+    const fresh = Array.from(screen.root.querySelectorAll('.doc.news .release.fresh h2 .ver'), (el) => el.textContent)
+    expect(fresh).toContain('0.2.5')
+    expect(fresh).not.toContain('0.2.4')
+    expect(Array.from(screen.root.querySelectorAll('.doc.news .tag.new')).length).toBe(fresh.length - 1)
+  })
+
+  it('makes What’s new’s releases rows: the cursor opens on the newest and steps through them, Back above', async () => {
+    const { screen } = make()
+    screen.showNews()
+    const rows = Array.from(screen.root.querySelectorAll<HTMLElement>('.doc.news .release'))
+    const scroller = screen.root.querySelector('.doc-scroll') as HTMLElement
+    rows.forEach((c, i) => Object.defineProperty(c, 'offsetTop', { value: i * 300 }))
+    const ver = (i: number) => rows[i].querySelector('.ver')!.textContent
+    expect(focused(screen)).toBe('release:' + version)
+    expect(rows[0].classList.contains('focused')).toBe(true)
+    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('Up and down step through the releases.')
+    press(screen, 'ArrowDown')
+    expect(focused(screen)).toBe('release:' + ver(1))
+    await vi.waitFor(() => expect(scroller.scrollTop).toBe(300))
+    screen.pad({ type: 'dir', source: 'dpad', dir: 4 })
+    expect(focused(screen)).toBe('release:' + ver(2))
+    await vi.waitFor(() => expect(scroller.scrollTop).toBe(600))
+    press(screen, 'ArrowUp')
+    press(screen, 'ArrowUp')
+    expect(focused(screen)).toBe('release:' + version)
+    await vi.waitFor(() => expect(scroller.scrollTop).toBe(0))
+    // Back is the row above the newest, as in any menu; A on it leaves
+    press(screen, 'ArrowUp')
+    expect(focused(screen)).toBe('back')
+    pad(screen, 'A')
+    expect(screen.view).toBe('home')
+  })
+
+  it('stands What’s new, the account’s screens, Settings and Watch in stills of their own, and the rest in the room', () => {
+    const { screen } = make()
+    const still = () => (screen.root.querySelector('.menu-backdrop.up img') as HTMLImageElement | null)?.getAttribute('src') ?? null
+    expect(still()).toBeNull()
+    screen.showNews()
+    expect(still()).toBe('/about/keys-bg.webp')
+    expect(screen.root.classList.contains('covered')).toBe(true)
+    pad(screen, 'B')
+    expect(still()).toBeNull()
+    expect(screen.root.classList.contains('covered')).toBe(false)
+    screen.showAccounts()
+    expect(still()).toBe('/about/account-bg.webp')
+    screen.showServers('add')
+    expect(still()).toBe('/about/account-bg.webp')
+    screen.showServers('watch')
+    expect(still()).toBe('/about/branch-bg.webp')
+    screen.showWatch()
+    expect(still()).toBe('/about/branch-bg.webp')
+    screen.showSettings()
+    expect(still()).toBe('/about/pad-bg.webp')
+    screen.showHome()
+    expect(still()).toBeNull()
   })
 
   it('opens About & credits as the site’s own page, not a screen of the app', () => {
@@ -1112,7 +1201,7 @@ describe('the front end: Play and Watch', () => {
     const s = loggedIn()
     const { screen, connect } = make(() => s)
     expect(screen.view).toBe('home')
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Settings', 'orbrun · CDI', 'About & credits'])
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Settings', 'orbrun · CDI', 'What’s new', 'About & credits'])
     expect(focused(screen)).toBe('play:dcss-web-0.34')
     press(screen, 'ArrowDown')
     expect(focused(screen)).toBe('play:dcss-web-trunk')
@@ -1200,7 +1289,7 @@ describe('the front end: Play and Watch', () => {
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
     const { screen } = make(() => s)
     expect(screen.view).toBe('home')
-    expect(labels(screen)).toEqual(['Watch', 'Settings', 'orbrun · CDI', 'About & credits'])
+    expect(labels(screen)).toEqual(['Watch', 'Settings', 'orbrun · CDI', 'What’s new', 'About & credits'])
     expect(screen.root.textContent).toContain('Loading game versions…')
     expect(focused(screen)).toBe('watch')
     s.state.lobby.complete = true
@@ -1210,7 +1299,7 @@ describe('the front end: Play and Watch', () => {
     ]
     ;(s as unknown as { emit(e: unknown): void }).emit({ type: 'state', msg: { msg: 'set_game_links' } })
     await new Promise((r) => requestAnimationFrame(r))
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk', 'Watch', 'Settings', 'orbrun · CDI', 'About & credits'])
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk', 'Watch', 'Settings', 'orbrun · CDI', 'What’s new', 'About & credits'])
     expect(focused(screen)).toBe('watch')
     expect(screen.root.textContent).not.toContain('Loading game versions…')
   })

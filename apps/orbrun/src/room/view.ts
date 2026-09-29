@@ -87,6 +87,8 @@ export class RoomView {
   private idle = IDLE_DELAY
   private size = { w: 1, h: 1 }
   private posterTimer = 0
+  /** a still stands over the room (menu.ts `stand`): nothing drawn, nothing to take hold of */
+  private covered = false
 
   get cellWidth(): number {
     return this.grid.cw
@@ -125,6 +127,14 @@ export class RoomView {
     void this.start()
   }
 
+  /** A screen stands in a still over the room, or no longer does: the room keeps its eye and draws again once uncovered. */
+  cover(on: boolean) {
+    if (on === this.covered) return
+    this.covered = on
+    if (on) this.cancelDrag()
+    else this.invalidate()
+  }
+
   destroy() {
     this.destroyed = true
     clearTimeout(this.posterTimer)
@@ -141,6 +151,7 @@ export class RoomView {
 
   /** Right stick: dx, dy in [-1, 1]; zero releases it. */
   look(dx: number, dy: number) {
+    if (this.covered) return
     const st = getSettings()
     if (dx !== 0 || dy !== 0) this.interrupt()
     this.cam.look(dx, dy, st.lookSensitivity, st.invertLook)
@@ -217,7 +228,7 @@ export class RoomView {
 
   private invalidate() {
     this.needsRender = true
-    if (!this.raf && !document.hidden) {
+    if (!this.raf && !document.hidden && !this.covered) {
       // frames were paced by the idle turn's timer (or stopped): the clock starts again, so a look's first frame eases from zero
       this.last = performance.now()
       this.raf = requestAnimationFrame(this.tick)
@@ -267,6 +278,8 @@ export class RoomView {
     this.raf = 0
     clearTimeout(this.driftTimer)
     this.driftTimer = 0
+    // covered since the frame was asked for: the render waits for the room to show again (cover)
+    if (this.covered) return
     const dt = Math.min(0.1, (now - this.last) / 1000 || 0)
     this.last = now
     const eased = this.cam.update(dt)
@@ -292,7 +305,7 @@ export class RoomView {
 
   private driftFrame = () => {
     this.driftTimer = 0
-    if (!this.raf && !document.hidden && !this.destroyed) this.raf = requestAnimationFrame(this.tick)
+    if (!this.raf && !document.hidden && !this.destroyed && !this.covered) this.raf = requestAnimationFrame(this.tick)
   }
 
   private onVisibility() {
@@ -316,7 +329,7 @@ export class RoomView {
     const c = this.el
     const surface = this.host
     surface.addEventListener('pointerdown', (ev) => {
-      if (this.drag || !this.room) return
+      if (this.drag || !this.room || this.covered) return
       if (!isScenery(ev.target)) return
       // the press is the room's: no caret dropped in the words it went through, no row taking focus
       ev.preventDefault()

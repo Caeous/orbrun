@@ -14,6 +14,8 @@ const BUILT = [
   'about.html',
   'about/new.html',
   'about/hero-1280.webp',
+  'about/keys-bg.webp',
+  'about/account-bg.webp',
   'assets/index-AbC123.js',
   'assets/index-AbC123.js.map',
   'assets/index-DeF456.css',
@@ -37,9 +39,11 @@ const BUILT = [
 
 /** Orbrun opens with no connection: the service worker keeps what the app needs to start, and nothing else. */
 describe('the app kept on the device', () => {
-  it('keeps the page, the bundles, the fonts, the front room and the icons', () => {
+  it('keeps the page, the bundles, the fonts, the front room, the stills the menus stand in and the icons', () => {
     expect(shellFiles(BUILT)).toEqual([
       '/',
+      '/about/account-bg.webp',
+      '/about/keys-bg.webp',
       '/assets/index-AbC123.js',
       '/assets/index-DeF456.css',
       '/assets/worker-GhI789.js',
