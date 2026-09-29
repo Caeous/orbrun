@@ -23,6 +23,7 @@
     "engine-files.ts",
     "site-pages.ts",
     "shell.ts",
+    "package.json",
     "worker"
   ],
   "references": [

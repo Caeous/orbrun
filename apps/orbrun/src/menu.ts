@@ -1,3 +1,4 @@
+import { version } from '../package.json'
 import { cm, gameLinkRows, gameLinkVersion, gameVersionRows, type GameLink, type GameState, type LobbyEntry } from '@orbrun/webtiles'
 import { settingsPanel } from './settings-panel'
 import { settingGroups, type SettingGroup } from './settings-rows'
@@ -803,6 +804,8 @@ export class FrontEnd {
       })
       brand.append(h('footer', { class: 'home-footer' }, utilities))
     }
+    // which Orbrun this is, in the title screen's corner as a console game's is: the release What's new names
+    if (home) brand.append(h('div', { class: 'home-version' }, version))
     // a dialog (the exit report) is laid over the screen that is already up, which keeps its place behind it;
     // the next screen drawn clears both, as it clears everything but the room
     if (opts.over) {

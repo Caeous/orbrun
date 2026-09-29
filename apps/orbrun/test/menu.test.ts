@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { initialState, type GameState, type LobbyEntry } from '@orbrun/webtiles'
 import { accountConn, CONN_MARKER, FrontEnd, navDir, loginWord, exitReasonMessage, type Intent } from '../src/menu'
+import { version } from '../package.json'
 import { engines } from '../src/engines'
 import { settingsPanel } from '../src/settings-panel'
 import type { Session } from '../src/session'
@@ -1006,6 +1007,13 @@ describe('the front end: accounts and servers', () => {
     } finally {
       onLine.mockRestore()
     }
+  })
+
+  it('names the release in the title screen’s corner, as What’s new does, and nowhere else', () => {
+    const { screen } = make()
+    expect(screen.root.querySelector('.home-version')?.textContent).toBe(version)
+    screen.showSettings(() => screen.showHome())
+    expect(screen.root.querySelector('.home-version')).toBeNull()
   })
 
   it('an account picked is chosen, opens its own connection, and the home screen is its', () => {

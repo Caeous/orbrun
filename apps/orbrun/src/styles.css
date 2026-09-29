@@ -1655,6 +1655,18 @@ a.item.beside {
 .frame.home-list .legend:empty {
   display: none;
 }
+/* the release, in the screen's very corner under the legend: the smallest, dimmest words on the screen */
+.frame.home-list .home-version {
+  position: absolute;
+  right: max(0.6rem, env(safe-area-inset-right));
+  bottom: max(0.5rem, env(safe-area-inset-bottom));
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--ink-dim);
+  opacity: 0.35;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
 
 /* ------------------------------------------------------------------ lobby */
 
