@@ -934,6 +934,28 @@ describe('the front end: accounts and servers', () => {
     }
   })
 
+  it('offers no players on this device in a browser without JSPI, where the engine cannot run', () => {
+    vi.stubEnv('MODE', 'development')
+    try {
+      const marc: Account = { serverId: 'offline', username: 'Marc' }
+      localStorage.setItem('orbrun.accounts', JSON.stringify([marc, orbrun]))
+      const offered = make().screen
+      offered.showAccounts()
+      expect(labels(offered)).toContain('Marc')
+      // Firefox 151: no WebAssembly.Suspending
+      vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: undefined }))
+      const { screen } = make()
+      screen.showAccounts()
+      expect(labels(screen)).not.toContain('Marc')
+      pick(screen, 'Add an account')
+      expect(screen.view).toBe('servers')
+      expect(labels(screen)).not.toContain('This device')
+    } finally {
+      vi.unstubAllEnvs()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('an account picked is chosen, opens its own connection, and the home screen is its', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
