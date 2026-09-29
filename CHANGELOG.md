@@ -4,27 +4,25 @@ Notable changes to Orbrun, newest first.
 
 ## 0.2.7 — 2026-09-29
 
-- What's new is now in the app, on the title screen, and works offline. A dot marks anything unread.
-- What's new, Accounts, Settings and Watch now show scenes from real games.
+- What's new is now in the app, with a dot when there's something new.
+- More screens show scenes from real games.
 
 ## 0.2.6 — 2026-09-29
 
-- Once you've played on this device, Orbrun opens with no connection.
-- Back online, the game updates right away, and you can watch it download.
-- With no internet, the home screen says so instead of "reconnecting".
+- Play Orbrun without an internet connection.
 
 ## 0.2.5 — 2026-09-28
 
-- Travel, explore and rest on this device skip to the end and leave a trail, like on a server.
-- Browsers that can't run offline games, like older Firefox, ask you to update instead of crashing.
+- Travel, explore and rest on this device work like they do on a server.
+- Older browsers ask you to update instead of crashing.
 
 ## 0.2.4 — 2026-09-28
 
-- Edit your rc file in Orbrun: under Accounts > (other versions), or beside a player on this device.
+- Edit your rc file right in Orbrun.
 
 ## 0.2.3 — 2026-09-28
 
-- Play older versions, Sprint, the tutorial and seeded games under Accounts > (other versions).
+- Play older versions, Sprint, the tutorial and seeded games.
 
 ## 0.2.2 — 2026-09-25
 
