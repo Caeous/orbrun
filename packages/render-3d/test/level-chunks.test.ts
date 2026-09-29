@@ -66,6 +66,8 @@ function cellAt(x: number, y: number, lit: boolean): SceneCell {
     overlays: t === 'floor' && (x + y) % 5 === 0 ? [7, 8] : undefined,
     translucent: t === 'floor' && (x + y) % 5 === 0 ? [8] : undefined,
     wallOverlays: t === 'wall' && x % 4 === 0 ? [9] : undefined,
+    // a cell icon (a cursor, a travel arrow) now and then
+    icons: t === 'floor' && (x * 3 + y) % 7 === 0 ? [10] : undefined,
     flags: { water: false, lava: false, excluded: false, travelTrail: false, newStair: false, cursor: false, outOfRange: false, magicMapped: false },
   }
   return cell
@@ -107,6 +109,7 @@ function triangles(mesher: LevelMesher): Map<string, string[]> {
     for (const g of parts) {
       const list = out.get(g.kind) || []
       const streams: [keyof ChunkGeometry, number][] = [['position', 3], ['uv', 2], ['color', 3], ['cut', 1], ['cell', 2]]
+      if (g.rect) streams.push(['rect', 4])
       for (let i = 0; i < g.index.length; i += 3) {
         const parts2: string[] = []
         for (let v = 0; v < 3; v++) {
@@ -148,6 +151,19 @@ describe('a level built in chunks', () => {
       build(walked, scene)
       expectSameGeometry(walked, fresh(scene), `step ${step}`)
     }
+  })
+
+  it('draws the cell icons as marks, each vertex carrying its tile\'s uv rect', () => {
+    const mesher = fresh(seen(20))
+    const marks = [...mesher.chunks.values()].flat().filter((g) => g.kind === 'marks')
+    expect(marks.length).toBeGreaterThan(0)
+    const uv = uvFor(rectFor(10), 128, 128)
+    for (const g of marks) {
+      expect(g.rect!.length).toBe((g.position.length / 3) * 4)
+      for (let i = 0; i < g.rect!.length; i += 4) expect([...g.rect!.subarray(i, i + 4)]).toEqual([uv.u0, uv.v0, uv.u1, uv.v1].map(Math.fround))
+    }
+    // and nowhere else: no icon is in the level's own faces or the blended decals
+    for (const g of [...mesher.chunks.values()].flat()) if (g.kind !== 'marks') expect(g.rect).toBeUndefined()
   })
 
   it('leaves the chunks a step did not reach alone', () => {

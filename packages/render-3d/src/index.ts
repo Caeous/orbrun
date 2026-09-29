@@ -17,7 +17,7 @@ import {
 } from '@orbrun/scene'
 import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, handsFootprint, type HandPose, type HandRect } from './hands.js'
 import { LevelGrid } from './grid.js'
-import { LevelMesher, uvFor, type ChunkGeometry, type LevelStats, type MeshContext, type TileDraw } from './level-mesh.js'
+import { LevelMesher, MARK_MARGIN, uvFor, type ChunkGeometry, type LevelStats, type MeshContext, type TileDraw } from './level-mesh.js'
 import { Movers, monsterId } from './motion.js'
 import { distanceField, peelInk } from './peel.js'
 import type { PeelReply, PeelRequest } from './peel.worker.js'
@@ -84,6 +84,11 @@ const GHOST_FADE = 14
 /** The same for anything the server currently shows, which is never allowed to disappear. */
 const GHOST_FADE_VISIBLE_START = 8
 const GHOST_FADE_VISIBLE = 30
+/** The cursor ring's band, in cells out from the cell's centre along either axis (a diamond). */
+const RING_INNER = 0.34
+const RING_OUTER = 0.46
+/** How far the ring's quad reaches, the band and a margin for the pixels its outer edge grazes. */
+const RING_REACH = RING_OUTER + MARK_MARGIN
 const CURSOR_COLOUR = 0xff8800
 const CURSOR_MAP_COLOUR = 0xffffff
 const HULL_SEL_COLOUR = 0xffdd33
@@ -127,6 +132,7 @@ interface AtlasEntry {
   uniforms: { map: THREE.IUniform; distMap: THREE.IUniform; atlasSize: THREE.IUniform }
   level: THREE.RawShaderMaterial
   decal: THREE.RawShaderMaterial
+  marks: THREE.RawShaderMaterial
   sprite: Record<SpritePass, THREE.RawShaderMaterial>
 }
 
@@ -326,21 +332,22 @@ export class Render3d implements MapRenderer {
     this.shadowBatch = new Batch(disc, this.shadowMat, [['iAnchor', 3], ['iScale', 1]], 0)
     this.shadowBatch.mesh.layers.set(LAYER_STANDING)
     this.three.add(this.shadowBatch.mesh)
-    this.cursorMat = this.raw(CURSOR_VERT, CURSOR_FRAG, { color: { value: new THREE.Vector4(1, 0.53, 0, 0.95) }, uvRect: { value: new THREE.Vector4(0, 0, 1, 1) } }, { transparent: true, depthTest: false, depthWrite: false })
+    this.cursorMat = this.raw(CURSOR_VERT, CURSOR_FRAG, { color: { value: new THREE.Vector4(1, 0.53, 0, 0.95) }, uvRect: { value: new THREE.Vector4(0, 0, 1, 1) } }, { transparent: true, depthTest: false, depthWrite: false }, { RING_INNER: RING_INNER.toFixed(6), RING_OUTER: RING_OUTER.toFixed(6) })
     this.cursorTileMat = this.raw(
       CURSOR_VERT,
       CURSOR_FRAG,
       { color: { value: new THREE.Vector4(1, 1, 1, 1) }, uvRect: { value: new THREE.Vector4(0, 0, 1, 1) }, map: { value: null } },
       { transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide },
-      { TILE: '' },
+      { TILE: '', MARK_SCALE: (1 + 2 * MARK_MARGIN).toFixed(6) },
     )
-    const ring = new THREE.RingGeometry(0.34, 0.46, 4)
+    // the ring is worked out in the shader: the quad reaches past it by the pixel it may take at the most
+    const ring = new THREE.PlaneGeometry(2 * RING_REACH, 2 * RING_REACH)
     ring.rotateX(-Math.PI / 2)
     this.cursorMesh = new THREE.Mesh(ring, this.cursorMat)
     this.cursorMesh.renderOrder = 0.5
     this.cursorMesh.visible = false
     this.cursorMesh.layers.set(LAYER_STANDING)
-    const cq = new THREE.PlaneGeometry(1, 1)
+    const cq = new THREE.PlaneGeometry(1 + 2 * MARK_MARGIN, 1 + 2 * MARK_MARGIN)
     cq.rotateX(Math.PI / 2)
     this.cursorTileMesh = new THREE.Mesh(cq, this.cursorTileMat)
     this.cursorTileMesh.renderOrder = 0.5
@@ -392,6 +399,7 @@ export class Render3d implements MapRenderer {
     const fu = this.fieldUniforms
     const level = this.raw(LEVEL_VERT, LEVEL_FRAG, { map: uniforms.map, alphaTest: { value: 0.5 }, opacity: { value: 1 }, ...fu, ...this.lidUniforms }, { side: THREE.DoubleSide })
     const decal = this.raw(LEVEL_VERT, LEVEL_FRAG, { map: uniforms.map, alphaTest: { value: 0.02 }, opacity: { value: 1 }, ...fu, ...this.lidUniforms }, { side: THREE.DoubleSide, transparent: true, depthWrite: false })
+    const marks = this.raw(LEVEL_VERT, LEVEL_FRAG, { map: uniforms.map, alphaTest: { value: 0.01 }, opacity: { value: 1 }, ...fu, ...this.lidUniforms }, { side: THREE.DoubleSide, transparent: true, depthWrite: false }, { MARKS: '' })
     const su = { ...uniforms, ...fu, ...this.standUniforms, ...this.spriteUniforms }
     const ghost = (fadeStart: number, fadeRange: number) =>
       this.raw(SPRITE_VERT, SPRITE_FRAG, { ...su, ...this.ghostUniforms, fadeStart: { value: fadeStart }, fadeRange: { value: fadeRange } }, { transparent: true, depthTest: false, depthWrite: false }, { GHOST: '' })
@@ -406,6 +414,7 @@ export class Render3d implements MapRenderer {
       uniforms,
       level,
       decal,
+      marks,
       sprite: {
         fixture: this.raw(SPRITE_VERT, SPRITE_FRAG, su),
         opaque: this.raw(SPRITE_VERT, SPRITE_FRAG, su, { transparent: true, depthWrite: true }),
@@ -424,6 +433,7 @@ export class Render3d implements MapRenderer {
       a.dist?.dispose()
       a.level.dispose()
       a.decal.dispose()
+      a.marks.dispose()
       for (const m of Object.values(a.sprite)) m.dispose()
     }
     this.atlases.clear()
@@ -540,13 +550,14 @@ export class Render3d implements MapRenderer {
     const first = this.atlases.values().next().value ?? this.atlas(this.tiles?.atlasNames()[0] ?? '')
     const warm = new THREE.Scene()
     const mats: THREE.Material[] = [this.voidMat, this.shadowMat, this.cursorMat, this.cursorTileMat, this.blitMat]
-    if (first) mats.push(first.level, first.decal, ...Object.values(first.sprite))
+    if (first) mats.push(first.level, first.decal, first.marks, ...Object.values(first.sprite))
     const plain = new THREE.BufferGeometry()
     plain.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3))
     plain.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(6), 2))
     plain.setAttribute('color', new THREE.BufferAttribute(new Float32Array(9), 3))
     plain.setAttribute('cell', new THREE.BufferAttribute(new Float32Array(6), 2))
     plain.setAttribute('cut', new THREE.BufferAttribute(new Float32Array(3), 1))
+    plain.setAttribute('rect', new THREE.BufferAttribute(new Float32Array(12), 4))
     for (const m of mats) {
       const mesh = new THREE.Mesh(plain, m)
       mesh.visible = false
@@ -811,6 +822,7 @@ export class Render3d implements MapRenderer {
     geo.setAttribute('color', new THREE.BufferAttribute(g.color, 3))
     geo.setAttribute('cell', new THREE.BufferAttribute(g.cell, 2))
     geo.setAttribute('cut', new THREE.BufferAttribute(g.cut, 1))
+    if (g.rect) geo.setAttribute('rect', new THREE.BufferAttribute(g.rect, 4))
     geo.setIndex(new THREE.BufferAttribute(g.index, 1))
     geo.computeBoundingSphere()
     let mat: THREE.Material
@@ -821,10 +833,11 @@ export class Render3d implements MapRenderer {
         geo.dispose()
         return null
       }
-      mat = g.kind === 'decal' ? a.decal : a.level
+      mat = g.kind === 'decal' ? a.decal : g.kind === 'marks' ? a.marks : a.level
     }
     const mesh = new THREE.Mesh(geo, mat)
     if (g.kind === 'decal') mesh.renderOrder = 1
+    else if (g.kind === 'marks') mesh.renderOrder = 1.1
     return mesh
   }
 

@@ -33,6 +33,16 @@ export const LID_SHADE = 0.75
  * neighbouring tile in the atlas.
  */
 export const UV_INSET = 0.25
+/**
+ * How far a mark's quad reaches past its tile, in cells. A cursor's line is
+ * the tile's outermost texel, and a far one is thinner than a pixel: the GPU
+ * shades only the pixels whose centres fall inside the quad, so along a
+ * slanted edge it shades some and skips the rest and the line prints as
+ * dashes. With a margin every pixel the line touches is shaded, and the
+ * `footprint` taps that land past the tile count as empty. Four texels: half
+ * the widest footprint it takes taps across.
+ */
+export const MARK_MARGIN = 4 / 32
 
 const DIAGONALS: [number, number][] = [[-1, -1], [1, -1], [-1, 1], [1, 1]]
 
@@ -62,8 +72,12 @@ export interface MeshContext {
 
 /** One mesh's worth of a chunk: which material it wears and its vertex streams. */
 export interface ChunkGeometry {
-  /** `level` is the alpha-tested masonry and floors, `decal` the blended marks over them, `void` the black of never-seen space. */
-  kind: 'level' | 'decal' | 'void'
+  /**
+   * `level` is the alpha-tested masonry and floors, `decal` the blended marks
+   * over them, `marks` the cell icons (cursors, travel arrows, badges), blended
+   * and sampled over each pixel's footprint, `void` the black of never-seen space.
+   */
+  kind: 'level' | 'decal' | 'marks' | 'void'
   atlas: string
   position: Float32Array
   uv: Float32Array
@@ -72,6 +86,8 @@ export interface ChunkGeometry {
   cell: Float32Array
   /** 1 on a wall face, whose back side is culled. */
   cut: Float32Array
+  /** Per vertex on `marks`, the tile's uv rect (u0, v0, u1, v1) the footprint is kept inside. */
+  rect?: Float32Array
   index: Uint16Array | Uint32Array
 }
 
@@ -138,15 +154,25 @@ class GeoBuilder {
   private colors = new Stream(new Float32Array(3 * 256))
   private cut = new Stream(new Float32Array(256))
   private cells = new Stream(new Float32Array(2 * 256))
+  private rects: Stream<Float32Array> | null
   private indices = new Stream(new Uint32Array(6 * 128))
   private cx = 0
   private cz = 0
+  /** `withRects` keeps each quad's uv rect per vertex, for the `marks` shader. */
+  constructor(withRects = false) {
+    this.rects = withRects ? new Stream(new Float32Array(4 * 256)) : null
+  }
   at(x: number, z: number): this {
     this.cx = x
     this.cz = z
     return this
   }
-  quad(p: [number, number, number][], uv: UVRect, shade: number, tint: Tint, cut = false) {
+  /** `rect` is the tile's own uv rect when `uv` reaches past it (a mark's margin). */
+  quad(p: [number, number, number][], uv: UVRect, shade: number, tint: Tint, cut = false, rect: UVRect = uv) {
+    if (this.rects) for (let i = 0; i < p.length; i++) {
+      this.rects.push2(rect.u0, rect.v0)
+      this.rects.push2(rect.u1, rect.v1)
+    }
     this.poly(p, quadUVs(uv), shade, tint, cut)
   }
   poly(p: [number, number, number][], uv: [number, number][], shade: number, tint: Tint, cut = false) {
@@ -180,6 +206,7 @@ class GeoBuilder {
       color: this.colors.take(),
       cell: this.cells.take(),
       cut: this.cut.take(),
+      ...(this.rects ? { rect: this.rects.take() } : {}),
       index: wide ? idx : new Uint16Array(idx),
     }
   }
@@ -394,6 +421,7 @@ export class LevelMesher {
     this.stats.levelChunkBuilds++
     const builders = new Map<string, GeoBuilder>()
     const decalBuilders = new Map<string, GeoBuilder>()
+    const markBuilders = new Map<string, GeoBuilder>()
     const voids = new GeoBuilder()
     const get = (name: string) => {
       let g = builders.get(name)
@@ -404,6 +432,11 @@ export class LevelMesher {
       if (!cell.translucent?.includes(id)) return get(name)
       let g = decalBuilders.get(name)
       if (!g) decalBuilders.set(name, (g = new GeoBuilder()))
+      return g
+    }
+    const getMark = (name: string) => {
+      let g = markBuilders.get(name)
+      if (!g) markBuilders.set(name, (g = new GeoBuilder(true)))
       return g
     }
     const lerp = (a: number, b: number, t: number) => a + (b - a) * t
@@ -419,18 +452,24 @@ export class LevelMesher {
         if (!solid && cell) {
           const ft = tileOf(cell.floorTile)
           if (ft) get(ft.atlas).at(x, y).quad([[x, 0, y + 1], [x + 1, 0, y + 1], [x + 1, 0, y], [x, 0, y]], ft.uv, 1, tint)
-          const decal = (id: number, lift: number) => {
+          const decal = (id: number, lift: number, mark = false) => {
             const ot = tileOf(id)
             if (!ot) return
             const c = ot.r.cell
             const dx0 = x + ot.r.ox / c, dx1 = x + (ot.r.ox + ot.r.w) / c
             const dz0 = y + ot.r.oy / c, dz1 = y + (ot.r.oy + ot.r.h) / c
-            getDecal(ot.atlas, cell, id).at(x, y).quad([[dx0, lift, dz1], [dx1, lift, dz1], [dx1, lift, dz0], [dx0, lift, dz0]], ot.uv, 1, tint)
+            if (mark) {
+              // a mark stands MARK_MARGIN wider all round, its uvs running on past the tile (see MARK_MARGIN)
+              const m = MARK_MARGIN, uv = ot.uv
+              const du = ((uv.u1 - uv.u0) / (dx1 - dx0)) * m, dv = ((uv.v1 - uv.v0) / (dz1 - dz0)) * m
+              const wide = { u0: uv.u0 - du, v0: uv.v0 - dv, u1: uv.u1 + du, v1: uv.v1 + dv }
+              getMark(ot.atlas).at(x, y).quad([[dx0 - m, lift, dz1 + m], [dx1 + m, lift, dz1 + m], [dx1 + m, lift, dz0 - m], [dx0 - m, lift, dz0 - m]], wide, 1, tint, false, uv)
+            } else getDecal(ot.atlas, cell, id).at(x, y).quad([[dx0, lift, dz1], [dx1, lift, dz1], [dx1, lift, dz0], [dx0, lift, dz0]], ot.uv, 1, tint)
           }
           if (cell.underlays) for (const o of cell.underlays) decal(o, 0.002)
           if (cell.featureTile !== undefined && !stands(cell)) decal(cell.featureTile, 0.004)
           if (cell.overlays) for (const o of cell.overlays) if (!cell.wallShadows?.includes(o) && !cell.shorelines?.includes(o)) decal(o, 0.006)
-          if (cell.icons) for (const o of cell.icons) decal(o, 0.008)
+          if (cell.icons) for (const o of cell.icons) decal(o, 0.008, true)
           const ceiling = ceilingOf(cell)
           if (ceiling) get(ceiling.atlas).at(x, y).quad([[x, 1, y], [x + 1, 1, y], [x + 1, 1, y + 1], [x, 1, y + 1]], ceiling.uv, LID_SHADE, tint)
           continue
@@ -576,6 +615,10 @@ export class LevelMesher {
     }
     for (const [name, gb] of decalBuilders) {
       const g = gb.build('decal', name)
+      if (g) out.push(g)
+    }
+    for (const [name, gb] of markBuilders) {
+      const g = gb.build('marks', name)
       if (g) out.push(g)
     }
     const vg = voids.build('void', '')

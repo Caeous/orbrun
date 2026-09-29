@@ -436,7 +436,9 @@ function near(keys: CellKey[], reach: number): Set<CellKey> {
  * A room this wide or narrower is roofed entirely in its own wall type.
  */
 export const CEILING_REACH = 3
-/** How long a corpse or skeleton lies on the floor, in cells, where a standing item is 0.4 tall. */
+/** How tall a standing item is, in cells: under the smallest monsters' heads, so one behind it shows over it. */
+export const ITEM_HEIGHT = 0.3
+/** How long a corpse or skeleton lies on the floor, in cells. */
 export const LYING_LENGTH = 0.6
 
 /** The wall base tiles each built scene's lids were voted from, for the next build to reuse them (Part IV). */
@@ -1241,7 +1243,7 @@ function addBillboards(scene: Scene, mc: MapCell, cell: SceneCell, gd: Gamedata,
       y: mc.y,
       tile: fgIdx,
       kind: 'item',
-      height: isTree ? 0.95 : lying ? LYING_LENGTH : 0.4,
+      height: isTree ? 0.95 : lying ? LYING_LENGTH : ITEM_HEIGHT,
       scenery: isTree || undefined,
       lying: lying || undefined,
       layers: layers.length > 1 ? layers : undefined,

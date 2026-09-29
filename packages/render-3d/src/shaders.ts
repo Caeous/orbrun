@@ -24,6 +24,45 @@ vec3 flashed(vec3 c, vec3 world) {
   return mix(c, flash.rgb, flash.a);
 }`
 
+/**
+ * A mark sampled over the pixel's footprint rather than at its centre. The
+ * cursors and the other cell icons are drawn in one-texel lines: point-sampled
+ * on a far cell, most of a line falls between the samples and what is left
+ * breaks into dashes. This takes a tap per texel the footprint spans along
+ * each of its axes (at least 1, at most 8), so no one-texel line can pass
+ * between them. A tap past the tile's `rect` (u0, v0, u1, v1) is empty,
+ * and none reads a neighbour in the atlas: the quad reaches past its tile
+ * (`MARK_MARGIN`) so the pixels its edges only graze are drawn at all. A line thinner than a pixel covers only
+ * a sliver of it and would fade out, so the coverage `c` of `n` taps across
+ * is drawn as 1 - (1 - c)^n: near opaque where the line crosses the pixel,
+ * faint where it only grazes it, which is what keeps a slanted line smooth.
+ * Near, a footprint is under a texel and this is the texel.
+ */
+const FOOTPRINT = /* glsl */ `
+vec4 footprint(sampler2D map, vec2 uv, vec4 rect) {
+  vec2 size = vec2(textureSize(map, 0));
+  vec2 dx = dFdx(uv), dy = dFdy(uv);
+  vec2 lo = min(rect.xy, rect.zw), hi = max(rect.xy, rect.zw);
+  // the tile's own edges, out past the inset (UV_INSET)
+  vec2 edge0 = lo - 0.25 / size, edge1 = hi + 0.25 / size;
+  int nx = int(clamp(ceil(length(dx * size)), 1.0, 8.0));
+  int ny = int(clamp(ceil(length(dy * size)), 1.0, 8.0));
+  vec4 sum = vec4(0.0);
+  for (int i = 0; i < nx; i++) {
+    for (int j = 0; j < ny; j++) {
+      vec2 o = (vec2(float(i), float(j)) + 0.5) / vec2(float(nx), float(ny)) - 0.5;
+      vec2 at = uv + o.x * dx + o.y * dy;
+      if (any(lessThan(at, edge0)) || any(greaterThan(at, edge1))) continue;
+      vec4 s = texture(map, clamp(at, lo, hi));
+      sum += vec4(s.rgb * s.a, s.a);
+    }
+  }
+  sum /= float(nx * ny);
+  if (sum.a <= 0.0) return vec4(0.0);
+  float n = float(max(nx, ny));
+  return vec4(sum.rgb / sum.a, 1.0 - pow(1.0 - sum.a, n));
+}`
+
 /** Linear to sRGB, as three encodes for the canvas. */
 const ENCODE = /* glsl */ `
 vec3 toSRGB(vec3 c) {
@@ -54,8 +93,15 @@ out vec2 vCell;
 out float vCut;
 out vec3 vWorld;
 out vec3 vView;
+#ifdef MARKS
+in vec4 rect;
+out vec4 vRect;
+#endif
 void main() {
   vUv = uv;
+#ifdef MARKS
+  vRect = rect;
+#endif
   vColor = color;
   vCell = cell;
   vCut = cut;
@@ -90,7 +136,8 @@ float overhead(vec3 world, vec3 view, float cut) {
  * times the cell's light, washed by the flash. Wall faces wind toward their
  * open neighbour, so a back-facing one is the far side of the wall and is
  * culled. `alphaTest` is 0.5 on the masonry (all or nothing), a sliver on a
- * blended decal, which keeps its texels' alpha.
+ * blended decal, which keeps its texels' alpha. `MARKS` (the cell icons)
+ * samples each pixel's `footprint` inside the tile's rect instead of a point.
  */
 export const LEVEL_FRAG = /* glsl */ `
 precision highp float;
@@ -107,9 +154,17 @@ in float vCut;
 in vec3 vWorld;
 in vec3 vView;
 out vec4 fragColor;
+#ifdef MARKS
+in vec4 vRect;
+${FOOTPRINT}
+#endif
 void main() {
   if (vCut > 0.5 && !gl_FrontFacing) discard;
+#ifdef MARKS
+  vec4 t = footprint(map, vUv, vRect);
+#else
   vec4 t = texture(map, vUv);
+#endif
   if (t.a < alphaTest) discard;
   vec3 c = t.rgb * vColor * shadeAt(vCell);
   fragColor = outColor(vec4(flashed(c, vWorld) * overhead(vWorld, vView, vCut), t.a * opacity));
@@ -436,6 +491,14 @@ void main() {
 
 // ----------------------------------------------------------------- cursor
 
+/**
+ * The cursor: a tile (`TILE`, the icon WebTiles draws, sampled over each
+ * pixel's `footprint`) or the ring, a diamond band RING_INNER..RING_OUTER out
+ * from the cell's centre (|x| + |z|, in cells). The ring is a plain quad and
+ * the band is worked out per pixel: rasterized as a band it is thinner than a
+ * pixel on a far cell, and prints as dashes. Its coverage is drawn as the
+ * marks' is, 1 - (1 - c)^n with n how many bands the pixel spans.
+ */
 export const CURSOR_VERT = /* glsl */ `
 precision highp float;
 in vec3 position;
@@ -443,8 +506,10 @@ in vec2 uv;
 uniform mat4 projectionMatrix;
 uniform mat4 modelViewMatrix;
 out vec2 vUv;
+out vec2 vRing;
 void main() {
   vUv = uv;
+  vRing = position.xz;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`
 
@@ -454,17 +519,29 @@ uniform vec4 color;
 uniform vec4 uvRect;
 #ifdef TILE
 uniform sampler2D map;
+${FOOTPRINT}
 #endif
 ${ENCODE}
 in vec2 vUv;
+#ifndef TILE
+in vec2 vRing;
+#endif
 out vec4 fragColor;
 void main() {
 #ifdef TILE
-  vec4 t = texture(map, mix(uvRect.xy, uvRect.zw, vUv));
-  if (t.a < 0.1) discard;
+  // the quad reaches MARK_MARGIN past the tile all round (level-mesh.ts)
+  vec2 at = (vUv - 0.5) * MARK_SCALE + 0.5;
+  vec4 t = footprint(map, mix(uvRect.xy, uvRect.zw, at), uvRect);
+  if (t.a < 0.01) discard;
   fragColor = outColor(t * color);
 #else
-  fragColor = outColor(color);
+  // the ring, worked out per pixel rather than rasterized as a band (RING_*)
+  float d = abs(vRing.x) + abs(vRing.y);
+  float w = max(length(vec2(dFdx(d), dFdy(d))), 1e-5);
+  float c = clamp((min(d + 0.5 * w, RING_OUTER) - max(d - 0.5 * w, RING_INNER)) / w, 0.0, 1.0);
+  float a = 1.0 - pow(1.0 - c, max(1.0, w / (RING_OUTER - RING_INNER)));
+  if (a < 0.01) discard;
+  fragColor = outColor(vec4(color.rgb, color.a * a));
 #endif
 }`
 
