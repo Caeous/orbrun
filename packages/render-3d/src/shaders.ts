@@ -53,13 +53,36 @@ out vec3 vColor;
 out vec2 vCell;
 out float vCut;
 out vec3 vWorld;
+out vec3 vView;
 void main() {
   vUv = uv;
   vColor = color;
   vCell = cell;
   vCut = cut;
   vWorld = position;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vec4 view = modelViewMatrix * vec4(position, 1.0);
+  vView = view.xyz;
+  gl_Position = projectionMatrix * view;
+}`
+
+/**
+ * The lid recedes: crawl has no ceiling art, so the lid wears the walls'
+ * masonry, and at full light a cell over the eye reads as a slab. It is drawn
+ * at LID_LIGHT and fades toward black over LID_FADE cells from the eye, and a
+ * wall darkens to WALL_TOP over its top WALL_SHADOW of a cell, so the seam
+ * sinks into shadow and the room reads taller than it is. Under a sky there
+ * is no lid and the walls keep their light to the top.
+ */
+const LID = /* glsl */ `
+uniform float lidded;
+const float LID_LIGHT = 0.7;
+const float LID_FADE = 5.0;
+const float WALL_TOP = 0.75;
+const float WALL_SHADOW = 0.3;
+float overhead(vec3 world, vec3 view, float cut) {
+  if (cut > 0.5) return mix(1.0, mix(1.0, WALL_TOP, lidded), smoothstep(1.0 - WALL_SHADOW, 1.0, world.y));
+  if (world.y > 0.999) return LID_LIGHT * exp(-length(view) / LID_FADE);
+  return 1.0;
 }`
 
 /**
@@ -76,18 +99,20 @@ uniform float alphaTest;
 uniform float opacity;
 ${FIELDS}
 ${ENCODE}
+${LID}
 in vec2 vUv;
 in vec3 vColor;
 in vec2 vCell;
 in float vCut;
 in vec3 vWorld;
+in vec3 vView;
 out vec4 fragColor;
 void main() {
   if (vCut > 0.5 && !gl_FrontFacing) discard;
   vec4 t = texture(map, vUv);
   if (t.a < alphaTest) discard;
   vec3 c = t.rgb * vColor * shadeAt(vCell);
-  fragColor = outColor(vec4(flashed(c, vWorld), t.a * opacity));
+  fragColor = outColor(vec4(flashed(c, vWorld) * overhead(vWorld, vView, vCut), t.a * opacity));
 }`
 
 /** Never-seen space: black, however lit. */

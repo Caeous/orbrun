@@ -257,6 +257,8 @@ export class Render3d implements MapRenderer {
     fieldSize: { value: new THREE.Vector2(1, 1) },
   }
   private standUniforms = { standYaw: { value: 0 } }
+  /** 1 under a lid, 0 under a sky: the tops of the walls shade into the lid only where there is one. */
+  private lidUniforms = { lidded: { value: 1 } }
   private spriteUniforms = {
     shellColor: { value: new THREE.Color(HULL_SEL_COLOUR) },
     modelInverse: { value: new THREE.Matrix4() },
@@ -388,8 +390,8 @@ export class Render3d implements MapRenderer {
     const h = (img as { height: number }).height
     const uniforms = { map: { value: tex }, distMap: { value: null as THREE.Texture | null }, atlasSize: { value: new THREE.Vector2(w, h) } }
     const fu = this.fieldUniforms
-    const level = this.raw(LEVEL_VERT, LEVEL_FRAG, { map: uniforms.map, alphaTest: { value: 0.5 }, opacity: { value: 1 }, ...fu }, { side: THREE.DoubleSide })
-    const decal = this.raw(LEVEL_VERT, LEVEL_FRAG, { map: uniforms.map, alphaTest: { value: 0.02 }, opacity: { value: 1 }, ...fu }, { side: THREE.DoubleSide, transparent: true, depthWrite: false })
+    const level = this.raw(LEVEL_VERT, LEVEL_FRAG, { map: uniforms.map, alphaTest: { value: 0.5 }, opacity: { value: 1 }, ...fu, ...this.lidUniforms }, { side: THREE.DoubleSide })
+    const decal = this.raw(LEVEL_VERT, LEVEL_FRAG, { map: uniforms.map, alphaTest: { value: 0.02 }, opacity: { value: 1 }, ...fu, ...this.lidUniforms }, { side: THREE.DoubleSide, transparent: true, depthWrite: false })
     const su = { ...uniforms, ...fu, ...this.standUniforms, ...this.spriteUniforms }
     const ghost = (fadeStart: number, fadeRange: number) =>
       this.raw(SPRITE_VERT, SPRITE_FRAG, { ...su, ...this.ghostUniforms, fadeStart: { value: fadeStart }, fadeRange: { value: fadeRange } }, { transparent: true, depthTest: false, depthWrite: false }, { GHOST: '' })
@@ -1063,6 +1065,7 @@ export class Render3d implements MapRenderer {
     this.standUniforms.standYaw.value = this.cam.rotation.y
     this.placeCursor()
     this.mark?.('place')
+    this.lidUniforms.lidded.value = scene.level.sky === 'none' ? 1 : 0
     const bg = scene.level.sky === 'open' ? 0x0b1220 : scene.level.sky === 'dark' ? 0x120818 : 0x000000
     const { frame, depth } = this.targetsFor(r)
     // the target holds encoded values, and three would clear it in linear: hand it the encoded colour as if linear
