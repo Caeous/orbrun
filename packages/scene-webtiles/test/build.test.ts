@@ -105,18 +105,26 @@ describe('classification', () => {
     expect(classifyFeature('DNGN_EXIT_ABYSS', '@', 23)).toEqual({ type: 'portal' })
   })
   it('chooses stances', () => {
-    // stairs stand: a floor decal is a sliver at eye height, and stairs are what a player steers by
-    expect(stanceFor('DNGN_STONE_STAIRS_DOWN', { type: 'stairs', dir: 'down' })).toBe('upright')
+    // a way up stands; a way down lies in the floor, a block like a corpse
+    expect(stanceFor('DNGN_STONE_STAIRS_DOWN', { type: 'stairs', dir: 'down' })).toBe('lying')
+    expect(stanceFor('DNGN_STONE_STAIRS_DOWN_I', undefined)).toBe('lying')
+    expect(stanceFor('DNGN_ENTER_LAIR', { type: 'stairs', dir: 'down', branch: true })).toBe('lying')
     expect(stanceFor('DNGN_STONE_STAIRS_UP_I', undefined)).toBe('upright')
-    // escape hatches stand with the stairs: they are a way off the level
-    expect(stanceFor('DNGN_ESCAPE_HATCH_DOWN', { type: 'hatch', dir: 'down' })).toBe('upright')
+    expect(stanceFor('DNGN_EXIT_DUNGEON', { type: 'stairs', dir: 'up', exit: true })).toBe('upright')
+    expect(stanceFor('DNGN_ESCAPE_HATCH_DOWN', { type: 'hatch', dir: 'down' })).toBe('lying')
     expect(stanceFor('DNGN_ESCAPE_HATCH_UP', { type: 'hatch', dir: 'up' })).toBe('upright')
-    expect(stanceFor('DNGN_ESCAPE_HATCH_DOWN', undefined)).toBe('upright')
-    // a shaft is a hole you fall down, not a route: it classifies as a down hatch but stays on the floor
-    expect(stanceFor('DNGN_TRAP_SHAFT', { type: 'hatch', dir: 'down' })).toBe('decal')
-    expect(stanceFor('DNGN_TRAP_SHAFT', undefined)).toBe('decal')
+    expect(stanceFor('DNGN_ESCAPE_HATCH_DOWN', undefined)).toBe('lying')
+    // what the player steps on or uses lies as a block too: traps (a shaft among them) and transporters
+    expect(stanceFor('DNGN_TRAP_SHAFT', { type: 'hatch', dir: 'down' })).toBe('lying')
+    expect(stanceFor('DNGN_TRAP_SHAFT', undefined)).toBe('lying')
+    expect(stanceFor('DNGN_TRAP_ARROW', { type: 'trap' })).toBe('lying')
+    expect(stanceFor('DNGN_TRAP_WEB', undefined)).toBe('lying')
+    expect(stanceFor('DNGN_TRANSPORTER', { type: 'transporter' })).toBe('lying')
+    expect(stanceFor('DNGN_TELEPORTER', undefined)).toBe('lying')
+    // a landing is where a transporter puts you, and decorations are the floor's own
+    expect(stanceFor('DNGN_TRANSPORTER_LANDING', undefined)).toBe('decal')
+    expect(stanceFor('DNGN_DECORATIVE_FLOOR', undefined)).toBe('decal')
     expect(stanceFor('DNGN_ALTAR_ZIN', { type: 'altar' })).toBe('upright')
-    expect(stanceFor('DNGN_TRAP_ARROW', { type: 'trap' })).toBe('decal')
     expect(stanceFor('DNGN_GRANITE_STATUE', undefined)).toBe('upright')
     expect(stanceFor('DNGN_TREE', undefined)).toBe('upright')
     expect(stanceFor('DNGN_MANGROVE', undefined)).toBe('upright')

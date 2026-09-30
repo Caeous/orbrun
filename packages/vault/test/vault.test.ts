@@ -131,7 +131,7 @@ describe('vaultScene: the vault as a Scene', () => {
     const stairs = getCell(s, 3, 1)!
     expect(stairs.kind).toBe('feature')
     expect(stairs.feature).toEqual({ type: 'stairs', dir: 'down' })
-    expect(stairs.stance).toBe('upright')
+    expect(stairs.stance).toBe('lying')
     expect(stairs.beacon).toBe('down')
     expect(stairs.featureTile).toBe(gd.dngn.id('DNGN_STONE_STAIRS_DOWN'))
     const door = getCell(s, 3, 4)!

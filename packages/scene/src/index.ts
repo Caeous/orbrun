@@ -127,7 +127,8 @@ export interface SceneCell {
   ceilingTile?: TileId
   featureTile?: TileId
   feature?: Feature
-  stance?: 'upright' | 'decal'
+  /** How the feature tile stands: up in its cell, laid on the floor as a block a texel thick (a way down), or painted on it. */
+  stance?: 'upright' | 'lying' | 'decal'
   /**
    * The cell's feature stands on the dungeon — a statue, a fountain, an altar,
    * a tree — rather than being built into it, as a door, a gate, a runelight

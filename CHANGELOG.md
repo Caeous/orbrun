@@ -2,6 +2,10 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.9 — 2026-09-29
+
+- Stairs down, traps and transporters now sit solid in the floor.
+
 ## 0.2.8 — 2026-09-29
 
 - The main menu stands in a new real place from the dungeon each visit, to look around.

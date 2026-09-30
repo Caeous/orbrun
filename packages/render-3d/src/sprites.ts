@@ -161,9 +161,11 @@ export function stand(x: number, y: number, layers: readonly SpriteLayer[], o: S
     // A board at a heading (an open door in its wall run) is seen from every angle, edge-on as the player walks
     // through it, and there a hull is no line but a band: its back face swings out from the board in parallax and
     // is cut to ribbons against the masonry either side. Its ink is the flat ring instead, in the board's plane.
-    if (solid && o.yaw !== undefined) mode |= MODE_RING
+    // Lying on the floor it is seen from above, and keeps its hull.
+    const board = solid && o.yaw !== undefined && !o.lie
+    if (board) mode |= MODE_RING
     // the ink: a hull round a block, a flat ring round a ghost; none on a badge, a bar or a board at a heading (which has its ring)
-    const grow = l.flat ? 0 : ghost ? 1 : solid && o.yaw === undefined ? (o.grow ?? 1) : solid ? 0 : (o.grow ?? 0)
+    const grow = l.flat ? 0 : ghost ? 1 : board ? 0 : solid ? (o.grow ?? 1) : (o.grow ?? 0)
     out.push({
       atlas: l.r.atlas,
       pass: o.pass,
@@ -283,7 +285,9 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
  * The instances of the level's upright features: statues, trees, altars and
  * open doors, lit by the shade map like the masonry. A framed door stands
  * squared to its wall run, full height, at the cell's middle; every other
- * fixture turns to the eye and stands `FIXTURE_BACK` back.
+ * fixture turns to the eye and stands `FIXTURE_BACK` back. A way down lies in
+ * its cell as a corpse does, a block a texel thick, something standing on it
+ * or not.
  */
 export function fixtureInstances(scene: Scene, tile: TileLookup, framed: ReadonlyMap<number, number>, occupied: ReadonlySet<number>): SpriteInstance[] {
   const out: SpriteInstance[] = []
@@ -291,9 +295,16 @@ export function fixtureInstances(scene: Scene, tile: TileLookup, framed: Readonl
   const stands = (c: SceneCell) => c.stance === 'upright' && !occupied.has(cellKey(c.x, c.y))
   for (const cell of scene.cells.values()) {
     if (cell.kind === 'unknown' || cell.occluder) continue
-    if (cell.featureTile === undefined || !stands(cell)) continue
+    if (cell.featureTile === undefined) continue
+    const lie = cell.stance === 'lying'
+    if (!lie && !stands(cell)) continue
     const r = tile(cell.featureTile)
     if (!r) continue
+    if (lie) {
+      // laid as the floor paints it, the tile's top to the north, whatever the camera does
+      out.push(...stand(cell.x, cell.y, [{ r, ox: 0, oy: 0 }], { height: 1, shade: 1, tint, shadeMap: true, thick: true, pass: 'fixture', lie, yaw: 0 }))
+      continue
+    }
     const yaw = framed.get(cellKey(cell.x, cell.y))
     if (yaw !== undefined) {
       out.push(...stand(cell.x, cell.y, [{ r, ox: 0, oy: 0 }], { height: 1, shade: 1, tint, shadeMap: true, thick: true, pass: 'fixture', yaw }))

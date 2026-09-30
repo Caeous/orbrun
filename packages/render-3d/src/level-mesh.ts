@@ -235,6 +235,7 @@ interface Build {
   ctx: MeshContext
   memo: Map<number, FootprintEntry>
   ceilingOf(c: SceneCell | undefined): TileDraw | null
+  /** Whether the cell's feature is drawn as a sprite (sprites.ts `fixtureInstances`) rather than painted on the floor. */
   stands(c: SceneCell): boolean
 }
 
@@ -319,7 +320,7 @@ export class LevelMesher {
       if (t === undefined) ceilingCache.set(c.ceilingTile, (t = ctx.tileOf(c.ceilingTile)))
       return t
     }
-    const stands = (c: SceneCell) => c.stance === 'upright' && !grid.occupied.has(cellKey(c.x, c.y))
+    const stands = (c: SceneCell) => c.stance === 'lying' || (c.stance === 'upright' && !grid.occupied.has(cellKey(c.x, c.y)))
     const build: Build = { grid, scene, tint, ctx, memo: new Map(), ceilingOf, stands }
     const range = grid.range
     const globals = `${tint.r},${tint.g},${tint.b}|${scene.level.ceilingTile}|${scene.level.sky}|${ctx.fo.inset}|${ctx.chamfer}`

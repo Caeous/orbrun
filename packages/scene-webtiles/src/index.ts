@@ -202,23 +202,23 @@ const UPRIGHT = /HATCH|DOOR|ARCH|GATE|ALTAR|FOUNTAIN|STATUE|IDOL|GRAVE|SARCOPHAG
 const DECAL = /TRAP|TELEPORT|LANDING|SHAFT|MAGIC_CIRCLE|WATER|LAVA|BLOOD|MOLD|SLIME/
 
 /**
- * Whether a feature stands as a billboard in its cell or lies on the floor.
+ * Whether a feature stands as a billboard in its cell, lies on the floor as a
+ * block, or is painted on it.
  *
- * Stairs stand. Their tile is the one thing on the floor a player steers by,
- * and a floor decal seen at eye height is a sliver: a staircase two rooms away
- * has to read as a staircase. Escape hatches stand for the same reason — they
- * are a way off the level you steer towards. Trap shafts and traps stay decals:
- * a shaft is a hole you fall down, not a route, and `classifyFeature` files it
- * as a down hatch, so the name settles it here.
+ * A way up stands: its tile is steps rising out of the floor, and a player
+ * steers by it. What lies on the floor for the player to use or step on — a
+ * way down, a trap, a transporter — lies with a corpse's thickness, so it
+ * reads as a thing and not a stain. The rest of the floor's art, a landing
+ * or a decoration, stays painted on.
  */
-export function stanceFor(name: string | undefined, feature: Feature | undefined): 'upright' | 'decal' {
+export function stanceFor(name: string | undefined, feature: Feature | undefined): 'upright' | 'lying' | 'decal' {
+  const n = name || ''
   if (feature) {
-    if (feature.type === 'stairs') return 'upright'
-    if (feature.type === 'hatch') return /SHAFT/.test(name || '') ? 'decal' : 'upright'
-    if (feature.type === 'trap' || feature.type === 'transporter') return 'decal'
+    if (feature.type === 'stairs' || feature.type === 'hatch') return feature.dir === 'up' ? 'upright' : 'lying'
+    if (feature.type === 'trap' || feature.type === 'transporter') return 'lying'
     if (feature.type === 'door' || feature.type === 'altar' || feature.type === 'shop' || feature.type === 'fountain' || feature.type === 'portal') return 'upright'
   }
-  const n = name || ''
+  if (/(STAIRS|HATCH)_DOWN|^DNGN_TRAP_|TELEPORTER|^DNGN_TRANSPORTER$/.test(n)) return 'lying'
   if (DECAL.test(n)) return 'decal'
   if (UPRIGHT.test(n)) return 'upright'
   return 'decal'
