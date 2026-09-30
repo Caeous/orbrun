@@ -1,33 +1,26 @@
 import { CameraController } from '../camera'
 import { h } from '../dom'
 import { getSettings } from '../servers'
+import { placeById } from './places'
 import type { Room3d } from './room-3d'
 
 /**
- * The room behind the front end: the Antechamber (antechamber.des), drawn by
- * the game's own renderer from a fixed eye in the middle of the hall. The
- * right stick and a drag on the scenery look around it; left alone, the eye
- * turns clockwise so slowly it reads as stillness (DRIFT_RATE below), and
- * nothing else moves. Nothing is drawn while nothing moves.
+ * The room behind the front end: a place of a real game (places.ts), one a
+ * visit, drawn by the game's own renderer from the place's eye. The right
+ * stick and a drag on the scenery look around it; left alone, nothing moves,
+ * and nothing is drawn while nothing moves.
  *
  * Stands where the level backdrop stood: a canvas under the screen's frame,
  * publishing the cell size the console-face menus are laid out on (`--cw`,
  * `--ch`, `--fs`, `--fit` on the host) and `onfit` when it changes.
  *
  * The renderer, three.js with it, is a lazy chunk: the menus draw and work
- * before it lands, on the dark. Usually the live room is up within a moment
- * and fades in from the dark facing a random way at the resting pitch, so
- * each visit opens on a different wall; nothing is remembered between
- * visits. Only when the room is slow to land (POSTER_DELAY) does the poster
- * come up (the room at rest, drawn once at build: tools/build/poster.mjs),
- * and then the live room opens on the poster's own shot, so the one never
- * cuts to the other. No WebGL (or a context lost and not given back) leaves
- * the menus on the poster.
+ * before it lands, on the dark. The live room fades in from the dark facing
+ * a random way at the resting pitch (every way from a place's eye is clear
+ * of the void), so each visit opens on a different view; nothing is
+ * remembered between visits. No WebGL (or a context lost and not given back)
+ * leaves the menus on the dark.
  */
-/** the room at rest, as a picture */
-const POSTER_URL = '/room/poster.jpg'
-/** how long the menus stand on the dark before the poster comes up, in ms; the live room usually beats it */
-const POSTER_DELAY = 400
 /** the pixel ratio the room is drawn at: one drawn pixel per css pixel, as the game's view (game.ts VIEW_MAX_DPR) */
 const ROOM_MAX_DPR = 1
 /** the glance up and down: never under the floor, never into the lid's edge */
@@ -35,44 +28,20 @@ const PITCH_MIN = -(Math.PI / 180) * 30
 const PITCH_MAX = (Math.PI / 180) * 15
 /** a press on the scenery is a look once it has moved this far, in css px (game.ts DRAG_SLOP) */
 const DRAG_SLOP = 6
-/**
- * The idle turn: left alone, the eye turns clockwise (to the right, as the
- * stick turns it) so slowly nobody would call it movement, DRIFT_RATE radians
- * a second; it is under way as the room comes in, holds still for IDLE_DELAY
- * seconds after any look and eases (back) up to speed over DRIFT_RAMP
- * seconds, so a hand on the scenery is never fought. Off under
- * prefers-reduced-motion, or when the player turns it off (`roomTurn`).
- */
-const DRIFT_RATE = (Math.PI / 180) * 0.35
-const IDLE_DELAY = 4
-const DRIFT_RAMP = 3
-/**
- * The idle turn's own frame rate: at DRIFT_RATE the eye moves a tenth of a
- * pixel a frame at the display's rate, so a frame every DRIFT_FRAME_MS reads
- * the same and costs a weak GPU a fifth of it. Frames follow the display
- * again the moment a stick or a drag moves the eye.
- */
-const DRIFT_FRAME_MS = 80
 /** the console grid the menus stand on: the cell the level backdrop settled on for its usual floor, kept so nothing about the menus' scale changes */
 const GRID_COLS = 59
 const GRID_ROWS = 32
 
 export class RoomView {
   readonly el: HTMLCanvasElement
-  /** the picture under the canvas */
-  readonly poster: HTMLImageElement
   onfit: (() => void) | null = null
   private reducedMotion = false
-  /** the Menu room turn setting */
-  private turnOn = true
   private host: HTMLElement
   private ro: ResizeObserver | null = null
   private grid = { cw: 16, ch: 23 }
   private room: Room3d | null = null
   private cam = new CameraController()
   private raf = 0
-  /** the timer that paces the idle turn's frames while nothing else moves */
-  private driftTimer = 0
   private last = 0
   private needsRender = false
   private lost = false
@@ -81,12 +50,11 @@ export class RoomView {
   /** Lets go of a look drag: the window lost focus, or the button was released out of sight. */
   private cancelDrag: () => void = () => {}
   private onWindowBlur: () => void = () => {}
-  /** how far the idle turn has come up to speed, 0..1 */
-  private driftEnv = 0
-  /** seconds since the last look; the idle turn waits for IDLE_DELAY of them, and none on opening: the room comes in already turning */
-  private idle = IDLE_DELAY
   private size = { w: 1, h: 1 }
-  private posterTimer = 0
+  /** the veil over the room that keeps the menus readable, tinted for the place (styles.css `.room-veil`) */
+  readonly veil: HTMLElement
+  /** the place this visit stands in */
+  private readonly place: string
   /** a still stands over the room (menu.ts `stand`): nothing drawn, nothing to take hold of */
   private covered = false
 
@@ -94,15 +62,15 @@ export class RoomView {
     return this.grid.cw
   }
 
-  constructor(host: HTMLElement) {
+  constructor(host: HTMLElement, place: string) {
     this.host = host
+    this.place = place
     this.el = h('canvas', { class: 'room', 'aria-hidden': 'true' })
-    // no `src` yet: the picture is fetched when it is first shown (showPoster), not on every visit the live room beats it to
-    this.poster = h('img', { class: 'room-poster', alt: '', 'aria-hidden': 'true', draggable: 'false' })
+    this.veil = h('div', { class: 'room-veil', 'aria-hidden': 'true' })
+    this.veil.dataset.tint = placeById(place)?.tint ?? ''
+    host.prepend(this.veil)
     host.prepend(this.el)
-    host.prepend(this.poster)
     this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-    this.turnOn = getSettings().roomTurn
     this.fit = this.fit.bind(this)
     this.tick = this.tick.bind(this)
     this.onVisibility = this.onVisibility.bind(this)
@@ -115,7 +83,6 @@ export class RoomView {
       ev.preventDefault()
       this.lost = true
       this.el.classList.remove('in')
-      this.showPoster()
     })
     this.el.addEventListener('webglcontextrestored', () => {
       this.lost = false
@@ -123,7 +90,6 @@ export class RoomView {
     })
     document.addEventListener('visibilitychange', this.onVisibility)
     this.attachPointer()
-    this.posterTimer = window.setTimeout(() => this.showPoster(), POSTER_DELAY)
     void this.start()
   }
 
@@ -137,54 +103,50 @@ export class RoomView {
 
   destroy() {
     this.destroyed = true
-    clearTimeout(this.posterTimer)
     cancelAnimationFrame(this.raf)
-    clearTimeout(this.driftTimer)
     this.ro?.disconnect()
     document.removeEventListener('visibilitychange', this.onVisibility)
     window.removeEventListener('blur', this.onWindowBlur)
     this.room?.destroy()
     this.room = null
     this.el.remove()
-    this.poster.remove()
+    this.veil.remove()
   }
 
   /** Right stick: dx, dy in [-1, 1]; zero releases it. */
   look(dx: number, dy: number) {
     if (this.covered) return
     const st = getSettings()
-    if (dx !== 0 || dy !== 0) this.interrupt()
     this.cam.look(dx, dy, st.lookSensitivity, st.invertLook)
     this.invalidate()
   }
 
   private async start() {
-    if (!hasWebGL(this.el)) {
-      this.showPoster()
-      return
-    }
-    let mod: typeof import('./room-3d')
+    if (!hasWebGL(this.el)) return
+    let room: Room3d
     try {
-      mod = await import('./room-3d')
+      const mod = await import('./room-3d')
       if (this.destroyed) return
-      this.room = await mod.Room3d.create(this.el)
+      room = mod.Room3d.create(this.el)
     } catch (e) {
       console.warn('the front room could not be drawn; the menus stand on the dark', e)
       return
     }
-    if (this.destroyed) {
-      this.room.destroy()
-      this.room = null
-      return
+    let camera
+    try {
+      camera = (await room.show(this.place)).camera
+    } catch (e) {
+      console.warn(`the place ${this.place} could not be drawn; the menus stand on the dark`, e)
+      return room.destroy()
     }
-    // the eye opens somewhere new each time: any heading, at the resting pitch; but a poster already up
-    // is the shot the room must open on, or the fade would cut from one heading to another
-    clearTimeout(this.posterTimer)
-    this.cam.camera = { ...this.room.camera }
-    if (!this.poster.classList.contains('up')) this.cam.restore({ yaw: Math.random() * Math.PI * 2 })
-    // the eye opens at the angle the player set, as the game's would
+    if (this.destroyed) return room.destroy()
+    this.room = room
+    // the eye opens facing a way of its own each visit, at the angle the player set, as the game's would (the
+    // place's eye is stored at the setting's default)
+    this.cam.camera = { ...camera }
+    this.cam.restore({ yaw: Math.random() * Math.PI * 2 })
     this.cam.setRestPitch(radians(getSettings().restPitch))
-    this.cam.camera.pitch = clampPitch(this.cam.camera.pitch)
+    this.cam.camera.pitch = clampPitch(camera.pitch + radians(getSettings().restPitch) - REST_PITCH_DEFAULT)
     this.room.resize(this.size.w, this.size.h, dpr())
     this.invalidate()
   }
@@ -199,11 +161,6 @@ export class RoomView {
     const st = getSettings()
     this.cam.setRestPitch(radians(st.restPitch))
     this.cam.camera.pitch = clampPitch(this.cam.camera.pitch)
-    if (st.roomTurn !== this.turnOn) {
-      this.turnOn = st.roomTurn
-      // turned back on, it comes up to speed from still, as after a look
-      this.driftEnv = 0
-    }
     this.room?.applySettings(st)
     this.invalidate()
   }
@@ -229,55 +186,16 @@ export class RoomView {
   private invalidate() {
     this.needsRender = true
     if (!this.raf && !document.hidden && !this.covered) {
-      // frames were paced by the idle turn's timer (or stopped): the clock starts again, so a look's first frame eases from zero
+      // frames had stopped: the clock starts again, so a look's first frame eases from zero
       this.last = performance.now()
       this.raf = requestAnimationFrame(this.tick)
     }
   }
 
-  /** The picture of the room at rest, for as long as there is no live room to stand on; fetched now if never before. */
-  private showPoster() {
-    if (this.destroyed) return
-    if (!this.poster.src) this.poster.src = POSTER_URL
-    this.poster.classList.add('up')
-  }
 
-  /** The player looked: the idle turn lets go and waits; the eye is theirs until they leave it. */
-  private interrupt() {
-    this.idle = 0
-    this.driftEnv = 0
-  }
-
-  /** Whether the idle turn runs at all. */
-  private get turns(): boolean {
-    return this.turnOn && !this.reducedMotion
-  }
-
-  /** Whether the eye is left alone: no stick, no drag. */
-  private get atRest(): boolean {
-    return !this.cam.steering && !this.drag
-  }
-
-  /**
-   * The idle turn: a step of it, once the eye has been left alone a while.
-   * Returns whether the camera moved.
-   */
-  private drift(dt: number): boolean {
-    if (!this.turns || !this.room || !this.atRest || !this.el.classList.contains('in')) return false
-    this.idle += dt
-    if (this.idle < IDLE_DELAY) return false
-    this.driftEnv = Math.min(1, this.driftEnv + dt / DRIFT_RAMP)
-    const env = this.driftEnv * this.driftEnv * (3 - 2 * this.driftEnv)
-    const c = this.cam.camera
-    this.cam.restore({ yaw: c.yaw + env * DRIFT_RATE * dt })
-    return true
-  }
-
-  /** A frame while something moves; then nothing until something does (the idle turn counts as something). */
+  /** A frame while something moves; then nothing until something does. */
   private tick(now: number) {
     this.raf = 0
-    clearTimeout(this.driftTimer)
-    this.driftTimer = 0
     // covered since the frame was asked for: the render waits for the room to show again (cover)
     if (this.covered) return
     const dt = Math.min(0.1, (now - this.last) / 1000 || 0)
@@ -286,34 +204,23 @@ export class RoomView {
     if (eased) {
       this.cam.camera.pitch = clampPitch(this.cam.camera.pitch)
       this.needsRender = true
-    } else if (this.drift(dt)) {
-      this.needsRender = true
     }
     const live = !!this.room && !this.lost
     if (this.needsRender && live) {
       this.needsRender = false
-      this.room!.render(this.cam.camera)
-      this.el.classList.add('in')
+      // a big level is built a slice a frame: frames follow until it is whole, and only then does the room come up
+      if (this.room!.render(this.cam.camera)) this.needsRender = true
+      else this.el.classList.add('in')
     }
-    const turning = this.turns && live && this.el.classList.contains('in')
     // with no room to draw (none yet, none at all, or a context lost) a pending render waits without frames: the
     // room's arrival and the context's return each invalidate, and that wakes the loop
     if (this.cam.steering || (this.needsRender && live) || eased) this.raf = requestAnimationFrame(this.tick)
-    // left alone, only the idle turn wants frames, and it wants few of them
-    else if (turning) this.driftTimer = window.setTimeout(this.driftFrame, DRIFT_FRAME_MS)
-  }
-
-  private driftFrame = () => {
-    this.driftTimer = 0
-    if (!this.raf && !document.hidden && !this.destroyed && !this.covered) this.raf = requestAnimationFrame(this.tick)
   }
 
   private onVisibility() {
     if (document.hidden) {
       cancelAnimationFrame(this.raf)
-      clearTimeout(this.driftTimer)
       this.raf = 0
-      this.driftTimer = 0
       this.last = 0
     } else this.invalidate()
   }
@@ -333,7 +240,6 @@ export class RoomView {
       if (!isScenery(ev.target)) return
       // the press is the room's: no caret dropped in the words it went through, no row taking focus
       ev.preventDefault()
-      this.interrupt()
       this.drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, moved: false }
       surface.setPointerCapture(ev.pointerId)
     })
@@ -414,6 +320,9 @@ const MENU_SELECTOR = [
 export function isScenery(target: EventTarget | null): boolean {
   return target instanceof Element ? !target.closest(MENU_SELECTOR) : false
 }
+
+/** the Camera angle setting's default, in radians (servers.ts): the pitch a place's eye is stored at */
+const REST_PITCH_DEFAULT = radians(-5)
 
 function radians(deg: number): number {
   return (deg * Math.PI) / 180

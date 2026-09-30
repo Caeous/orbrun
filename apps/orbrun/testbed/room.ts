@@ -13,7 +13,9 @@ import { dirToYaw, normalizeYaw, shadeOf, type Camera, type Scene } from '@orbru
 import { parseDes, vaultCamera, vaultScene, DesError, type Vault } from '@orbrun/vault'
 import desText from '../src/room/antechamber.des?raw'
 import { loadRoomTiles, type RoomTiles } from '../src/room/tiles'
-import { ROOM_EYE_HEIGHT, ROOM_FOV } from '../src/room/room-3d'
+/** the Antechamber's eye, as the front end drew it: the game's defaults of the day */
+const ROOM_FOV = 80
+const ROOM_EYE_HEIGHT = 0.6
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 const poster = new URLSearchParams(location.search).has('poster')

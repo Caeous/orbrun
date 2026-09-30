@@ -7,8 +7,8 @@ import { MOVED, PAGES } from './src/site'
 /**
  * The app's own files, kept on the device by the service worker
  * (public/sw.js), so Orbrun opens with no connection: the page, the bundle,
- * the fonts, the front room, the two stills the menus stand in and the
- * icons. Not the site's pages and the rest of their pictures, the social cards or the source maps; the engine is kept apart
+ * the fonts, the places the front screen stands in (their levels and
+ * tiles), the two stills the menus stand in and the icons. Not the site's pages and the rest of their pictures, the social cards or the source maps; the engine is kept apart
  * (@orbrun/offline EngineStore).
  *
  * The build writes the list, with a version made from the files' contents,
@@ -22,7 +22,8 @@ const KEPT = [
   /^index\.html$/,
   /^assets\/.+(?<!\.map)$/,
   /^fonts\/.+\.woff2$/,
-  /^room\/(atlas\.json|atlas\.png|poster\.jpg)$/,
+  // the places the front screen stands in (room/places.ts): each one's level and tiles
+  /^room\/places\/[\w-]+\.(json|png)$/,
   // the stills What's new and the account's screens stand in (menu.ts Backdrop), the site's own
   /^about\/(keys-bg|account-bg)\.webp$/,
   /^icons\/.+\.png$/,

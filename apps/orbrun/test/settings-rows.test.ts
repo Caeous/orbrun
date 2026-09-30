@@ -127,7 +127,7 @@ describe('Camera angle', () => {
 describe('removed settings', () => {
   it('are gone, Corners among them: every wall corner is cut back the same 1/32 (CHAMFER)', () => {
     expect(CHAMFER).toBe(1 / 32)
-    for (const label of ['Corners', 'Wall thickness', 'Purist look', 'Render scale', 'Auto-facing', 'Edge pips', 'Key hints', 'Gamepad hints']) expect(ALL_SETTING_ROWS.find((r) => r.label === label)).toBeUndefined()
+    for (const label of ['Corners', 'Wall thickness', 'Purist look', 'Render scale', 'Auto-facing', 'Edge pips', 'Key hints', 'Gamepad hints', 'Menu room turn']) expect(ALL_SETTING_ROWS.find((r) => r.label === label)).toBeUndefined()
   })
 
   it('include Wall thickness: every wall face stands the same 12/32 back (WALL_INSET), whatever a saved session says', () => {

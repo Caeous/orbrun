@@ -170,7 +170,7 @@ select {
     linear-gradient(180deg, rgba(3, 2, 6, 0.45), transparent 25%, transparent 70%, rgba(3, 2, 6, 0.7));
 }
 
-/* the room behind the screen (room/view.ts): the Antechamber, drawn by the game's renderer; in once its first frame is drawn */
+/* the room behind the screen (room/view.ts): a place of a real game, drawn by the game's renderer; in once its first frame is drawn */
 canvas.room {
   position: absolute;
   inset: 0;
@@ -179,34 +179,51 @@ canvas.room {
   display: block;
   z-index: 0;
   opacity: 0;
-  transition: opacity 900ms ease;
+  transition: opacity 600ms ease;
   touch-action: none;
   cursor: grab;
 }
 canvas.room.in {
   opacity: 1;
 }
-/* the room at rest, as a picture (public/room/poster.jpg): what the menus stand on when the renderer is slow to come up, and after a lost context */
-img.room-poster {
+/* the veil over the room (room/view.ts): the place it stands in dimmed and tinted as the site's acts on the same
+   places are (site/site.css .act.field), so the menus read on a bright level as on a dark one */
+.room-veil {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  /* at the room's level, after it in the page: over the room, and under the menus' shade (.home::before) */
   z-index: 0;
   pointer-events: none;
-  user-select: none;
-  opacity: 0;
-  transition: opacity 600ms ease;
+  background: linear-gradient(rgba(7, 7, 11, 0.6), rgba(7, 7, 11, 0.3) 30%, rgba(7, 7, 11, 0.3) 70%, rgba(7, 7, 11, 0.8));
 }
-img.room-poster.up {
-  opacity: 1;
+.room-veil[data-tint='depths'] {
+  background: linear-gradient(rgba(7, 7, 11, 0.7), rgba(30, 18, 12, 0.45) 30%, rgba(30, 18, 12, 0.45) 70%, rgba(7, 7, 11, 0.85));
 }
+.room-veil[data-tint='lair'] {
+  background: linear-gradient(rgba(7, 7, 11, 0.7), rgba(26, 30, 8, 0.45) 30%, rgba(26, 30, 8, 0.45) 70%, rgba(7, 7, 11, 0.85));
+}
+.room-veil[data-tint='dungeon'] {
+  background: linear-gradient(rgba(7, 7, 11, 0.7), rgba(12, 22, 14, 0.5) 30%, rgba(12, 22, 14, 0.5) 70%, rgba(7, 7, 11, 0.85));
+}
+.room-veil[data-tint='abyss'] {
+  background: linear-gradient(rgba(7, 7, 11, 0.7), rgba(18, 12, 34, 0.4) 30%, rgba(18, 12, 34, 0.4) 70%, rgba(7, 7, 11, 0.85));
+}
+.room-veil[data-tint='shoals'] {
+  background: linear-gradient(rgba(7, 7, 11, 0.7), rgba(10, 22, 30, 0.45) 30%, rgba(10, 22, 30, 0.45) 70%, rgba(7, 7, 11, 0.85));
+}
+.room-veil[data-tint='zot'] {
+  background: linear-gradient(rgba(7, 7, 11, 0.7), rgba(30, 10, 26, 0.45) 30%, rgba(30, 10, 26, 0.45) 70%, rgba(7, 7, 11, 0.85));
+}
+.room-veil[data-tint='spider'] {
+  background: linear-gradient(rgba(7, 7, 11, 0.7), rgba(22, 16, 26, 0.5) 30%, rgba(22, 16, 26, 0.5) 70%, rgba(7, 7, 11, 0.85));
+}
+
 /* a place of the dungeon a screen stands in over the room (menu.ts Backdrop): a still of a real game, the site's own,
    dimmed and tinted as the site's act on it is (site/site.css .act.field), fading in over the room and out again */
 .menu-backdrop {
   position: absolute;
   inset: 0;
+  /* after the room's veil in the page, so over it (the still has its own), and under the menus' shade */
   z-index: 0;
   pointer-events: none;
   opacity: 0;
@@ -268,8 +285,7 @@ img.room-poster.up {
   cursor: default;
 }
 @media (prefers-reduced-motion: reduce) {
-  canvas.room,
-  img.room-poster {
+  canvas.room {
     transition: none;
   }
 }

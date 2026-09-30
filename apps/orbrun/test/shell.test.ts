@@ -26,6 +26,8 @@ const BUILT = [
   'room/atlas.png',
   'room/poster.jpg',
   'room/card.jpg',
+  'room/places/lair.json',
+  'room/places/lair.png',
   'room/README.md',
   'icons/icon-192.png',
   'steam/grid.png',
@@ -39,7 +41,7 @@ const BUILT = [
 
 /** Orbrun opens with no connection: the service worker keeps what the app needs to start, and nothing else. */
 describe('the app kept on the device', () => {
-  it('keeps the page, the bundles, the fonts, the front room, the stills the menus stand in and the icons', () => {
+  it('keeps the page, the bundles, the fonts, the places the front screen stands in, the stills the menus stand in and the icons', () => {
     expect(shellFiles(BUILT)).toEqual([
       '/',
       '/about/account-bg.webp',
@@ -52,9 +54,8 @@ describe('the app kept on the device', () => {
       '/icons/icon-192.png',
       '/manifest.webmanifest',
       '/orb.png',
-      '/room/atlas.json',
-      '/room/atlas.png',
-      '/room/poster.jpg',
+      '/room/places/lair.json',
+      '/room/places/lair.png',
     ])
   })
 

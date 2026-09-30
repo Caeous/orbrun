@@ -1,5 +1,6 @@
 import type { TileId, TileRect, TileSource } from '@orbrun/scene'
 import type { TileNames } from '@orbrun/vault'
+import type { PlaceFile } from './place-data'
 
 /**
  * The front room's tiles: one small atlas packed at build time from a pinned
@@ -45,6 +46,14 @@ export class RoomTiles implements TileSource, TileNames {
       this.ids.set(name, n.id)
       this.counts.set(n.id, n.count)
     }
+  }
+
+  /** A place's own atlas (place-data.ts): the tiles its level names, packed the same way, by the ids its scene uses. */
+  static fromPlace(file: Pick<PlaceFile, 'atlas' | 'source' | 'license'>, image: TexImageSource | undefined): RoomTiles {
+    const { cell, width, height } = file.atlas
+    const tiles = Object.fromEntries(Object.entries(file.atlas.tiles).map(([id, t]) => [id, { name: '', ...t }]))
+    const atlases = [...new Set(Object.values(file.atlas.tiles).map((t) => t.from))].sort()
+    return new RoomTiles({ source: { host: file.source.host, version: file.source.version, atlases, des: '' }, license: file.license, cell, width, height, names: {}, tiles }, image)
   }
 
   tile(id: TileId): TileRect | undefined {

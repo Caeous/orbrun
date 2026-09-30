@@ -15,6 +15,7 @@
     "src",
     "testbed",
     "src/room/*.des",
+    "src/room/*.json",
     "testbed/*.json",
     "test/fixtures/skills-crt.json",
     "data/*.json",

@@ -5,6 +5,7 @@ import { settingGroups, type SettingGroup } from './settings-rows'
 import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
 import { FocusNav, type Focusable } from './focus'
+import { nextHomePlace } from './room/places'
 import { RoomView } from './room/view'
 import { addAccount, addServer, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, offlineRuns, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
@@ -274,7 +275,8 @@ export class FrontEnd {
     this.root = h('div', { class: 'screen home' })
     host.append(this.root)
     this.root.addEventListener('focusin', this.onNativeFocus)
-    this.roomView = new RoomView(this.root)
+    // each visit the room stands in the next place round the cycle (places.ts)
+    this.roomView = new RoomView(this.root, nextHomePlace().id)
     // an offline build checked for, downloading, or new is said on its game's row
     this.unwatchEngines = engines.onChange(() => {
       if (this._view === 'home') this.showHome()
@@ -730,9 +732,9 @@ export class FrontEnd {
     } else this.showHome()
   }
 
-  /** The screen's frame in the safe area, over the room; the room and its poster stay where they are. */
+  /** The screen's frame in the safe area, over the room; the room stays where it is. */
   private screen(cls: string, content: (HTMLElement | null)[]) {
-    const keep: HTMLElement[] = [this.roomView.poster, this.roomView.el, this.backdrop.el]
+    const keep: HTMLElement[] = [this.roomView.el, this.roomView.veil, this.backdrop.el]
     for (const child of Array.from(this.root.children)) if (!keep.includes(child as HTMLElement)) child.remove()
     for (const el of keep) if (el.parentNode !== this.root) this.root.append(el)
     this.stand(this.backdropFor())

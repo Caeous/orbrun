@@ -2,6 +2,10 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.8 — 2026-09-29
+
+- The main menu stands in a new real place from the dungeon each visit, to look around.
+
 ## 0.2.7 — 2026-09-29
 
 - What's new is now in the app, with a dot when there's something new.

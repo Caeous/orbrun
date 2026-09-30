@@ -1,0 +1,12 @@
+[
+  {"id": "lair-grove", "place": "Lair:3", "tint": "lair", "cycle": true, "recording": "20260926-0105-Lair3-2.ndjson", "at": 627, "eye": [-33, -10]},
+  {"id": "abyss", "place": "Abyss:3", "tint": "abyss", "cycle": true, "recording": "20260926-0105-Depths1-1.ndjson", "at": 2152},
+  {"id": "zot-4", "place": "Zot:4", "tint": "zot", "cycle": true, "recording": "20260929-2116-Zot2-1.ndjson", "at": 10598, "eye": [-1, -34]},
+  {"id": "necropolis", "place": "Necropolis", "tint": "spider", "cycle": true, "recording": "20260929-2116-Shoals4-2.ndjson", "at": 20702},
+  {"id": "shoals", "place": "Shoals:4", "tint": "shoals", "cycle": true, "openLevel": true, "recording": "20260929-2116-Shoals4-2.ndjson", "at": 61},
+  {"id": "d1-fountains", "place": "Dungeon:1", "tint": "dungeon", "cycle": true, "recording": "20260926-0119-D1-7.ndjson", "at": 527},
+  {"id": "elven-halls", "place": "Elven Halls:1", "tint": "dungeon", "cycle": true, "recording": "20260929-2116-Shoals4-2.ndjson", "at": 15300},
+  {"id": "zot-crystal", "place": "Zot:2", "tint": "zot", "cycle": true, "recording": "20260929-2116-Zot2-1.ndjson", "at": 2403},
+  {"id": "orc-mines", "place": "Orcish Mines:2", "tint": "depths", "cycle": true, "recording": "20260929-2116-Shoals4-2.ndjson", "at": 13800},
+  {"id": "vaults", "place": "Vaults:4", "tint": "depths", "cycle": true, "recording": "20260929-2116-Shoals4-2.ndjson", "at": 13504}
+]
