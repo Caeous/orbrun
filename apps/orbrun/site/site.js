@@ -68,6 +68,42 @@
     set()
   }
 
+  // About's stills open to the whole window at a click (the comparison is a slider, and the grounds are behind words); a click anywhere, Escape or B closes
+  const viewer = document.createElement('dialog')
+  viewer.className = 'viewer'
+  viewer.innerHTML = '<img alt="" />'
+  const big = viewer.firstChild
+  // closed by the mouse, the still it came from is not left ringed as the keyboard's
+  viewer.addEventListener('click', () => {
+    viewer.close()
+    document.activeElement?.blur()
+  })
+  // the page stays put under it; hiding the page's overflow instead would take the scrollbar away and shift everything over
+  const still = (e) => e.preventDefault()
+  viewer.addEventListener('wheel', still, { passive: false })
+  viewer.addEventListener('touchmove', still, { passive: false })
+  viewer.addEventListener('keydown', (e) => {
+    if ([' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'].includes(e.key)) e.preventDefault()
+  })
+  document.body.append(viewer)
+  for (const img of document.querySelectorAll('main figure:not(.compare) img:not(.device)')) {
+    const zoom = document.createElement('button')
+    zoom.type = 'button'
+    zoom.className = 'zoom'
+    zoom.setAttribute('aria-label', img.alt ? `Enlarge: ${img.alt}` : 'Enlarge')
+    // the Deck's screen is stood where the glass is: the button stands there in its place
+    zoom.style.cssText = img.style.cssText
+    img.removeAttribute('style')
+    img.replaceWith(zoom)
+    zoom.append(img)
+    zoom.addEventListener('click', () => {
+      big.src = img.currentSrc || img.src
+      big.alt = img.alt
+      big.style.imageRendering = getComputedStyle(img).imageRendering
+      viewer.showModal()
+    })
+  }
+
   // a line to type (a document's fenced block) copied at a click; where the clipboard is shut, it is selected for Ctrl+C
   for (const pre of document.querySelectorAll('.doc pre')) {
     const box = document.createElement('div')
@@ -106,7 +142,7 @@
   addEventListener('mousemove', () => point(null), { passive: true })
 
   const onScreen = () =>
-    [...document.querySelectorAll('main a[href], main button.copy, header a[href], footer a[href]')].filter((el) => {
+    [...document.querySelectorAll('main a[href], main button.copy, main button.zoom, header a[href], footer a[href]')].filter((el) => {
       const b = el.getBoundingClientRect()
       return b.width > 0 && b.top >= 56 && b.bottom <= innerHeight - 8
     })
@@ -162,6 +198,13 @@
         const stick = Math.hypot(pad.axes[0] ?? 0, pad.axes[1] ?? 0) > 0.5
         const dpad = b(12) || b(13) || b(14) || b(15)
         for (const { li, names } of rows) li.classList.toggle('lit', names.some((n) => (n === 'LSTICK' ? stick : n === 'DPAD' ? dpad : b(INDEX[n]))))
+      }
+      // a still at full size: A or B puts it back, and nothing else moves under it
+      if (viewer.open) {
+        press('a', b(0), () => viewer.close(), t)
+        press('b', b(1) || b(9), () => viewer.close(), t)
+        requestAnimationFrame(tick)
+        return
       }
       if (boardInView()) {
         // only the right stick moves on, so every other button can be tried

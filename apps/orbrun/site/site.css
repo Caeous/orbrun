@@ -179,8 +179,7 @@ a[target='_blank']:not(.btn)::after { content: ' ↗'; font: 0.75em var(--mono);
 /* the branches, as cards stood side by side */
 .branches { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; width: min(100%, 68rem) }
 .branches figure { position: relative; margin: 0; overflow: hidden; border: 1px solid var(--line); aspect-ratio: 3 / 4; background: var(--stone) }
-.branches img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; transition: transform 0.6s ease }
-.branches figure:hover img { transform: scale(1.04) }
+.branches img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated }
 .branches figcaption { position: absolute; left: 0; right: 0; bottom: 0; display: grid; gap: 0.1rem; padding: 2.5rem 0.9rem 0.8rem; font: 0.8rem var(--mono); color: var(--ink-dim); background: linear-gradient(transparent, rgba(7, 7, 11, 0.92)) }
 .branches b { font: 700 0.78rem var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold-bright) }
 
@@ -201,12 +200,14 @@ a[target='_blank']:not(.btn)::after { content: ' ↗'; font: 0.75em var(--mono);
 
 /* two more things, each a still over a line */
 .minimap-shot { width: min(100%, 44rem); margin: 0 }
-.minimap-shot img { display: block; width: 100%; height: auto; image-rendering: pixelated; border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6) }
+.minimap-shot img { display: block; width: 100%; height: auto; image-rendering: pixelated }
+.minimap-shot .zoom { border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6) }
 .minimap-shot figcaption { padding-top: 0.7rem; text-align: center; font: 0.78rem var(--mono); color: var(--ink-dim) }
 .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; width: min(100%, 68rem) }
 .pair.trio { grid-template-columns: repeat(3, minmax(0, 1fr)) }
 .pair figure { margin: 0; display: grid; gap: 0.9rem; align-content: start }
-.pair img { width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; image-rendering: pixelated; border: 1px solid var(--line); background: var(--stone) }
+.pair img { width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; image-rendering: pixelated }
+.pair .zoom { border: 1px solid var(--line); background: var(--stone) }
 .pair figcaption { font-size: 0.98rem; color: var(--ink-dim) }
 .pair h3 { margin: 0 0 0.3rem; font: 700 1.6rem/1.1 var(--gothic); color: var(--ink) }
 
@@ -219,6 +220,20 @@ a[target='_blank']:not(.btn)::after { content: ' ↗'; font: 0.75em var(--mono);
 .deck img { position: absolute }
 .deck .device { inset: 0; width: 100%; height: 100%; filter: drop-shadow(0 30px 50px rgba(0, 0, 0, 0.8)) }
 .deck .screen { object-fit: fill; image-rendering: auto; background: #000 }
+
+/* a still to enlarge: the whole picture is the button, and it leans in under the pointer, within its frame */
+.zoom { position: relative; display: block; width: 100%; padding: 0; overflow: hidden; font: inherit; color: inherit; background: none; border: 0; cursor: zoom-in }
+.zoom img { display: block; transition: transform 0.6s ease }
+.zoom:hover img, .branches figure:hover img { transform: scale(1.04) }
+.branches .zoom { height: 100% }
+.branches .zoom:focus-visible, .branches .zoom.cursor { outline-offset: -3px }
+.deck .zoom { position: absolute }
+.deck .zoom img, .deck .zoom:hover img { position: static; width: 100%; height: 100%; transform: none }
+.viewer { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: rgba(0, 0, 0, 0.88); cursor: zoom-out }
+.viewer[open] { display: grid; place-items: center; animation: viewer-in 0.15s ease-out }
+.viewer::backdrop { background: none }
+.viewer img { max-width: 94vw; max-height: 94dvh; width: auto; height: auto; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8) }
+@keyframes viewer-in { from { opacity: 0 } }
 
 .promises { display: grid; gap: 0.9rem; width: min(100%, var(--measure)); margin: 0; padding: 0; list-style: none }
 .promises li { position: relative; padding-left: 1.8rem }
@@ -233,7 +248,7 @@ a[target='_blank']:not(.btn)::after { content: ' ↗'; font: 0.75em var(--mono);
 .faq summary:hover, .faq summary:focus-visible { color: var(--gold-bright) }
 .faq details p { margin: 0 0 1.1rem; padding: 0 0.2rem; color: var(--ink-dim) }
 
-@media (prefers-reduced-motion: reduce) { .branches img { transition: none } .branches figure:hover img { transform: none } }
+@media (prefers-reduced-motion: reduce) { .zoom img { transition: none } .zoom:hover img, .branches figure:hover img { transform: none } .viewer[open] { animation: none } }
 @media (max-width: 900px) {
   .branches { grid-template-columns: repeat(2, minmax(0, 1fr)) }
   .padboard { grid-template-columns: repeat(2, minmax(0, 1fr)) }
