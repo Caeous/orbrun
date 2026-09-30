@@ -16,9 +16,10 @@
  * as the one pushed, so a game is counted however it was started.
  *
  * The script is loaded `defer`, after the app has its DOM, so measurement never
- * costs a frame of the game.
+ * costs a frame of the game. The site's pages carry the same tag, written in
+ * at build time (site-pages.ts).
  */
-const BEACON_SRC = 'https://static.cloudflareinsights.com/beacon.min.js'
+export const BEACON_SRC = 'https://static.cloudflareinsights.com/beacon.min.js'
 
 function beaconToken(): string {
   const token = (import.meta.env.VITE_CF_BEACON_TOKEN as string | undefined) ?? ''

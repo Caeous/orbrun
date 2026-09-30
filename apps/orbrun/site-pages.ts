@@ -4,6 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Window } from 'happy-dom'
 import type { Plugin } from 'vite'
+import { BEACON_SRC } from './src/analytics'
 import { glyph, type GlyphName } from './src/glyphs'
 import { renderMarkdown } from './src/markdown'
 import { HOME, PAGES, SITE_URL, pageAt, type Page } from './src/site'
@@ -228,7 +229,7 @@ function structuredData(page: Page): string {
   }).replace(/</g, '\\u003c')
 }
 
-function head(page: Page, css: string): string {
+function head(page: Page, css: string, beacon: string): string {
   // About's card is its hero, a still of a real game; the documents' is the room they stand in (both 1200×630, tools/build/cards.mjs)
   const card = page.path === '/about' ? { src: '/about/card.jpg', alt: CARD_ALT + CARD_WORDS } : { src: '/room/card.jpg', alt: POSTER_ALT + CARD_WORDS }
   const title = esc(page.title)
@@ -264,7 +265,7 @@ function head(page: Page, css: string): string {
 <link rel="preload" href="/fonts/dejavu-sans-mono-700.woff2" as="font" type="font/woff2" crossorigin />
 <style>
 ${css}
-</style>
+</style>${beacon ? `\n<script defer src="${BEACON_SRC}" data-cf-beacon="${esc(JSON.stringify({ token: beacon }))}"></script>` : ''}
 </head>`
 }
 
@@ -542,13 +543,17 @@ ${html}
 </article>`
 }
 
-/** A page of the site at `page.path`, whole. */
-export function sitePageHtml(page: Page, dom: Dom): string {
+/**
+ * A page of the site at `page.path`, whole. With a `beacon` token it carries
+ * Cloudflare's beacon as the app does (analytics.ts), so a visit that reads
+ * About and leaves is counted too.
+ */
+export function sitePageHtml(page: Page, dom: Dom, beacon = ''): string {
   const css = fs.readFileSync(path.join(HERE, 'site/site.css'), 'utf8')
   const js = fs.readFileSync(path.join(HERE, 'site/site.js'), 'utf8')
   return `<!doctype html>
 <html lang="en">
-${head(page, css)}
+${head(page, css, beacon)}
 <body>
 <a class="skip" href="#main">Skip to the words</a>
 ${bar(page)}
@@ -608,18 +613,23 @@ export function robotsTxt(): string {
 }
 
 /** each of the site's pages, drawn with a DOM of its own that is closed after */
-function drawPages(pages: Page[], each: (page: Page, html: string) => void) {
+function drawPages(pages: Page[], each: (page: Page, html: string) => void, beacon = '') {
   const window = new Window()
   try {
-    for (const page of pages) each(page, sitePageHtml(page, window as unknown as Dom))
+    for (const page of pages) each(page, sitePageHtml(page, window as unknown as Dom, beacon))
   } finally {
     void window.happyDOM.close()
   }
 }
 
 export function sitePages(): Plugin {
+  // the build's beacon token, as the app reads it (analytics.ts); the dev server draws pages without it
+  let beacon = ''
   return {
     name: 'orbrun-site-pages',
+    configResolved(config) {
+      beacon = String(config.env.VITE_CF_BEACON_TOKEN ?? '').trim()
+    },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const at = new URL(req.url ?? '/', 'http://dev').pathname
@@ -635,6 +645,7 @@ export function sitePages(): Plugin {
       drawPages(
         PAGES.filter((p) => p.path !== '/'),
         (page, html) => this.emitFile({ type: 'asset', fileName: page.path.slice(1) + '.html', source: html }),
+        beacon,
       )
       this.emitFile({ type: 'asset', fileName: 'sitemap.xml', source: sitemapXml(PAGES) })
       this.emitFile({ type: 'asset', fileName: 'robots.txt', source: robotsTxt() })

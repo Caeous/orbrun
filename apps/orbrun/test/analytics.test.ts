@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { Window } from 'happy-dom'
 import { installAnalytics } from '../src/analytics'
+import { pageAt } from '../src/site'
+import { sitePageHtml } from '../site-pages'
 
 const SRC = 'https://static.cloudflareinsights.com/beacon.min.js'
 
@@ -45,5 +48,25 @@ describe('cloudflare web analytics beacon', () => {
     installAnalytics(doc)
     expect(installAnalytics(doc)).toBeNull()
     expect(beacons()).toHaveLength(1)
+  })
+})
+
+/** The site's pages are counted as the app is: the same beacon, written in at build time, or nothing without a token. */
+describe('the beacon on the site’s pages', () => {
+  const page = (beacon?: string) => {
+    const window = new Window()
+    const doc = new window.DOMParser().parseFromString(sitePageHtml(pageAt('/about')!, window as never, beacon), 'text/html')
+    return Array.from(doc.querySelectorAll(`script[src="${SRC}"]`))
+  }
+
+  it('carries the token, deferred', () => {
+    const [script, ...more] = page('abc123')
+    expect(more).toHaveLength(0)
+    expect(script.hasAttribute('defer')).toBe(true)
+    expect(script.getAttribute('data-cf-beacon')).toBe('{"token":"abc123"}')
+  })
+
+  it('has none without a token', () => {
+    expect(page()).toHaveLength(0)
   })
 })
