@@ -222,7 +222,11 @@ export function ensureDeviceAccount() {
   setChosenAccount(player)
 }
 
-/** Forget `a`: the account and its token; the chosen account too, if it was this one. */
+/**
+ * Forget `a`: the account and its token. If it was the chosen one, the one
+ * used most recently of those left is chosen in its place (without counting
+ * as a use), so there is never an account list with none of it chosen.
+ */
 export function removeAccount(a: Account) {
   save(
     ACCOUNTS_KEY,
@@ -232,7 +236,7 @@ export function removeAccount(a: Account) {
   const used = load<Record<string, number>>(USED_KEY, {})
   delete used[tokenKey(a.serverId, a.username)]
   save(USED_KEY, used)
-  if (sameAccount(getChosenAccount(), a)) setChosenAccount(null)
+  if (sameAccount(getChosenAccount(), a)) save(ACCOUNT_KEY, listAccounts()[0] ?? null)
 }
 
 /** The account last picked on the home screen: the one the `#lobby` (Watch screen), play and watch routes mean. */

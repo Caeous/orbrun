@@ -1213,6 +1213,21 @@ describe('the front end: accounts and servers', () => {
     expect(labels(screen)[0]).toBe('Play')
   })
 
+  it('removing the account in use closes its connection without calling the close an error', () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok', 'cko/orbrun': 'tok' }))
+    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
+    const { screen, logout } = make((sv, u) => (sv.id === 'cdi' && u === 'orbrun' ? s : null))
+    screen.showAccounts()
+    ;(screen.root.querySelector('[data-focus="remove:cdi/orbrun"]') as HTMLElement).click()
+    expect(logout).toHaveBeenCalledWith(orbrun)
+    // the close it asked for lands a moment later (an offline engine's worker winds down on its own time)
+    ;(s as unknown as { emit(e: unknown): void }).emit({ type: 'closed', reason: 'closed by the server' })
+    expect(screen.view).toBe('home')
+    expect(screen.root.querySelector('.error')).toBeNull()
+  })
+
   it('Watch without an account asks for a server, then watches on it without a login', () => {
     const { screen, connect } = make()
     pick(screen, 'Watch')

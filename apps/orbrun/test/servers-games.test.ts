@@ -67,6 +67,24 @@ describe('offline profiles', () => {
     expect(listAccounts()).toEqual([])
   })
 
+  it('chooses the account used most recently of those left when the chosen one is removed', () => {
+    const ann: Account = { serverId: 'offline', username: 'Ann' }
+    const orbrun: Account = { serverId: 'cdi', username: 'orbrun' }
+    addAccount(orbrun)
+    addAccount(sam)
+    addAccount(ann)
+    setChosenAccount(orbrun, 1000)
+    setChosenAccount(ann, 2000)
+    setChosenAccount(sam, 3000)
+    removeAccount(sam)
+    expect(getChosenAccount()).toEqual(ann)
+    // removing one not chosen leaves the choice be
+    removeAccount(orbrun)
+    expect(getChosenAccount()).toEqual(ann)
+    removeAccount(ann)
+    expect(getChosenAccount()).toBeNull()
+  })
+
   it('gives a device with no account a player of its own, chosen, where the engine runs', () => {
     const jspi = (on: boolean) => vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: on ? function Suspending() {} : undefined }))
     try {

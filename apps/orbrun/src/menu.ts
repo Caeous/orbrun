@@ -1848,8 +1848,7 @@ export class FrontEnd {
   private async deleteProfile(a: Account) {
     this.deleting = null
     removeAccount(a)
-    this.hooks.logout(a)
-    this.session = null
+    this.forget(a)
     await deleteProfileSaves(a.username)
     this.showAccounts()
   }
@@ -1858,9 +1857,16 @@ export class FrontEnd {
   private logout(account: Account) {
     // the account goes first, so nothing (the home screen's warm connection) opens it again on the way out
     removeAccount(account)
-    this.hooks.logout(account)
-    this.session = null
+    this.forget(account)
     this.showHome()
+  }
+
+  /** Close a removed account's connection, no longer listening: its close is asked for, not news to report. */
+  private forget(account: Account) {
+    this.unsub?.()
+    this.unsub = null
+    this.session = null
+    this.hooks.logout(account)
   }
 
   /** Close the window, from the home screen's footer; a browser that refuses says so where the errors go. */
