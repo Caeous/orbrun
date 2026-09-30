@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cellKey, emptyScene, type Scene } from '@orbrun/scene'
-import { readScene, sceneTileIds, writeScene, type PlaceFile } from '../src/room/place-data'
+import { readScene, sceneTileIds, writeScene, type PlaceFile, type PlaceScene } from '../src/room/place-data'
 import { nextHomePlace, placeCamera, PLACES } from '../src/room/places'
 import { RoomTiles } from '../src/room/tiles'
 
@@ -85,6 +85,15 @@ describe('a place file', () => {
     expect(back.cells.get(cellKey(1, 2))).toEqual({ x: 1, y: 2, kind: 'floor', visibility: 'visible', occluder: false, floorTile: 5, overlays: [9], flags })
     expect(back.billboards).toEqual([{ x: 1, y: 2, tile: 7, kind: 'monster', height: 1, name: 'rat' }])
     expect([...sceneTileIds(back)].sort()).toEqual([5, 7, 9])
+  })
+
+  it('stands its features as the builder stands them now, not as they were frozen', () => {
+    const cell = (x: number, feature: PlaceScene['cells'][number]['feature'], stance: 'upright' | 'decal') => ({ x, y: 0, kind: 'feature' as const, visibility: 'seen' as const, occluder: false, floorTile: 1, featureTile: 2, feature, stance })
+    const back = readScene({
+      ...writeScene(emptyScene()),
+      cells: [cell(0, { type: 'stairs', dir: 'down' }, 'upright'), cell(1, { type: 'stairs', dir: 'up' }, 'upright'), cell(2, { type: 'trap' }, 'decal'), cell(3, { type: 'other', name: 'tree' }, 'upright')],
+    })
+    expect([0, 1, 2, 3].map((x) => back.cells.get(cellKey(x, 0))?.stance)).toEqual(['lying', 'upright', 'lying', 'upright'])
   })
 
   it('opens its eye where the place file stands it', () => {

@@ -1,4 +1,5 @@
 import { cellKey, type Billboard, type Scene, type SceneCell, type TileId } from '@orbrun/scene'
+import { stanceFor } from '@orbrun/scene-webtiles'
 
 /**
  * A place the front end stands in: a moment of a real game, the level as
@@ -71,10 +72,19 @@ export function writeScene(scene: Scene): PlaceScene {
   return { bounds: scene.bounds, player: scene.player, level: scene.level, cells, billboards }
 }
 
-/** A place file's scene as the renderer takes it. */
+/**
+ * A place file's scene as the renderer takes it. How a feature stands is
+ * the builder's call of today, not of the day the place was frozen: a way
+ * down frozen upright lies in the floor as it does in a game. An `other`
+ * feature is known by its name, which the file does not keep, so it keeps
+ * the stance it was written with.
+ */
 export function readScene(p: PlaceScene): Scene {
   const cells: Scene['cells'] = new Map()
-  for (const c of p.cells) cells.set(cellKey(c.x, c.y), { ...c, flags: { ...NO_FLAGS, ...c.flags } })
+  for (const c of p.cells) {
+    const stance = c.kind === 'feature' && c.feature && c.feature.type !== 'other' ? stanceFor(undefined, c.feature) : c.stance
+    cells.set(cellKey(c.x, c.y), { ...c, stance, flags: { ...NO_FLAGS, ...c.flags } })
+  }
   return { bounds: p.bounds, player: p.player, playerOnLevel: true, level: p.level, cells, billboards: p.billboards, revision: 1, layoutRevision: 1 }
 }
 
