@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   addAccount,
+  ensureDeviceAccount,
   characterOf,
   describeCharacter,
   describePlace,
@@ -64,6 +65,28 @@ describe('offline profiles', () => {
     expect(listAccounts()).toEqual([{ serverId: 'offline', username: 'Ann' }])
     removeAccount({ serverId: 'offline', username: 'ann' })
     expect(listAccounts()).toEqual([])
+  })
+
+  it('gives a device with no account a player of its own, chosen, where the engine runs', () => {
+    const jspi = (on: boolean) => vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: on ? function Suspending() {} : undefined }))
+    try {
+      // not where the engine cannot run: Play asks for a server account there
+      jspi(false)
+      ensureDeviceAccount()
+      expect(listAccounts()).toEqual([])
+      jspi(true)
+      ensureDeviceAccount()
+      const player: Account = { serverId: 'offline', username: 'Player' }
+      expect(listAccounts()).toEqual([player])
+      expect(getChosenAccount()).toEqual(player)
+      // once there is any account, none is added
+      removeAccount(player)
+      addAccount({ serverId: 'cdi', username: 'orbrun' })
+      ensureDeviceAccount()
+      expect(listAccounts()).toEqual([{ serverId: 'cdi', username: 'orbrun' }])
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('lists the account picked last first, and the never-picked after in the order they were added', () => {

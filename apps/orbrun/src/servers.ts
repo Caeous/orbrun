@@ -3,6 +3,7 @@ import type { GameLink } from '@orbrun/webtiles'
 import bundled from '../data/servers.json'
 import { canQuit } from './quit'
 import { MENU_PATH, RC_PATH, titleAt, VERSIONS_PATH } from './site'
+import { DEFAULT_PROFILE } from '@orbrun/offline'
 
 export interface ServerInfo {
   id: string
@@ -25,7 +26,7 @@ export const ENGINE_BASE = '/engine'
  * made with a name and no password; the server list offers it first when an
  * account is being added, and never for watching.
  */
-export const OFFLINE_SERVER: ServerInfo = { id: 'offline', name: 'This device', ws: '', http: '', host: 'this device', offline: true }
+export const OFFLINE_SERVER: ServerInfo = { id: 'offline', name: 'Offline', ws: '', http: '', host: 'this device', offline: true }
 
 /**
  * Whether Offline is offered: everywhere but under test, where no engine is
@@ -207,6 +208,18 @@ export function addAccount(a: Account) {
   const all = storedAccounts().filter((x) => !sameAccount(x, a))
   all.push({ serverId: a.serverId, username: a.username })
   save(ACCOUNTS_KEY, all)
+}
+
+/**
+ * A device with no account yet gets a player of its own, chosen, so the
+ * first Play starts a game with nothing to set up. Not where the engine
+ * cannot run: there Play still asks for an account on a server.
+ */
+export function ensureDeviceAccount() {
+  if (!offlineOffered() || !offlineRuns() || storedAccounts().length) return
+  const player: Account = { serverId: OFFLINE_SERVER.id, username: DEFAULT_PROFILE }
+  addAccount(player)
+  setChosenAccount(player)
 }
 
 /** Forget `a`: the account and its token; the chosen account too, if it was this one. */

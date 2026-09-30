@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { initialState, type GameState, type LobbyEntry } from '@orbrun/webtiles'
-import { accountConn, CONN_MARKER, FrontEnd, navDir, loginWord, exitReasonMessage, type Intent } from '../src/menu'
+import { accountConn, FrontEnd, navDir, exitReasonMessage, type Intent } from '../src/menu'
 import { version } from '../package.json'
 import { engines } from '../src/engines'
 import { settingsPanel } from '../src/settings-panel'
@@ -112,11 +112,10 @@ function conn(screen: FrontEnd): string | null {
   return item ? [item.querySelector('.label')?.textContent, item.querySelector('.sub')?.textContent].filter(Boolean).join(' · ') : null
 }
 
-/** The colour of the dot before the account: up, wait, off or down, or null without one. */
+/** The colour of the dot after the account's name: wait or down, or null without one (ready says nothing). */
 function dot(screen: FrontEnd): string | null {
-  const item = screen.root.querySelector('.home-utilities .item[data-focus="account"]')
-  if ((item as HTMLElement | null)?.dataset.marker !== CONN_MARKER) return null
-  return ['up', 'wait', 'off', 'down'].find((c) => item.classList.contains('conn-' + c)) ?? null
+  const el = screen.root.querySelector('.home-utilities .item[data-focus="account"] .conn-dot')
+  return el ? (['wait', 'down'].find((c) => el.classList.contains('conn-' + c)) ?? null) : null
 }
 
 function pick(screen: FrontEnd, label: string) {
@@ -567,8 +566,7 @@ describe('the front end: the home screen', () => {
     expect(focused(screen)).toBe('account')
     pad(screen, 'A')
     expect(screen.view).toBe('accounts')
-    expect(sub(screen, 'orbrun · CDI')).toContain('crawl.dcss.io')
-    expect(sub(screen, 'orbrun · CDI')).toContain('logged in')
+    expect(sub(screen, 'orbrun · CDI')).toBe('in use')
     pad(screen, 'B')
     expect(focused(screen)).toBe('account')
     press(screen, 'ArrowRight')
@@ -728,7 +726,7 @@ describe('the front end: the home screen', () => {
     screen.refresh()
     expect(conn(screen)).toBe('orbrun · CDI')
     expect(focused(screen)).toBe('account')
-    expect(dot(screen)).toBe('up')
+    expect(dot(screen)).toBeNull()
   })
 
   it('a dropped connection the app is retrying says so, one it is not says why it closed', () => {
@@ -747,16 +745,17 @@ describe('the front end: the home screen', () => {
     expect(retrying.root.querySelector('.error')?.textContent).toBe('Connection lost. Reconnecting…')
   })
 
-  it('the dot in the account\'s margin is green logged in, the glyph again logged out, gold on the way and red when the line is down', () => {
+  it('the dot after the account\'s name is there only when something is wrong: none logged in, red when the server wants a password or the line is down, gold on the way', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
     const { screen } = make(() => s)
     const glyph = () => screen.root.querySelector<HTMLElement>('.home-utilities .item[data-focus="account"]')?.dataset.marker
-    expect(dot(screen)).toBe('up')
+    expect(dot(screen)).toBeNull()
     s.state.lobby.username = ''
     screen.refresh()
-    expect(dot(screen)).toBe(null)
+    expect(dot(screen)).toBe('down')
+    // the margin keeps the account's own glyph, whatever the dot says
     expect(glyph()).toBe('\\')
     ;(s.conn as { open: boolean }).open = false
     screen.refresh()
@@ -803,17 +802,6 @@ describe('the front end: the home screen', () => {
     expect(conn(screen)).toBe('orbrun · CDI')
     expect(focused(screen)).toBe('settings')
     expect(screen.root.querySelector('.frame')?.classList.contains('still')).toBe(true)
-  })
-
-  it('sets every word of a login in the same room, so the line never changes length', () => {
-    const open = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
-    const failed = fakeSession(cdi, 'orbrun', { loginFailed: 'no' })
-    const pending = fakeSession(cdi, 'orbrun')
-    const closed = fakeSession(cdi, 'orbrun', {}, false)
-    const words = [loginWord(open, true), loginWord(failed, true), loginWord(pending, true), loginWord(closed, true), loginWord(null, true)]
-    expect(words.map((w) => w.trim())).toEqual(['logged in', 'not logged in', 'logging in…', 'connecting…', 'connecting…'])
-    expect(new Set(words.map((w) => w.length)).size).toBe(1)
-    expect(loginWord(null, false)).toBe('')
   })
 
   it('words a game’s end as client.js exit_reason_message does', () => {
@@ -990,48 +978,105 @@ describe('the front end: accounts and servers', () => {
     expect(screen.view).toBe('home')
   })
 
-  it('lights the account that is logged in with the home screen’s dot, and says where each is as the server list does', () => {
+  it('says which account is in use, and dots it only while its connection is not ready', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
     const s = fakeSession(cdi, 'orbrun')
     const { screen } = make((sv, u) => (sv.id === 'cdi' && u === 'orbrun' ? s : null))
     screen.showAccounts()
-    const dots = () => Array.from(screen.root.querySelectorAll('.menu .item.conn')).map((el) => [el.querySelector('.label')?.textContent, ['up', 'wait', 'off', 'down'].find((c) => el.classList.contains('conn-' + c))])
-    expect(dots()).toEqual([['orbrun · CDI', 'wait'], ['orbrun · CKO', 'off']])
-    // a gray dot is an account not in use, not a row that cannot be taken
+    const dots = () => Array.from(screen.root.querySelectorAll('.menu .item')).filter((el) => el.querySelector('.conn-dot')).map((el) => [el.querySelector('.label')?.textContent, ['wait', 'down'].find((c) => el.querySelector('.conn-dot')!.classList.contains('conn-' + c))])
+    expect(dots()).toEqual([['orbrun · CDI', 'wait']])
+    expect(sub(screen, 'orbrun · CDI')).toBe('in use')
+    expect(sub(screen, 'orbrun · CKO')).toBeNull()
+    // an account not in use is not a row that cannot be taken
     expect(screen.root.querySelectorAll('.menu .item.off').length).toBe(0)
-    // as the server list says where a server is, never whether it is up: that is the dot's
-    expect(sub(screen, 'orbrun · CDI')).toMatch(/^us · crawl\.dcss\.io · logging in…/)
     const before = screen.root.querySelector('.menu')
     while (focused(screen) !== 'add') press(screen, 'ArrowDown')
-    // the login lands: the row goes green, in place, the cursor where it was
+    // the login lands: the row is redrawn in place, the cursor where it was
     s.state.lobby.username = 'orbrun'
     screen.refresh()
     expect(screen.root.querySelector('.menu')).not.toBe(before)
-    expect(dots()).toEqual([['orbrun · CDI', 'up'], ['orbrun · CKO', 'off']])
-    expect(sub(screen, 'orbrun · CDI')).toMatch(/· logged in/)
+    // logged in: the dot goes, and "in use" stays
+    expect(dots()).toEqual([])
+    expect(sub(screen, 'orbrun · CDI')).toBe('in use')
     expect(focused(screen)).toBe('add')
     const again = screen.root.querySelector('.menu')
     screen.refresh()
     expect(screen.root.querySelector('.menu')).toBe(again)
   })
 
-  it('names a player on this device by name alone, over "on this device", and the home screen says it too', () => {
+  it('names an account on this device by name alone, with nothing under it, and the home screen says it too', () => {
     vi.stubEnv('MODE', 'development')
     try {
       const marc: Account = { serverId: 'offline', username: 'Marc' }
       localStorage.setItem('orbrun.accounts', JSON.stringify([marc, orbrun]))
+      localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
       const { screen } = make()
       screen.showAccounts()
-      expect(labels(screen)).toEqual(['Back', 'Marc', '(edit rc)', '(delete)', 'orbrun · CDI', '(other versions)', '(log out)', 'Add an account'])
-      expect(sub(screen, 'Marc')).toBe('on this device')
+      expect(labels(screen)).toEqual(['Back', 'Marc', '(edit rc)', '(delete)', 'Add an offline account', 'orbrun · CDI', '(other versions)', '(remove)', 'Add a server account'])
+      expect(sub(screen, 'Marc')).toBeNull()
       // and the home screen's account row names it as the account list does: the name alone
       localStorage.setItem('orbrun.account', JSON.stringify(marc))
       const home = make((sv, u) => fakeSession(sv, u, { username: 'Marc' })).screen
       expect(conn(home)).toBe('Marc')
     } finally {
       vi.unstubAllEnvs()
+    }
+  })
+
+  it('groups the players on this device under Offline and the server accounts under Servers, each with its own Add', () => {
+    vi.stubEnv('MODE', 'development')
+    vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: function Suspending() {} }))
+    try {
+      const marc: Account = { serverId: 'offline', username: 'Marc' }
+      // used last first, as ever, but within its group
+      localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, marc]))
+      localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
+      const { screen } = make()
+      screen.showAccounts()
+      const heads = () => Array.from(screen.root.querySelectorAll('.menu .group-head')).map((el) => el.textContent)
+      expect(heads()).toEqual(['Offline', 'Servers'])
+      expect(labels(screen)).toEqual(['Back', 'Marc', '(edit rc)', '(delete)', 'Add an offline account', 'orbrun · CDI', '(other versions)', '(remove)', 'Add a server account'])
+      expect(sub(screen, 'Add an offline account')).toBe('on this device')
+      // the headings are read, never stood on: down from Marc's row is Add an offline account, then orbrun
+      while (focused(screen) !== 'account:offline/Marc') press(screen, 'ArrowDown')
+      press(screen, 'ArrowDown')
+      expect(focused(screen)).toBe('add-player')
+      press(screen, 'ArrowDown')
+      expect(focused(screen)).toBe('account:cdi/orbrun')
+      // Add an offline account is the name form, and back from it is here again
+      pick(screen, 'Add an offline account')
+      expect(screen.root.querySelector('.head .place')?.textContent).toBe('A new player')
+      press(screen, 'Escape')
+      expect(screen.view).toBe('accounts')
+      expect(focused(screen)).toBe('add-player')
+      // Add a server account is the server list, with no Offline in it
+      pick(screen, 'Add a server account')
+      expect(screen.view).toBe('servers')
+      expect(labels(screen)).not.toContain('Offline')
+    } finally {
+      vi.unstubAllEnvs()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('starts a new device on a player of its own, so Play is one press away', () => {
+    vi.stubEnv('MODE', 'development')
+    vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: function Suspending() {} }))
+    const update = vi.spyOn(engines, 'update').mockResolvedValue()
+    try {
+      const games = [{ id: 'offline-0.34', label: 'DCSS 0.34' }]
+      const { screen, connect } = make((sv, u) => fakeSession(sv, u, { username: 'Player', complete: true, games }))
+      expect(conn(screen)).toBe('Player')
+      expect(focused(screen)).toBe('play:offline-0.34')
+      connect.mockClear()
+      press(screen, 'Enter')
+      expect(connect).toHaveBeenCalledWith(OFFLINE_SERVER, 'Player', { kind: 'play', gameId: 'offline-0.34' })
+    } finally {
+      update.mockRestore()
+      vi.unstubAllEnvs()
+      vi.unstubAllGlobals()
     }
   })
 
@@ -1045,9 +1090,7 @@ describe('the front end: accounts and servers', () => {
       const { screen } = make()
       screen.showAccounts()
       expect(labels(screen)).toContain('Marc')
-      pick(screen, 'Add an account')
-      expect(screen.view).toBe('servers')
-      expect(sub(screen, 'This device')).toBe('needs a newer browser')
+      expect(sub(screen, 'Add an offline account')).toBe('needs a newer browser')
       // its home screen says why, and Play starts no game
       localStorage.setItem('orbrun.account', JSON.stringify(marc))
       const home = make((sv, u) => fakeSession(sv, u, { username: 'Marc', complete: true, games: [{ id: 'dcss-0.34', label: 'DCSS 0.34' }] }))
@@ -1118,17 +1161,31 @@ describe('the front end: accounts and servers', () => {
   it('an account picked is chosen, opens its own connection, and the home screen is its', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    // CKO has forgotten its login: it asks for the password again beside its row
+    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
     const { screen, connect } = make()
     pick(screen, 'orbrun · CDI')
     expect(screen.view).toBe('accounts')
-    expect(labels(screen)).toEqual(['Back', 'orbrun · CDI', '(other versions)', '(log out)', 'orbrun · CKO', '(other versions)', '(log out)', 'Add an account'])
-    expect(sub(screen, 'orbrun · CDI')).toContain('crawl.dcss.io')
+    expect(labels(screen)).toEqual(['Back', 'orbrun · CDI', '(other versions)', '(remove)', 'orbrun · CKO', '(other versions)', '(log in)', '(remove)', 'Add an account'])
     screen.root.querySelector<HTMLElement>('[data-focus="account:cko/orbrun"]')!.click()
     expect(connect).toHaveBeenCalledWith(cko, 'orbrun', undefined)
     expect(JSON.parse(localStorage.getItem('orbrun.account')!)).toEqual(kelbi)
     expect(screen.view).toBe('home')
     expect(labels(screen)[0]).toBe('Log in')
     expect(conn(screen)).toBe('orbrun · CKO · Not logged in')
+  })
+
+  it('(log in) beside an account whose login is forgotten chooses it and asks for its password', () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
+    const { screen } = make()
+    screen.showAccounts()
+    ;(screen.root.querySelector('[data-focus="login:cko/orbrun"]') as HTMLElement).click()
+    expect(JSON.parse(localStorage.getItem('orbrun.account')!)).toEqual(kelbi)
+    expect(screen.view).toBe('login')
+    expect(screen.root.querySelector<HTMLInputElement>('input[name="username"]')!.value).toBe('orbrun')
+    expect(screen.root.querySelector('.head .lede')?.textContent).toBe('CKO')
   })
 
   it("a server's site stands beside its row when adding an account, a link out in a new tab", () => {
@@ -1142,13 +1199,13 @@ describe('the front end: accounts and servers', () => {
     expect(screen.root.querySelector<HTMLAnchorElement>('[data-focus="site:cao"]')!.href).toBe('https://crawl.akrasiac.org:8443/')
   })
 
-  it('logging out forgets the account and comes back to the front without it', () => {
+  it('removing an account forgets it and its login, and comes back to the front without it', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
     const { screen, logout } = make()
     pick(screen, 'orbrun · CDI')
-    ;(screen.root.querySelector('[data-focus="logout:cdi/orbrun"]') as HTMLElement).click()
+    ;(screen.root.querySelector('[data-focus="remove:cdi/orbrun"]') as HTMLElement).click()
     expect(logout).toHaveBeenCalledWith(orbrun)
     expect(localStorage.getItem('orbrun.account')).toBe('null')
     expect(JSON.parse(localStorage.getItem('orbrun.accounts')!)).toEqual([])

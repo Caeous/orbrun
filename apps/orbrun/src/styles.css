@@ -625,6 +625,19 @@ canvas.room.in {
 .frame.menu-frame .menu {
   gap: 0.3rem;
 }
+/* a group's name over its rows (Offline, Servers on the accounts), set as the lede is; never under the cursor */
+.frame.menu-frame .group-head {
+  grid-column: 1 / -1;
+  padding: 0.2rem 0 0 0.7rem;
+  font: 700 0.75rem/1.5 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  text-shadow: 0 2px 8px #000;
+}
+.frame.menu-frame .group-head.gap {
+  margin-top: 0.9rem;
+}
 /* a group starts here: a little air above */
 .frame.menu-frame .item.gap,
 .frame.menu-frame .line.gap,
@@ -914,26 +927,36 @@ a.item.beside {
 .frame.menu-frame .item:focus-visible::after {
   opacity: 0;
 }
-/* an account row (home, Accounts): its glyph is a dot that says where the login stands; the usual glyph again when logged out (conn-off is not .off, a row that cannot be taken) */
-.frame.menu-frame:is(.home-list, .accounts-list) .item.conn:not(.conn-off)::after {
-  text-shadow: 0 0 8px currentColor;
+/* the chosen account (home, Accounts): a dot after its name, the colour of its connection. After the name, not in
+   the margin, so the cursor never stands over it */
+.frame.menu-frame .item .conn-dot {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-left: 0.6em;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
 }
-.frame.menu-frame:is(.home-list, .accounts-list) .item.conn:is(.focused, :focus-visible)::after {
-  animation: none;
-}
-.frame.menu-frame:is(.home-list, .accounts-list) .item.conn-up::after {
+.frame.menu-frame .item .conn-dot.conn-up {
   color: #6fbf73;
 }
-.frame.menu-frame:is(.home-list, .accounts-list) .item.conn-wait::after {
+.frame.menu-frame .item .conn-dot.conn-wait {
   color: var(--gold);
   animation: conn-wait 1.4s ease-in-out infinite;
 }
-.frame.menu-frame:is(.home-list, .accounts-list) .item.conn-down::after {
+.frame.menu-frame .item .conn-dot.conn-down {
   color: var(--color-12);
 }
 @keyframes conn-wait {
   50% {
     opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .frame.menu-frame .item .conn-dot {
+    animation: none;
   }
 }
 
