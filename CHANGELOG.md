@@ -8,16 +8,16 @@ Notable changes to Orbrun, newest first.
 
 ## 0.2.8 — 2026-09-29
 
-- The main menu stands in a new real place from the dungeon each visit, to look around.
+- The main menu now stands in a new real place from the dungeon each visit.
 
 ## 0.2.7 — 2026-09-29
 
-- What's new is now in the app, with a dot when there's something new.
-- More screens show scenes from real games.
+- What's new is now in the main menu, with a dot when there's something new.
+- Settings/accounts screens show scenes as backdrop.
 
 ## 0.2.6 — 2026-09-29
 
-- Play Orbrun without an internet connection.
+- You can launch Orbrun and play without an internet connection.
 
 ## 0.2.5 — 2026-09-28
 
