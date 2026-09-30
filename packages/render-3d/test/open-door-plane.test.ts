@@ -167,6 +167,51 @@ describe('an open door', () => {
     }
   })
 
+  /**
+   * Two doorways turning a corner share one wall cell between them. Both doors
+   * count as wall for its footprint, so the diagonal floor cuts its inside
+   * corner away; nothing may stand in that cut, or a sliver of wall shows
+   * between the doors where the corner was.
+   */
+  it('leaves the corner between two doorways open', () => {
+    // the corner wall at (2, 1), a door west of it at (1, 1) and one south of it at (2, 2), the player at (1, 2)
+    const s = emptyScene()
+    s.playerOnLevel = true
+    s.player = { x: 1, y: 2 }
+    s.bounds = { left: 0, top: 0, right: 3, bottom: 3 }
+    const walls = new Set([cellKey(0, 1), cellKey(2, 1), cellKey(2, 3), cellKey(2, 0), cellKey(3, 1)])
+    const doors = new Set([cellKey(1, 1), cellKey(2, 2)])
+    for (let y = 0; y <= 3; y++) {
+      for (let x = 0; x <= 3; x++) {
+        const k = cellKey(x, y)
+        const wall = walls.has(k), isDoor = doors.has(k)
+        s.cells.set(k, {
+          x,
+          y,
+          kind: wall ? 'wall' : 'floor',
+          visibility: 'visible',
+          occluder: wall,
+          floorTile: 0,
+          wallTile: wall ? 1 : undefined,
+          featureTile: isDoor ? 5 : undefined,
+          stance: isDoor ? 'upright' : undefined,
+          feature: isDoor ? { type: 'door', state: 'open' } : undefined,
+        })
+      }
+    }
+    const grid = new LevelGrid(s)
+    expect(grid.framed.size).toBe(2)
+    // the cut is the corner cell's south-west inset square; no masonry stands inside it
+    const t = WALL_INSET
+    for (const g of level(s)) {
+      for (let i = 0; i < g.position.length; i += 3) {
+        const x = g.position[i], y = g.position[i + 1], z = g.position[i + 2]
+        if (y <= 1e-6) continue
+        expect(x > 2 + 1e-6 && x < 2 + t - 1e-6 && z > 2 - t + 1e-6 && z < 3 - 1e-6).toBe(false)
+      }
+    }
+  })
+
   /** With no wall run to read, there is no plane to stand in: the board faces the eye as any fixture does. */
   it('faces the camera where there is no doorway', () => {
     const { inst, yaw } = door(corridor('none'))

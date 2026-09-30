@@ -500,7 +500,8 @@ export class LevelMesher {
             : { u0: lerp(uv.u0, uv.u1, t0), u1: lerp(uv.u0, uv.u1, t1) }
         const maxNotch = Math.min(rect.x1 - rect.x0, rect.z1 - rect.z0) / 2
         const notch = ctx.chamfer > 0 && maxNotch > 1e-6
-        const cornerOn = [notch && openN && openW, notch && openN && openE, notch && openS && openW, notch && openS && openE]
+        // a corner between two framed doors is open both ways yet cut away (a door counts as wall for the cut), so there is none to chamfer
+        const cornerOn = [notch && openN && openW, notch && openN && openE, notch && openS && openW, notch && openS && openE].map((on, i) => on && !rect.cut[i])
         const cornerPt = (i: number): [number, number] => [i & 1 ? rect.x1 : rect.x0, i >> 1 ? rect.z1 : rect.z0]
         const Nv: [number, number, number, number] = [0, 0, 0, 0]
         for (let i = 0; i < 4; i++) if (cornerOn[i]) Nv[i] = Math.min(ctx.chamfer, maxNotch)
