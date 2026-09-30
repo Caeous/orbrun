@@ -1,5 +1,6 @@
 import { cm } from '@orbrun/webtiles'
 import { installAnalytics } from './analytics'
+import { count } from './count'
 import { h } from './dom'
 import { Session } from './session'
 import { pingServer } from './ping'
@@ -82,7 +83,11 @@ function updateTitle(s: Session | null) {
   if (document.title !== t) document.title = t
 }
 
+/** The game the open session was last asked to play, for the event counts (count.ts): the session's state never names it. */
+let playedGameId: string | null = null
+
 function play(s: Session, gameId: string) {
+  playedGameId = gameId
   // which version was played last, so the home screen leads with it; who waits in it is the server's to say
   setLast({ serverId: s.server.id, gameId, username: s.state.lobby.username || undefined })
   if (s.server.offline) void engines.played(gameId)
@@ -206,6 +211,7 @@ function applyRoute(r: Route) {
 function openSession(server: ServerInfo, username: string | null, i?: Intent): Session {
   session?.close()
   intent = i ?? null
+  playedGameId = null
   const s = (session = new Session(server, username))
   s.on((e) => {
     if (e.type === 'open' && intent?.kind === 'watch') {
@@ -227,6 +233,10 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
       // the old game would not stop: the server asks whether to kill it, and the home screen is where that is answered
       if (m === 'force_terminate?' && boot && s === session) showLobbyFor(s)
       if (m === 'game_started' || m === 'watching_started') routeTo(s)
+      // the anonymous counts (count-events.ts): a game started and what it was set up with, never who, and
+      // nothing after. Whose game a spectate is of is the server's to know: only which server
+      if (m === 'game_started') count(s.server.offline ? 'play-offline' : 'play', { server: s.server.id, game: playedGameId, settings: getSettings(), pad: gamepad.connected })
+      if (m === 'watching_started') count('spectate', { server: s.server.id, pad: gamepad.connected })
       if ((m === 'game_client' || m === 'watching_started' || m === 'game_started') && !game) startGame()
       if (m === 'game_client' && typeof e.msg.version === 'string') {
         // the version this server's games run on, so the next visit can fetch its tiles before Play
@@ -751,6 +761,7 @@ applyRoute(parseRoute())
 
 // last, so the beacon never delays the first screen (see analytics.ts)
 installAnalytics()
+count('boot')
 
 // the game's chunk, fetched while the player is still on the front end, so it is cached by the time they press Play;
 // then the tiles of the version they played last, which are the bulk of what Play would otherwise wait on

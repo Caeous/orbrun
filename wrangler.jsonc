@@ -35,6 +35,8 @@
   // the offline engine's files: a Worker of their own (engine/wrangler.jsonc),
   // deployed before this one, so a new engine build never redeploys the app
   "services": [{ "binding": "ENGINE", "service": "orbrun-engine" }],
+  // the app's anonymous event counts at /api/e (apps/orbrun/src/count-events.ts); the dataset is made on first write
+  "analytics_engine_datasets": [{ "binding": "EVENTS", "dataset": "orbrun_events" }],
   "observability": {
     "enabled": true
   }

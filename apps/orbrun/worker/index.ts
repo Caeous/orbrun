@@ -1,5 +1,7 @@
 import { GAMEDATA_PROXY_PREFIX, MORGUE_PROXY_PREFIX, serveGamedata, serveMorgue } from '../gamedata-proxy'
 import { MOVED, addressKind, pageAt } from '../src/site'
+import { COUNT_PATH } from '../src/count-events'
+import { countEvent, type EventsDataset } from './count'
 
 /**
  * orbrun.app: the static build, plus the gamedata proxy the browser cannot do
@@ -16,17 +18,23 @@ import { MOVED, addressKind, pageAt } from '../src/site'
  * Every other address comes here too (all but the hashed bundles and the
  * room's and Steam's pictures, wrangler.jsonc), so a search engine is told
  * the truth about it (`answerPage`).
+ *
+ * And the app's anonymous event counts (../src/count-events.ts), at
+ * `/api/e`, into Workers Analytics Engine.
  */
 interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> }
   /** orbrun-engine (engine/wrangler.jsonc): the offline engine's files, at /engine/* */
   ENGINE: { fetch(request: Request): Promise<Response> }
+  /** orbrun_events (wrangler.jsonc): the event counts (./count.ts) */
+  EVENTS?: EventsDataset
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     if (url.pathname.startsWith('/engine/')) return env.ENGINE.fetch(request)
+    if (url.pathname === COUNT_PATH) return countEvent(request, url, env)
     const morgue = url.pathname.startsWith(MORGUE_PROXY_PREFIX)
     if (!morgue && !url.pathname.startsWith(GAMEDATA_PROXY_PREFIX)) return answerPage(request, url, env)
 
