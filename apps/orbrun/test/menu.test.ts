@@ -163,6 +163,16 @@ describe('the front end: the home screen', () => {
     expect(sub(screen, 'Play')).toBeNull()
   })
 
+  it('says how to look around the room: the right stick on a pad, a drag with a mouse, nothing on touch', () => {
+    const legend = (screen: FrontEnd) => screen.root.querySelector('.legend .menu-prompt')?.getAttribute('aria-label') ?? null
+    const pointer = (fine: boolean) => vi.stubGlobal('matchMedia', (q: string) => ({ matches: fine && q === '(pointer: fine)' }))
+    pointer(true)
+    expect(legend(make(undefined, true).screen)).toBe('Right stick Look around')
+    expect(legend(make().screen)).toBe('Drag Look around')
+    pointer(false)
+    expect(legend(make().screen)).toBeNull()
+  })
+
   it('offers Quit in the footer only where the browser left no way out', () => {
     const { screen } = make()
     expect(labels(screen)).not.toContain('Quit')

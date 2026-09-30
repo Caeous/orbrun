@@ -8,7 +8,7 @@ import type { Button, PadKind } from './gamepad'
  * of a dark disc so the CSS can dim or highlight a whole prompt at once.
  */
 
-export type GlyphName = Button | 'DPAD' | 'LSTICK' | 'LSTICK_UP' | 'RSTICK' | 'HOLD'
+export type GlyphName = Button | 'DPAD' | 'LSTICK' | 'LSTICK_UP' | 'RSTICK' | 'HOLD' | 'DRAG'
 
 const NS = 'http://www.w3.org/2000/svg'
 
@@ -93,6 +93,14 @@ function stickClick(label: string): SVGSVGElement {
 /** A stick without the press mark, with an arrow ring to say it moves. */
 function stick(label: string): SVGSVGElement {
   return svg(24, 24, n('circle', { cx: 12, cy: 12, r: 11, fill: '#15171c' }), n('circle', { cx: 12, cy: 12, r: 6.5, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.5, 'stroke-opacity': 0.8 }), n('path', { d: 'M12 1.5 L10 3.5 M12 1.5 L14 3.5 M12 22.5 L10 20.5 M12 22.5 L14 20.5 M1.5 12 L3.5 10 M1.5 12 L3.5 14 M22.5 12 L20.5 10 M22.5 12 L20.5 14', stroke: 'currentColor', 'stroke-width': 1.3, 'stroke-linecap': 'round', 'stroke-opacity': 0.55, fill: 'none' }), text(12, 12.5, label, 8.5))
+}
+
+/** Drag to look: an open hand, the grab cursor, bare and in outline; neighbouring fingers share a side. */
+function hand(): SVGSVGElement {
+  return svg(24, 24, n('path', {
+    d: 'M10.2 11 V6 a1.3 1.3 0 0 0 -2.6 0 V14.6 M12.8 11 V4 a1.3 1.3 0 0 0 -2.6 0 V11 M15.4 11 V4.8 a1.3 1.3 0 0 0 -2.6 0 V11 M15.4 11 V7 a1.3 1.3 0 0 1 2.6 0 V15 a5.5 5.5 0 0 1 -5.5 5.5 H11.2 Q8.8 20.5 7.4 19 L4.4 15.5 a1.3 1.3 0 0 1 1.9 -1.8 L7.6 14.6',
+    fill: 'none', stroke: 'currentColor', 'stroke-width': 1.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-opacity': 0.9,
+  }))
 }
 
 /** Left stick pushed forward: one upward arrow, never the stick-click press mark. */
@@ -191,6 +199,8 @@ export function glyph(name: GlyphName, kind: PadKind): SVGSVGElement {
       return holdRing()
     case 'HOME':
       return menu()
+    case 'DRAG':
+      return hand()
   }
 }
 
@@ -231,6 +241,8 @@ export function glyphName(name: GlyphName, kind: PadKind): string {
       return ps ? 'Options' : sw ? 'Plus' : 'Menu'
     case 'HOLD':
       return 'Hold'
+    case 'DRAG':
+      return 'Drag'
     case 'DU':
       return 'D-pad up'
     case 'DR':

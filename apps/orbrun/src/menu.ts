@@ -933,13 +933,16 @@ export class FrontEnd {
     if (!this.legend) return
     const connected = !!this.hooks.padConnected?.()
     const kind = this.hooks.padKind?.() ?? 'generic'
-    const shape = `${connected}/${kind}/${this._view}`
+    const mouse = !connected && !!window.matchMedia?.('(pointer: fine)').matches
+    const shape = `${connected}/${mouse}/${kind}/${this._view}`
     if (shape === this.legendShape) return
     this.legendShape = shape
     const prompt = (key: GlyphName, text: string) => h('span', { class: 'menu-prompt', 'aria-label': `${glyphName(key, kind)} ${text}` }, glyph(key, kind), text)
-    // the legend is for the pad only, and only on the title screen, where it says how to look around
-    // the room; Move, Choose and Back go without saying, and X still opens Settings, unadvertised
-    replace(this.legend, ...(connected && this._view === 'home' ? [prompt('RSTICK', 'Look around')] : []))
+    // the legend is only on the title screen, where it says how to look around the room: the right stick
+    // on a pad, a drag with a mouse, nothing on touch; Move, Choose and Back go without saying, and X
+    // still opens Settings, unadvertised
+    const look: GlyphName | null = connected ? 'RSTICK' : mouse ? 'DRAG' : null
+    replace(this.legend, ...(look && this._view === 'home' ? [prompt(look, 'Look around')] : []))
   }
 
   /** The cursor landed on a row: say what it is, unless the row says it already, and give a field the caret. */

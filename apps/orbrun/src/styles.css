@@ -1831,7 +1831,12 @@ a.item.beside {
   bottom: var(--safe-y);
   margin: 0;
   justify-content: flex-end;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  /* set as the lede under the title (.home-list .brand .head .lede): a tight shadow reads as bold */
+  font: 400 1.1rem/1.55 var(--mono);
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 8px #000;
+  /* a quiet aside over the room, never a rival to the rows */
+  opacity: 0.6;
 }
 .frame.home-list .legend:empty {
   display: none;
