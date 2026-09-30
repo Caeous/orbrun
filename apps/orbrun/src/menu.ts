@@ -738,8 +738,14 @@ export class FrontEnd {
     for (const child of Array.from(this.root.children)) if (!keep.includes(child as HTMLElement)) child.remove()
     for (const el of keep) if (el.parentNode !== this.root) this.root.append(el)
     this.stand(this.backdropFor())
-    this.root.append(h('div', { class: 'frame menu-frame ' + cls }, ...content))
+    // the first screen of a visit has no screen before it to move in from: it is simply there
+    const first = !this.arrived
+    this.arrived = true
+    this.root.append(h('div', { class: 'frame menu-frame ' + cls + (first ? ' still' : '') }, ...content))
   }
+
+  /** a screen has been drawn this visit (`screen`) */
+  private arrived = false
 
   /** the still a screen can stand in over the room, kept from screen to screen so the account's screens share one without fading it in again */
   private backdrop = (() => {
