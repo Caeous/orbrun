@@ -12,7 +12,8 @@ import servers from '../data/servers.json' with { type: 'json' }
  * size, whether a pad was connected, and each of `COUNTED_SETTINGS`:
  * `parseCount` is the whole of what the Worker keeps of a beacon, and it drops
  * anything else. It never reads the address or the browser a beacon came from.
- * A browser that asks not to be measured (Global Privacy Control) is not.
+ * A browser that asks not to be measured (Global Privacy Control) is not, and
+ * nor is a workers.dev address (`countedHost`).
  *
  * Each event counts once a page load, so a row is about a person, not a
  * reload's worth of games.
@@ -22,6 +23,16 @@ export type CountedEvent = (typeof EVENTS)[number]
 
 /** Where a beacon goes: a first-party path with nothing a blocklist looks for in it. */
 export const COUNT_PATH = '/api/e'
+
+/**
+ * Whether events at `hostname` are counted. A `workers.dev` address is a
+ * deployment's own (its preview and version links), seen by whoever is
+ * testing it, so nothing is counted there.
+ */
+export function countedHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, '')
+  return host !== 'workers.dev' && !host.endsWith('.workers.dev')
+}
 
 /**
  * The settings a game start carries, each with the stops its row offers

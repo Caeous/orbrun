@@ -1,10 +1,11 @@
-import { COUNT_PATH, SETTING_KEYS, serverTag, settingParam, sideParam, versionTag, type CountedEvent } from './count-events'
+import { COUNT_PATH, SETTING_KEYS, countedHost, serverTag, settingParam, sideParam, versionTag, type CountedEvent } from './count-events'
 import type { Settings } from './servers'
 
 /**
  * The client half of the anonymous counts (count-events.ts has the rules both
- * halves keep): one beacon an event a page load, never in dev, never under
- * Global Privacy Control, and never a failure the player could see.
+ * halves keep): one beacon an event a page load, never in dev or on
+ * workers.dev (count-events.ts `countedHost`), never under Global Privacy
+ * Control, and never a failure the player could see.
  */
 const sent = new Set<CountedEvent>()
 
@@ -55,7 +56,7 @@ export function optedOut(): boolean {
 
 /** Count `event` once for this page load, on the first server and game it happened on; never when the browser has opted out. */
 export function count(event: CountedEvent, where: CountWhere = {}): void {
-  if (import.meta.env.DEV || sent.has(event) || optedOut()) return
+  if (import.meta.env.DEV || sent.has(event) || optedOut() || !countedHost(location.hostname)) return
   sent.add(event)
   try {
     navigator.sendBeacon(countUrl(event, where, { width: window.innerWidth, height: window.innerHeight }))

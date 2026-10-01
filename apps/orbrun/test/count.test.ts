@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { BLOB_COLUMNS, COUNTED_SETTINGS, COUNT_PATH, DOUBLE_COLUMNS, EVENTS, NUMBER_SETTINGS, SETTING_KEYS, WORD_SETTINGS, dataPoint, parseCount, sideParam, versionTag } from '../src/count-events'
+import { BLOB_COLUMNS, COUNTED_SETTINGS, COUNT_PATH, DOUBLE_COLUMNS, EVENTS, NUMBER_SETTINGS, SETTING_KEYS, WORD_SETTINGS, countedHost, dataPoint, parseCount, sideParam, versionTag } from '../src/count-events'
 import { countUrl } from '../src/count'
 import { ALL_SETTING_ROWS } from '../src/settings-rows'
 import { defaultSettings, type Settings } from '../src/servers'
@@ -115,6 +115,21 @@ describe('counts: what the Worker keeps', () => {
     countEvent(req(null), url, { EVENTS })
     expect(points).toHaveLength(1)
   })
+
+  it('counts orbrun.app and not workers.dev', () => {
+    expect(countedHost('orbrun.app')).toBe(true)
+    expect(countedHost('orbrun.someone.workers.dev')).toBe(false)
+    expect(countedHost('ORBRUN.SOMEONE.WORKERS.DEV.')).toBe(false)
+    expect(countedHost('notworkers.dev')).toBe(true)
+  })
+
+  it('keeps nothing sent to a workers.dev address', () => {
+    const points: unknown[] = []
+    const EVENTS: EventsDataset = { writeDataPoint: (p) => void points.push(p) }
+    const req = new Request(`https://orbrun.someone.workers.dev${COUNT_PATH}?e=boot`, { method: 'POST' })
+    expect(countEvent(req, new URL(req.url), { EVENTS }).status).toBe(204)
+    expect(points).toEqual([])
+  })
 })
 
 describe('counts: stable or trunk, and the window size', () => {
@@ -225,6 +240,14 @@ describe('counts: sending', () => {
     const { count } = await import('../src/count')
     count('boot')
     count('play', { server: 'cdi' })
+    expect(sends).toEqual([])
+  })
+
+  it('sends nothing from a workers.dev address', async () => {
+    vi.stubEnv('DEV', false)
+    vi.stubGlobal('location', { ...location, hostname: 'abc123-orbrun.someone.workers.dev' })
+    const { count } = await import('../src/count')
+    count('boot')
     expect(sends).toEqual([])
   })
 
