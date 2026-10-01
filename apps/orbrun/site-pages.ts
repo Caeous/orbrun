@@ -260,6 +260,8 @@ function head(page: Page, css: string, beacon: string): string {
 <script type="application/ld+json">${structuredData(page)}</script>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="manifest" href="/manifest.webmanifest" />
+<meta name="application-name" content="Orbrun" />
+<meta name="apple-mobile-web-app-title" content="Orbrun" />
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
 <link rel="preload" href="/fonts/grenze-gotisch-700-latin.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="preload" href="/fonts/dejavu-sans-mono-700.woff2" as="font" type="font/woff2" crossorigin />

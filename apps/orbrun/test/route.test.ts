@@ -246,6 +246,12 @@ describe('routes', () => {
       expect(document.title).toBe('Orbrun - Dungeon Crawl Stone Soup in first person')
     })
 
+    it('names only the app in a window of its own', () => {
+      history.replaceState(null, '', '/?fullscreen')
+      setRoute({ kind: 'menu', path: 'settings' })
+      expect(document.title).toBe('Orbrun')
+    })
+
     it('leaves for the site’s pages with the launch flags, and in a window of its own without adding to history', () => {
       const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {})
       const replace = vi.spyOn(window.location, 'replace').mockImplementation(() => {})

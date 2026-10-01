@@ -2,7 +2,7 @@ import type { HintMode } from './gamepad-hints'
 import type { GameLink } from '@orbrun/webtiles'
 import bundled from '../data/servers.json'
 import { canQuit } from './quit'
-import { MENU_PATH, RC_PATH, titleAt, VERSIONS_PATH } from './site'
+import { HOME, MENU_PATH, pageAt, RC_PATH, titleAt, VERSIONS_PATH } from './site'
 import { DEFAULT_PROFILE } from '@orbrun/offline'
 
 export interface ServerInfo {
@@ -881,5 +881,14 @@ export function setRoute(r: Route) {
   if (!canQuit() && routeDepth(r) > routeDepth(parseRoute())) history.pushState(null, '', next)
   else history.replaceState(null, '', next)
   // a game names the tab after its character (main.ts updateTitle); every other screen after its page
-  if (r.kind !== 'play' && r.kind !== 'watch') document.title = titleAt(window.location.pathname)
+  if (r.kind !== 'play' && r.kind !== 'watch') document.title = screenTitle(window.location.pathname)
+}
+
+/**
+ * The title of a screen that is not a game. In a window of its own (an
+ * installed app, a kiosk) the title bar names the app and nothing more; in a
+ * tab it is the page's search headline (site.ts).
+ */
+export function screenTitle(pathname: string): string {
+  return canQuit() && !pageAt(pathname) ? HOME.name : titleAt(pathname)
 }

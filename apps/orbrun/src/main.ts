@@ -7,12 +7,13 @@ import { pingServer } from './ping'
 import { FrontEnd, type Intent } from './menu'
 import type { GameScreen, InputDevice } from './game'
 import { GamepadInput, installPadKeys, isPadActivity } from './gamepad'
-import { findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getSettings, getToken, parseRoute, sameAccount, setChosenAccount, setGames, setLast, setMorgueDir, setRoute, setToken, type Account, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getSettings, getToken, parseRoute, sameAccount, setChosenAccount, setGames, setLast, setMorgueDir, screenTitle, setRoute, setToken, type Account, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { gamedataUrls } from '@orbrun/gamedata'
 import { morgueDirOf } from './whereis'
 import { settingsPanel } from './settings-panel'
 import { engines, keepEngines } from './engines'
-import { HOME, titleAt } from './site'
+import { HOME } from './site'
+import { canQuit } from './quit'
 
 const app = document.getElementById('app')!
 const gamepad = new GamepadInput()
@@ -67,19 +68,22 @@ let lastBeat = Date.now()
 /** when the page was last hidden */
 let hiddenAt = 0
 document.documentElement.style.setProperty('--ui-scale', String(getSettings().uiScale))
-/** What a character's tab title ends in, so a game in progress reads as "orbrun the Chiller | Vine Stalker - Orbrun". */
-const SHORT_TITLE = HOME.name
+/**
+ * What a character's tab title ends in, so a game in progress reads as "orbrun the Chiller | Vine Stalker - Orbrun".
+ * Nothing in a window of its own: an installed app's title bar puts the app's name in front already.
+ */
+const shortTitle = () => (canQuit() ? '' : HOME.name)
 
 /**
  * The tab says whose game this is (playing or watching), from the game's
- * `player` updates; the page's own title otherwise (site.ts). Any phase but the lobby counts:
+ * `player` updates; the screen's own title otherwise (servers.ts screenTitle). Any phase but the lobby counts:
  * a server may name the character before `game_started` says the game is on.
  */
 function updateTitle(s: Session | null) {
   const p = s?.state.player
   const t = p?.name && s && s.state.phase !== 'lobby' && s.state.phase !== 'ended'
-    ? gameTitle({ name: p.name, title: p.title || '', species: p.species_display_name || p.species || '', god: p.god || '', xl: p.xl, place: p.place || '', depth: p.depth || 0 }, SHORT_TITLE)
-    : titleAt(window.location.pathname)
+    ? gameTitle({ name: p.name, title: p.title || '', species: p.species_display_name || p.species || '', god: p.god || '', xl: p.xl, place: p.place || '', depth: p.depth || 0 }, shortTitle())
+    : screenTitle(window.location.pathname)
   if (document.title !== t) document.title = t
 }
 
