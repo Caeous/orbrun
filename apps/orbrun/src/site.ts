@@ -32,7 +32,7 @@ export interface Page {
 export const HOME: Page = {
   path: '/',
   name: 'Orbrun',
-  title: 'Orbrun - Dungeon Crawl Stone Soup in first person',
+  title: 'Orbrun - Dungeon Crawl Stone Soup',
   description:
     'Play Dungeon Crawl Stone Soup (DCSS) in first-person 3D with a gamepad, in your browser. Built for the Steam Deck, on your own WebTiles account.',
 }

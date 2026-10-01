@@ -243,7 +243,7 @@ describe('routes', () => {
       setRoute({ kind: 'play', account: orbrun, gameId: 'dcss-0.34' })
       expect(document.title).toBe('orbrun the Chiller | Vine Stalker - Orbrun')
       setRoute({ kind: 'menu', path: 'settings' })
-      expect(document.title).toBe('Orbrun - Dungeon Crawl Stone Soup in first person')
+      expect(document.title).toBe('Orbrun - Dungeon Crawl Stone Soup')
     })
 
     it('names only the app in a window of its own', () => {
