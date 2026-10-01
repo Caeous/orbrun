@@ -675,8 +675,10 @@ export class GameScreen {
         padLabels.splice(at < 0 ? padLabels.length : at, 0, l)
       }
     }
-    this.hud.minimapUp = this.cam.mapYaw
-    this.hud.minimapUpright = this.cam.mapUprightYaw
+    // north up: the ground and all on it stand unturned, and the map is drawn without its north mark
+    this.hud.minimapTurns = settings.minimapTurns
+    this.hud.minimapUp = settings.minimapTurns ? this.cam.mapYaw : 0
+    this.hud.minimapUpright = settings.minimapTurns ? this.cam.mapUprightYaw : 0
     this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing)
     this.chat.update(st, this.chatOn && (st.phase === 'playing' || st.phase === 'watching'), !!st.lobby.username)
     this.syncTarget()

@@ -313,6 +313,8 @@ export class Hud {
    * player standing in cells are upright either way.
    */
   minimapUpright = 0
+  /** The minimap turns with the player (the "Minimap rotation" setting); north up, it needs no north mark. */
+  minimapTurns = true
   private minimapTiles: Gamedata | null = null
   /** The level map is open: the minimap has become it and stays out of sight. */
   private minimapHidden = false
@@ -1217,7 +1219,7 @@ export class Hud {
     if (this.minimapHidden || !this.minimapSize.w) return
     // the map is a full redraw of every known cell: only when something it shows moved.
     // The rc's palette rides `rev.player` (state.ts: `options` and `set_option` bump it).
-    const key = `${scene.revision}|${cam.x},${cam.y},${cam.yaw},${this.minimapUp},${this.minimapUpright}|${state.rev.player}|${gd?.version}`
+    const key = `${scene.revision}|${cam.x},${cam.y},${cam.yaw},${this.minimapUp},${this.minimapUpright},${this.minimapTurns}|${state.rev.player}|${gd?.version}`
     if (key === this.minimapKey) return
     this.minimapKey = key
     const opts = state.options
@@ -1273,7 +1275,7 @@ export class Hud {
     this.minimap.render()
     this.cutMinimapDisc()
     // no level yet (the character is still being picked): a north mark round an empty disc points at nothing
-    if (scene.cells.size) this.drawMinimapNorth()
+    if (scene.cells.size && this.minimapTurns) this.drawMinimapNorth()
   }
 
   /**

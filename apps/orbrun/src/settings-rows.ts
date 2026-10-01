@@ -1,4 +1,4 @@
-import { getSettings, saveSettings, VIEW_OPTIONS, type LeftRight, type Settings } from './servers'
+import { defaultSettings, getSettings, saveSettings, VIEW_OPTIONS, type LeftRight, type Settings } from './servers'
 
 /**
  * Orbrun's own settings, one row each: what it is called, which key it sets,
@@ -151,6 +151,7 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   ),
   row('Interface', 'Minimap size', 'minimapTiles', MINIMAP_TILES, 'How many tiles across the minimap shows: it grows out of its corner over the view, at the same cell size.', (v) => v + ' tiles'),
   row('Interface', 'Minimap tile size', 'minimapCell', MINIMAP_CELLS, 'How big each minimap tile is drawn: the same tiles, larger, until the map runs out of room over the view.', (v) => v + 'px'),
+  row('Interface', 'Minimap rotation', 'minimapTurns', [true, false], 'Whether the minimap turns with you, so ahead is always up, or stays still with north up.', (v) => (v ? 'Turns with you' : 'North up')),
 ]
 
 /** The offered rows by group, in group order, each with its tab's line; groups with no row left out. */
@@ -186,6 +187,24 @@ export function adjustSetting(r: SettingRow, d: number, onchange?: () => void): 
   document.documentElement.style.setProperty('--ui-scale', String(s.uiScale))
   onchange?.()
   return settingValue(r, s)
+}
+
+/** Whether every row `group` offers is at its default. */
+export function groupAtDefaults(group: SettingGroup, s: Settings = getSettings()): boolean {
+  return SETTING_ROWS.every((r) => r.group !== group || s[r.key] === defaultSettings[r.key])
+}
+
+/**
+ * Put every row `group` offers back to its default, save, and apply what
+ * applies at once (the UI scale), as `adjustSetting` does. A row the build
+ * does not offer (`VIEW_OPTIONS`) keeps what it was.
+ */
+export function resetGroup(group: SettingGroup, onchange?: () => void) {
+  const s = getSettings()
+  for (const r of SETTING_ROWS) if (r.group === group) (s as unknown as Record<string, unknown>)[r.key] = defaultSettings[r.key]
+  saveSettings(s)
+  document.documentElement.style.setProperty('--ui-scale', String(s.uiScale))
+  onchange?.()
 }
 
 /**

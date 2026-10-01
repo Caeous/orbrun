@@ -1,7 +1,7 @@
 import { h } from './dom'
 import { gamepadHints } from './gamepad-hints'
 import { getSettings, saveSettings } from './servers'
-import { adjustSetting, rowHint, rowOff, settingGroups, settingValue, type SettingGroup } from './settings-rows'
+import { adjustSetting, groupAtDefaults, resetGroup, rowHint, rowOff, settingGroups, settingValue, type SettingGroup } from './settings-rows'
 
 /**
  * Orbrun's settings, one panel for the front end and the game: drawn as
@@ -91,6 +91,20 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
       rows.push(sheet)
       ol.append(sheet)
     }
+  }
+  // the page's own settings back as they came; dark while there is nothing to put back
+  {
+    const k = hotkey()
+    const reset = h('li', { class: 'row level2 selectable fg7 action', dataset: { hotkey: k, focus: 'settings-reset', hint: `Put every ${group.toLowerCase()} setting back to its default.` } },
+      h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, 'Reset to defaults'))
+    draw.push(() => reset.classList.toggle('off', groupAtDefaults(group)))
+    reset.addEventListener('click', () => {
+      if (groupAtDefaults(group)) return
+      resetGroup(group, opts.onchange)
+      redraw()
+    })
+    rows.push(reset)
+    ol.append(reset)
   }
   redraw()
   // every page leaves the same way: Back at its foot, where the group's row was taken from

@@ -2,7 +2,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { CHAMFER, defaultSettings, getSavedView, getSettings, leftRightTurns, saveSettings, saveView, VIEW_OPTIONS, WALL_INSET, type DirSource } from '../src/servers'
 import { REST_PITCH } from '@orbrun/scene'
-import { adjustSetting, ALL_SETTING_ROWS, settingGroups, CAM_ANGLES, EYE_HEIGHTS, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowOff, SETTING_ROWS, settingValue } from '../src/settings-rows'
+import { settingsPanel } from '../src/settings-panel'
+import { adjustSetting, ALL_SETTING_ROWS, groupAtDefaults, resetGroup, settingGroups, CAM_ANGLES, EYE_HEIGHTS, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowOff, SETTING_ROWS, settingValue } from '../src/settings-rows'
 
 // happy-dom's localStorage has no working methods; give servers.ts a plain one
 const store = new Map<string, string>()
@@ -307,5 +308,46 @@ describe('what left and right do', () => {
       expect(g.rows.length).toBeGreaterThan(0)
     }
     expect(groups.flatMap((g) => g.rows)).toEqual([...SETTING_ROWS])
+  })
+})
+
+describe('settings: reset a page to its defaults', () => {
+  beforeEach(() => store.clear())
+
+  it("puts back only the page's own settings, and leaves the rest as they were", () => {
+    saveSettings({ ...defaultSettings, fov: 60, eyeHeight: 0.3, uiScale: 1.3, minimapTurns: false })
+    expect(groupAtDefaults('Camera')).toBe(false)
+    resetGroup('Camera')
+    const s = getSettings()
+    expect(s.fov).toBe(defaultSettings.fov)
+    expect(s.eyeHeight).toBe(defaultSettings.eyeHeight)
+    expect(groupAtDefaults('Camera')).toBe(true)
+    expect(s.uiScale).toBe(1.3)
+    expect(s.minimapTurns).toBe(false)
+    resetGroup('Interface')
+    expect(getSettings().uiScale).toBe(defaultSettings.uiScale)
+    expect(document.documentElement.style.getPropertyValue('--ui-scale')).toBe(String(defaultSettings.uiScale))
+  })
+
+  it("is a row of each page, above Back, dark while there is nothing to put back", () => {
+    const onchange = () => void changes++
+    let changes = 0
+    for (const { group } of settingGroups()) {
+      const panel = settingsPanel(group, { onchange, back: () => {} })
+      const ids = panel.rows.map((r) => r.dataset.focus)
+      expect(ids.slice(-2)).toEqual(['settings-reset', 'settings-back'])
+      const reset = panel.rows[ids.indexOf('settings-reset')]
+      expect(reset.classList.contains('off')).toBe(true)
+      reset.click()
+      expect(changes).toBe(0)
+    }
+    saveSettings({ ...defaultSettings, invertLook: true })
+    const panel = settingsPanel('Controls', { onchange })
+    const reset = panel.rows.find((r) => r.dataset.focus === 'settings-reset')!
+    expect(reset.classList.contains('off')).toBe(false)
+    reset.click()
+    expect(getSettings().invertLook).toBe(false)
+    expect(changes).toBe(1)
+    expect(reset.classList.contains('off')).toBe(true)
   })
 })

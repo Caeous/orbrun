@@ -2,6 +2,11 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.11 — 2026-10-01
+
+- The minimap can now stay north up instead of turning with you (Settings › Interface).
+- Each settings page can now be reset to its defaults.
+
 ## 0.2.10 — 2026-09-30
 
 - Stairs up are now solid steps.

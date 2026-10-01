@@ -539,6 +539,8 @@ export interface Settings {
   minimapTiles: number
   /** How big a minimap tile is drawn, in css px (hud.md "Minimap"); 20 is the cell the map follows the player at. */
   minimapCell: number
+  /** Whether the minimap turns with the player (hud.md "Minimap"), or stands with north up. */
+  minimapTurns: boolean
   /** The gamepad prompts in the corner of the view (gamepad-hints.ts `HintMode`). */
   hints: HintMode
   /** Keyboard (arrows, h/l, numpad 4/6): what left and right do. */
@@ -611,6 +613,7 @@ export const defaultSettings: Settings = {
   nearby: 'pips',
   minimapTiles: 19,
   minimapCell: 20,
+  minimapTurns: true,
   hints: 'adaptive',
   leftRightKeys: 'turn',
   leftRightPad: 'turn',
