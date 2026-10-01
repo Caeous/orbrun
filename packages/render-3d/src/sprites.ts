@@ -61,6 +61,7 @@ export const MODE_RING = 8
 export const MODE_SHADE_MAP = 16
 export const MODE_FLASH_OVERRIDE = 32
 export const MODE_LIE = 64
+export const MODE_FACE_EYE = 128
 
 export type Tint = { r: number; g: number; b: number }
 
@@ -124,6 +125,15 @@ export interface StandOptions {
   lift?: number
   /** Laid face up on the floor, the tile's top away from the eye, instead of stood up (a corpse). */
   lie?: boolean
+  /**
+   * Turned to face the eye where it stands rather than the way it looks, then
+   * this share of the way on to where it looks: turning on the spot sways it
+   * only so far (a folded way up, whose steps swung round whole would show
+   * what is behind them).
+   */
+  faceEye?: number
+  /** The block's depth in cells, where it is more than a texel (a folded way up's side, reaching back under its steps). */
+  depth?: number
   moverId?: number
 }
 
@@ -149,13 +159,14 @@ export function stand(x: number, y: number, layers: readonly SpriteLayer[], o: S
     const bottom = (cell - (l.r.oy + l.oy + hTex)) * k
     // lying, the frame's y runs along the floor from the cell's middle, and its z up off the floor
     const cy = o.lie ? bottom + hq / 2 - scale / 2 : bottom + hq / 2
-    const depth = BB_DEPTH * k
+    const depth = o.depth ?? BB_DEPTH * k
     const lt = l.tint || o.tint
     const solid = o.thick && !l.flat
     const ghost = o.pass === 'ghostVisible' || o.pass === 'ghostRemembered'
     let mode = 0
     if (o.lie) mode |= MODE_LIE
-    if (o.yaw === undefined) mode |= MODE_BILLBOARD
+    if (o.faceEye !== undefined) mode |= MODE_FACE_EYE
+    else if (o.yaw === undefined) mode |= MODE_BILLBOARD
     if (solid) mode |= MODE_THICK
     if (o.shadeMap) mode |= MODE_SHADE_MAP
     // A board at a heading (an open door in its wall run) is seen from every angle, edge-on as the player walks
@@ -174,7 +185,7 @@ export function stand(x: number, y: number, layers: readonly SpriteLayer[], o: S
       z: o.lie ? [i * 0.002 + depth + LIE_LIFT, depth] : [i * 0.002 - back, depth],
       texel: [l.r.sx, l.r.sy, l.r.w, hTex],
       color: [o.shade * lt.r, o.shade * lt.g, o.shade * lt.b, o.alpha ?? 1],
-      misc: [mode, grow, k, o.yaw ?? 0],
+      misc: [mode, grow, k, o.faceEye ?? o.yaw ?? 0],
       cell: [x, y],
       moverId: o.moverId,
       x,
@@ -289,7 +300,7 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
  * its cell as a corpse does, a block a texel thick, something standing on it
  * or not.
  */
-export function fixtureInstances(scene: Scene, tile: TileLookup, framed: ReadonlyMap<number, number>, occupied: ReadonlySet<number>): SpriteInstance[] {
+export function fixtureInstances(scene: Scene, tile: TileLookup, framed: ReadonlyMap<number, number>, occupied: ReadonlySet<number>, columns?: StairColumns): SpriteInstance[] {
   const out: SpriteInstance[] = []
   const tint = scene.level.tint
   const stands = (c: SceneCell) => c.stance === 'upright' && !occupied.has(cellKey(c.x, c.y))
@@ -310,8 +321,111 @@ export function fixtureInstances(scene: Scene, tile: TileLookup, framed: Readonl
       out.push(...stand(cell.x, cell.y, [{ r, ox: 0, oy: 0 }], { height: 1, shade: 1, tint, shadeMap: true, thick: true, pass: 'fixture', yaw }))
       continue
     }
-    const h = cell.feature?.type === 'stairs' ? STAIR_H : FIXTURE_H
+    const f = cell.feature
+    const stairs = f?.type === 'stairs'
+    const up = (f?.type === 'stairs' || f?.type === 'hatch') && f.dir === 'up'
+    const art = up ? columns?.(r) : undefined
+    const folded = art && foldedStairs(cell.x, cell.y, r, art, tint, stairs ? STAIR_H : FIXTURE_H, stairs ? STAIRS_STEPS : HATCH_STEPS, stairs)
+    if (folded) {
+      out.push(...folded)
+      continue
+    }
+    const h = stairs ? STAIR_H : FIXTURE_H
     out.push(...stand(cell.x, cell.y, [{ r, ox: 0, oy: 0 }], { height: h, shade: 1, tint, shadeMap: true, thick: true, pass: 'fixture', back: FIXTURE_BACK }))
+  }
+  return out
+}
+
+/**
+ * A way up's art read column by column: `top` the first body row of each
+ * column of the tile's rect (-1 where a column has none), `side` the first row
+ * of the stairs' side under the step, where the art falls from the step's lit
+ * edge to the side's shadow, `open` the first row under that left open (r.h
+ * where none is). Undefined until the art can be read.
+ */
+export type StairColumns = (r: TileRect) => { top: readonly number[]; side: readonly number[]; open: readonly number[] } | undefined
+
+/** How many columns wide a run of columns starting at the same row must be to be a step. */
+const STEP_MIN = 3
+/** The share of the camera's turn a folded way up follows, from facing the eye (0) to turning with the camera as a board does (1). */
+export const STAIR_SWAY = 0.25
+/** How far a folded way up's side stands forward of its steps, in cells. */
+const SIDE_FORWARD = 0.002
+/** Columns between run [c0, c1) and a step: 0 for the step itself. */
+const gap = ([s0, s1]: [number, number], c0: number, c1: number) => Math.max(0, s0 - c1 + 1, c0 - s1 + 1)
+/**
+ * How many steps art must climb to be folded: crawl draws its stairs in five
+ * (fewer is an arch, a gate or the Orcish Mines' palisade), and its escape
+ * hatch up as a step-ladder of four.
+ */
+const STAIRS_STEPS = 5
+const HATCH_STEPS = 4
+
+/**
+ * A way up folded where its steps meet its side: crawl draws the stairs side
+ * on, the side the dark wedge at the bottom of the tile and each step a lit
+ * column standing on it. The side stands as any upright feature's board
+ * does, but forward of the cell's middle by half the deepest step, so the
+ * steps behind it are centred on the cell; each step (a run of at least `STEP_MIN` columns starting at the same
+ * row) is laid back flat from the top of the side under it, at its height.
+ * Behind the side a block of its texels reaches back under the steps, its end
+ * showing as the risers; under the escape hatch only the band under each step
+ * does, and its legs are the board alone, to be seen between. Null for art that does not climb in
+ * `minSteps` steps or more (sealed and one-way stairs, the branch exits but
+ * the hells'), which stands whole.
+ */
+function foldedStairs(x: number, y: number, r: TileRect, art: { top: readonly number[]; side: readonly number[]; open: readonly number[] }, tint: Tint, height: number, minSteps: number, solid: boolean): SpriteInstance[] | null {
+  const { top } = art
+  const runs: [number, number][] = []
+  for (let c0 = 0; c0 < top.length; ) {
+    let c1 = c0 + 1
+    while (c1 < top.length && top[c1] === top[c0]) c1++
+    if (top[c0] >= 0) runs.push([c0, c1])
+    c0 = c1
+  }
+  // crawl's stairs climb to the left: each step starts lower than the one before it
+  const steps = runs.filter(([c0, c1]) => c1 - c0 >= STEP_MIN).map(([c0]) => top[c0])
+  if (steps.length < minSteps || steps.some((t, i) => i > 0 && t <= steps[i - 1])) return null
+  const out: SpriteInstance[] = []
+  const k = height / r.cell
+  const o = { height, shade: 1, tint, shadeMap: true, thick: true, pass: 'fixture' as const, faceEye: STAIR_SWAY }
+  const part = (c0: number, c1: number, r0: number, r1: number): TileRect => ({ ...r, sx: r.sx + c0, ox: r.ox + c0, w: c1 - c0, sy: r.sy + r0, oy: r.oy + r0, h: r1 - r0 })
+  // where each step's side starts: its columns agree but for a stray texel, so the middle one
+  const wide = runs.filter(([c0, c1]) => c1 - c0 >= STEP_MIN)
+  const folds = wide.map(([c0, c1]) => art.side.slice(c0, c1).sort((p, q) => p - q)[(c1 - c0) >> 1])
+  // the steps turn about the cell's middle: standing at the middle, their whole depth behind it, a step's far
+  // corner would swing out into the wall beside it, so they stand forward by half the deepest step instead
+  const back = -Math.max(...wide.map(([c0], i) => Math.min(r.h, folds[i]) - top[c0])) * k / 2
+  // the side's board a hair forward of the block behind it, whose front it would otherwise share
+  const side = { ...o, back: back - SIDE_FORWARD }
+  // where the art first opens under each step: the escape hatch's band under the step ends there, its legs begin
+  const opens = wide.map(([c0, c1]) => Math.min(...art.open.slice(c0, c1)))
+  for (const [c0, c1] of runs) {
+    const t = top[c0]
+    // an empty column beside the run keeps the ink on its outer side, and the empty row above it the ink on its top
+    const a = c0 > 0 && top[c0 - 1] < 0 ? c0 - 1 : c0
+    const b = c1 < top.length && top[c1] < 0 ? c1 + 1 : c1
+    const above = Math.max(0, t - 1)
+    // a stray column of the art between steps folds with the nearest step
+    let near = 0
+    for (let i = 1; i < wide.length; i++) if (gap(wide[i], c0, c1) < gap(wide[near], c0, c1)) near = i
+    const fold = Math.min(r.h, folds[near])
+    if (fold <= t) {
+      out.push(...stand(x, y, [{ r: part(a, b, above, r.h), ox: 0, oy: 0 }], side))
+      continue
+    }
+    // the side under the step: a board a texel thick with its ink, as any upright feature's, and behind it a block
+    // of the same texels reaching back under the whole step, whose end between one step and the next is the riser,
+    // in the side's own material. The block has no ink: the board's, stretched the block's depth, would lie on the
+    // floor and stand beside it as black slabs. Where the art stands on legs to be seen between, the block is only
+    // the band down to where the art opens, the legs the board alone.
+    if (fold < r.h) out.push(...stand(x, y, [{ r: part(a, b, fold, r.h), ox: 0, oy: 0 }], side))
+    const band = solid ? r.h : Math.max(fold, Math.min(r.h, opens[near]))
+    if (band > fold) out.push(...stand(x, y, [{ r: part(c0, c1, fold, band), ox: 0, oy: 0 }], { ...o, back, depth: (fold - t) * k, grow: 0 }))
+    // the step lies back from the fold, a board at the fold's height
+    const up = (r.cell - r.oy - fold) * k
+    const oy = r.cell / 2 - back / k - r.oy - fold
+    out.push(...stand(x, y, [{ r: part(a, b, above, fold), ox: 0, oy }], { ...o, lie: true, lift: up - LIE_LIFT }))
   }
   return out
 }

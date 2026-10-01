@@ -200,7 +200,9 @@ void main() {
  * columns stand in the masonry); 16 lit by the shade map (else the light is
  * in `iColor`); 32 washed by `flashOverride` instead of the flash map (the
  * hands, which stand in no cell); 64 lying: the frame tipped onto its back,
- * its y along the floor away from yaw's forward and its z up (a corpse).
+ * its y along the floor away from yaw's forward and its z up (a corpse); 128
+ * turn to face the eye where it stands, then `iMisc.w` of the way on to the
+ * camera's heading (instead of a fixed yaw).
  *
  * The fragment shader marches the view ray through the texel grid of the
  * block: the first body texel it crosses is the hit, coloured by that texel
@@ -240,7 +242,16 @@ flat out vec2 fCell;
 flat out float fYaw;
 void main() {
   int mode = int(iMisc.x + 0.5);
+  // the eye in the model's frame, from the sprite's origin
+  vec3 e = (modelInverse * vec4(cameraPosition, 1.0)).xyz - iAnchor;
   float yaw = (mode & 1) != 0 ? standYaw : iMisc.w;
+  if ((mode & 128) != 0) {
+    // from facing the eye, iMisc.w of the way on to turning with the camera, the short way round
+    float toEye = atan(e.x, e.z);
+    float turn = standYaw - toEye;
+    turn -= 6.2831853 * floor((turn + 3.1415927) / 6.2831853);
+    yaw = toEye + iMisc.w * turn;
+  }
   bool thick = (mode & 2) != 0;
   float x0 = iQuad.x - iQuad.z, x1 = iQuad.x + iQuad.z;
   float y0 = iQuad.y - iQuad.w, y1 = iQuad.y + iQuad.w;
@@ -251,7 +262,6 @@ void main() {
   vec3 up = lie ? vec3(local.x, local.z, -local.y) : local;
   vec3 world = (modelMatrix * vec4(iAnchor + vec3(c * up.x + s * up.z, up.y, c * up.z - s * up.x), 1.0)).xyz;
   // the eye in the sprite's frame, for the march
-  vec3 e = (modelInverse * vec4(cameraPosition, 1.0)).xyz - iAnchor;
   e = vec3(c * e.x - s * e.z, e.y, c * e.z + s * e.x);
   fEye = lie ? vec3(e.x, -e.z, e.y) : e;
   vLocal = local;

@@ -19,7 +19,7 @@ import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, handsFootpr
 import { LevelGrid } from './grid.js'
 import { LevelMesher, MARK_MARGIN, uvFor, type ChunkGeometry, type LevelStats, type MeshContext, type TileDraw } from './level-mesh.js'
 import { Movers, monsterId } from './motion.js'
-import { distanceField, peelInk } from './peel.js'
+import { INK_LEVEL, distanceField, peelInk } from './peel.js'
 import type { PeelReply, PeelRequest } from './peel.worker.js'
 import {
   BLOCK_SHADE,
@@ -236,6 +236,8 @@ export class Render3d implements MapRenderer {
   private blitScene = new THREE.Scene()
   private cam = new THREE.PerspectiveCamera(75, 1, 0.05, 200)
   private tiles: TileSource | null = null
+  /** Each way up's art by column (sprites.ts `StairColumns`), read once; null where it cannot be read. */
+  private stairArt = new Map<string, { top: number[]; side: number[]; open: number[] } | null>()
   private scene: Scene | null = null
   private camera: Camera | null = null
   private cursor: SceneCursor | null = null
@@ -584,6 +586,7 @@ export class Render3d implements MapRenderer {
 
   setTiles(tiles: TileSource): void {
     this.tiles = tiles
+    this.stairArt.clear()
     this.dropAtlases()
     for (const h of this.handCache.values()) this.dropHand(h)
     this.handCache.clear()
@@ -851,8 +854,67 @@ export class Render3d implements MapRenderer {
     this.mark?.('level')
     this.stats.fixtureBuilds++
     const tiles = this.tiles
-    this.fixtures = fixtureInstances(scene, (id) => tiles.tile(id), grid.framed, grid.occupied)
+    this.fixtures = fixtureInstances(scene, (id) => tiles.tile(id), grid.framed, grid.occupied, (r) => this.stairColumns(r))
     this.crowdRevision = -1
+  }
+
+  /**
+   * A way up's art by column (sprites.ts `StairColumns`): the first body row,
+   * ink and clear texels left out as the peel leaves them, and the row under
+   * the biggest fall in brightness from one body texel to the next below it,
+   * where the lit step gives way to the stairs' shadowed side, and the first
+   * row under that the art leaves open (between the escape hatch's legs).
+   */
+  private stairColumns(r: TileRect): { top: readonly number[]; side: readonly number[]; open: readonly number[] } | undefined {
+    const key = `${r.atlas}:${r.sx}:${r.sy}:${r.w}:${r.h}`
+    let art = this.stairArt.get(key)
+    if (art === undefined) {
+      art = null
+      const img = this.tiles?.atlas(r.atlas)
+      const canvas = img && makeCanvas(r.w, r.h)
+      const ctx = canvas?.getContext('2d') as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null | undefined
+      try {
+        if (ctx) {
+          ctx.drawImage(img as CanvasImageSource, r.sx, r.sy, r.w, r.h, 0, 0, r.w, r.h)
+          const d = ctx.getImageData(0, 0, r.w, r.h).data
+          const lum = (x: number, y: number) => {
+            const i = (y * r.w + x) * 4
+            return 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]
+          }
+          const body = (x: number, y: number) => {
+            const i = (y * r.w + x) * 4
+            return d[i + 3] >= OPAQUE_ALPHA && !(d[i] < INK_LEVEL && d[i + 1] < INK_LEVEL && d[i + 2] < INK_LEVEL)
+          }
+          art = { top: [], side: [], open: [] }
+          for (let x = 0; x < r.w; x++) {
+            let top = -1
+            for (let y = 0; y < r.h && top < 0; y++) if (body(x, y)) top = y
+            // body to body: the clear row under the tile and the ink between are no edge
+            let side = r.h
+            let fall = 0
+            let last = top >= 0 ? lum(x, top) : 0
+            for (let y = top + 1; top >= 0 && y < r.h; y++) {
+              if (!body(x, y)) continue
+              const l = lum(x, y)
+              if (last - l > fall) {
+                fall = last - l
+                side = y
+              }
+              last = l
+            }
+            let open = side
+            while (open < r.h && body(x, open)) open++
+            art.top.push(top)
+            art.side.push(side)
+            art.open.push(open)
+          }
+        }
+      } catch {
+        art = null
+      }
+      this.stairArt.set(key, art)
+    }
+    return art ?? undefined
   }
 
   // ------------------------------------------------------------ the fields

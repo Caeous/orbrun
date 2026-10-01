@@ -9,7 +9,7 @@
  * crawl draws round a sprite and the shadow it paints at its feet, not the
  * body of the thing.
  */
-const INK_LEVEL = 24
+export const INK_LEVEL = 24
 /**
  * The ink the eye can reach from outside a sprite is peeled off before the
  * atlas is drawn (`atlasMask`), up to this many texels deep. 2D needs that

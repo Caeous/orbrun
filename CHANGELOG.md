@@ -2,6 +2,10 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.10 — 2026-09-30
+
+- Stairs up are now solid steps.
+
 ## 0.2.9 — 2026-09-29
 
 - Stairs down, traps and transporters now sit solid in the floor.
