@@ -85,6 +85,8 @@ export class Runner {
   lastStep: LastStep | null = null
   /** Recent intents, newest first: replies can arrive after another direction was sent. */
   private recentSteps: LastStep[] = []
+  /** when the last wait (`.`, `s`) went out: a turn passed in place, which leaves the view where it is */
+  lastWaitAt = -Infinity
   /** a dangerous action awaiting its confirming second press */
   private armed: { what: string; t: number } | null = null
   /** look mode: `x` went out (`pending`), the server opened its targeting (`active`) */
@@ -147,6 +149,7 @@ export class Runner {
       // (`examining`). Fire holds the heading until the cursor is first
       // stepped (`step`, `holdingView`); any other command drops a hold a
       // refused `f` left behind.
+      if (isWait(msg)) this.lastWaitAt = this.hooks.now()
       if (isLookAround(msg)) this.look = { state: 'pending', t: this.hooks.now() }
       this.hold = isFire(msg) ? { state: 'pending', t: this.hooks.now() } : { state: 'idle', t: 0 }
       this.session.send(msg)
@@ -695,6 +698,12 @@ function isLookAround(msg: ClientMessage): boolean {
 function isFire(msg: ClientMessage): boolean {
   if (msg.msg === 'input') return msg.text === 'f'
   return msg.msg === 'key' && msg.keycode === 'f'.charCodeAt(0)
+}
+
+/** CMD_WAIT, however it was typed: `.` or `s`, as text or as a keycode. */
+function isWait(msg: ClientMessage): boolean {
+  if (msg.msg === 'input') return msg.text === '.' || msg.text === 's'
+  return msg.msg === 'key' && (msg.keycode === '.'.charCodeAt(0) || msg.keycode === 's'.charCodeAt(0))
 }
 
 /** CMD_EXPLORE, however it was typed: the `o` key as text or as a keycode. */

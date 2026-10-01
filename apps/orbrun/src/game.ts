@@ -1107,7 +1107,9 @@ export class GameScreen {
         // a plant coming into view is no discovery: it is firewood, not a threat (scene `isThreat`)
         if (!this.lastMonsters.has(id) && isThreat(b)) newest = newest ?? b
       }
-      const keyedJustNow = !!this.runner.lastStep && performance.now() - this.runner.lastStep.t < 400
+      // a step or a wait of the player's own: the turn they chose is not taken from them
+      const keyedAt = Math.max(this.runner.lastStep?.t ?? -Infinity, this.runner.lastWaitAt)
+      const keyedJustNow = performance.now() - keyedAt < 400
       this.lastMonsters = ids
       // the server's own word wins: a walk it refused ("X is nearby!") or
       // stopped ("You encounter X.", "X comes into view.") names the monster,
