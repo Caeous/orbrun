@@ -1,6 +1,7 @@
 import { cellKey, cellLayoutEquals, keyToXY, type CellKey, type Rect, type Scene, type SceneCell, type TileRect } from '@orbrun/scene'
 import type { FootprintOptions } from './footprint.js'
 import { LevelGrid, sameKeys, type FootprintEntry } from './grid.js'
+import { BB_DEPTH, LIE_LIFT } from './sprites.js'
 
 /**
  * The level's geometry (rendering-3d.md II.1, inset walls), built in chunks
@@ -470,7 +471,12 @@ export class LevelMesher {
           if (cell.underlays) for (const o of cell.underlays) decal(o, 0.002)
           if (cell.featureTile !== undefined && !stands(cell)) decal(cell.featureTile, 0.004)
           if (cell.overlays) for (const o of cell.overlays) if (!cell.wallShadows?.includes(o) && !cell.shorelines?.includes(o)) decal(o, 0.006)
-          if (cell.icons) for (const o of cell.icons) decal(o, 0.008, true)
+          if (cell.icons) {
+            // on a way down or a trap lying as a block (sprites.ts `fixtureInstances`) the marks sit on its top, not under it
+            const lies = cell.stance === 'lying' && cell.featureTile !== undefined ? tileOf(cell.featureTile) : null
+            const lift = lies ? LIE_LIFT + BB_DEPTH / lies.r.cell + 0.002 : 0.008
+            for (const o of cell.icons) decal(o, lift, true)
+          }
           const ceiling = ceilingOf(cell)
           if (ceiling) get(ceiling.atlas).at(x, y).quad([[x, 1, y], [x + 1, 1, y], [x + 1, 1, y + 1], [x, 1, y + 1]], ceiling.uv, LID_SHADE, tint)
           continue
