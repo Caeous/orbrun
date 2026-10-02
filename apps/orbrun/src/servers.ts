@@ -496,6 +496,8 @@ type Nearby = 'list' | 'pips'
  * the diagonals are the same either way (runner.ts `step`).
  */
 export type LeftRight = 'turn' | 'strafe'
+/** The right stick: free look, or the left stick's 45° turn on left and right (game.ts `stickTurn`). */
+export type RightStick = 'look' | 'turn'
 
 /**
  * Where a direction came from: the three keyboard sets keys.ts `directionKey`
@@ -547,6 +549,8 @@ export interface Settings {
   leftRightKeys: LeftRight
   /** Gamepad (d-pad and left stick): what left and right do. */
   leftRightPad: LeftRight
+  /** Gamepad right stick: free look, or a 45° turn each push left or right. */
+  rightStick: RightStick
 }
 
 const HINT_MODES: readonly string[] = ['adaptive', 'contextual', 'off']
@@ -617,6 +621,7 @@ export const defaultSettings: Settings = {
   hints: 'adaptive',
   leftRightKeys: 'turn',
   leftRightPad: 'turn',
+  rightStick: 'look',
 }
 
 export function getSettings(): Settings {

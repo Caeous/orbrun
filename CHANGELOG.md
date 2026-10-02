@@ -2,6 +2,12 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.12 — 2026-10-01
+
+- The left stick no longer slips into diagonal steps by accident.
+- The right stick can turn in 45° steps, so the left stick can strafe (Settings › Controls).
+- The right stick looks around faster.
+
 ## 0.2.11 — 2026-10-01
 
 - The minimap can now stay north up instead of turning with you (Settings › Interface).

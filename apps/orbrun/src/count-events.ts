@@ -58,6 +58,7 @@ export const COUNTED_SETTINGS = {
   minimapTiles: Array.from({ length: 27 }, (_, i) => 9 + 2 * i),
   minimapCell: [8, 10, 12, 14, 16, 20, 24, 28, 32],
   minimapTurns: [true, false],
+  rightStick: ['look', 'turn'],
 } as const satisfies Record<string, readonly (number | boolean | string)[]>
 export type CountedSetting = keyof typeof COUNTED_SETTINGS
 export const SETTING_KEYS = Object.keys(COUNTED_SETTINGS) as CountedSetting[]

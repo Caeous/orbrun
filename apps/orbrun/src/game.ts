@@ -334,6 +334,8 @@ export class GameScreen {
 
   destroy() {
     this.destroyed = true
+    this.hooks.gamepad.fourWay = false
+    this.hooks.gamepad.rightStickTurns = false
     this.saveView()
     window.removeEventListener('pagehide', this.saveView)
     cancelAnimationFrame(this.raf)
@@ -634,6 +636,9 @@ export class GameScreen {
     // so while anything of the server's is up it stands behind the overlays.
     this.loading.classList.toggle('behind', !!(st.dialog || st.menus.length || st.ui.length || st.textInput))
     this.ctx = this.deriveContext(st)
+    const walking = this.is3d && this.ctx.mode === 'command'
+    this.hooks.gamepad.fourWay = walking
+    this.hooks.gamepad.rightStickTurns = walking && this.settings().rightStick === 'turn' && !this.overlays.hasClientOverlay && !this.chat.capturing
     this.fireHolds(now)
     // the server reports targeting alone; the runner knows whether its `x` opened it
     if (this.runner.examining(this.ctx.mode)) this.ctx.examining = true
@@ -1215,7 +1220,14 @@ export class GameScreen {
         return
       }
       this.mapPan = { x: 0, y: 0 }
-      this.cam.look(ev.dx, ev.dy, st.lookSensitivity, st.invertLook)
+      if (this.hooks.gamepad.rightStickTurns) {
+        // on Turn the stick's left and right come as `rstick` directions; a look is only ever up or down
+        this.cam.look(0, 0)
+        this.cam.tilt(ev.dy, st.lookSensitivity, st.invertLook)
+      } else {
+        this.cam.tilt(0)
+        this.cam.look(ev.dx, ev.dy, st.lookSensitivity, st.invertLook)
+      }
       this.needsRender = true
       return
     }

@@ -752,6 +752,9 @@ window.addEventListener('beforeunload', (ev) => {
     // closing the tab hides it only as the page goes, too late for the save: this is the last moment the engine
     // lives, and it saves on its own thread while the leave prompt is up
     session.checkpoint()
+    // the prompt only over the game itself: a front-end screen has left it (the session can still say playing
+    // while it is stopped and saved), and a prompt there would keep the home screen's Quit from closing the window
+    if (!game) return
     ev.preventDefault()
     ev.returnValue = ''
   }

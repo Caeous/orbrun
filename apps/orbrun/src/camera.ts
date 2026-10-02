@@ -62,6 +62,8 @@ export class CameraController {
    */
   private _uprightYaw = 0
   private freeLook = false
+  /** the right stick tilting the view up and down only, the yaw left to its easing (`tilt`) */
+  private tilting = false
   private dragging = false
   private lookVel = 0
   private pitchVel = 0
@@ -255,8 +257,17 @@ export class CameraController {
     }
     this._steeringRevision++
     this.freeLook = true
-    this.lookVel = dx * 3.2 * sensitivity
-    this.pitchVel = (invert ? dy : -dy) * 0.8 * sensitivity
+    this.lookVel = dx * LOOK_YAW_SPEED * sensitivity
+    this.pitchVel = (invert ? dy : -dy) * LOOK_PITCH_SPEED * sensitivity
+  }
+
+  /**
+   * The right stick on Turn: dy in [-1,1] tilts the view as `look` does,
+   * while the yaw keeps easing onto the heading the turns chose. Zero lets go.
+   */
+  tilt(dy: number, sensitivity = 1, invert = false) {
+    this.tilting = dy !== 0
+    this.pitchVel = this.tilting ? (invert ? dy : -dy) * LOOK_PITCH_SPEED * sensitivity : 0
   }
 
   /**
@@ -554,6 +565,10 @@ export class CameraController {
         c.yaw = yaw
         moved = true
       }
+      if (this.tilting) {
+        c.pitch = this.clampPitch(c.pitch + this.pitchVel * dt)
+        moved = true
+      }
     }
     // The minimap's ground: where it turns with the view it *is* the view's
     // yaw (`mapYaw`), so there is nothing to ease — the same turn, the same
@@ -687,6 +702,9 @@ export function trailStep(scene: Scene): { dx: number; dy: number } | null {
 
 /** Exponential turn rates, calibrated to the old 60 Hz feel but independent of frame rate. */
 const TURN_RATE = 16
+/** The right stick at full push, in radians a second: its yaw about as quick as a 45° turn. */
+const LOOK_YAW_SPEED = 4.2
+const LOOK_PITCH_SPEED = 1.05
 const MAP_TURN_RATE = 21
 /** how far ahead a heading must be open before it counts as not facing a wall */
 const OPEN_DEPTH = 2

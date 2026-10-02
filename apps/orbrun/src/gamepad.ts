@@ -8,12 +8,15 @@ export type Button = 'A' | 'B' | 'X' | 'Y' | 'LB' | 'RB' | 'LT' | 'RT' | 'SELECT
 
 const BUTTON_INDEX: Button[] = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'SELECT', 'START', 'L3', 'R3', 'DU', 'DD', 'DL', 'DR', 'HOME']
 
+/** Where a direction came from: the right stick only ever turns (`rightStickTurns`). */
+export type DirSource = 'dpad' | 'lstick' | 'rstick'
+
 export type PadEvent =
   | { type: 'press'; button: Button; t: number }
   | { type: 'release'; button: Button; t: number; held: number }
   | { type: 'repeat'; button: Button; n: number }
-  | { type: 'dir'; source: 'dpad' | 'lstick'; dir: Dir8 | null }
-  | { type: 'dirRepeat'; source: 'dpad' | 'lstick'; dir: Dir8; n: number }
+  | { type: 'dir'; source: DirSource; dir: Dir8 | null }
+  | { type: 'dirRepeat'; source: DirSource; dir: Dir8; n: number }
   /** `start`: true on the first frame of a deflection; false on the frames that follow and on the settle to 0,0 */
   | { type: 'look'; dx: number; dy: number; start?: boolean }
 
@@ -74,7 +77,9 @@ export class GamepadInput {
   private repeatState = new Map<Button, { next: number; n: number }>()
   private dpadDir: Dir8 | null = null
   private stickDir: Dir8 | null = null
-  private dirRepeat = new Map<'dpad' | 'lstick', { next: number; n: number }>()
+  /** the right stick's four-way sector on Turn: left and right turn, up and down tilt */
+  private rstickDir: Dir8 | null = null
+  private dirRepeat = new Map<DirSource, { next: number; n: number }>()
   private opts: Required<GamepadOptions>
   private listeners = new Set<(e: PadEvent) => void>()
   private lastActive = -1
@@ -82,6 +87,19 @@ export class GamepadInput {
   private rest = new Map<string, readonly number[]>()
   kind: PadKind = 'generic'
   connected = false
+  /**
+   * The left stick reads only the four straight ways, so a forward push
+   * pulled a little off true never steps diagonally (game.ts sets it while
+   * walking the 3D view; the level map, an aim and the menus keep all eight).
+   */
+  fourWay = false
+  /**
+   * The right stick's left and right are the left stick's turn, read the
+   * same way (reach, sectors, repeat) and sent as its `rstick` directions;
+   * only a push up or down is a look, and it only tilts (game.ts sets it on
+   * the Right stick setting's Turn, while walking the 3D view).
+   */
+  rightStickTurns = false
   private looking = false
 
   constructor(opts: GamepadOptions = {}) {
@@ -217,49 +235,12 @@ export class GamepadInput {
     const dx = (dr ? 1 : 0) - (dl ? 1 : 0)
     const dy = (dd ? 1 : 0) - (du ? 1 : 0)
     const newDpad = dx === 0 && dy === 0 ? null : dirFromDelta(dx, dy)
-    if (newDpad !== this.dpadDir) {
-      this.dpadDir = newDpad
-      this.emit({ type: 'dir', source: 'dpad', dir: newDpad })
-      if (newDpad !== null) this.dirRepeat.set('dpad', { next: now + this.opts.repeatDelay, n: 0 })
-      else this.dirRepeat.delete('dpad')
-    } else if (newDpad !== null) {
-      const r = this.dirRepeat.get('dpad')
-      if (r && now >= r.next) {
-        r.next = now + this.opts.repeatInterval
-        r.n++
-        this.emit({ type: 'dirRepeat', source: 'dpad', dir: newDpad, n: r.n })
-      }
-    }
-    // left stick 8-way with hysteresis
-    const lx = axes[0] || 0
-    const ly = axes[1] || 0
-    const mag = Math.hypot(lx, ly)
-    let newStick: Dir8 | null = this.stickDir
-    if (this.stickDir === null) {
-      if (mag >= this.opts.enterL) newStick = sectorOf(lx, ly)
-    } else {
-      if (mag < this.opts.leaveL) newStick = null
-      else {
-        // switch sector only when the stick is clearly inside the new one: a
-        // forward push that wobbles across the 22.5° edge must not turn into a
-        // diagonal, then back, restarting the repeat delay each time
-        const s = sectorOf(lx, ly, SECTOR_MARGIN)
-        if (s !== null && s !== this.stickDir && mag >= this.opts.enterL) newStick = s
-      }
-    }
-    if (newStick !== this.stickDir) {
-      this.stickDir = newStick
-      this.emit({ type: 'dir', source: 'lstick', dir: newStick })
-      if (newStick !== null) this.dirRepeat.set('lstick', { next: now + this.opts.repeatDelay, n: 0 })
-      else this.dirRepeat.delete('lstick')
-    } else if (newStick !== null) {
-      const r = this.dirRepeat.get('lstick')
-      if (r && now >= r.next) {
-        r.next = now + this.opts.repeatInterval
-        r.n++
-        this.emit({ type: 'dirRepeat', source: 'lstick', dir: newStick, n: r.n })
-      }
-    }
+    this.dirFrom('dpad', this.dpadDir, newDpad, now)
+    this.dpadDir = newDpad
+    // left stick 8-way (or four-way) with hysteresis
+    const stick = this.sector(this.stickDir, axes[0] || 0, axes[1] || 0, this.fourWay)
+    this.dirFrom('lstick', this.stickDir, stick, now)
+    this.stickDir = stick
     // right stick look, with hysteresis like the left stick: a worn stick
     // resting a little off centre must not steer the camera, nor count as the
     // pad speaking every frame (game.ts `pad`), which would keep the prompts
@@ -267,7 +248,21 @@ export class GamepadInput {
     const rx = axes[2] || 0
     const ry = axes[3] || 0
     const rm = Math.hypot(rx, ry)
-    if (rm > (this.looking ? this.opts.deadzoneR : this.opts.enterR)) {
+    const turnOf = (d: Dir8 | null) => (d === 2 || d === 6 ? d : null)
+    const r = this.rightStickTurns ? this.sector(this.rstickDir, rx, ry, true) : null
+    this.dirFrom('rstick', turnOf(this.rstickDir), turnOf(r), now)
+    this.rstickDir = r
+    if (this.rightStickTurns) {
+      if (r === 0 || r === 4) {
+        const k = ((rm - this.opts.deadzoneR) / (1 - this.opts.deadzoneR)) ** 2
+        const start = !this.looking
+        this.looking = true
+        this.emit({ type: 'look', dx: 0, dy: (ry / rm) * k, start })
+      } else if (this.looking) {
+        this.looking = false
+        this.emit({ type: 'look', dx: 0, dy: 0 })
+      }
+    } else if (rm > (this.looking ? this.opts.deadzoneR : this.opts.enterR)) {
       const k = ((rm - this.opts.deadzoneR) / (1 - this.opts.deadzoneR)) ** 2
       const start = !this.looking
       this.looking = true
@@ -275,6 +270,37 @@ export class GamepadInput {
     } else if (this.looking) {
       this.looking = false
       this.emit({ type: 'look', dx: 0, dy: 0 })
+    }
+  }
+
+  /**
+   * A stick's next direction from `was`, with hysteresis in reach (enterL
+   * to start, down to leaveL to keep) and in angle (SECTOR_MARGIN).
+   */
+  private sector(was: Dir8 | null, x: number, y: number, fourWay: boolean): Dir8 | null {
+    const mag = Math.hypot(x, y)
+    if (was === null) return mag >= this.opts.enterL ? sectorOf(x, y, 0, fourWay) : null
+    if (mag < this.opts.leaveL) return null
+    // switch sector only when the stick is clearly inside the new one: a
+    // forward push that wobbles across the edge must not turn into a
+    // diagonal, then back, restarting the repeat delay each time
+    const s = sectorOf(x, y, SECTOR_MARGIN, fourWay)
+    return s !== null && s !== was && mag >= this.opts.enterL ? s : was
+  }
+
+  /** A direction source's change, or its repeat while it is held. */
+  private dirFrom(source: DirSource, was: Dir8 | null, dir: Dir8 | null, now: number) {
+    if (dir !== was) {
+      this.emit({ type: 'dir', source, dir })
+      if (dir !== null) this.dirRepeat.set(source, { next: now + this.opts.repeatDelay, n: 0 })
+      else this.dirRepeat.delete(source)
+    } else if (dir !== null) {
+      const r = this.dirRepeat.get(source)
+      if (r && now >= r.next) {
+        r.next = now + this.opts.repeatInterval
+        r.n++
+        this.emit({ type: 'dirRepeat', source, dir, n: r.n })
+      }
     }
   }
 }
@@ -330,19 +356,22 @@ function dirFromDelta(dx: number, dy: number): Dir8 {
 /**
  * Angular hysteresis, in sectors (1 = 45°): a held stick changes sector only
  * once it is this far past the boundary. 0.2 is 9°, so a sector is entered
- * from within ±13.5° of its centre and kept up to ±22.5°.
+ * from within ±13.5° of its centre and kept up to ±22.5°; on four ways
+ * (sectors of 90°) it is 18°, entered within ±27° and kept up to ±45°.
  */
 const SECTOR_MARGIN = 0.2
 
 /**
- * The 8-way sector of a deflection, angle 0 = up (north), clockwise. With a
- * `margin`, null when the stick sits within that many sectors of a boundary.
+ * The 8-way sector of a deflection, angle 0 = up (north), clockwise, or with
+ * `fourWay` the nearest straight way, its sector 90° wide. With a `margin`,
+ * null when the stick sits within that many sectors of a boundary.
  */
-function sectorOf(x: number, y: number, margin = 0): Dir8 | null {
-  const a = Math.atan2(x, -y) / (Math.PI / 4)
+function sectorOf(x: number, y: number, margin = 0, fourWay = false): Dir8 | null {
+  const per = fourWay ? 2 : 1
+  const a = Math.atan2(x, -y) / (per * Math.PI / 4)
   const q = Math.round(a)
   if (Math.abs(a - q) > 0.5 - margin) return null
-  return (((q % 8) + 8) % 8) as Dir8
+  return ((((q * per) % 8) + 8) % 8) as Dir8
 }
 
 /** Optional keyboard stand-ins for testing controller menus. Native Crawl punctuation stays untouched. */

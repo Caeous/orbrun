@@ -79,7 +79,7 @@ describe('counts: what the Worker keeps', () => {
   })
 
   it('names its columns in the order they are written, within what Analytics Engine keeps (20 of each)', () => {
-    expect(BLOB_COLUMNS).toEqual(['event', 'server', 'version', 'leftRightKeys', 'leftRightPad', 'hints', 'nearby'])
+    expect(BLOB_COLUMNS).toEqual(['event', 'server', 'version', 'leftRightKeys', 'leftRightPad', 'hints', 'nearby', 'rightStick'])
     expect(DOUBLE_COLUMNS).toEqual(['pad', 'width', 'height', 'eyeHeight', 'restPitch', 'fov', 'viewmodel', 'lookSensitivity', 'invertLook', 'uiScale', 'minimapTiles', 'minimapCell', 'minimapTurns'])
     expect(BLOB_COLUMNS.length).toBeLessThanOrEqual(20)
     expect(DOUBLE_COLUMNS.length).toBeLessThanOrEqual(20)
@@ -158,7 +158,7 @@ describe('counts: the settings a game starts on', () => {
   })
 
   it('keeps words as text and numbers and yes-or-no as numbers', () => {
-    expect(WORD_SETTINGS).toEqual(['leftRightKeys', 'leftRightPad', 'hints', 'nearby'])
+    expect(WORD_SETTINGS).toEqual(['leftRightKeys', 'leftRightPad', 'hints', 'nearby', 'rightStick'])
     expect(NUMBER_SETTINGS).toEqual(['eyeHeight', 'restPitch', 'fov', 'viewmodel', 'lookSensitivity', 'invertLook', 'uiScale', 'minimapTiles', 'minimapCell', 'minimapTurns'])
   })
 

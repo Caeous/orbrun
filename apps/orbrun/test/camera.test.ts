@@ -282,6 +282,42 @@ describe('camera view between sessions', () => {
   })
 })
 
+describe('the right stick', () => {
+  const headingYaw = (c: CameraController) => {
+    const h = cam()
+    h.setFacing(c.facing, true)
+    return h.camera.yaw
+  }
+
+  it('free look stays exactly where it was let go, facing the nearest heading', () => {
+    const c = cam()
+    c.reducedMotion = false
+    c.look(1, 0.5)
+    c.update(0.2)
+    const { yaw, pitch } = c.camera
+    c.look(0, 0)
+    expect(Math.abs(headingYaw(c) - yaw)).toBeGreaterThan(0.05)
+    c.update(1)
+    expect(c.camera.yaw).toBeCloseTo(yaw)
+    expect(c.camera.pitch).toBeCloseTo(pitch)
+  })
+
+  it('on Turn, tilting up or down leaves a turn easing on its way', () => {
+    const c = cam()
+    c.reducedMotion = false
+    const pitch = c.camera.pitch
+    c.turn(1)
+    c.tilt(-1)
+    c.update(0.05)
+    expect(c.camera.pitch).toBeGreaterThan(pitch)
+    c.tilt(0)
+    c.update(3)
+    c.update(1)
+    expect(c.camera.yaw).toBeCloseTo(headingYaw(c))
+    expect(c.facing).toBe(1)
+  })
+})
+
 describe('rest pitch (the Camera angle setting)', () => {
   it('starts a little under the horizon, and a new angle tilts the view with it', () => {
     const c = cam(0)
