@@ -941,7 +941,15 @@ export class Overlays {
       tabs.append(h('button', { type: 'button', role: 'tab', class: current ? 'current' : t.empty ? 'empty' : '', disabled: !!t.empty, 'aria-selected': String(current), onclick: () => this.turnPack(strip, i) }, id === undefined ? null : tileCanvas(gd, [{ t: id }]), t.label))
     })
     // the rest of crawl's title, at the far end: the keys that turn the page
-    if (strip.hint) tabs.append(h('span', { class: 'pack-hint' }, strip.hint))
+    // (whole or not at all: cut short, it only says less than the bar does)
+    if (strip.hint) {
+      const hint = h('span', { class: 'pack-hint' }, strip.hint)
+      tabs.append(hint)
+      // measured once laid out (the menu may not be on the page yet) and again whenever the row resizes
+      new ResizeObserver(() => {
+        hint.style.visibility = hint.scrollWidth > hint.clientWidth ? 'hidden' : ''
+      }).observe(hint)
+    }
     return tabs
   }
 

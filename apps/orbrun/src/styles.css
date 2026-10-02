@@ -3701,6 +3701,9 @@ canvas.minimap.hidden {
 }
 .menu .pack-tabs button {
   display: flex;
+  /* a tab never wraps its name ("Gear (10/52)") onto a second line; the hint gives way instead */
+  flex: none;
+  white-space: nowrap;
   align-items: center;
   gap: 0.35em;
   /* the underline's 2px again on top, so the name sits centred between it and the title */
@@ -3748,7 +3751,7 @@ canvas.minimap.hidden {
 .menu .pack-tabs button.empty:is(:hover, :focus-visible) {
   color: var(--ink-dim);
 }
-/* the rest of crawl's title, at the strip's far end and quiet as the other tabs; it gives way first when the row is short */
+/* the rest of crawl's title, at the strip's far end and quiet as the other tabs; on a row too short for all of it, it goes (overlays.ts packTabs) */
 .menu .pack-tabs .pack-hint {
   margin-left: auto;
   align-self: center;
