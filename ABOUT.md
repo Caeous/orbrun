@@ -71,8 +71,8 @@ keys are relative to where you are facing.
 | `j` / `↓` and the diagonals | step back, strafe |
 | Shift + direction | run |
 | Ctrl + direction | attack |
-| F2 | travel menu (Select) |
-| F3 | actions menu (LB) |
+| F2 | level map (Select) |
+| F3 | actions menu (X) |
 | F4 | gear menu (Y) |
 | F5 | Orbrun menu (Start) |
 | F12 | chat |
@@ -91,17 +91,21 @@ while spectating, Escape opens it too.
 - **A** does what the situation calls for: takes the stairs you're standing
   on, opens or closes the door ahead, attacks, picks up, or steps.
 - **B** cancels or backs out; in play it sends Escape.
-- **X** waits a turn; hold it to rest. In a menu, X describes the row under
-  the cursor.
+- **X** opens your spells, abilities, evocables and quiver as tabs; the
+  bumpers switch between them, Y swaps weapons and LT shouts. In a menu, X
+  describes the row under the cursor.
 - **Y** opens the gear menu, with your pack at the top.
-- **LB** opens the Actions menu.
+- **LB** waits a turn; hold it to rest.
 - **RB** aims your quivered action; press it again to fire.
 - **LT** autoexplores.
 - **RT** autofights.
 - **R3** or **L3** (click either stick) examines: the d-pad moves the cursor
   and A describes what's under it.
-- **Select** opens the travel commands. Every menu reopens on the row you
-  last chose.
+- **Select** opens the level map. There LB and RB find the stairs up and
+  down, A travels to the cursor, Y travels to another branch or floor, L3
+  searches for items and R3 shows the dungeon overview. Hold Select for
+  the rest of the map's commands. Every menu reopens on the row you last
+  chose.
 - **Start** opens the Orbrun menu, which has two tabs: Character (skills,
   spells, status, religion and the rest) and System (resume, repeat, the game
   menu, help, chat, gamepad, settings, save and exit).

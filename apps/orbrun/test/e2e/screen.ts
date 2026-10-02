@@ -42,7 +42,9 @@ export function screen(g: E2e): Screen {
   } else if (ctx.mode === 'yesno' || ctx.mode === 'prompt') title = ctx.prompt?.text ?? ''
   const menuLit = ctx.mode === 'menu' && menu && menu.last_hovered >= 0 ? formattedStringToText(menu.items[menu.last_hovered]?.text ?? '').trim() : null
   const bar: Record<string, string> = {}
-  for (const l of barLabels(ctx)) bar[l.button] = formattedStringToText(l.label)
+  // an overlay of Orbrun's own (an empty tab of X's actions) puts the bar away: its footer says what the buttons do
+  const ours = !!g.root.querySelector('.overlay-stack > [data-client]')
+  if (!ours) for (const l of barLabels(ctx)) bar[l.button] = formattedStringToText(l.label)
   return {
     mode: ctx.mode,
     surface,

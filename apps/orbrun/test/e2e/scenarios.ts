@@ -88,6 +88,82 @@ const quiverDarts = (g: E2e) => give(g, 'dart')
 export const SCENARIOS: Scenario[] = [
   // ---- menus
   { id: 'inventory', about: 'the pack, `i`: single-select, arrows, no initial hover', setup: (g) => g.key('i'), surface: 'menu:inventory' },
+  { id: 'gear', about: "Y: the pack at once, its pages as tabs on the bumpers", setup: (g) => g.press('Y'), surface: 'menu:inventory' },
+  {
+    id: 'gear-scrolls',
+    about: "the pack turned to its Scrolls page, the long way round from Inventory",
+    setup: async (g) => {
+      await wiz(g)
+      await give(g, 'scroll of teleportation')
+      await g.press('Y')
+      await g.press('RB')
+      await g.press('RB')
+    },
+    surface: 'menu:inventory',
+  },
+  {
+    id: 'gear-scrolls-two',
+    about: "the pack's Scrolls page with two kinds of scroll on it, the cursor on the first",
+    setup: async (g) => {
+      await wiz(g)
+      await give(g, 'scroll of teleportation')
+      await give(g, 'scroll of fog')
+      await g.press('Y')
+      await g.press('LB')
+    },
+    surface: 'menu:inventory',
+  },
+  {
+    id: 'gear-again',
+    about: 'the pack, put away on its Potions page and opened again with Y: back on Potions',
+    setup: async (g) => {
+      await g.press('Y')
+      await g.press('RB')
+      await g.press('B')
+      await g.press('Y')
+    },
+    surface: 'menu:inventory',
+  },
+  // ---- X's actions as tabs (action-tabs.ts): crawl's spell, ability, evoke and quiver menus
+  { id: 'actions-spells', about: 'X: the actions, on the cast list (`z`, then `*` once it asks)', args: CONJURER, setup: (g) => g.press('X'), surface: 'menu:spell' },
+  {
+    id: 'actions-abilities',
+    about: "the actions turned to Abilities, past the Spells a Berserker hasn't",
+    args: BERSERKER,
+    setup: async (g) => {
+      await g.press('X')
+      await g.press('RB')
+    },
+    surface: 'menu:ability',
+  },
+  {
+    id: 'actions-evoke',
+    about: 'the actions turned to Evocables, a wand on it',
+    setup: async (g) => {
+      await wiz(g)
+      await give(g, 'wand of flame')
+      await g.press('X')
+      await g.press('LB')
+      await g.press('LB')
+    },
+    surface: 'menu:use_item',
+  },
+  {
+    id: 'actions-quiver',
+    about: 'the actions turned back from Spells round to Quiver',
+    args: CONJURER,
+    setup: async (g) => {
+      await g.press('X')
+      await g.press('LB')
+    },
+    surface: 'menu:actions',
+  },
+  {
+    id: 'actions-empty',
+    about: "the actions on a tab with nothing on it: a Fighter's Spells, crawl's line where the menu would be",
+    setup: (g) => g.press('X'),
+    surface: 'command',
+  },
   { id: 'drop', about: 'drop, `d`: multiselect with quantities and categories', setup: (g) => g.key('d'), surface: 'menu:inventory' },
   { id: 'wear', about: 'wear or take off, `W`: the use-item menu', setup: (g) => g.key('W'), surface: 'menu:use_item' },
   { id: 'quaff', about: 'quaff, `q`', setup: (g) => g.key('q'), surface: 'menu:use_item' },

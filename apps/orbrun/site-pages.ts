@@ -308,14 +308,14 @@ const label = (id: string, name: string, sub: string) =>
 const PAD_BOARD: { buttons: GlyphName[]; name: string; does: string }[] = [
   { buttons: ['A'], name: 'A', does: 'Does what the moment calls for: stairs, doors, attack, pick up, step' },
   { buttons: ['B'], name: 'B', does: 'Back out' },
-  { buttons: ['X'], name: 'X', does: 'Wait a turn; hold to rest' },
+  { buttons: ['X'], name: 'X', does: 'Spells, abilities, evocables and quiver' },
   { buttons: ['Y'], name: 'Y', does: 'Your gear, pack first' },
-  { buttons: ['LB'], name: 'LB', does: 'Actions' },
+  { buttons: ['LB'], name: 'LB', does: 'Wait a turn; hold to rest' },
   { buttons: ['RB'], name: 'RB', does: 'Aim your quivered action, then fire' },
   { buttons: ['LT'], name: 'LT', does: 'Autoexplore' },
   { buttons: ['RT'], name: 'RT', does: 'Autofight' },
   { buttons: ['L3', 'R3'], name: 'L3 or R3', does: 'Examine' },
-  { buttons: ['SELECT'], name: 'Select', does: 'Travel' },
+  { buttons: ['SELECT'], name: 'Select', does: 'Level map' },
   { buttons: ['START'], name: 'Start', does: 'Character and system' },
   { buttons: ['LSTICK', 'DPAD'], name: 'Left stick or d-pad', does: 'Step, turn and strafe; hold to run' },
 ]

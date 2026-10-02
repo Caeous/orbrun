@@ -31,7 +31,9 @@ export interface PadHintEvidence {
 export function padLesson(a: Action, ctx: Context): PadLesson | null {
   if (ctx.mode === 'command') {
     if (a.kind === 'fight') return 'fight'
-    if (a.kind === 'ui' && (a.op === 'commands' || a.op === 'travel' || a.op === 'equipment')) return a.op
+    if (a.kind === 'ui' && (a.op === 'commands' || a.op === 'equipment')) return a.op
+    // Select's level map is the way across the dungeon
+    if (a.kind === 'ui' && a.op === 'levelmap') return 'travel'
     if (a.kind === 'examine') return 'examine'
     if (a.kind === 'keys' && a.seq.length === 1 && 'text' in a.seq[0]) {
       return KEY_LESSONS[a.seq[0].text] ?? null
@@ -106,7 +108,11 @@ export class GamepadHints {
     const b = p.before
     let worked = false
     switch (p.lesson) {
-      case 'commands': case 'travel': case 'equipment': worked = !b.clientOverlay && after.clientOverlay; break
+      // X opens one of crawl's menus, or the frame an empty tab stands in (action-tabs.ts)
+      case 'commands': worked = (after.mode === 'menu' && b.mode !== 'menu') || (!b.clientOverlay && after.clientOverlay); break
+      case 'travel': worked = after.mode === 'levelmap' && b.mode !== 'levelmap'; break
+      // Y opens crawl's own pack
+      case 'equipment': worked = after.mode === 'menu' && b.mode !== 'menu'; break
       case 'examine': worked = after.mode === 'targeting' && b.mode !== 'targeting'; break
       case 'explore': worked = after.x !== b.x || after.y !== b.y; break
       // autofight either swings or takes a step toward the threat; both spend the turn
@@ -141,9 +147,9 @@ export class GamepadHints {
       if (!this.knows('move')) teaching.push(tip('LSTICK', 'Move', { kind: 'step', dir: 0 }))
       if (!this.knows('look')) teaching.push(tip('RSTICK', 'Look around', { kind: 'look', dx: 0, dy: 0 }))
       if (!teaching.length) {
-        // Travel (Select) and the other menu buttons stand along the view's foot (hud.ts renderMenus), so they need no lesson
+        // the level map (Select) and the other menu buttons stand along the view's foot (hud.ts renderMenus), so they need no lesson
         const table = bindingTable(ctx)
-        for (const button of ['R3', 'X'] as const) {
+        for (const button of ['R3', 'LB'] as const) {
           const a = table[button]
           if (!a) continue
           if (a.kind === 'hold') {

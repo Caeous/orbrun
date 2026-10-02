@@ -2381,17 +2381,17 @@ canvas.minimap.hidden {
   cursor: default;
 }
 /*
- * The pad's menu buttons (hud.ts renderMenus): a pair stacked in each bottom
- * corner of the view, the left hand's reading from its glyphs, the right
+ * The pad's menu buttons (hud.ts renderMenus), stacked in the bottom
+ * corners of the view, the left hand's reading from its glyph, the right
  * hand's hard against the right edge with its glyphs at the edge, the same
  * shadowed text as the contextual stack. They keep the corners whatever the
- * first-person weapon does: the stack steps left of it, the pairs do not.
+ * first-person weapon does: the stack steps left of it, the menu buttons do not.
  */
 .menubar {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  /* a row up from the view's foot (hud.ts renderMenus sets --rise to the pair's row pitch) */
+  /* a row up from the view's foot (hud.ts renderMenus sets --rise to the stack's row pitch) */
   padding: 0 0.3em calc(0.15em + var(--rise, 0px)) 0.3em;
   line-height: 1.2;
   pointer-events: none;
@@ -2441,10 +2441,10 @@ canvas.minimap.hidden {
 }
 
 /*
- * Under a centred panel (hud.ts POPUP_MODES) the corner is only the strip
- * between the panel's foot and the view's, so the stack becomes a grid two
- * prompts wide, filled from the corner (hud.ts renderBar sets each chip's
- * cell): the primary prompt still at the edge on the last row, the next
+ * In a panel's modes (hud.ts POPUP_MODES) with no panel to stand under
+ * (hud.ts placeBar), the corner is only the strip between the panel's foot
+ * and the view's, so the stack becomes a grid two prompts wide, filled from
+ * the corner (hud.ts renderBar sets each chip's cell): the primary prompt still at the edge on the last row, the next
  * left of it, the rest on the rows above, glyphs in two columns as the pad's
  * menu pairs stand. Right to left so the first column is the edge one; the
  * chips themselves read left to right again.
@@ -2459,11 +2459,56 @@ canvas.minimap.hidden {
   column-gap: 1.4em;
   row-gap: 0.2em;
 }
+/* right below the panel (hud.ts placeBar): one line in the prompts' own order, flush with the panel's right edge, as a
+   key-help line under the panel */
+.actionbar.contextual.row.under {
+  display: flex;
+  direction: ltr;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0;
+  transition: none;
+}
+/* the panel's key-help line stands over the dim the panel stands on (.overlay-stack), not under it with the world */
+.hud > .actionbar.under {
+  z-index: 21;
+}
+/* but quieter than the panel it serves, so the eye stays on the panel; a held button comes up full as it fills */
+.hud > .actionbar.under .chip:not(.holding) {
+  opacity: 0.7;
+}
 .actionbar.contextual.row .group {
   display: contents;
 }
 .actionbar.contextual.row .chip {
   direction: ltr;
+}
+/*
+ * The level map (hud.ts renderBar): every button it has stands named, too
+ * many for the corner's column, so they make a centred line along the map's
+ * foot of the buttons that go together (LB / RB, LT / RT, L3 / R3), each pair
+ * one over the other, each glyph before its label as a key-help line reads.
+ */
+.actionbar.contextual.foot {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  column-gap: 2.2em;
+  row-gap: 0.4em;
+  padding: 0 var(--cw, 10px) 0.3em;
+}
+.actionbar.contextual.foot .foot-pair {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2em;
+}
+.actionbar.contextual.foot .chip {
+  flex-direction: row;
+  gap: 0.4em;
 }
 .actionbar.contextual .chip:hover {
   border: 0;
@@ -2599,11 +2644,20 @@ canvas.minimap.hidden {
   z-index: 20;
 }
 
+/*
+ * A popup hangs from the top of the screen, as WebTiles' do (style.css
+ * .ui-popup: align-items start, .ui-popup-outer margin 50px, 20px when the
+ * window is under 780px tall), each one stacked over another a further 20px
+ * down (--depth, overlays.ts render), up to three deep. Only what crawl marks
+ * `ui-centred` (tileweb.cc: before a game exists) stands in the middle.
+ */
 .popup {
+  --popup-top: 50px;
+  --popup-y: 0%;
   position: absolute;
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  top: calc(var(--popup-top) + var(--depth, 0) * 20px);
+  transform: translate(-50%, var(--popup-y));
   background: rgba(10, 10, 14, 0.96);
   border: 1px solid #555;
   border-radius: 6px;
@@ -2611,12 +2665,22 @@ canvas.minimap.hidden {
   font-family: var(--mono);
   font-size: 0.95em;
   max-width: min(94vw, 78rem);
-  max-height: 88vh;
+  max-height: calc(95vh - 2 * var(--popup-top));
   min-width: 24rem;
   display: flex;
   flex-direction: column;
   pointer-events: auto;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.7);
+}
+
+.popup.centred {
+  --popup-y: -50%;
+  top: 50%;
+}
+@media (max-height: 780px) {
+  .popup {
+    --popup-top: 20px;
+  }
 }
 
 .popup.hidden {
@@ -3437,16 +3501,14 @@ canvas.minimap.hidden {
   border-radius: 2px;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7), 0 30px 90px rgba(0, 0, 0, 0.75);
   min-width: 26rem;
-  animation: popup-in 200ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: popup-in 200ms cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
 }
+/* a fade only, and nothing held once it is over (`backwards`): a scale here had Chrome keep the popup drawn at the
+   animation's scale long after it ended, then draw it again at its own whenever it pleased (a focus change, a quiet
+   page), so the icons in it changed under the player */
 @keyframes popup-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, -50%);
   }
 }
 /* corner marks */
@@ -3504,6 +3566,17 @@ canvas.minimap.hidden {
     opacity: 0;
   }
 }
+/* the pack, X's actions and the character overview stand on the world dimmed, as WebTiles' popups stand on its .ui-popup-overlay:
+   flat and unblurred, lighter than the pause menu, and eased rather than animated in, so a turn from one
+   tab to the next (crawl's menu gone a moment before the next is up) never flashes the world bright */
+.overlay-stack {
+  transition: background-color 160ms ease;
+}
+.overlay-stack:has(> .popup.paged-pack),
+.overlay-stack:has(> .popup.action-tabs),
+.overlay-stack:has(> .popup.type-formatted-scroller[data-tag='resists']) {
+  background-color: rgba(3, 2, 6, 0.55);
+}
 
 /*
  * The pause menu and the settings are drawn as the game draws its own
@@ -3513,7 +3586,7 @@ canvas.minimap.hidden {
  */
 .popup.menu.game {
   min-width: 26rem;
-  animation: popup-in 200ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: popup-in 200ms cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
 }
 .menu.game .title {
   color: #fff;
@@ -3603,12 +3676,10 @@ canvas.minimap.hidden {
 .popup.menu.game.command-menu {
   min-width: min(34rem, 92vw);
 }
-.command-menu.tabbed .body,
-.command-menu .command-hints {
+.command-menu.tabbed .body {
   display: grid;
 }
-.command-menu.tabbed .body > ol,
-.command-menu .command-hints > .command-hint {
+.command-menu.tabbed .body > ol {
   grid-area: 1 / 1;
   align-self: start;
 }
@@ -3616,33 +3687,76 @@ canvas.minimap.hidden {
   visibility: hidden;
   pointer-events: none;
 }
-.command-menu .command-tabs {
+/* the pack's pages (overlays.ts packTabs): a quiet row of names under crawl's title, the page up in the title's own white, underlined */
+.menu .pack-tabs {
   display: flex;
-  gap: 0.3rem;
-  padding: 0.5rem 0.8rem 0;
+  gap: 1.4em;
+  padding: 0 0.8rem;
+  border-bottom: 1px solid #333;
 }
-.command-menu .command-tabs button {
-  flex: 1;
-  padding: 0.35rem 0.6rem;
+/* the same width on every page, so turning one never resizes the pack (its height is set from its rows); the Start menu's tabs (overlays.ts installTabs) match it */
+.popup.menu.paged-pack,
+.popup.menu.game.command-menu.tabbed {
+  width: min(48rem, 94vw);
+}
+.menu .pack-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  /* the underline's 2px again on top, so the name sits centred between it and the title */
+  padding: calc(0.35rem + 2px) 0 0.35rem;
   color: var(--ink-dim);
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: 3px;
+  border: 0;
+  border-bottom: 2px solid transparent;
   font: inherit;
   cursor: pointer;
 }
-.command-menu .command-tabs button:is(:hover, :focus-visible) {
+/* a small icon before each name, quiet off the page up as the command lists' are off the lit row */
+.menu .pack-tabs canvas.tile {
+  opacity: 0.72;
+}
+.menu .pack-tabs button.current canvas.tile {
+  opacity: 1;
+}
+.menu .pack-tabs button:is(:hover, :focus-visible) {
   color: var(--ink);
 }
-.command-menu .command-tabs button.current {
-  color: var(--accent);
-  border-color: currentColor;
+.menu .pack-tabs button.current {
+  color: var(--color-15);
+  border-bottom-color: currentColor;
 }
-.command-menu .command-hint {
-  padding: 0.35rem 0.8rem 0.5rem;
-  border-bottom: 1px solid #333;
+/* X's actions as tabs (overlays.ts actionStrip): one width whichever of crawl's menus is up, so a turn never resizes the frame */
+.popup.menu.action-tabs {
+  width: min(48rem, 94vw);
+}
+/* the empty frame stands in for a menu already on screen: it never fades in over it */
+.popup.menu.game.action-tabs {
+  animation: none;
+}
+/* an empty tab (showActionTabs): crawl's line saying so, where its menu would be */
+.popup.menu.action-tabs .action-empty {
+  margin: 0;
+  padding: 1.2rem 0.8rem;
   color: var(--ink-dim);
-  font-size: 0.85em;
+}
+/* a page with nothing on it: there, but not to be turned to */
+.menu .pack-tabs button.empty {
+  opacity: 0.4;
+  cursor: default;
+}
+.menu .pack-tabs button.empty:is(:hover, :focus-visible) {
+  color: var(--ink-dim);
+}
+/* the rest of crawl's title, at the strip's far end and quiet as the other tabs; it gives way first when the row is short */
+.menu .pack-tabs .pack-hint {
+  margin-left: auto;
+  align-self: center;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--ink-dim);
 }
 .command-menu .body {
   padding: 0.4rem 0.4rem 0.5rem;
@@ -3931,6 +4045,9 @@ canvas.minimap.hidden {
   .overlay-stack:has(> .popup.sysmenu),
   .overlay-stack.dim {
     animation: none;
+  }
+  .overlay-stack {
+    transition: none;
   }
 }
 /* A dialog over the screen already up (menu.ts `list` with `over`): the front stays readable behind it,

@@ -139,15 +139,14 @@ describe('a server menu on the keyboard', () => {
     const { ov, st, sent, frame, open, k, key } = setup()
     open(useItem)
     frame()
-    // left and right are the server's on the rows (invent.cc cycle_page, cycle_mode), as the d-pad's are
+    // this one is evoke, a tab of X's actions: left and right turn the tabs (game.ts openActionTab), and
+    // never reach crawl's rows, where they would cycle its mode
     expect(key('ArrowLeft')).toBe(true)
     expect(key('ArrowRight')).toBe(true)
     // Enter takes the hovered row, as crawl's own Enter does on an arrows menu; Escape leaves
     expect(key('Enter')).toBe(true)
     expect(key('Escape')).toBe(true)
     expect(sent).toEqual([
-      { msg: 'key', keycode: Keys.CK_LEFT },
-      { msg: 'key', keycode: Keys.CK_RIGHT },
       { msg: 'key', keycode: Keys.ENTER },
       { msg: 'key', keycode: Keys.ESC },
     ])

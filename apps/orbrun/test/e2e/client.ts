@@ -123,6 +123,8 @@ export interface E2e {
   type(text: string): Promise<void>
   /** one pad button, pressed and released */
   press(button: Button, heldMs?: number): Promise<void>
+  /** pad buttons pressed one after another faster than crawl answers: one settle, after the last */
+  burst(buttons: Button[]): Promise<void>
   /** one d-pad direction: 0 up, 2 right, 4 down, 6 left */
   dpad(dir: 0 | 2 | 4 | 6): Promise<void>
   /** a click on an element of the screen */
@@ -333,6 +335,15 @@ async function startClient(t: Transport, device: InputDevice, before: (settle: (
       await apply({ kind: 'padDown', button })
       await apply({ kind: 'padUp', button, heldMs })
     },
+    async burst(buttons) {
+      for (const button of buttons) {
+        held.add(button)
+        screen!.pad({ type: 'press', button, t: now })
+        held.delete(button)
+        screen!.pad({ type: 'release', button, t: now + 50, held: 50 })
+      }
+      await settle()
+    },
     async dpad(dir) {
       await apply({ kind: 'dir', dir })
       await apply({ kind: 'dir', dir: null })
@@ -400,7 +411,10 @@ export async function startReplay(rec: Recording): Promise<E2e> {
       }
     },
   )
-  const strip = (l: ClientMessage[]) => JSON.stringify(l.filter((m) => m.msg !== 'token_login' && m.msg !== 'play'))
+  // `menu_scroll` goes out on a wall-clock timer (overlays.ts `scheduleScrollSync`, 100 ms after the hover moves), so
+  // whether it lands inside a step depends on how loaded the machine is; it only reports the rows in view, and a
+  // replay's answers are recorded, so leaving it out of the comparison loses nothing the replay depends on
+  const strip = (l: ClientMessage[]) => JSON.stringify(l.filter((m) => m.msg !== 'token_login' && m.msg !== 'play' && m.msg !== 'menu_scroll'))
   if (strip(g.sent) !== strip(rec.sent)) throw new Error(`replay drifted from its recording:\n live   ${strip(rec.sent)}\n replay ${strip(g.sent)}`)
   g.clearSent()
   return g

@@ -2,6 +2,12 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.2.13 — 2026-10-02
+
+- In-game menus are redone, with tabs for your pack and your actions.
+- X opens your spells, abilities and quiver; LB now waits and rests.
+- Select opens the level map, with stairs and travel a button away.
+
 ## 0.2.12 — 2026-10-01
 
 - The left stick no longer slips into diagonal steps by accident.

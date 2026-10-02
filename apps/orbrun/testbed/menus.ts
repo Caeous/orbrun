@@ -27,13 +27,10 @@ const ov = new Overlays(host, {
 })
 const run = (a: unknown) => console.log('run', a)
 const screens: [string, () => void][] = [
-  ['Actions (LB)', () => ov.showCommands(run, 'battle')],
-  ['Travel (Select)', () => ov.showCommands(run, 'travel')],
-  ['Equipment (Y)', () => ov.showCommands(run, 'equipment')],
   ['Start', () => ov.showSystem({ spectating: false, inGame: true, run })],
   ['Start (spectating)', () => ov.showSystem({ spectating: true, inGame: true, run })],
 ]
-let shown = screens[3]
+let shown = screens[0]
 for (const [label, show] of screens) {
   const b = document.createElement('button')
   b.textContent = label

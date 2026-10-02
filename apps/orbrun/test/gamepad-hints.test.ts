@@ -42,7 +42,7 @@ describe('adaptive gamepad teaching', () => {
     expect(teaching(h).map((l) => l.button)).toEqual(['R3'])
   })
 
-  it('teaches examine on R3 and wait/rest on X, never B', () => {
+  it('teaches examine on R3 and wait/rest on LB, never B', () => {
     const h = new GamepadHints()
     basics(h)
     expect(teaching(h)).toMatchObject([{ button: 'R3', label: 'Examine' }])
@@ -50,7 +50,7 @@ describe('adaptive gamepad teaching', () => {
     h.observe(evidence({ mode: 'targeting' }), 10)
     h.attempt(bindingTable(ctx()).SELECT!, ctx(), evidence(), 20)
     h.observe(evidence({ clientOverlay: true }), 30)
-    expect(teaching(h)).toMatchObject([{ button: 'X', label: 'Wait one turn', hold: 'Rest' }])
+    expect(teaching(h)).toMatchObject([{ button: 'LB', label: 'Wait one turn', hold: 'Rest' }])
     expect(padLesson(bindingTable(ctx()).B!, ctx())).toBeNull()
   })
 
@@ -88,10 +88,12 @@ describe('adaptive gamepad teaching', () => {
     expect(teaching(h, targeting).map((l) => l.label)).toEqual(['Move cursor'])
   })
 
-  it('the level map stands its zoom and describe keys in the corner, since the server prints no key help there', () => {
+  it('the level map stands all its keys in the corner, since the server prints no key help there', () => {
     const h = new GamepadHints()
     const map = ctx({ mode: 'levelmap' })
-    expect(h.prompts(map, 'contextual').map((l) => [l.button, l.label])).toEqual([['X', 'Describe'], ['LT', 'Zoom out'], ['RT', 'Zoom in'], ['A', 'Travel here']])
+    expect(h.prompts(map, 'contextual').map((l) => [l.button, l.label])).toEqual([
+      ['X', 'Describe'], ['Y', 'Find you'], ['LB', 'Up stairs'], ['RB', 'Down stairs'], ['LT', 'Zoom out'], ['RT', 'Zoom in'], ['L3', 'Find…'], ['R3', 'Overview'], ['A', 'Travel here'],
+    ])
     expect(h.prompts(map, 'off').map((l) => [l.button, l.label])).toEqual([['A', 'Travel here']])
     expect(teaching(h, map).map((l) => l.label)).toEqual(['Move cursor'])
   })
@@ -130,7 +132,7 @@ describe('nothing standing: only the context and the lessons', () => {
     h.attempt({ kind: 'ui', op: 'commands' }, ctx(), evidence(), 0)
     h.observe(evidence({ clientOverlay: true }), 10)
     h.attempt({ kind: 'ui', op: 'equipment' }, ctx(), evidence(), 20)
-    h.observe(evidence({ clientOverlay: true }), 30)
+    h.observe(evidence({ mode: 'menu' }), 30)
     h.attempt(keys('o'), ctx(), evidence(), 40)
     h.observe(evidence({ x: 11 }), 50)
     for (const id of ['commands', 'equipment', 'explore'] as const) expect(h.knows(id)).toBe(true)
@@ -172,9 +174,12 @@ describe('nothing standing: only the context and the lessons', () => {
 
 describe('successful outcomes, not button presses', () => {
   it.each([
+    ['commands', { kind: 'ui', op: 'commands' }, { mode: 'menu' }],
     ['commands', { kind: 'ui', op: 'commands' }, { clientOverlay: true }],
-    ['travel', { kind: 'ui', op: 'travel' }, { clientOverlay: true }],
-    ['equipment', { kind: 'ui', op: 'equipment' }, { clientOverlay: true }],
+    // Select opens the level map
+    ['travel', { kind: 'ui', op: 'levelmap' }, { mode: 'levelmap' }],
+    // Y opens crawl's own pack
+    ['equipment', { kind: 'ui', op: 'equipment' }, { mode: 'menu' }],
     ['examine', { kind: 'examine' }, { mode: 'targeting' }],
     ['explore', keys('o'), { x: 11 }],
     ['wait', keys('.'), { turn: 2 }],
@@ -194,7 +199,7 @@ describe('successful outcomes, not button presses', () => {
     const h = new GamepadHints()
     h.attempt({ kind: 'ui', op: 'equipment' }, ctx(), evidence(), 0)
     h.observe(evidence({ mode: 'more' }), 10)
-    h.observe(evidence({ clientOverlay: true }), 2000)
+    h.observe(evidence({ mode: 'menu' }), 2000)
     expect(h.knows('equipment')).toBe(false)
   })
 
@@ -202,7 +207,7 @@ describe('successful outcomes, not button presses', () => {
     const h = new GamepadHints()
     h.attempt({ kind: 'ui', op: 'equipment' }, ctx(), evidence(), 0)
     h.cancel()
-    h.observe(evidence({ clientOverlay: true }), 10)
+    h.observe(evidence({ mode: 'menu' }), 10)
     expect(h.knows('equipment')).toBe(false)
     h.attempt(keys('o'), ctx(), evidence(), 20)
     h.attempt({ kind: 'step', dir: 0 }, ctx(), evidence(), 21)

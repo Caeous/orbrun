@@ -4,6 +4,7 @@ import type { Button, PadEvent } from './gamepad'
 import { DEFAULT_YESNO, LOG_DEFAULT_COLOUR, isFocusMode, type Context, type MenuContext, type ParsedPrompt, type ShopContext } from './context'
 import type { FocusOp } from './focus'
 import { menuHasSections } from './menu-nav'
+import { SHOUT, SWAP_WEAPONS } from './action-tabs'
 
 export type RelDir = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7
 
@@ -40,8 +41,12 @@ export type Action =
   /** Fire the quivered action (`f`), or confirm the shot when already aiming: `f` inside the aim prompt selects the target too. */
   | { kind: 'fire' }
   | { kind: 'hold'; tap: Action; hold: Action }
-  /** `contextual`: the binding exists only because of the situation (a shop with marked rows), so the bar shows it unasked */
-  | { kind: 'keys'; seq: KeyOrText[]; label: string; contextual?: boolean }
+  /**
+   * `contextual`: the binding exists only because of the situation (a shop with marked rows), so the bar shows it unasked;
+   * `keepsMap`: the keys leave the level map for another screen, and the map stays drawn until that screen is up (map-hold.ts);
+   * `repeats`: held, the button sends the keys again and again (`repeatsHeld`)
+   */
+  | { kind: 'keys'; seq: KeyOrText[]; label: string; contextual?: boolean; keepsMap?: boolean; repeats?: boolean }
   /**
    * `altSelect` sends the hovered row's hotkey shifted (the shop's "put on shopping list");
    * `examine` describes the hovered row where it stands (menu.cc CMD_MENU_EXAMINE)
@@ -51,7 +56,7 @@ export type Action =
   | { kind: 'prompt'; hotkey: string }
   /** the focus layer's cursor over the top overlay (popup, prompt, CRT screen, dialog) */
   | { kind: 'focus'; op: FocusOp }
-  | { kind: 'ui'; op: 'commands' | 'travel' | 'equipment' | 'palette' | 'system' | 'keyboard' | 'faceHostile' | 'toggleRenderer' | 'levelmap' | 'bindings' | 'scrollLog' | 'popupAction'; arg?: number; category?: CommandCategory; section?: string }
+  | { kind: 'ui'; op: 'commands' | 'actionTab' | 'equipment' | 'palette' | 'system' | 'keyboard' | 'faceHostile' | 'toggleRenderer' | 'levelmap' | 'bindings' | 'scrollLog' | 'popupAction'; arg?: number; category?: CommandCategory; section?: string }
   | { kind: 'osk'; op: 'move' | 'type' | 'backspace' | 'space' | 'submit' | 'cancel' | 'shift'; dir?: Dir8 }
 
 /** Which section of the command palette applies: the cmd-keys.h key table for the mode. */
@@ -102,23 +107,23 @@ export const LEVEL_MAP: Action = k('X', 'Level map')
 const COMMAND: Partial<Record<Button, Action>> = {
   A: { kind: 'contextual' },
   B: ESC,
-  // wait and rest are the same verb at two lengths, so they share a button; X because the
-  // hold wants a thumb rather than an index finger, and because autoexplore, pressed far more
-  // often, earns a shoulder button and never sits a tap-or-hold's decision out until release
-  X: hold(k('.', 'Wait one turn'), k('5', 'Rest')),
-  // the gear button: the pack itself is the first row of the menu it opens
+  // the two face buttons over A open screens: X the actions, Y the pack, each a face button
+  // whose pages the bumpers turn (action-tabs.ts, pack-tabs.ts)
+  X: { kind: 'ui', op: 'commands' },
   Y: { kind: 'ui', op: 'equipment' },
   // The right hand attacks -- a shot on RB, autofight on RT, which repeats while held (`repeatsHeld`) -- and the left hand does everything
   // that is not attacking. Explore and autofight, the tightest loop there is, stay on opposite
-  // hands, so the pair you alternate constantly never shares a finger.
-  LB: { kind: 'ui', op: 'commands' },
+  // hands, so the pair you alternate constantly never shares a finger. Wait and rest are the
+  // same verb at two lengths, so they share LB, beside autoexplore: the left hand passes the time.
+  LB: hold(k('.', 'Wait one turn'), k('5', 'Rest')),
   RB: { kind: 'fire' },
   LT: k('o', 'Autoexplore'),
   RT: { kind: 'fight' },
   // either stick click examines: R3 for a right thumb already on the look stick, L3 for a left thumb resting on the move stick
   L3: { kind: 'examine' },
   R3: { kind: 'examine' },
-  SELECT: { kind: 'ui', op: 'travel' },
+  // the level map, where the ways across the dungeon are (levelmapTable)
+  SELECT: { kind: 'ui', op: 'levelmap' },
   // the way out of a game from the pad: the Orbrun menu, with Save and exit on it
   START: SYSTEM,
 }
@@ -144,11 +149,23 @@ function menuTable(m: MenuContext | undefined, ctx: Context): Partial<Record<But
   if (!m) return t
   // the menu's own help, on the key it names (the inventory's `_`); a menu that names none has none
   if (m.helpKey) t.Y = k(m.helpKey, 'Help')
+  // X's actions as tabs (action-tabs.ts): the bumpers turn them, and Y and LT are the two actions that are no list
+  if (m.actions) {
+    if (EXAMINING_MENUS.has(m.menu.tag)) t.X = { kind: 'menu', op: 'examine' }
+    return { ...t, LB: { kind: 'ui', op: 'actionTab', arg: -1 }, RB: { kind: 'ui', op: 'actionTab', arg: 1 }, Y: SWAP_WEAPONS, LT: SHOUT }
+  }
   // the hovered row, described where it stands (the spell, ability and item menus' "[?] toggle ... description"
   // without the toggle, see Overlays.menuAction); `!` cycles the mode from the palette, or Left/Right on a row
   if (EXAMINING_MENUS.has(m.menu.tag) && !m.togglesAtOnce) t.X = { kind: 'menu', op: 'examine' }
-  // the previous / next section (menu.cc cycle_headers, both ways); a menu without headers pages, when it has pages
-  if (m.sections || ctx.pageable) {
+  // the previous / next section (menu.cc cycle_headers, both ways); a menu without headers pages, when it has pages.
+  // In the pack the bumpers turn its pages, as Left and Right do (pack-tabs.ts), and the sections move to the triggers beside them
+  const sectioned = m.sections || ctx.pageable
+  // (a pack with one page to it keeps the sections on the bumpers)
+  const turns = !!m.pack?.next
+  if (turns) {
+    t.LB = { kind: 'menu', op: 'left' }
+    t.RB = { kind: 'menu', op: 'right' }
+  } else if (sectioned) {
     t.LB = { kind: 'menu', op: 'sectionPrev' }
     t.RB = { kind: 'menu', op: 'sectionNext' }
   }
@@ -161,6 +178,10 @@ function menuTable(m: MenuContext | undefined, ctx: Context): Partial<Record<But
   }
   // Select stays the filter (documented); the palette's menu section holds the rest
   if (m.filter) t.SELECT = ctrl('F', 'Filter')
+  if (turns && sectioned) {
+    t.LT = { kind: 'menu', op: 'sectionPrev' }
+    t.RT = { kind: 'menu', op: 'sectionNext' }
+  }
   return t
 }
 
@@ -256,28 +277,45 @@ function examineTable(ctx: Context): Partial<Record<Button, Action>> {
 }
 
 /**
- * The level map (X). Unlike an aim, the server prints no key help here, so
- * the corner names what the pad cannot guess: X describes the cell under
- * the cursor (`v`), and the triggers zoom (`{`/`}`, cmd-keys.h
- * CMD_MAP_ZOOM_OUT/IN, which nudge `tile_map_scale` and send it back as a
- * `set_option`). `{` goes as a keycode: as text it would open a JSON message
- * (keys.ts). `+` and `-` scroll the map, so they are not zoom.
+ * Leave the level map, then send a main-map command: crawl reads the keys in
+ * order, and nothing flushes between. The map stays on screen meanwhile (map-hold.ts).
+ */
+const offMap = (label: string, key: KeyOrText): Action => ({ kind: 'keys', seq: [{ key: Keys.ESC }, key], label, contextual: true, keepsMap: true })
+
+/**
+ * The level map (X), and Select's: the pad's way across the dungeon. Unlike
+ * an aim, the server prints no key help here, so the corner names all of
+ * it. The bumpers put the cursor on the next stairs up or down (`<`/`>`,
+ * CMD_MAP_FIND_UPSTAIR/DOWNSTAIR), A travels there; X describes the cell
+ * (`v`), and the triggers zoom (`{`/`}`, cmd-keys.h CMD_MAP_ZOOM_OUT/IN, which
+ * nudge `tile_map_scale` and send it back as a `set_option`). `{` goes as a
+ * keycode: as text it would open a JSON message (keys.ts). `+` and `-`
+ * scroll the map, so they are not zoom.
+ *
+ * Travel to a branch (`G`), the overview (Ctrl-O) and the stash search
+ * (Ctrl-F) are main-map commands: inside the map `G` views another level
+ * (CMD_MAP_GOTO_LEVEL) and Ctrl-F forgets it (CMD_MAP_FORGET), so those
+ * buttons close the map first. Select closes it again, held it opens the
+ * map's palette, with the waypoints and exclusions.
  */
 function levelmapTable(ctx: Context): Partial<Record<Button, Action>> {
   const t: Partial<Record<Button, Action>> = {
     B: ESC,
-    LB: k('<', 'Up stairs'),
-    RB: k('>', 'Down stairs'),
+    LB: situational(k('<', 'Up stairs')),
+    RB: situational(k('>', 'Down stairs')),
     X: situational(k('v', 'Describe')),
-    LT: situational(kc(123, 'Zoom out')),
-    RT: situational(k('}', 'Zoom in')),
-    SELECT: palette('levelmap'),
+    // held, the triggers keep zooming, a step (tileweb.cc ZOOM_INC) every repeat
+    LT: { kind: 'keys', seq: [{ key: 123 }], label: 'Zoom out', contextual: true, repeats: true },
+    RT: { kind: 'keys', seq: [{ text: '}' }], label: 'Zoom in', contextual: true, repeats: true },
+    L3: offMap('Find…', { key: 6 }),
+    R3: offMap('Overview', { key: 15 }),
+    SELECT: hold(kc(Keys.ESC, 'Close'), palette('levelmap')),
   }
-  // the cursor away from the player: somewhere to travel to, and a way back to them
+  // the cursor away from the player: somewhere to travel to, and a way back to them; on them, Y travels further
   if (!ctx.mapCursorHome) {
     t.A = k('.', 'Travel here')
-    t.Y = k('@', 'Find you')
-  }
+    t.Y = situational(k('@', 'Find you'))
+  } else t.Y = offMap('Travel to…', { text: 'G' })
   return t
 }
 
@@ -618,7 +656,7 @@ function menuRowExamines(m: MenuContext): boolean {
   return i !== undefined && i >= 0 && m.hoverable.includes(i) && !!menu.items[i]?.hotkeys?.length
 }
 
-/** The wait (`.`) or rest (`5`) key on its own, as the X tap-or-hold sends them. */
+/** The wait (`.`) or rest (`5`) key on its own, as the LB tap-or-hold sends them. */
 function isRest(a: Action): boolean {
   return a.kind === 'keys' && a.seq.length === 1 && 'text' in a.seq[0] && (a.seq[0].text === '.' || a.seq[0].text === '5')
 }
@@ -695,7 +733,7 @@ function staticLabel(a: Action): string {
     case 'keys':
       return a.label
     case 'ui':
-      return { commands: 'Actions', travel: 'Travel', equipment: 'Equipment', palette: 'Commands', system: 'Orbrun menu', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', levelmap: 'Map', bindings: 'Gamepad', scrollLog: 'Log', popupAction: 'Action' }[a.op]
+      return { commands: 'Actions', actionTab: 'Actions tab', equipment: 'Equipment', palette: 'Commands', system: 'Orbrun menu', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', levelmap: 'Level map', bindings: 'Gamepad', scrollLog: 'Log', popupAction: 'Action' }[a.op]
     default:
       return actionLabel(a, EMPTY_CTX)
   }
@@ -726,6 +764,9 @@ export function actionLabel(a: Action, ctx: Context, button?: Button): string {
       // the letter switches, in the shop's own words; they read the same marked or not, as the footer does
       if (shop && a.op === 'select') return shop.mode === 'buy' ? 'mark item for purchase' : 'examine item'
       if (shop && a.op === 'altSelect') return 'put item on shopping list'
+      // the bumpers in the pack name the page they turn to
+      const pack = ctx.menu?.pack
+      if (pack?.next && (a.op === 'left' || a.op === 'right')) return (a.op === 'left' ? pack.prev : pack.next)!
       if (a.op === 'sectionNext' || a.op === 'sectionPrev') {
         // the bumpers read as the jump they make: sections where the menu has headers, pages otherwise
         const sections = !!ctx.menu && menuHasSections(ctx.menu.menu)
@@ -760,7 +801,10 @@ export function actionLabel(a: Action, ctx: Context, button?: Button): string {
     }
     case 'ui':
       if (a.op === 'popupAction') return ctx.popupActions?.[a.arg ?? 0]?.label || 'Action'
-      return { commands: 'Actions', travel: 'Travel', equipment: 'Equipment', palette: 'Commands', system: 'Character', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', levelmap: 'Map', bindings: 'Gamepad', scrollLog: 'Log' }[a.op]
+      // the bumpers on X's actions name the tab they turn to
+      if (a.op === 'actionTab') return ((a.arg ?? 1) < 0 ? ctx.menu?.actions?.prev : ctx.menu?.actions?.next) ?? 'Actions tab'
+      // X and Y name the first tab of what they open (action-tabs.ts, pack-tabs.ts)
+      return { commands: 'Spells', equipment: 'Gear', palette: 'Commands', system: 'Character', keyboard: 'Keyboard', faceHostile: 'Face threat', toggleRenderer: 'View', levelmap: 'Level map', bindings: 'Gamepad', scrollLog: 'Log' }[a.op]
     case 'osk':
       return { move: 'Move', type: 'Type', backspace: 'Backspace', space: 'Space', submit: 'Done', cancel: 'Cancel', shift: 'Shift' }[a.op]
     case 'step':
@@ -849,14 +893,15 @@ export function holdAction(button: Button, ctx: Context): Action | null {
 
 /**
  * Whether a held button sends this action again and again, as a held key does
- * on a keyboard: autofight alone, the one action pressed in a run of dozens,
- * where holding Tab is how the keyboard plays it. Every repeat is resolved
+ * on a keyboard: autofight, the one action pressed in a run of dozens, where
+ * holding Tab is how the keyboard plays it, and the level map's zoom, a step
+ * at a time as a held `}` takes it. Every repeat is resolved
  * against the context of the moment, so whatever the last swing opened -- a
  * `--more--`, a prompt, an aim -- binds the button to something else and the
  * run stops there rather than answering it.
  */
 function repeatsHeld(a: Action): boolean {
-  return a.kind === 'fight'
+  return a.kind === 'fight' || (a.kind === 'keys' && !!a.repeats)
 }
 
 /**
@@ -902,6 +947,8 @@ export function resolve(ev: PadEvent, ctx: Context, turns: (source: 'dpad' | 'ls
       case 'menu':
         if (ev.dir === 0) return { kind: 'menu', op: 'prev' }
         if (ev.dir === 4) return { kind: 'menu', op: 'next' }
+        // X's actions: left and right turn the tabs, as they turn the pack's pages (crawl's own, there)
+        if (ctx.menu?.actions && (ev.dir === 6 || ev.dir === 2)) return { kind: 'ui', op: 'actionTab', arg: ev.dir === 6 ? -1 : 1 }
         if (ev.dir === 6) return { kind: 'menu', op: 'left' }
         if (ev.dir === 2) return { kind: 'menu', op: 'right' }
         return null

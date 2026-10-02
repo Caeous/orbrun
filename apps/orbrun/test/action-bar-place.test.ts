@@ -4,6 +4,8 @@ import { Hud, type HudHooks } from '../src/hud'
 import { GridHost } from '../src/grid/host'
 import { gameSplit } from '../src/grid/console'
 import type { Context } from '../src/context'
+import type { BindingLabel } from '../src/bindings'
+import type { BindingLabel } from '../src/bindings'
 
 const context: Context = {
   mode: 'command', layer: 'micro',
@@ -97,4 +99,47 @@ describe('the prompt stack in the corner of the view', () => {
     render('pad', false)
     expect(bar.hidden).toBe(true)
   })
+
+  it('stands right below a panel, its right edge on the panel’s, and back in the corner once it closes', () => {
+    const { hud, host, bar, grid, cells } = setup()
+    const stack = document.createElement('div')
+    stack.className = 'overlay-stack'
+    const panel = document.createElement('div')
+    panel.className = 'popup menu'
+    stack.append(panel)
+    host.append(stack)
+    panel.getBoundingClientRect = () => new DOMRect(300, 50, 600, 400)
+    const inner = hud as unknown as {
+      renderBar(ctx: Context, kind: string, spectating: boolean, device: string, hints: boolean, padLabels: BindingLabel[]): void
+      placeBar(under: boolean): void
+    }
+    inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [{ button: 'A', label: 'Select' }, { button: 'B', label: 'Back' }])
+    expect(bar.hidden).toBe(false)
+    inner.placeBar(true)
+    expect(bar.classList.contains('under')).toBe(true)
+    expect(bar.style.left).toBe('300px')
+    expect(bar.style.width).toBe('600px')
+    expect(bar.style.top).toBe(450 + 16 + 'px')
+    expect(bar.style.transform).toBe('none')
+    // a panel that reaches the view's foot: the prompts stop at it
+    panel.getBoundingClientRect = () => new DOMRect(300, 50, 600, 2000)
+    inner.placeBar(true)
+    const free = grid.px(cells.clear)
+    expect(bar.style.top).toBe(free.top + free.height + 'px')
+    panel.classList.add('hidden')
+    inner.placeBar(true)
+    expect(bar.classList.contains('under')).toBe(false)
+    expectInCorner(hud, bar, grid, cells)
+  })
+
+  it('reads in one order under a panel, A at the right end', () => {
+    const { hud, bar } = setup()
+    const inner = hud as unknown as {
+      renderBar(ctx: Context, kind: string, spectating: boolean, device: string, hints: boolean, padLabels: BindingLabel[], under: boolean): void
+    }
+    const l = (button: BindingLabel['button'], label: string) => ({ button, label, action: { kind: 'menu', op: 'select' }, contextual: true }) as BindingLabel
+    inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('A', 'select'), l('X', 'Examine'), l('Y', 'Swap weapons'), l('LT', 'Shout')], true)
+    expect([...bar.querySelectorAll('.chip')].map((c) => c.textContent)).toEqual(['LTShout', 'YSwap weapons', 'XExamine', 'Aselect'])
+  })
 })
+

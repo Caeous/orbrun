@@ -9,6 +9,7 @@ import { formattedStringToText } from '@orbrun/webtiles'
 import { builtChannels } from './engine'
 import { atSurface } from './matrix'
 import { screen } from './screen'
+import { keysOf } from './rules'
 import { SCENARIOS } from './scenarios'
 import type { E2e } from './client'
 
@@ -32,6 +33,153 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     g = await at('inventory')
     await g.key('Enter')
     expect(screen(g).surface).toBe('popup:describe-item')
+  })
+
+  it('Y brings the pack back on the page and the item it was left on, for reading the same scroll again', async () => {
+    const g = await at('gear-scrolls-two')
+    expect(screen(g).title).toMatch(/^Scrolls/)
+    const first = screen(g).lit
+    await g.dpad(4)
+    const second = screen(g).lit
+    expect(second).not.toBe(first)
+    await g.press('B')
+    expect(screen(g).mode).toBe('command')
+    await g.press('Y')
+    expect(screen(g).title).toMatch(/^Scrolls/)
+    expect(screen(g).lit).toBe(second)
+  })
+
+  it('turning the pack never leaves the cursor on a section header', async () => {
+    const give = async (g: E2e, name: string) => {
+      await g.raw('&%')
+      await g.raw(name + '\r')
+      await g.raw(',')
+      for (let i = 0; i < 8 && g.ctx().mode === 'more'; i++) await g.key(' ')
+    }
+    const g = await atSurface({
+      id: 'gear-header',
+      about: 'the pack with three kinds of potion and two weapons, so the Gear page has a header third',
+      surface: 'menu:inventory',
+      setup: async (g) => {
+        await g.raw('&')
+        await g.raw('wiz\r')
+        await g.raw('\x1b')
+        for (const name of ['potion of curing', 'potion of might', 'potion of heal wounds', 'dagger']) await give(g, name)
+        await g.press('Y')
+      },
+    })
+    open.push(g)
+    await g.press('RB')
+    expect(screen(g).title).toMatch(/^Potions/)
+    await g.dpad(4)
+    await g.dpad(4)
+    // the third potion's index is the Armour header on the Gear page: crawl keeps the index across the turn
+    await g.press('LB')
+    expect(screen(g).title).toMatch(/^Gear/)
+    expect(screen(g).lit).toMatch(/scale mail/)
+    expect(g.state().menus.at(-1)!.last_hovered).toBe(4)
+  })
+
+  it("X's actions: the bumpers turn crawl's spell, ability, evoke and quiver menus, an empty one saying so, and X comes back to the last", async () => {
+    const g = await at('actions-spells')
+    const frame = () => g.root.querySelector('.action-tabs')
+    const tab = () => frame()?.querySelector('.pack-tabs .current')?.textContent
+    const empty = () => frame()?.querySelector('.action-empty')?.textContent
+    expect(screen(g).title).toMatch(/^Your spells \(cast\)/)
+    expect(tab()).toBe('Spells')
+    expect(screen(g).bar).toMatchObject({ LB: 'Quiver', RB: 'Abilities', Y: 'Swap weapons', LT: 'Shout' })
+    // a Conjurer has no abilities and no wands: crawl's own line stands where its menu would
+    await g.press('RB')
+    expect(tab()).toBe('Abilities')
+    expect(empty()).toBe("Sorry, you're not good enough to have a special ability.")
+    await g.press('RB')
+    expect(tab()).toBe('Evocables')
+    expect(empty()).toBe("You aren't carrying any items that you can evoke.")
+    await g.press('RB')
+    expect(screen(g).surface).toBe('menu:actions')
+    expect(tab()).toBe('Quiver')
+    await g.press('RB')
+    expect(screen(g).surface).toBe('menu:spell')
+    // back to Quiver and away: X opens the actions on it again
+    await g.press('LB')
+    expect(screen(g).surface).toBe('menu:actions')
+    await g.press('B')
+    expect(screen(g).mode).toBe('command')
+    expect(frame()).toBeNull()
+    await g.press('X')
+    expect(screen(g).surface).toBe('menu:actions')
+  })
+
+  it("the actions never leave the screen bare: the empty frame stays until crawl's menu stands in its place", async () => {
+    // a Berserker's LB turns back to an empty Spells; RB turns to the abilities crawl lists
+    const g = await at('actions-abilities')
+    await g.press('LB')
+    expect(g.root.querySelector('.action-tabs .action-empty')?.textContent).toBe("You don't know any spells.")
+    let bare = false
+    const mo = new (g.root.ownerDocument.defaultView as unknown as typeof globalThis).MutationObserver(() => {
+      if (!g.root.querySelector('.popup')) bare = true
+    })
+    mo.observe(g.root, { subtree: true, childList: true })
+    await g.press('RB')
+    mo.disconnect()
+    expect(screen(g).surface).toBe('menu:ability')
+    expect(bare).toBe(false)
+  })
+
+  it("the actions' Y swaps weapons and LT shouts, from crawl's menu or an empty tab", async () => {
+    let g = await at('actions-empty')
+    expect(g.root.querySelector('.action-tabs .action-empty')?.textContent).toBe("You don't know any spells.")
+    g.clearSent()
+    await g.press('LT')
+    expect(screen(g).title).toBe('What are your orders?')
+    expect(g.root.querySelector('.action-tabs')).toBeNull()
+    g = await at('actions-quiver')
+    g.clearSent()
+    await g.press('Y')
+    expect(keysOf(g.sent)).toBe(JSON.stringify([27, 39]))
+    expect(screen(g).mode).toBe('command')
+  })
+
+  it("the actions keep up with a quick player: presses ahead of crawl move the tab, and no key lands in a menu still opening", async () => {
+    const g = await at('actions-spells')
+    const tab = () => g.root.querySelector('.action-tabs .pack-tabs .current')?.textContent
+    g.clearSent()
+    await g.burst(['RB', 'RB'])
+    expect(tab()).toBe('Evocables')
+    // one Escape for the cast list, then Evocables' key alone: Abilities was passed by
+    expect(keysOf(g.sent)).toBe(JSON.stringify([27, 'V'.charCodeAt(0)]))
+    g.clearSent()
+    await g.burst(['RB', 'RB', 'RB'])
+    expect(tab()).toBe('Abilities')
+    // Quiver's key was out before the next presses came: its menu, then the Escape, then Abilities'
+    expect(keysOf(g.sent)).toBe(JSON.stringify(['Q', 27, 'a'].map((k) => (typeof k === 'string' ? k.charCodeAt(0) : k))))
+  })
+
+  it("the arrows and the d-pad's left and right turn the actions, crawl's menus and the empty tabs alike", async () => {
+    const g = await at('actions-spells')
+    const tab = () => g.root.querySelector('.action-tabs .pack-tabs .current')?.textContent
+    await g.key('ArrowRight')
+    expect(tab()).toBe('Abilities')
+    await g.key('ArrowRight')
+    expect(tab()).toBe('Evocables')
+    await g.dpad(2)
+    expect(screen(g).surface).toBe('menu:actions')
+    await g.key('ArrowLeft')
+    expect(tab()).toBe('Evocables')
+    await g.dpad(6)
+    expect(tab()).toBe('Abilities')
+  })
+
+  it('the actions on the keyboard: F3 opens them, the arrows turn an empty tab, Escape puts them away', async () => {
+    const g = await at('actions-empty')
+    await g.key('Escape')
+    expect(g.root.querySelector('.action-tabs')).toBeNull()
+    await g.key('F3')
+    expect(g.root.querySelector('.action-tabs .pack-tabs .current')?.textContent).toBe('Spells')
+    await g.key('ArrowRight')
+    expect(g.root.querySelector('.action-tabs .pack-tabs .current')?.textContent).toBe('Abilities')
+    await g.key('F3')
+    expect(g.root.querySelector('.action-tabs')).toBeNull()
   })
 
   it("an item's description: A and Enter do the lit verb, the first on its actions line", async () => {
@@ -152,5 +300,31 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     g = await at('look')
     await g.key('Enter')
     expect(screen(g).surface).toMatch(/^popup:describe-/)
+  })
+
+  it('Select closes the level map, and Select opens it again', async () => {
+    const g = await at('level-map')
+    await g.press('SELECT')
+    expect(screen(g).mode).toBe('command')
+    await g.press('SELECT')
+    expect(screen(g).surface).toBe('levelmap')
+  })
+
+  it('the level map: Y, L3 and R3 leave it for the travel prompt, the stash search and the overview', async () => {
+    let g = await at('level-map')
+    await g.press('Y')
+    expect(screen(g).surface).toBe('menu:travel')
+    g = await at('level-map')
+    await g.press('L3')
+    expect(screen(g).surface).toMatch(/^text:/)
+    // the map stays drawn under the search, the minimap still put away as the map puts it, until the search is put away
+    const minimapHidden = () => g.root.querySelector('canvas.minimap')!.classList.contains('hidden')
+    expect(minimapHidden()).toBe(true)
+    await g.press('B')
+    expect(screen(g).mode).toBe('command')
+    expect(minimapHidden()).toBe(false)
+    g = await at('level-map')
+    await g.press('R3')
+    expect(screen(g).surface).toBe('popup:formatted-scroller')
   })
 })

@@ -70,6 +70,8 @@ export interface RunnerHooks {
   now(): number
   /** A melee attack went out: the weapon lifts a touch (rendering-3d.md II.7). */
   swing(): void
+  /** Keys that leave the level map for another screen went out: keep the map drawn till it is up (map-hold.ts). */
+  keepMap?(): void
 }
 
 /**
@@ -492,6 +494,7 @@ export class Runner {
   execute(a: Action) {
     switch (a.kind) {
       case 'keys':
+        if (a.keepsMap) this.hooks.keepMap?.()
         this.sendKeys(a.seq)
         break
       case 'step':

@@ -93,18 +93,28 @@ describe('a hold in progress fills its prompt', () => {
     const hud = new Hud(host, { onSelectMonster() {}, onBarAction() {}, onMinimapClick() {}, onPanelItem() {}, onPanelShow() {} })
     const inner = hud as unknown as { renderBar(c: Context, k: string, spectating: boolean, device: string, hints: boolean): void; showHold(h: { button: string; fraction: number } | null): void; actionbar: HTMLElement }
     inner.renderBar(ctx({ injured: true }), 'xbox', false, 'pad', true)
-    const chip = inner.actionbar.querySelector('.chip.X') as HTMLElement
+    const chip = inner.actionbar.querySelector('.chip.LB') as HTMLElement
     expect(chip.querySelector('.hold')?.textContent).toBe('Rest')
     expect(chip.querySelector('.hold path')?.getAttribute('pathLength')).toBe('1')
-    inner.showHold({ button: 'X', fraction: 0.5 })
+    inner.showHold({ button: 'LB', fraction: 0.5 })
     expect(chip.classList.contains('holding')).toBe(true)
     expect(chip.style.getPropertyValue('--hold')).toBe('0.5')
-    inner.showHold({ button: 'X', fraction: 1.5 })
+    inner.showHold({ button: 'LB', fraction: 1.5 })
     expect(chip.style.getPropertyValue('--hold')).toBe('1')
     inner.showHold(null)
     expect(chip.classList.contains('holding')).toBe(false)
     expect(chip.style.getPropertyValue('--hold')).toBe('')
-    expect(inner.actionbar.querySelector('.chip.X')).toBe(chip)
+    expect(inner.actionbar.querySelector('.chip.LB')).toBe(chip)
+  })
+})
+
+describe('the level map', () => {
+  it('lays its prompts along its foot in the pairs that go together, one over the other', () => {
+    const el = bar(ctx({ mode: 'levelmap', mapCursorHome: true }))
+    expect(el.classList.contains('foot')).toBe(true)
+    const pairs = [...el.querySelectorAll('.foot-pair')].map((p) => [...p.querySelectorAll('.chip')].map((c) => c.classList[1]))
+    expect(pairs).toEqual([['LB', 'RB'], ['LT', 'RT'], ['L3', 'R3'], ['Y', 'X']])
+    expect(bar(ctx({ mode: 'command' })).classList.contains('foot')).toBe(false)
   })
 })
 
@@ -139,14 +149,14 @@ describe('the pad menu strip', () => {
   }
   const chips = (side: Element) => [...side.querySelectorAll('.chip')].map((c) => [c.classList[1], c.querySelector('.label')?.textContent])
 
-  it('stacks each pair in its corner, Actions and Equipment at the foot', () => {
+  it('stands Select in the left corner and the right hand\'s three in the right, Spells at the foot', () => {
     const inner = hud()
     inner.renderMenus(ctx({}), 'xbox', true)
     expect(inner.menubar.hidden).toBe(false)
     const [left, right] = inner.menubar.querySelectorAll('.side')
-    expect(chips(left)).toEqual([['SELECT', 'Travel'], ['LB', 'Actions']])
-    expect(chips(right)).toEqual([['START', 'Character'], ['Y', 'Equipment']])
-    expect(inner.menubar.querySelector('.chip.LB svg')).not.toBeNull()
+    expect(chips(left)).toEqual([['SELECT', 'Level map']])
+    expect(chips(right)).toEqual([['START', 'Character'], ['Y', 'Gear'], ['X', 'Spells']])
+    expect(inner.menubar.querySelector('.chip.X svg')).not.toBeNull()
   })
 
   it('is only for the play view, not a menu, aiming, the keyboard or a spectator', () => {

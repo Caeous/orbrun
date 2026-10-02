@@ -1,6 +1,8 @@
 import { MouseMode, UiState, floorItemsLabel, formattedStringToSpans, formattedStringToText, isStationaryItemName, topMenu, topPopup, type GameState, type MenuState, type Monster } from '@orbrun/webtiles'
 import { cellAhead, cellUnder, billboardsAt, getCell, isThreat, monstersInView, type Camera, type Feature, type Scene, type SceneCell } from '@orbrun/scene'
 import type { FocusInfo } from './focus'
+import { neighbour, packStrip } from './pack-tabs'
+import { actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
 
 export type Mode =
   | 'command'
@@ -83,6 +85,10 @@ export interface MenuContext {
   helpKey?: string
   /** a row picked takes effect at once (the known-items menu's autopickup): nothing is marked, nothing accepted */
   togglesAtOnce?: boolean
+  /** the pack's pages as tabs (pack-tabs.ts): the page up (its id), and the labels of the ones the bumpers turn to, when there is another page to turn to */
+  pack?: { current?: string; prev?: string; next?: string }
+  /** one of X's actions as tabs (action-tabs.ts): the tab up, and the labels of the ones the bumpers turn to */
+  actions?: { current: ActionTabId; prev: string; next: string }
   /** the shop menu (tag `shop`): what its letters, `$` and Enter do right now */
   shop?: ShopContext
 }
@@ -591,6 +597,10 @@ function menuContext(state: GameState): MenuContext | undefined {
   if (help) ctx.helpKey = help[1] ?? help[2]
   if (known) ctx.togglesAtOnce = true
   if (menu.tag === 'shop') ctx.shop = shopContext(menu)
+  const strip = packStrip(menu, state)
+  if (strip) ctx.pack = { current: strip.tabs[strip.current]?.id, prev: strip.tabs[neighbour(strip, -1)]?.label, next: strip.tabs[neighbour(strip, 1)]?.label }
+  const tab = actionTabOf(menu)
+  if (tab) ctx.actions = { current: tab, prev: actionTab(actionNeighbour(tab, -1)).label, next: actionTab(actionNeighbour(tab, 1)).label }
   return ctx
 }
 

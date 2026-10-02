@@ -7,7 +7,9 @@ import { loadGamedata, type Gamedata } from '@orbrun/gamedata'
 import { initialState, MouseMode, reduce, type ClientMessage } from '@orbrun/webtiles'
 import { emptyScene } from '@orbrun/scene'
 import { Overlays, commandTileId } from '../src/overlays'
-import { BATTLE_COMMANDS, CHARACTER_COMMANDS, COMMAND_MENUS, EQUIPMENT_COMMANDS, GAMEPAD_COMMAND_KEYS, REPEAT_COMMAND, TRAVEL_COMMANDS } from '../src/command-menu'
+import { PAGES } from '../src/pack-tabs'
+import { CHARACTER_COMMANDS, GAMEPAD_COMMAND_KEYS, REPEAT_COMMAND } from '../src/command-menu'
+import { ACTION_TABS } from '../src/action-tabs'
 import { deriveContext } from '../src/context'
 import { resolve, type Action } from '../src/bindings'
 import commands from '../data/commands.json'
@@ -26,34 +28,19 @@ function setup() {
   const run = vi.fn<(a: Action) => void>()
   const focused = () => host.querySelector('.command-menu .focused .label, .sysmenu .focused .label')?.textContent
   const system = (spectating = false) => ov.showSystem({ spectating, inGame: true, run })
-  return { ov, host, sent, run, focused, changed, system }
+  /** a small list of choices, as a client menu is shown (Overlays.showChoices) */
+  const list = () => ov.showChoices('Actions', ROWS.map((label) => ({ label, run: () => run({ kind: 'keys', label, seq: [] }) })))
+  return { ov, host, sent, run, focused, changed, system, list }
 }
+
+const ROWS = ['Cast spell', 'Use ability', 'Evoke item', 'Swap weapons', 'Quiver item / action', 'Primary attack', 'Shout / order allies']
 
 afterEach(() => { document.body.replaceChildren() })
 
 describe('the command menus', () => {
-  it('offers native commands in stable order and sends exactly their keys', () => {
-    const h = setup()
-    for (const menu of COMMAND_MENUS) {
-      h.ov.showCommands(h.run, menu.id)
-      expect([...h.host.querySelectorAll('.command-menu ol .label')].map((r) => r.textContent)).toEqual(menu.entries.map((c) => c.label))
-      expect(new Set(menu.entries.map((c) => c.key)).size).toBe(menu.entries.length)
-      for (const c of menu.entries) {
-        if (c.action.kind !== 'keys' || c.action.seq.length !== 1) continue
-        const step = c.action.seq[0]
-        const native = 'text' in step ? step.text : String.fromCharCode(step.key)
-        expect(commands.some((entry) => entry.mode === 'command' && entry.key === native)).toBe(true)
-        h.ov.showCommands(h.run, menu.id)
-        expect(h.ov.clientOverlayHotkey(c.key)).toBe(true)
-        expect(h.run).toHaveBeenLastCalledWith(c.action)
-        expect(h.ov.hasClientOverlay).toBe(false)
-      }
-    }
-  })
-
   it('puts the whole menu away on Select, wherever in it the cursor stands', () => {
     const h = setup()
-    h.ov.showCommands(h.run, 'travel')
+    h.list()
     expect(h.ov.hasClientOverlay).toBe(true)
     expect(h.ov.clientOverlayInput('close')).toBe(true)
     expect(h.ov.hasClientOverlay).toBe(false)
@@ -68,36 +55,12 @@ describe('the command menus', () => {
     expect(back).not.toHaveBeenCalled()
   })
 
-  it('gives each button its own list, with no command on two of them', () => {
-    expect(BATTLE_COMMANDS.map((c) => c.key)).toEqual(['q', 'r', 'z *', 'a', 'V', "'", 'Q', 'v', 't'])
-    // the quiver cycles (`)` and `(`) are the palette's, not the button's
-    expect(BATTLE_COMMANDS.some((c) => c.key === ')' || c.key === '(')).toBe(false)
-    // Y is the gear button, and the pack is the first thing it opens
-    expect(EQUIPMENT_COMMANDS[0].key).toBe('i')
-    const lists = [...COMMAND_MENUS.map((m) => m.entries), CHARACTER_COMMANDS]
-    const every = lists.flat()
-    expect(new Set(every.map((c) => c.key)).size).toBe(every.length)
-    for (const c of every) expect(GAMEPAD_COMMAND_KEYS.has(c.key)).toBe(false)
+  it("gives the Start menu its own commands, with none of the pad's own among them", () => {
+    expect(new Set(CHARACTER_COMMANDS.map((c) => c.key)).size).toBe(CHARACTER_COMMANDS.length)
+    for (const c of CHARACTER_COMMANDS) expect(GAMEPAD_COMMAND_KEYS.has(c.key)).toBe(false)
     // Repeat and Save are the Start menu's own rows, not commands on a list
     expect(REPEAT_COMMAND.key).toBe('`')
-    expect(every.some((c) => c.key === '`' || c.key === 'S')).toBe(false)
-  })
-
-  it('a button menu has no tabs, search or More, and tab navigation stays in it', () => {
-    const h = setup()
-    for (const menu of COMMAND_MENUS) {
-      h.ov.showCommands(h.run, menu.id)
-      expect(h.host.querySelector('.title')?.textContent).toBe(menu.title)
-      expect(h.host.querySelector('.command-tabs')).toBeNull()
-      h.ov.clientOverlayInput('right')
-      h.ov.clientOverlayInput('catNext')
-      expect([...h.host.querySelectorAll('.command-menu .label')].map((r) => r.textContent)).toEqual(menu.entries.map((c) => c.label))
-      expect(h.host.textContent).not.toContain('All commands / search')
-      expect(h.host.textContent).not.toContain('More…')
-      expect(h.host.querySelector('input')).toBeNull()
-    }
-    expect(h.run).not.toHaveBeenCalled()
-    expect(h.sent).toEqual([])
+    expect(CHARACTER_COMMANDS.some((c) => c.key === '`' || c.key === 'S')).toBe(false)
   })
 
   it('search omits direct gamepad commands but keeps battle actions and other modes intact', () => {
@@ -133,30 +96,27 @@ describe('the command menus', () => {
     expect(h.sent).toEqual([])
   })
 
-  it('the footer reads in the words of the device that spoke last: key caps on the keyboard, glyphs on the pad', () => {
+  it('the footer is the keyboard\'s, with key caps; the pad\'s prompts stand under the panel instead', () => {
     const h = setup()
     h.system()
     const more = h.host.querySelector('.command-menu .more')!
-    // by default and after the keyboard, the pad reading is hidden and the keyboard one carries key caps, no glyphs
     h.ov.setDevice('keyboard')
     expect(h.host.querySelector('.overlay-stack')?.classList.contains('device-keyboard')).toBe(true)
-    expect([...more.querySelectorAll('.kbd-only kbd')].map((k) => k.textContent)).toEqual(['←', '→', 'Enter', 'Esc'])
-    expect(more.querySelector('.kbd-only svg')).toBeNull()
-    expect(more.querySelector('.pad-only svg')).not.toBeNull()
-    expect(more.querySelector('.pad-only')?.textContent).not.toContain('Back')
-    expect(more.querySelectorAll('.pad-only svg')).toHaveLength(3) // LB, RB and A only
-    // the pad speaks: the class flips without a rebuild, the same footer element
+    expect(more.classList.contains('kbd-only')).toBe(true)
+    expect([...more.querySelectorAll('kbd')].map((k) => k.textContent)).toEqual(['←', '→', 'Enter', 'Esc'])
+    expect(more.querySelector('svg')).toBeNull()
+    expect(h.ov.padPrompts?.map((l) => l.button + ' ' + l.label)).toEqual(['A select'])
+    // the pad speaks: the class flips without a rebuild, the same footer element, hidden by it
     h.ov.setDevice('pad')
     expect(h.host.querySelector('.overlay-stack')?.classList.contains('device-pad')).toBe(true)
     expect(h.host.querySelector('.command-menu .more')).toBe(more)
     // a pointer counts as the keyboard's side, as the prompt card does
     h.ov.setDevice('pointer')
     expect(h.host.querySelector('.overlay-stack')?.classList.contains('device-keyboard')).toBe(true)
-    // a button's own list has no tabs to switch, so its footer says only what fires a row
-    h.ov.showCommands(h.run, 'travel')
+    // a list with no tabs to switch: its footer says only what fires a row
+    h.list()
     const flat = h.host.querySelector('.command-menu .more')!
-    expect([...flat.querySelectorAll('.kbd-only kbd')].map((k) => k.textContent)).toEqual(['Enter', 'Esc'])
-    expect(flat.querySelectorAll('.pad-only svg')).toHaveLength(1)
+    expect([...flat.querySelectorAll('kbd')].map((k) => k.textContent)).toEqual(['Enter', 'Esc'])
   })
 
   it('keeps the dialog and tabs mounted when bumpers, arrows or pointer change tabs', () => {
@@ -193,47 +153,43 @@ describe('the command menus', () => {
     expect(h.host.querySelector('.command-tabs .current')?.textContent).toBe('Character')
     h.ov.clientOverlayInput('pagePrev')
     expect(h.focused()).toBe('Skills')
-    h.ov.showCommands(h.run)
+    h.list()
     h.ov.clientOverlayInput('bumperNext')
     expect(h.focused()).toBe('Shout / order allies')
     h.ov.clientOverlayInput('bumperPrev')
-    expect(h.focused()).toBe('Quaff potion')
+    expect(h.focused()).toBe('Cast spell')
     expect(h.run).not.toHaveBeenCalled()
   })
 
   it('does not spend a turn browsing, remembers selection, and Start submits it', () => {
     const h = setup()
-    h.ov.showCommands(h.run)
+    h.list()
     h.ov.clientOverlayInput('next')
     h.ov.clientOverlayInput('cancel')
     expect(h.run).not.toHaveBeenCalled()
     expect(h.sent).toEqual([])
-    h.ov.showCommands(h.run)
-    expect(h.focused()).toBe('Read scroll')
+    h.list()
+    expect(h.focused()).toBe('Use ability')
     h.ov.clientOverlayInput('submit')
-    expect(h.run).toHaveBeenCalledExactlyOnceWith(BATTLE_COMMANDS[1].action)
+    expect(h.run).toHaveBeenCalledExactlyOnceWith({ kind: 'keys', label: 'Use ability', seq: [] })
     expect(h.ov.hasClientOverlay).toBe(false)
   })
 
-  it('each button comes back to the row a command was picked from, by click or by pad', () => {
+  it('the list comes back to the row a command was picked from, by click or by pad', () => {
     const h = setup()
-    h.ov.showCommands(h.run, 'equipment')
-    expect(h.focused()).toBe('Inventory')
-    const wear = [...h.host.querySelectorAll<HTMLElement>('.command-menu ol li')].find((r) => r.textContent?.startsWith('Wear armour'))!
-    wear.click()
+    h.list()
+    expect(h.focused()).toBe('Cast spell')
+    const evoke = [...h.host.querySelectorAll<HTMLElement>('.command-menu ol li')].find((r) => r.textContent?.startsWith('Evoke item'))!
+    evoke.click()
     expect(h.run).toHaveBeenCalledTimes(1)
     expect(h.ov.hasClientOverlay).toBe(false)
-    // another button's list keeps its own cursor, untouched by the one next door
-    h.ov.showCommands(h.run, 'travel')
-    expect(h.focused()).toBe('Level map')
+    h.list()
+    expect(h.focused()).toBe('Evoke item')
     h.ov.clientOverlayInput('next')
     h.ov.clientOverlayInput('submit')
     expect(h.run).toHaveBeenCalledTimes(2)
-    h.ov.showCommands(h.run, 'equipment')
-    expect(h.focused()).toBe('Wear armour')
-    h.ov.clientOverlayInput('close')
-    h.ov.showCommands(h.run, 'travel')
-    expect(h.focused()).toBe('Go down a floor')
+    h.list()
+    expect(h.focused()).toBe('Swap weapons')
     expect(h.sent).toEqual([])
   })
 
@@ -275,16 +231,6 @@ describe('the command menus', () => {
     expect([...h.host.querySelectorAll('.sysrows li.sep .label')].map((r) => r.textContent)).toEqual(['Gamepad controls', 'Stop watching'])
     expect(h.run).not.toHaveBeenCalled()
     expect(h.sent).toEqual([])
-  })
-
-  it('Select offers map and G travel, with prompt-gated nearest-stairs shortcuts', () => {
-    const h = setup()
-    h.ov.showCommands(h.run, 'travel')
-    expect(h.focused()).toBe('Level map')
-    h.ov.clientOverlayHotkey('G')
-    expect(h.run).toHaveBeenLastCalledWith(expect.objectContaining({ seq: [{ text: 'G' }] }))
-    expect(TRAVEL_COMMANDS.find((c) => c.key === 'G <')!.action).toMatchObject({ seq: [{ text: 'G' }, { text: '<', await: 'prompt' }] })
-    expect(TRAVEL_COMMANDS.find((c) => c.key === 'G >')!.action).toMatchObject({ seq: [{ text: 'G' }, { text: '>', await: 'prompt' }] })
   })
 
   it('recorded pickup: A marks an item, and once one is marked Start sends Enter instead of selecting another item', () => {
@@ -336,14 +282,13 @@ describe('the command icons', () => {
   })
 
   it('names a tile crawl has, for every command that carries one', () => {
-    const named = [...BATTLE_COMMANDS, ...TRAVEL_COMMANDS, ...EQUIPMENT_COMMANDS, ...CHARACTER_COMMANDS].filter((c) => c.tile)
+    const named = [...ACTION_TABS, ...CHARACTER_COMMANDS].filter((c) => c.tile)
     expect(named.length).toBeGreaterThan(0)
     expect(named.filter((c) => commandTileId(gd, c.tile) === undefined).map((c) => `${c.label}: ${c.tile}`)).toEqual([])
   })
 
-  // the menu a button opens should read as icons, not as a column of gaps
-  it("gives every travel command an icon of crawl's own", () => {
-    expect(TRAVEL_COMMANDS.filter((c) => !c.tile)).toEqual([])
+  it("names a tile crawl has for every page of the pack", () => {
+    expect(PAGES.filter((p) => commandTileId(gd, p.tile) === undefined).map((p) => `${p.label}: ${p.tile}`)).toEqual([])
   })
 
   it('has no icon where gamedata has not loaded', () => {

@@ -3,9 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cm, initialState } from '@orbrun/webtiles'
 import { GamepadHints } from '../src/gamepad-hints'
 import { GameScreen } from '../src/game'
-import { HOLD_MS, type Action } from '../src/bindings'
+import { HOLD_MS, LEVEL_MAP, type Action } from '../src/bindings'
 import type { Context } from '../src/context'
 import type { Button, PadEvent } from '../src/gamepad'
+
+/** X from the map: crawl's spell menu, `z` (its `*` follows once `z` asks, game.ts trackActions) */
+const SPELLS: Action = { kind: 'keys', label: 'Spells', seq: [{ text: 'z' }] }
 
 /** An inventory with sections: X describes its rows and the bumpers jump between them. */
 const SECTIONED = { menu: { tag: 'inventory', items: [], flags: 0 } as never, hoverable: [], arrowsSelect: true, multiselect: false, wrap: false, filter: false, sections: true, anyMarked: false }
@@ -17,7 +20,7 @@ function harness() {
   const send = vi.fn()
   const step = vi.fn()
   const ctx: Context = { mode: 'command', layer: 'micro', ahead: { kind: 'none', label: '' }, under: { kind: 'none', label: '' }, hostilesInView: 0 }
-  const overlays = { hasClientOverlay: false, openMenu: null as string | null, clientOverlayInput: vi.fn(), showCommands: vi.fn(), showPalette: vi.fn(), showSystem: vi.fn(), menuKey: () => false, focusInfo: () => null }
+  const overlays = { hasClientOverlay: false, openMenu: null as string | null, clientOverlayInput: vi.fn(), showActionTabs: vi.fn(), showPalette: vi.fn(), showSystem: vi.fn(), menuKey: () => false, focusInfo: () => null }
   const state = initialState()
   const hints = new GamepadHints()
   const screen = Object.assign(Object.create(GameScreen.prototype), {
@@ -27,7 +30,7 @@ function harness() {
     holding: null,
     // This input-only harness bypasses the constructor and has no frame loop or renderer.
     wake: vi.fn(),
-    lastInput: 'pad', pointerLive: false,
+    lastInput: 'pad', pointerLive: false, actionTabUp: 'spells',
   }) as { pad(ev: PadEvent): void; fireHolds(t: number): void; holding: { button: Button; fraction: number } | null; onKeyDown(ev: KeyboardEvent): void; uiOp(op: string): void }
   const event = (ev: PadEvent) => {
     if (ev.type === 'press') held.add(ev.button)
@@ -52,12 +55,12 @@ describe('direct game input', () => {
     expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'keys', seq: [{ key: 27 }], label: 'Cancel' })
   })
 
-  it('B cancels a pending X rest without spending a turn', () => {
+  it('B cancels a pending LB rest without spending a turn', () => {
     const h = harness()
-    h.event({ type: 'press', button: 'X', t: 0 })
+    h.event({ type: 'press', button: 'LB', t: 0 })
     h.event({ type: 'press', button: 'B', t: 100 })
     h.screen.fireHolds(HOLD_MS)
-    h.event({ type: 'release', button: 'X', t: 500, held: 500 })
+    h.event({ type: 'release', button: 'LB', t: 500, held: 500 })
     expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'keys', seq: [{ key: 27 }], label: 'Cancel' })
   })
 
@@ -71,38 +74,38 @@ describe('direct game input', () => {
     expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'examine' })
   })
 
-  it('waits on X release, never on press', () => {
+  it('waits on LB release, never on press', () => {
     const h = harness()
-    h.event({ type: 'press', button: 'X', t: 0 })
+    h.event({ type: 'press', button: 'LB', t: 0 })
     h.screen.fireHolds(100)
     expect(h.execute).not.toHaveBeenCalled()
-    h.event({ type: 'release', button: 'X', t: 150, held: 150 })
+    h.event({ type: 'release', button: 'LB', t: 150, held: 150 })
     expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: '.' }] }))
   })
 
-  it('reports how far a held X has come towards the rest, for its corner prompt, and nothing once released or fired', () => {
+  it('reports how far a held LB has come towards the rest, for its corner prompt, and nothing once released or fired', () => {
     const h = harness()
-    h.event({ type: 'press', button: 'X', t: 0 })
+    h.event({ type: 'press', button: 'LB', t: 0 })
     h.screen.fireHolds(HOLD_MS / 4)
-    expect(h.screen.holding).toEqual({ button: 'X', fraction: 0.25 })
+    expect(h.screen.holding).toEqual({ button: 'LB', fraction: 0.25 })
     h.screen.fireHolds(HOLD_MS)
     expect(h.screen.holding).toBeNull()
-    h.event({ type: 'release', button: 'X', t: HOLD_MS, held: HOLD_MS })
-    h.event({ type: 'press', button: 'X', t: 1000 })
+    h.event({ type: 'release', button: 'LB', t: HOLD_MS, held: HOLD_MS })
+    h.event({ type: 'press', button: 'LB', t: 1000 })
     h.screen.fireHolds(1100)
     expect(h.screen.holding).not.toBeNull()
-    h.event({ type: 'release', button: 'X', t: 1150, held: 150 })
+    h.event({ type: 'release', button: 'LB', t: 1150, held: 150 })
     expect(h.screen.holding).toBeNull()
   })
 
   it('rests once at the hold threshold, with no wait before or after it', () => {
     const h = harness()
-    h.event({ type: 'press', button: 'X', t: 0 })
+    h.event({ type: 'press', button: 'LB', t: 0 })
     h.screen.fireHolds(HOLD_MS - 1)
     expect(h.execute).not.toHaveBeenCalled()
     h.screen.fireHolds(HOLD_MS)
     h.screen.fireHolds(HOLD_MS * 2)
-    h.event({ type: 'release', button: 'X', t: 1000, held: 1000 })
+    h.event({ type: 'release', button: 'LB', t: 1000, held: 1000 })
     expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: '5' }] }))
   })
 
@@ -126,20 +129,20 @@ describe('direct game input', () => {
 
   it('a mode change cancels a pending rest instead of turning a prompt into gameplay', () => {
     const h = harness()
-    h.event({ type: 'press', button: 'X', t: 0 })
+    h.event({ type: 'press', button: 'LB', t: 0 })
     h.ctx.mode = 'menu'
     h.screen.fireHolds(HOLD_MS)
     h.ctx.mode = 'command'
-    h.event({ type: 'release', button: 'X', t: 200, held: 200 })
+    h.event({ type: 'release', button: 'LB', t: 200, held: 200 })
     expect(h.execute).not.toHaveBeenCalled()
   })
 
   it('another action cancels a pending hold', () => {
     const h = harness()
-    h.event({ type: 'press', button: 'X', t: 0 })
+    h.event({ type: 'press', button: 'LB', t: 0 })
     h.event({ type: 'press', button: 'RT', t: 100 })
     h.screen.fireHolds(HOLD_MS)
-    h.event({ type: 'release', button: 'X', t: 500, held: 500 })
+    h.event({ type: 'release', button: 'LB', t: 500, held: 500 })
     expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'fight' })
   })
 
@@ -164,7 +167,7 @@ describe('direct game input', () => {
     },
   )
 
-  it.each([false, true])('LB paging a menu cannot open the actions menu after it closes (client: %s)', (client) => {
+  it.each([false, true])('LB paging a menu cannot wait or rest after it closes (client: %s)', (client) => {
     for (const held of [100, HOLD_MS * 2]) {
       const h = harness()
       h.overlays.hasClientOverlay = client
@@ -182,7 +185,7 @@ describe('direct game input', () => {
     }
   })
 
-  it('X examining a menu cannot wait or rest after it closes', () => {
+  it('X examining a menu cannot open the actions after it closes', () => {
     for (const held of [100, HOLD_MS * 2]) {
       const h = harness()
       h.ctx.mode = 'menu'
@@ -238,9 +241,7 @@ describe('direct game input', () => {
 
   it.each([
     ['START', { kind: 'ui', op: 'system' }],
-    ['LB', { kind: 'ui', op: 'commands' }],
-    ['Y', { kind: 'ui', op: 'equipment' }],
-    ['SELECT', { kind: 'ui', op: 'travel' }],
+    ['X', { kind: 'ui', op: 'commands' }],
   ] as const)('%s opens its menu and the same button puts it away', (button, action) => {
     const h = harness()
     // the real uiOp opens the overlay; the mocked runner stands in for it
@@ -300,24 +301,40 @@ describe('direct game input', () => {
     expect(h.send).not.toHaveBeenCalled()
   })
 
-  it('each button opens its own list: LB the actions, Select travel, Y the gear', () => {
+  it('Select opens the level map; there a tap closes it and a hold opens its palette', () => {
     const h = harness()
     h.execute.mockImplementation((a) => { if (a.kind === 'ui') h.screen.uiOp(a.op) })
-    h.event({ type: 'press', button: 'LB', t: 0 })
-    expect(h.overlays.showCommands).toHaveBeenLastCalledWith(expect.any(Function), 'battle')
-    h.event({ type: 'press', button: 'SELECT', t: 1 })
-    expect(h.overlays.showCommands).toHaveBeenLastCalledWith(expect.any(Function), 'travel')
-    h.event({ type: 'press', button: 'Y', t: 2 })
-    expect(h.overlays.showCommands).toHaveBeenLastCalledWith(expect.any(Function), 'equipment')
-    expect(h.send).not.toHaveBeenCalled()
+    h.event({ type: 'press', button: 'SELECT', t: 0 })
+    h.event({ type: 'release', button: 'SELECT', t: 100, held: 100 })
+    expect(h.execute).toHaveBeenLastCalledWith(LEVEL_MAP)
+    expect(h.execute).not.toHaveBeenCalledWith(SPELLS)
+    h.ctx.mode = 'levelmap'
+    h.event({ type: 'press', button: 'SELECT', t: 200 })
+    h.event({ type: 'release', button: 'SELECT', t: 300, held: 100 })
+    expect(h.execute).toHaveBeenLastCalledWith({ kind: 'keys', seq: [{ key: 27 }], label: 'Close' })
+    h.event({ type: 'press', button: 'SELECT', t: 400 })
+    h.screen.fireHolds(400 + HOLD_MS)
+    h.event({ type: 'release', button: 'SELECT', t: 400 + HOLD_MS + 100, held: HOLD_MS + 100 })
+    expect(h.execute).toHaveBeenLastCalledWith({ kind: 'ui', op: 'palette', category: 'levelmap', section: undefined })
   })
 
-  it('F2 opens commands without forwarding a key; native command keys still reach Crawl', () => {
+  it("X opens the actions on crawl's own menu; Y opens the pack itself", () => {
+    const h = harness()
+    h.execute.mockImplementation((a) => { if (a.kind === 'ui') h.screen.uiOp(a.op) })
+    h.event({ type: 'press', button: 'X', t: 0 })
+    expect(h.execute).toHaveBeenLastCalledWith(SPELLS)
+    // the frame lights the tab at once, and crawl's menu takes its place when it comes
+    expect(h.overlays.showActionTabs).toHaveBeenCalledExactlyOnceWith('spells', null)
+    h.event({ type: 'press', button: 'Y', t: 2 })
+    expect(h.execute).toHaveBeenLastCalledWith({ kind: 'keys', label: 'Inventory', seq: [{ text: 'i' }] })
+  })
+
+  it('F2 opens the level map as Select does; native command keys still reach Crawl', () => {
     const h = harness()
     const f2 = new KeyboardEvent('keydown', { key: 'F2', code: 'F2', cancelable: true })
     h.screen.onKeyDown(f2)
     expect(f2.defaultPrevented).toBe(true)
-    expect(h.overlays.showCommands).toHaveBeenCalledExactlyOnceWith(expect.any(Function), 'travel')
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith(LEVEL_MAP)
     expect(h.send).not.toHaveBeenCalled()
     for (const key of ['q', 'r', 'z', 'm', 'g', 'G', '>', '<']) h.screen.onKeyDown(new KeyboardEvent('keydown', { key, cancelable: true }))
     expect(h.send.mock.calls.map(([m]) => m.text ?? m.keycode)).toEqual(['q', 'r', 'z', 'm', 'g', 'G', '>', '<'])
@@ -331,19 +348,22 @@ describe('direct game input', () => {
       expect(ev.defaultPrevented).toBe(true)
     }
     press('F3')
-    expect(h.overlays.showCommands).toHaveBeenLastCalledWith(expect.any(Function), 'battle')
+    expect(h.execute).toHaveBeenLastCalledWith(SPELLS)
     press('F4')
-    expect(h.overlays.showCommands).toHaveBeenLastCalledWith(expect.any(Function), 'equipment')
+    expect(h.execute).toHaveBeenLastCalledWith({ kind: 'keys', label: 'Inventory', seq: [{ text: 'i' }] })
     press('F5')
     expect(h.overlays.showSystem).toHaveBeenCalledOnce()
-    // Travel is open: F3 goes to the actions, F2 closes Travel
+    // the actions are open: F2 puts them away for the level map, which F2 puts away again
     h.overlays.hasClientOverlay = true
-    h.overlays.openMenu = 'travel'
-    press('F3')
-    expect(h.overlays.showCommands).toHaveBeenLastCalledWith(expect.any(Function), 'battle')
-    expect(h.overlays.clientOverlayInput).not.toHaveBeenCalled()
+    h.overlays.openMenu = 'battle'
     press('F2')
     expect(h.overlays.clientOverlayInput).toHaveBeenCalledExactlyOnceWith('close')
+    expect(h.execute).toHaveBeenLastCalledWith(LEVEL_MAP)
+    h.overlays.hasClientOverlay = false
+    h.overlays.openMenu = null
+    h.ctx.mode = 'levelmap'
+    press('F2')
+    expect(h.execute).toHaveBeenLastCalledWith({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] })
     expect(h.send).not.toHaveBeenCalled()
   })
 
@@ -351,7 +371,7 @@ describe('direct game input', () => {
     const h = harness()
     h.ctx.mode = 'targeting'
     for (const key of ['F3', 'F4']) h.screen.onKeyDown(new KeyboardEvent('keydown', { key, code: key, cancelable: true }))
-    expect(h.overlays.showCommands).not.toHaveBeenCalled()
+    expect(h.execute).not.toHaveBeenCalled()
     h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'F2', code: 'F2', cancelable: true }))
     expect(h.overlays.showPalette).toHaveBeenCalledExactlyOnceWith('targeting')
     expect(h.send).not.toHaveBeenCalled()
@@ -373,7 +393,7 @@ describe('direct game input', () => {
   it('F1 is left to Crawl, which binds it to the game menu', () => {
     const h = harness()
     h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'F1', code: 'F1', cancelable: true }))
-    expect(h.overlays.showCommands).not.toHaveBeenCalled()
+    expect(h.execute).not.toHaveBeenCalled()
     expect(h.overlays.showPalette).not.toHaveBeenCalled()
     expect(h.send).toHaveBeenCalledExactlyOnceWith(cm.key(-265))
   })

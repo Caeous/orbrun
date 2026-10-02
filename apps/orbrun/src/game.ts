@@ -1,11 +1,11 @@
-import { cm, mapKey, MouseMode, UiState, keyMessage, type ClientMessage, type GameMessage, type GameState } from '@orbrun/webtiles'
+import { cm, mapKey, MouseMode, MSGCH, UiState, formattedStringToText, keyMessage, topMenu, type ClientMessage, type GameMessage, type GameState } from '@orbrun/webtiles'
 import { autofightTarget, cellKey, dirFromDelta, isThreat, type Billboard, type CellKey, type MapRenderer, type Scene, type SceneCursor } from '@orbrun/scene'
 import { linesSince, namedInWarnings, namedMonster } from './warnings'
 import { Render3d } from '@orbrun/render-3d'
 import { viewmodelFor } from '@orbrun/scene-webtiles'
 import { Render2d } from '@orbrun/render-2d'
 import { RendererPark } from './park'
-import { escapeHtml, h } from './dom'
+import { escapeHtml, h, onDprChange } from './dom'
 import type { Session } from './session'
 import { CameraController } from './camera'
 import { deriveContext, deriveMode, type Context } from './context'
@@ -20,9 +20,12 @@ import { Overlays } from './overlays'
 import { directionKey, isTextEntry, keydownMessage } from './keys'
 import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
 import { gamepadHints, type PadHintEvidence } from './gamepad-hints'
+import { isPack, openPackKeys } from './pack-tabs'
+import { OKAY_THEN, SHOUT_KEY, SWAP_WEAPONS_KEY, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
 import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INSET, type Settings } from './servers'
 import { type SettingGroup } from './settings-rows'
 import { PerfOverlay, type LogContext } from './perf'
+import { MapHold } from './map-hold'
 
 /** The most drawn pixels per CSS pixel the game view gets (Part IV of rendering-3d.md): the display's density, capped here. */
 const VIEW_MAX_DPR = 1
@@ -75,6 +78,9 @@ export class GameScreen {
   /** The 3D view kept aside while the level map is open, to come back with its level and crowd standing (park.ts). */
   private park = new RendererPark()
   private lastMapView = false
+  /** The level map is on screen: crawl's own, or held across a key that left it (map-hold.ts). Set once a frame, before the layout reads it. */
+  private mapShown = false
+  private mapHold = new MapHold()
   private session: Session
   private cam = new CameraController()
   private runner: Runner
@@ -213,6 +219,24 @@ export class GameScreen {
    */
   private lastInput: InputDevice = 'keyboard'
   private padHints = gamepadHints()
+  /** the pack's page last up (pack-tabs.ts), which Y opens it on again */
+  private packPage: string | null = null
+  /** the item the cursor was last on in each of the pack's pages, by its letter: Y puts the cursor back on it */
+  private packRow = new Map<string, number>()
+  /** Y opened the pack: the page it is turning to, and whether the pack has been up since */
+  private packReturn: { page: string; seen: boolean } | null = null
+  /** X's actions as tabs (action-tabs.ts): the one up last, which X opens again */
+  private actionTabUp: ActionTabId = 'spells'
+  /**
+   * A turn to one of X's tabs under way (`openActionTab`): the menu left
+   * being put away (`closing`), a tab's key sent and its menu or crawl's
+   * refusal awaited (`sent`), or, for Spells, `z`'s question answered with
+   * `*` (`listing`). `target` is the tab the player is turning to, `sent`
+   * the one whose key is out: presses quicker than crawl move the target
+   * only, and the turn goes on from whatever lands. `last` is the log's last
+   * line when the key went: crawl's answer is a line after it.
+   */
+  private actionTurn: { target: ActionTabId; sent: ActionTabId | null; stage: 'closing' | 'sent' | 'listing'; last?: GameMessage; t: number } | null = null
   private padStep: LastStep | null = null
   private padLooking = false
   /** right-stick travel accumulated toward the next level-map cursor step */
@@ -270,6 +294,7 @@ export class GameScreen {
       },
       onSystemAction: (op) => this.systemAction(op),
       settingsPanel: (group, back, controls) => this.hooks.settingsPanel(group, back, controls),
+      actionTab: (to) => this.openActionTab(to),
     })
     this.runner = new Runner(session, this.cam, {
       context: () => this.ctx,
@@ -281,6 +306,11 @@ export class GameScreen {
       confirmDangerous: () => this.hooks.settings().confirmStairs,
       now: () => performance.now(),
       swing: () => this.swing(),
+      keepMap: () => {
+        this.mapHold.begin(performance.now())
+        // a frame after the wait, so a hold nothing came for is let go even on a still screen
+        setTimeout(() => this.wake(), 1600)
+      },
     })
     this.ctx = deriveContext(session.state, session.scene, this.cam.camera, 'micro')
     this.lastInput = hooks.initialInput ?? 'keyboard'
@@ -293,6 +323,7 @@ export class GameScreen {
         } else if (e.type === 'state') {
           this.wake()
           this.trackHop()
+          this.trackActions(performance.now(), false)
           if (e.msg.msg === 'input_mode') this.payOwedTurn()
           // a new game on the same version reuses the loaded gamedata, so no
           // `gamedata` event follows: only wait when the session is fetching
@@ -322,6 +353,11 @@ export class GameScreen {
     window.addEventListener('keydown', this.onKeyDown, true)
     this.onResize = this.onResize.bind(this)
     window.addEventListener('resize', this.onResize)
+    // a move to a screen of another density need not resize the window, and every canvas is drawn for the old one
+    this.unsub.push(onDprChange(() => {
+      this.wake()
+      this.relayout(true)
+    }))
     this.onDocPointer = this.onDocPointer.bind(this)
     document.addEventListener('pointerdown', this.onDocPointer, true)
     this.onDocContextMenu = this.onDocContextMenu.bind(this)
@@ -377,14 +413,14 @@ export class GameScreen {
     const st = this.session.state
     const o = st.options
     const g = this.grid.grid
-    const mapView = st.uiState === UiState.VIEW_MAP
+    const mapView = this.mapShown
     const hideSidebar = mapView && o.tile_level_map_hide_sidebar === true
     const hideMessages = mapView && o.tile_level_map_hide_messages === true
     // no character yet: the official client's crt layer (game.js `set_ui_state`, `client.set_layer("crt")`) covers
     // the sidebar while the new-game chooser has the UI in CRT state (newgame.cc `choose_game`), until the redraw
     // that sends the first `player` (tileweb.cc `redraw`); a continued game has no sheet before that message either.
     const hideStats = hideSidebar || st.uiState === UiState.CRT || !st.player.received
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, st.messages.paneHeight, hideStats, hideSidebar, hideMessages].join(',')
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, st.messages.paneHeight, hideStats, hideSidebar, hideMessages, window.devicePixelRatio].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
     const cells = gameSplit(g, st.messages.paneHeight)
@@ -649,6 +685,8 @@ export class GameScreen {
     const fi = this.overlays.focusInfo(this.ctx)
     if (fi) this.ctx.focus = fi
     this.ctx.pageable = this.overlays.pageable(this.ctx)
+    this.trackPack()
+    this.trackActions(now, true)
     if (this.padHints.waiting) this.padHints.observe(this.padHintEvidence(), now)
     const cursor = this.cursorFor()
     const lc = this.lastCursor
@@ -661,14 +699,17 @@ export class GameScreen {
       this.needsRender = true
       if (movedTo && !this.cursorIsOurs) this.faceCursor(cursor)
     }
+    this.mapShown = this.mapHold.shown(st.uiState === UiState.VIEW_MAP, this.ctx.mode, now)
     this.relayout()
-    this.syncMapRenderer(st)
+    this.syncMapRenderer()
     this.applyServerOptions()
     this.hud.keepClear(this.handsLeft())
     // the monster list or the edge pips, one or the other; in 2D the top-down view frames everything in sight, so the list stands in
     const settings = this.settings()
     const nearby = this.is3d ? settings.nearby : 'list'
-    const padLabels = this.overlays.hasClientOverlay || this.chat.capturing ? [] : this.padHints.prompts(this.ctx, settings.hints)
+    // one of our own panels has its prompts from the panel (Overlays.padPrompts), set under it as crawl's menus' are
+    const ours = this.overlays.padPrompts
+    const padLabels = this.chat.capturing ? [] : ours ?? this.padHints.prompts(this.ctx, settings.hints)
     // A held tap-or-hold button (B: Wait, hold for Rest) shows its prompt while it is down, even when the
     // situation did not put it in the corner, so the hold's progress has a place to show. It joins the
     // contextual ones, under the lessons.
@@ -684,7 +725,7 @@ export class GameScreen {
     this.hud.minimapTurns = settings.minimapTurns
     this.hud.minimapUp = settings.minimapTurns ? this.cam.mapYaw : 0
     this.hud.minimapUpright = settings.minimapTurns ? this.cam.mapUprightYaw : 0
-    this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing)
+    this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours)
     this.chat.update(st, this.chatOn && (st.phase === 'playing' || st.phase === 'watching'), !!st.lobby.username)
     this.syncTarget()
     perf?.mark('ui')
@@ -806,8 +847,8 @@ export class GameScreen {
    * swap is a cut, in the frame the server's `ui_state` lands: the map is
    * there to be read, and nothing stands between the key and the reading.
    */
-  private syncMapRenderer(st: GameState) {
-    const mapView = st.uiState === UiState.VIEW_MAP
+  private syncMapRenderer() {
+    const mapView = this.mapShown
     if (mapView === this.lastMapView) return
     this.lastMapView = mapView
     if (mapView) {
@@ -840,7 +881,7 @@ export class GameScreen {
     const st = this.session.state
     const o = st.options
     const p = st.player
-    const mapView = st.uiState === UiState.VIEW_MAP
+    const mapView = this.mapShown
     const key = JSON.stringify([
       this.is3d,
       mapView,
@@ -1193,6 +1234,8 @@ export class GameScreen {
       if (ev.type === 'press') {
         // the button that opened this screen puts it away whole, before anything else it would do here
         if (ev.button === this.overlayOpener) this.overlays.clientOverlayInput('close')
+        // an empty tab of X's actions keeps the two that are no list: Y swaps weapons, LT shouts
+        else if (this.overlays.openMenu === 'battle' && (ev.button === 'Y' || ev.button === 'LT')) this.actionKey(ev.button === 'Y' ? SWAP_WEAPONS_KEY : SHOUT_KEY)
         else if (ev.button === 'A') this.overlays.clientOverlayInput('select')
         else if (ev.button === 'START') this.overlays.clientOverlayInput('submit')
         else if (ev.button === 'B') this.overlays.clientOverlayInput('cancel')
@@ -1262,7 +1305,8 @@ export class GameScreen {
     // reached from inside one (A on a settings row) keeps the opener it came with
     if (ev.type === 'press') {
       if (!this.overlays.hasClientOverlay) this.overlayOpener = null
-      else if (!overlayWasUp) this.overlayOpener = ev.button
+      // (the frame a turn of X's tabs stands in is no screen of the bumper's: the bumper turns it again)
+      else if (!overlayWasUp && this.overlays.openMenu !== 'battle') this.overlayOpener = ev.button
     }
     this.needsRender = true
   }
@@ -1315,7 +1359,7 @@ export class GameScreen {
   }
 
   /** One of the menu keys (MENU_KEYS): it opens that menu, and closes it again as the button does. */
-  private menuKey(menu: CommandMenu | 'system') {
+  private menuKey(menu: CommandMenu | 'levelmap' | 'equipment' | 'system') {
     const open = this.overlays.openMenu
     if (this.session.watching) {
       // a spectator has the Orbrun menu only, as the pad's Start
@@ -1324,14 +1368,24 @@ export class GameScreen {
       else if (!this.overlays.hasClientOverlay) this.uiOp('system')
       return
     }
-    if (open === menu) this.overlays.clientOverlayInput('close')
+    // Select's level map is crawl's own: F2 again puts it away, as Escape would
+    if (menu === 'levelmap' && this.ctx.mode === 'levelmap') this.runner.execute({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] })
+    else if (open === menu) this.overlays.clientOverlayInput('close')
+    // the pack is crawl's own menu: F4 again puts it away, as Escape would
+    else if (menu === 'equipment' && this.ctx.mode === 'menu' && this.ctx.menu && isPack(this.ctx.menu.menu)) this.runner.execute({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] })
+    // and so are X's actions
+    else if (menu === 'battle' && this.ctx.mode === 'menu' && this.ctx.menu?.actions) this.runner.execute({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] })
     // from the map, or from another of the four, the key goes straight to its own menu
-    else if (this.ctx.mode === 'command' && (!this.overlays.hasClientOverlay || open)) this.uiOp(menu === 'battle' ? 'commands' : menu)
+    else if (this.ctx.mode === 'command' && (!this.overlays.hasClientOverlay || open)) {
+      // the level map is crawl's, under ours: the menu up goes first
+      if (menu === 'levelmap' && open) this.overlays.clientOverlayInput('close')
+      this.uiOp(menu === 'battle' ? 'commands' : menu)
+    }
     else if (this.overlays.hasClientOverlay) this.overlays.clientOverlayInput('close')
     // elsewhere the Orbrun menu opens where Start opens it, and nowhere Start means something else
     else if (menu === 'system') { const a = buttonAction('START', this.ctx); if (a?.kind === 'ui' && a.op === 'system') this.uiOp('system') }
     // off the map F2 is the Select button there: the palette for the screen
-    else if (menu === 'travel') this.overlays.showPalette(this.ctx.mode === 'targeting' || this.ctx.mode === 'levelmap' || this.ctx.mode === 'menu' ? this.ctx.mode : 'command')
+    else if (menu === 'levelmap') this.overlays.showPalette(this.ctx.mode === 'targeting' || this.ctx.mode === 'menu' ? this.ctx.mode : 'command')
   }
 
   private onKeyDown(ev: KeyboardEvent) {
@@ -1360,6 +1414,8 @@ export class GameScreen {
       else if (ev.key === 'End') this.overlays.clientOverlayInput('last')
       // Enter and space both fire the row the cursor is on, as they do in a server menu
       else if (ev.key === 'Enter' || ev.key === ' ') this.overlays.clientOverlayInput('select')
+      // an empty tab of X's actions: crawl's own keys for the two that are no list
+      else if (this.overlays.openMenu === 'battle' && (ev.key === SWAP_WEAPONS_KEY || ev.key === SHOUT_KEY)) this.actionKey(ev.key)
       else if (!ev.altKey && !ev.metaKey) {
         if (ev.key === 'Tab') this.overlays.clientOverlayHotkey('Tab')
         else if (ev.key.length === 1) this.overlays.clientOverlayHotkey(ev.ctrlKey ? 'Ctrl-' + ev.key.toUpperCase() : ev.key)
@@ -1678,10 +1734,20 @@ export class GameScreen {
   private uiOp(op: string, arg?: number, category?: CommandCategory, section?: string) {
     switch (op) {
       case 'commands':
-      case 'travel':
-      case 'equipment':
-        this.overlays.showCommands((a) => this.runner.execute(a), op === 'travel' ? 'travel' : op === 'equipment' ? 'equipment' : 'battle')
+        this.openActionTab(this.actionTabUp)
         break
+      case 'actionTab':
+        // from the tab being turned to, when presses run ahead of crawl
+        this.openActionTab(actionNeighbour(this.actionTurn?.target ?? this.ctx.menu?.actions?.current ?? this.actionTabUp, arg ?? 1))
+        break
+      case 'equipment': {
+        // crawl's own pack, at once, on the page and row it was left on: its pages are the tabs (pack-tabs.ts)
+        const seq = openPackKeys(this.session.state, this.packPage)
+        this.runner.execute({ kind: 'keys', label: 'Inventory', seq })
+        // no turns: the page left is gone (or was the first), so the pack stays on its first, Gear
+        this.packReturn = { page: seq.length > 1 && this.packPage ? this.packPage : 'gear', seen: false }
+        break
+      }
       case 'interact':
         this.overlays.showChoices('Interact', [
           { label: contextualLabel(this.ctx), run: () => this.runner.contextual(false) },
@@ -1722,6 +1788,142 @@ export class GameScreen {
     }
   }
 
+  /**
+   * One of X's actions as tabs (action-tabs.ts), by its key. The frame
+   * lights the tab at once; crawl is asked for one menu at a time. From one
+   * of its menus that one goes away first, and the key follows once it has
+   * (`trackActions`): a key sent behind the Escape in one go could not wait
+   * for `z`'s question, and a refused one would leak its `*` into the
+   * dungeon. A press while a turn is under way only moves its target, so a
+   * quick player never has a key land in the menu that was opening.
+   */
+  private openActionTab(id: ActionTabId) {
+    this.actionTabUp = id
+    this.overlays.showActionTabs(id, null)
+    if (this.actionTurn) {
+      this.actionTurn.target = id
+      return
+    }
+    if (deriveMode(this.session.state) === 'menu') this.closeForTurn(id)
+    else this.sendActionKey(id)
+  }
+
+  private closeForTurn(target: ActionTabId) {
+    this.actionTurn = { target, sent: null, stage: 'closing', t: performance.now() }
+    this.runner.execute({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] })
+  }
+
+  private sendActionKey(target: ActionTabId) {
+    const tab = actionTab(target)
+    this.actionTurn = { target, sent: target, stage: 'sent', last: this.session.state.messages.lines.at(-1), t: performance.now() }
+    this.runner.execute({ kind: 'keys', label: tab.label, seq: [{ text: tab.key }] })
+  }
+
+  /** Y or LT on an empty tab: the frame goes, and crawl's key for the action goes alone (no menu to put away). */
+  private actionKey(key: string) {
+    // a menu still opening would take the key as a row's letter: the frame waits for it
+    if (this.actionTurn) return
+    this.overlays.closeClientOverlay()
+    this.runner.execute({ kind: 'keys', label: key === SHOUT_KEY ? 'Shout' : 'Swap weapons', seq: [{ text: key }] })
+  }
+
+  /**
+   * A turn of X's tabs, seen through: the tab's menu up (the frame goes,
+   * and X will open on it again), or crawl's line refusing it ("You don't
+   * know any spells."), which the frame shows where the menu would be.
+   * `z` asks before it lists (spl-cast.cc `cast_a_spell`, a prompt-channel
+   * line), and `*` answers. Anything else crawl puts up, or nothing for a
+   * while, ends the turn and the frame with it. The keys go as crawl's
+   * answers land; the frame goes only from a drawn frame (`drawn`), once
+   * what crawl put up stands in its place, or the screen would be bare
+   * for a frame between the two.
+   */
+  private trackActions(now: number, drawn: boolean) {
+    const turn = this.actionTurn
+    const st = this.session.state
+    // read off the state, not the frame's context: crawl's answer to one key may call for the next before a frame is drawn
+    const mode = deriveMode(st)
+    const menu = mode === 'menu' ? topMenu(st) : undefined
+    const up = menu ? actionTabOf(menu) : null
+    if (!turn) {
+      if (up) this.actionTabUp = up
+      return
+    }
+    const end = () => {
+      if (!drawn) return
+      this.actionTurn = null
+      if (this.overlays.openMenu === 'battle') this.overlays.closeClientOverlay()
+    }
+    // the frame put away (B, F3) while crawl was still answering: what lands goes too
+    const abandoned = this.overlays.openMenu !== 'battle'
+    // a menu going away passes through `prompt` (its last line was one); anything else crawl puts up ends the turn
+    const elsewhere = mode !== 'command' && mode !== 'menu' && mode !== 'prompt'
+    if (elsewhere || now - turn.t > ACTION_TURN_MS) return end()
+    if (turn.stage === 'closing') {
+      // the menu left is still up until the Escape lands, whichever tab it is
+      if (mode !== 'command') return
+      if (abandoned) return end()
+      return this.sendActionKey(turn.target)
+    }
+    if (up) {
+      if (abandoned) {
+        this.actionTurn = null
+        this.runner.execute({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] })
+        return
+      }
+      // the player went on past this one while it opened
+      if (up !== turn.target) return this.closeForTurn(turn.target)
+      this.actionTabUp = up
+      return end()
+    }
+    const last = st.messages.lines.at(-1)
+    if (!last || last === turn.last) return
+    const text = formattedStringToText(last.text).trim()
+    if (text === OKAY_THEN) return
+    // `z` asks before it lists, and waits for the answer; a refusal (some on the same channel) waits for nothing
+    if (mode !== 'command') {
+      if (turn.sent === 'spells' && turn.stage === 'sent' && last.channel === MSGCH.PROMPT) {
+        turn.stage = 'listing'
+        turn.last = last
+        this.runner.execute({ kind: 'keys', label: 'List spells', seq: [{ text: '*' }] })
+      }
+      return
+    }
+    // refused: the tab is empty, and crawl's line says so; or the player has gone on, and the next key goes
+    if (abandoned) return end()
+    if (turn.sent !== turn.target) return this.sendActionKey(turn.target)
+    this.actionTurn = null
+    this.overlays.showActionTabs(turn.target, text)
+  }
+
+  /**
+   * The pack's page and row, kept as the player leaves them, so Y brings the
+   * pack back where it was: the same scroll under the cursor for reading it
+   * again and again. Once Y's pack is on its page the cursor goes back to the
+   * item, by its letter (a stack keeps its letter as it shrinks); an item
+   * gone leaves crawl's own first row.
+   */
+  private trackPack() {
+    const m = this.ctx.mode === 'menu' ? this.ctx.menu : undefined
+    const page = m?.pack?.current
+    const back = this.packReturn
+    if (!m || !page) {
+      // the pack put away (or never opened: crawl refused it) after Y's turn at it
+      if (back?.seen && this.ctx.mode !== 'menu') this.packReturn = null
+      return
+    }
+    if (back) {
+      back.seen = true
+      if (page !== back.page) return
+      this.packReturn = null
+      const key = this.packRow.get(page)
+      if (key !== undefined) this.overlays.hoverHotkey(this.session.state, key)
+    }
+    this.packPage = page
+    const hovered = m.menu.items[m.menu.last_hovered]?.hotkeys?.[0]
+    if (hovered !== undefined) this.packRow.set(page, hovered)
+  }
+
   private systemAction(op: string) {
     if (op === 'toggleRenderer') this.userToggleRenderer()
     else if (op === 'chat' && this.chatOn) this.chat.padFocus()
@@ -1729,8 +1931,11 @@ export class GameScreen {
   }
 }
 
-/** The keys for the pad's four menus: F2 Select's travel, F3 LB's actions, F4 Y's gear, F5 Start's Orbrun menu. */
-const MENU_KEYS: Record<string, CommandMenu | 'system'> = { F2: 'travel', F3: 'battle', F4: 'equipment', F5: 'system' }
+/** How long a turn of X's tabs waits on crawl before it gives up (`trackActions`), as the runner's `awaitPrompt` waits on a prompt. */
+const ACTION_TURN_MS = 1500
+
+/** The keys for the pad's four menus: F2 Select's level map, F3 X's actions, F4 Y's gear, F5 Start's Orbrun menu. */
+const MENU_KEYS: Record<string, CommandMenu | 'levelmap' | 'equipment' | 'system'> = { F2: 'levelmap', F3: 'battle', F4: 'equipment', F5: 'system' }
 
 /** Degrees to radians: the Camera angle setting is degrees, every camera is radians. */
 function radians(deg: number): number {

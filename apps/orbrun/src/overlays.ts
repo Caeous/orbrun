@@ -14,16 +14,18 @@ import {
 import type { Gamedata } from '@orbrun/gamedata'
 import type { Dir8 } from '@orbrun/scene'
 import { controlsSheet } from './controls-sheet'
-import { h, clear, escapeHtml } from './dom'
+import { h, clear, escapeHtml, onDprChange, snapToPixels } from './dom'
 import { Osk, oskPrompts, type OskOp, type OskTarget } from './osk'
 import commands from '../data/commands.json'
 import { FocusNav, focusStep, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
 import { scrapeCrt } from './crt-scrape'
-import { focusFallback, promptButtons, submitOnStartOnly, type Action } from './bindings'
-import { CHARACTER_COMMANDS, COMMAND_MENUS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandMenu } from './command-menu'
+import { focusFallback, promptButtons, submitOnStartOnly, type Action, type BindingLabel } from './bindings'
+import { CHARACTER_COMMANDS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandMenu } from './command-menu'
 import { VIEW_OPTIONS } from './servers'
 import { settingGroups, type SettingGroup } from './settings-rows'
 import { glyph, glyphName } from './glyphs'
+import { packRows, packStrip, turnKeys, type PackStrip } from './pack-tabs'
+import { ACTION_TABS, SHOUT, SWAP_WEAPONS, actionNeighbour, actionTabOf, type ActionTabId } from './action-tabs'
 import type { Button, PadKind } from './gamepad'
 import { DEFAULT_YESNO, isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt } from './context'
 import type { InputDevice } from './game'
@@ -71,6 +73,8 @@ export interface OverlayHooks {
   onSystemAction(op: string): void
   /** one group's settings page, with what its Back does and what opens the Gamepad controls sheet (settings-panel.ts) */
   settingsPanel(group: SettingGroup, back: () => void, controls: () => void): { el: HTMLElement; rows: HTMLElement[] }
+  /** one of X's actions as tabs picked, by a click or the bumpers (action-tabs.ts, game.ts `openActionTab`) */
+  actionTab?(to: ActionTabId): void
 }
 
 export interface TileRef {
@@ -94,15 +98,55 @@ export interface PopupAction {
   send(): void
 }
 
-/** Draw a list of tile refs into a canvas (menu icons, describe headers). */
-function tileCanvas(gd: Gamedata | null, tiles: TileRef[], scale = 1): HTMLCanvasElement {
-  const c = h('canvas', { class: 'tile', width: 32 * scale, height: 32 * scale })
-  c.style.width = 32 * scale + 'px'
-  c.style.height = 32 * scale + 'px'
-  if (!gd) return c
+/**
+ * Draw a list of tile refs into a canvas (menu icons, describe headers),
+ * `size` CSS pixels square. The canvas holds exactly the device pixels it
+ * covers, so the browser never scales it: left to scale, it took the
+ * pixelated path while the canvas was a layer of its own and a filtered one
+ * once the window lost focus, and the icon changed under the player.
+ */
+function tileCanvas(gd: Gamedata | null, tiles: TileRef[], scale = 1, size = 32 * scale): HTMLCanvasElement {
+  const c = h('canvas', { class: 'tile' })
+  c.style.width = size + 'px'
+  c.style.height = size + 'px'
+  const draw = () => drawTiles(c, gd, tiles, size)
+  draw()
+  tileRedraws.set(c, draw)
+  watchTileDpr()
+  // onto whole device pixels once it stands in the page, and again when the popup it is in has finished arriving
+  requestAnimationFrame(() => snapToPixels(c))
+  return c
+}
+
+/** every tile canvas's own drawing, run again for the new density when the window changes screens (`onDprChange`) */
+const tileRedraws = new WeakMap<HTMLCanvasElement, () => void>()
+let tileDprWatched = false
+function watchTileDpr() {
+  if (tileDprWatched) return
+  tileDprWatched = true
+  onDprChange(() => {
+    for (const c of document.querySelectorAll<HTMLCanvasElement>('canvas.tile')) {
+      tileRedraws.get(c)?.()
+      snapToPixels(c)
+    }
+  })
+  document.addEventListener('animationend', (ev) => {
+    if (ev.target instanceof Element) for (const c of ev.target.querySelectorAll<HTMLCanvasElement>('canvas.tile')) snapToPixels(c)
+  })
+}
+
+function drawTiles(c: HTMLCanvasElement, gd: Gamedata | null, tiles: TileRef[], size: number) {
+  const px = Math.round(size * (window.devicePixelRatio || 1))
+  c.width = px
+  c.height = px
+  if (!gd) return
   const ctx = c.getContext('2d')
-  if (!ctx) return c
-  ctx.imageSmoothingEnabled = false
+  if (!ctx) return
+  // device pixels per tile pixel: keep it whole (a 32px icon on a 1x or 2x screen). At a fraction, Chrome's GPU and
+  // CPU canvases sample the atlas differently, and it redraws a small canvas on whichever it likes, so the icon changes
+  const k = px / 32
+  ctx.imageSmoothingEnabled = !Number.isInteger(k)
+  ctx.imageSmoothingQuality = 'high'
   for (const t of tiles) {
     const rect = gd.tile(t.t, t.tex === undefined ? undefined : String(t.tex))
     if (!rect) continue
@@ -111,11 +155,10 @@ function tileCanvas(gd: Gamedata | null, tiles: TileRef[], scale = 1): HTMLCanva
     let hh = rect.h
     if (t.ymax !== undefined && t.ymax < rect.oy + rect.h) hh = Math.max(0, t.ymax - rect.oy)
     if (hh <= 0) continue
-    const x = (rect.ox + (t.ox || 0)) * scale
-    const y = (rect.oy + (t.oy || 0)) * scale
-    ctx.drawImage(img as CanvasImageSource, rect.sx, rect.sy, rect.w, hh, x, y, rect.w * scale, hh * scale)
+    const x = (rect.ox + (t.ox || 0)) * k
+    const y = (rect.oy + (t.oy || 0)) * k
+    ctx.drawImage(img as CanvasImageSource, rect.sx, rect.sy, rect.w, hh, x, y, rect.w * k, hh * k)
   }
-  return c
 }
 
 /**
@@ -349,7 +392,7 @@ const histories: Record<string, string[]> = {}
 
 // ------------------------------------------------------------------ overlays
 
-type ClientOverlayKind = 'choices' | 'palette' | 'system' | 'bindings' | 'settings'
+type ClientOverlayKind = 'choices' | 'palette' | 'system' | 'bindings' | 'settings' | 'actions'
 
 /**
  * One entry of the command catalogue (data/commands.json), generated from the
@@ -429,6 +472,8 @@ export class Overlays {
   /** shows or hides the top menu's `more` line from its overflow; run before any scroll is set, since it changes the body's height */
   private menuMore: (() => void) | null = null
   private hovered = -1
+  /** a row of the pack as drawn, measured once it is: what sizes the pack's height */
+  private packRowPx = 0
   /**
    * The switches of the top menu's more line, once they are the cursor's
    * (the shop's `[!] buy|examine`, `[/] sort`, `[Enter] buy marked items`,
@@ -549,12 +594,13 @@ export class Overlays {
     return !!this.clientOverlay
   }
 
-  /** Which of the four menus is open (showCommands' lists, or the Orbrun menu), so its key can close it again. */
+  /** Which of the four menus is open (an empty tab of X's actions, or the Orbrun menu), so its key can close it again. */
   get openMenu(): CommandMenu | 'system' | null {
     const o = this.clientOverlay
     if (o?.kind === 'system') return 'system'
-    const remember = o?.el.dataset.remember
-    return remember?.startsWith('commands:') ? (remember.slice('commands:'.length) as CommandMenu) : null
+    // an empty tab of X's actions (showActionTabs)
+    if (o?.kind === 'actions') return 'battle'
+    return null
   }
 
   /**
@@ -644,12 +690,21 @@ export class Overlays {
     // The focus set is the top overlay's in mode priority (dialog > popup > menu > crt): each
     // renderer registers over the one before, so the last to register wins.
     // a `ui_cutoff` hid what was up when it arrived (state.ts applyCutoff), as game.js handle_set_ui_cutoff does
+    // each of the server's overlays hangs 20px under the one before, up to three deep, and stands in the
+    // middle only when crawl says `ui-centred` (styles.css .popup)
+    let depth = 0
+    const place = (el: HTMLElement, centred: boolean | undefined) => {
+      if (centred) el.classList.add('centred')
+      else el.style.setProperty('--depth', String(Math.min(depth, 3)))
+      depth++
+    }
     menus.forEach((m, i) => {
       // crawl's own Yes/No menu (tag `prompt`): the player's yes/no card asks it (updatePrompt); a spectator,
       // who has no card, sees the menu as it is
       if (m.tag === 'prompt' && !this.hooks.watching()) return
       const el = this.renderMenu(state, m, i === menus.length - 1)
       if (m.hidden) el.classList.add('hidden')
+      place(el, m['ui-centred'])
       this.root.append(el)
     })
     if (!this.menuExtra) {
@@ -659,6 +714,7 @@ export class Overlays {
     popups.forEach((p, i) => {
       const el = this.renderPopup(state, p, i === popups.length - 1)
       if (p.hidden) el.classList.add('hidden')
+      place(el, p['ui-centred'])
       this.root.append(el)
     })
     if (state.uiState === 1 && menus.length === 0 && popups.length === 0) this.root.append(this.renderCrt(state))
@@ -800,8 +856,29 @@ export class Overlays {
       if (!this.hooks.watching()) setTimeout(() => input.focus(), 30)
       this.textTarget = target
     }
-    el.append(title)
+    const strip = top ? packStrip(menu, state) : null
+    // one of X's actions: the tabs over crawl's title, which keeps its column heads (failure, cost)
+    const action = top ? actionTabOf(menu) : null
+    if (action) {
+      el.classList.add('action-tabs')
+      el.append(this.actionStrip(action))
+    }
+    // the pack's tabs stand in for its title, which only names the page and the keys that turn it
+    // (unless the title has become the filter's field)
+    if (!strip || (tp && !tp.raw)) el.append(title)
+    if (strip) el.append(this.packTabs(strip))
     const body = h('div', { class: 'body' })
+    if (strip) {
+      // one size whatever the page: as wide as styles.css says, as tall as the fullest page's rows
+      el.classList.add('paged-pack')
+      body.style.minHeight = `min(${packRows(state)} * var(--pack-row, ${this.packRowPx ? this.packRowPx + 'px' : '2.2em'}), 64vh)`
+      requestAnimationFrame(() => {
+        const row = body.querySelector('li.level2')?.getBoundingClientRect().height
+        if (!row || row === this.packRowPx) return
+        this.packRowPx = row
+        body.style.setProperty('--pack-row', row + 'px')
+      })
+    }
     const ol = h('ol')
     const arrows = !!(menu.flags & MenuFlag.ARROWS_SELECT)
     for (let i = 0; i < menu.items.length; i++) {
@@ -850,17 +927,99 @@ export class Overlays {
   }
 
   /**
+   * The pack's pages as tabs (pack-tabs.ts), across the top of crawl's menu
+   * under its title: the bar names what the bumpers turn to, the keyboard
+   * has Left and Right as the title says, and the mouse the tabs themselves.
+   */
+  private packTabs(strip: PackStrip): HTMLElement {
+    const gd = this.hooks.gamedata()
+    const tabs = h('div', { class: 'pack-tabs', role: 'tablist', 'aria-label': 'Pages' })
+    strip.tabs.forEach((t, i) => {
+      const current = i === strip.current
+      const id = commandTileId(gd, t.tile)
+      // an empty page stands, dimmed and inert, so the player knows it is there
+      tabs.append(h('button', { type: 'button', role: 'tab', class: current ? 'current' : t.empty ? 'empty' : '', disabled: !!t.empty, 'aria-selected': String(current), onclick: () => this.turnPack(strip, i) }, id === undefined ? null : tileCanvas(gd, [{ t: id }]), t.label))
+    })
+    // the rest of crawl's title, at the far end: the keys that turn the page
+    if (strip.hint) tabs.append(h('span', { class: 'pack-hint' }, strip.hint))
+    return tabs
+  }
+
+  /** The top menu's cursor onto the row whose letter is `hotkey`, where there is one. */
+  hoverHotkey(state: GameState, hotkey: number) {
+    const menu = topMenu(state)
+    if (!menu) return
+    const at = menu.items.findIndex((it) => it?.hotkeys?.[0] === hotkey)
+    if (at >= 0 && at !== menu.last_hovered) this.setHover(menu, at)
+  }
+
+  /** X's actions as tabs (action-tabs.ts), lit on `current`; a click turns to one as the bumpers do. */
+  private actionStrip(current: ActionTabId): HTMLElement {
+    const gd = this.hooks.gamedata()
+    const tabs = h('div', { class: 'pack-tabs', role: 'tablist', 'aria-label': 'Actions' })
+    for (const t of ACTION_TABS) {
+      const on = t.id === current
+      const id = commandTileId(gd, t.tile)
+      tabs.append(h('button', { type: 'button', role: 'tab', class: on ? 'current' : '', 'aria-selected': String(on), onclick: () => { if (!on) this.hooks.actionTab?.(t.id) } }, id === undefined ? null : tileCanvas(gd, [{ t: id }]), t.label))
+    }
+    return tabs
+  }
+
+  /**
+   * One of X's actions with no menu of crawl's up: the tab turned to has
+   * nothing on it, and `text` is crawl's line saying so ("You don't know any
+   * spells."), or the turn is under way and `text` is null (the menu left is
+   * gone, the next not yet up). The frame stands where crawl's menu would,
+   * with the same tabs, so turning past an empty one reads as a turn and
+   * not as the menu going away. Opened again over itself it keeps its place.
+   */
+  showActionTabs(current: ActionTabId, text: string | null) {
+    this.actionShown = current
+    // the pad's buttons stand under the frame, as they do under crawl's menus (padPrompts)
+    const kbd = h('div', { class: 'more kbd-only' }, h('kbd', null, '←'), ' ', h('kbd', null, '→'), ' Tabs · ', h('kbd', null, 'Esc'), ' Back')
+    const parts = [this.actionStrip(current), h('div', { class: 'body' }, h('p', { class: 'action-empty' }, text ?? '\u00a0')), kbd]
+    // under way, it keeps the height of the menu it stands in for, so a turn from one full tab to the next never shrinks the frame between
+    const left = this.root.querySelector<HTMLElement>('.popup.menu.action-tabs:not([data-client])')
+    const o = this.clientOverlay
+    const el = o?.kind === 'actions' ? o.el : h('div', { class: 'popup menu game action-tabs' })
+    if (text !== null) el.style.minHeight = ''
+    else if (left) el.style.minHeight = `${left.getBoundingClientRect().height}px`
+    if (o?.kind === 'actions') {
+      el.replaceChildren(...parts)
+      return
+    }
+    el.append(...parts)
+    this.openClientOverlay('actions', el, [])
+  }
+
+  /** The tab the empty frame stands on (showActionTabs), which its bumpers turn from. */
+  private actionShown: ActionTabId = 'spells'
+
+  /** A tab clicked: crawl's Left or Right, once per page between. */
+  private turnPack(strip: PackStrip, to: number) {
+    for (const k of turnKeys(strip, to) ?? []) if ('key' in k) this.hooks.send(cm.key(k.key))
+  }
+
+  /**
    * An arrows-select menu up with nothing hovered: the cursor goes on its
    * first row. Without MF_INIT_HOVER (the inventory `i`, drop, pickup, the
    * one end.cc shows on death) crawl seats no hover, and a page change
    * (invent.cc `cycle_page`) can drop it again, so Enter selects nothing
    * (menu.cc `process_selection` keeps an empty selection's menu) and A had
    * nothing to take but the way out. Seated, A and Enter take the lit row.
+   *
+   * A page turned in the pack (invent.cc `cycle_page`) keeps the hover's
+   * index from the page before, which can fall on a section header of the
+   * new one ("Armour"): the cursor goes on the first row after it, or the
+   * last row before when nothing follows.
    */
   private seatArrowsHover(menu: MenuState) {
-    if (!(menu.flags & MenuFlag.ARROWS_SELECT) || menu.last_hovered >= 0 || this.hooks.watching()) return
-    const first = this.hoverable(menu)[0]
-    if (first !== undefined) this.setHover(menu, first, false, false)
+    if (!(menu.flags & MenuFlag.ARROWS_SELECT) || this.hooks.watching()) return
+    const hov = this.hoverable(menu)
+    const at = menu.last_hovered
+    if (at >= 0 && hov.includes(at)) return
+    const row = at < 0 ? hov[0] : (hov.find((i) => i > at) ?? hov.at(-1))
+    if (row !== undefined) this.setHover(menu, row, false, false)
   }
 
   /**
@@ -1523,6 +1682,8 @@ export class Overlays {
     const spellsOf = (v: unknown): SpellBook[] => (Array.isArray(v) && v.length ? (v as SpellBook[]) : [])
     switch (p.type) {
       case 'formatted-scroller': {
+        // the character overview (`%`, output.cc `print_overview_screen`) is "resists": styles.css dims the world behind it
+        if (str('tag')) el.dataset.tag = str('tag')
         header(str('title'))
         const text = typeof p.state.text === 'string' ? (p.state.text as string) : str('text')
         el.append(h('div', { class: 'body', html: formattedStringToHtml(text) }))
@@ -2564,6 +2725,12 @@ export class Overlays {
           break
       }
     }
+    // an empty tab of X's actions: the bumpers and the arrows turn, and there is nothing to move or pick
+    if (o.kind === 'actions' && op !== 'cancel') {
+      const step = ['bumperNext', 'pageNext', 'right', 'catNext'].includes(op) ? 1 : ['bumperPrev', 'pagePrev', 'left', 'catPrev'].includes(op) ? -1 : 0
+      if (step) this.hooks.actionTab?.(actionNeighbour(this.actionShown, step))
+      return true
+    }
     switch (op) {
       case 'next':
         this.setClientFocus(o.focus + 1)
@@ -2661,21 +2828,30 @@ export class Overlays {
 
   /**
    * The footer of a client menu (the Commands screen, a list of choices):
-   * what moves the cursor and fires the row, in the words of the device that
-   * spoke last. Both readings are built and the stack's `device-*` class
-   * (`setDevice`) shows one, so the footer follows the player from the pad
-   * to the keyboard without a rebuild. `tabs`: the menu has categories on
-   * the bumpers and the left and right arrows.
+   * what moves the cursor and fires the row, for the keyboard. The pad's
+   * stand under the panel instead, as they do under crawl's menus
+   * (padPrompts), so the footer is shown only while the keyboard spoke last
+   * (the stack's `device-*` class, `setDevice`). `tabs`: the menu has
+   * categories on the left and right arrows.
    */
   private clientFooter(tabs: boolean): HTMLElement {
-    const kind = this.hooks.padKind?.() ?? 'generic'
-    const pad = h('span', { class: 'pad-only' })
-    if (tabs) pad.append(glyph('LB', kind), ' / ', glyph('RB', kind), ' Tabs · ')
-    pad.append(glyph('A', kind), ' Select')
-    const kbd = h('span', { class: 'kbd-only' })
+    const kbd = h('div', { class: 'more kbd-only' })
     if (tabs) kbd.append(h('kbd', null, '←'), ' ', h('kbd', null, '→'), ' Tabs · ')
     kbd.append(h('kbd', null, 'Enter'), ' Select · ', h('kbd', null, 'Esc'), ' Back')
-    return h('div', { class: 'more' }, pad, kbd)
+    return kbd
+  }
+
+  /**
+   * The pad's prompts under the client overlay that is up (hud.ts placeBar),
+   * as crawl's menus get theirs from the situation (bindings.ts
+   * promptLabels): an empty tab of X's actions has the two buttons that are
+   * no list, a list has the lit row to fire. Null with none up.
+   */
+  get padPrompts(): BindingLabel[] | null {
+    const o = this.clientOverlay
+    if (!o) return null
+    if (o.kind === 'actions') return [{ button: 'Y', label: 'Swap weapons', action: SWAP_WEAPONS, contextual: true }, { button: 'LT', label: 'Shout', action: SHOUT, contextual: true }]
+    return o.items.length ? [{ button: 'A', label: 'select', action: { kind: 'focus', op: 'select' }, contextual: true }] : []
   }
 
   /**
@@ -2708,57 +2884,44 @@ export class Overlays {
     this.setClientFocus(this.choiceAt.get(remember) ?? 0)
   }
 
-  /**
-   * One button, one list (command-menu.ts COMMAND_MENUS): LB the battle
-   * actions, Select the travel commands, Y the gear, each opening on the row
-   * it was left on, so a command picked once is under the cursor the next
-   * time. The character screens and the game options are tabs of the Start
-   * menu (showSystem).
-   */
-  showCommands(run: (action: Action) => void, which: CommandMenu = 'battle') {
-    const menu = COMMAND_MENUS.find((m) => m.id === which)!
-    this.showChoices(menu.title, this.commandChoices(menu.entries, run), undefined, 'commands:' + which)
-  }
-
   private commandChoices(entries: CommandEntry[], run: (action: Action) => void) {
     return entries.map((c) => ({ label: c.label, key: c.key, sub: c.sub, tile: c.tile, run: () => run(c.action) }))
   }
 
   /**
-   * Tabs over the client overlay that is open: the panels share one grid cell,
+   * Tabs over the client overlay that is open, drawn as the pack's pages are
+   * (packTabs) in place of its title: the panels share one grid cell,
    * so the largest sizes the dialog while only the current one is visible and
    * takes hotkeys. The bumpers and left / right change tabs, and a change
    * never closes the overlay or restarts its opening animation (or the
    * world's dimming). Each tab keeps its own cursor, under `remember` + its
    * id, and `onTab` is told which one the player left on.
    */
-  private installTabs(panels: { id: string; label: string; hint: string; items: HTMLElement[]; panel: HTMLElement }[], remember: string, start: string, onTab: (id: string) => void) {
+  private installTabs(panels: { id: string; label: string; hint: string; tile?: string; items: HTMLElement[]; panel: HTMLElement }[], remember: string, start: string, onTab: (id: string) => void) {
     const o = this.clientOverlay!
     o.el.classList.add('tabbed')
-    const tabs = h('div', { class: 'command-tabs', role: 'tablist', 'aria-label': 'Sections' })
-    const hints = h('div', { class: 'command-hints' })
+    const gd = this.hooks.gamedata()
+    const tabs = h('div', { class: 'pack-tabs command-tabs', role: 'tablist', 'aria-label': 'Sections' })
     const built = panels.map((p, index) => {
       const tabId = 'command-tab-' + p.id
       p.panel.id = 'command-panel-' + p.id
       p.panel.setAttribute('role', 'tabpanel')
       p.panel.setAttribute('aria-labelledby', tabId)
-      const hint = h('div', { class: 'command-hint' }, p.hint)
-      const tab = h('button', { id: tabId, type: 'button', role: 'tab', 'aria-controls': p.panel.id, title: p.hint, onclick: () => { o.category = index; o.rebuild!() } }, p.label)
+      const id = commandTileId(gd, p.tile)
+      const tab = h('button', { id: tabId, type: 'button', role: 'tab', 'aria-controls': p.panel.id, title: p.hint, onclick: () => { o.category = index; o.rebuild!() } }, id === undefined ? null : tileCanvas(gd, [{ t: id }]), p.label)
       this.itemsTakeMouse(p.items)
       tabs.append(tab)
-      hints.append(hint)
-      return { ...p, hint, tab }
+      return { ...p, tab }
     })
     o.category = Math.max(0, panels.findIndex((p) => p.id === start))
     o.categories = panels.map((p) => p.id)
     o.rebuild = () => {
       if (o.items.length && o.el.dataset.remember) this.choiceAt.set(o.el.dataset.remember, o.focus)
       o.items[o.focus]?.classList.remove('focused')
-      built.forEach(({ panel, hint, tab }, i) => {
+      built.forEach(({ panel, tab }, i) => {
         const active = i === o.category
         panel.inert = !active
         panel.classList.toggle('inactive', !active)
-        hint.classList.toggle('inactive', !active)
         tab.classList.toggle('current', active)
         tab.setAttribute('aria-selected', String(active))
       })
@@ -2771,7 +2934,8 @@ export class Overlays {
       if (body) body.scrollTop = 0
       this.setClientFocus(this.choiceAt.get(o.el.dataset.remember) ?? 0)
     }
-    o.el.querySelector('.title')!.after(tabs, hints)
+    // the tabs stand in for the title, as the pack's and X's actions' do (packTabs, actionStrip)
+    o.el.querySelector('.title')!.replaceWith(tabs)
     o.el.querySelector('.more')!.replaceWith(this.clientFooter(true))
     o.rebuild()
   }
@@ -2922,8 +3086,8 @@ export class Overlays {
     body.prepend(characterPanel)
     this.openClientOverlay('system', el, items)
     this.installTabs([
-      { id: 'character', label: 'Character', hint: 'Review and manage · character, skills and spells', items: character, panel: characterPanel },
-      { id: 'system', label: 'System', hint: 'Orbrun and the game · options, help and the way out', items, panel: ol },
+      { id: 'character', label: 'Character', hint: 'Review and manage · character, skills and spells', tile: 'CMD_DISPLAY_CHARACTER_STATUS', items: character, panel: characterPanel },
+      { id: 'system', label: 'System', hint: 'Orbrun and the game · options, help and the way out', tile: 'CMD_GAME_MENU', items, panel: ol },
     ], 'system:', this.systemTab, (id) => { this.systemTab = id })
   }
 
