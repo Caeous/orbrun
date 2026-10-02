@@ -97,7 +97,18 @@ export interface Render2dOptions {
    * the badges and bars that ride on them — is upright either way.
    */
   uprightYaw?: number | null
+  /**
+   * Orbrun: the heading the player faces (`yaw`, radians, north 0,
+   * clockwise) and how wide the view opens across (`fov`, radians), drawn as
+   * a soft cone of light on the floor from the player's cell, so a map
+   * borrowed from the 3D view still says what that view takes in. Null
+   * draws none.
+   */
+  facing?: { yaw: number; fov: number } | null
 }
+
+/** How far the facing cone reaches, in cells. */
+const FACING_REACH = 3.5
 
 /** Default terminal palette, as the official stylesheet. */
 const TERM_COLOURS = [
@@ -201,6 +212,7 @@ export class Render2d implements MapRenderer {
       up: opts.up ?? 0,
       upYaw: opts.upYaw ?? null,
       uprightYaw: opts.uprightYaw ?? null,
+      facing: opts.facing ?? null,
     }
   }
 
@@ -219,6 +231,7 @@ export class Render2d implements MapRenderer {
     if (opts.up !== undefined) this.opts.up = opts.up
     if (opts.upYaw !== undefined) this.opts.upYaw = opts.upYaw
     if (opts.uprightYaw !== undefined) this.opts.uprightYaw = opts.uprightYaw
+    if (opts.facing !== undefined) this.opts.facing = opts.facing
   }
 
   mount(target: HTMLCanvasElement | OffscreenCanvas): void {
@@ -497,6 +510,8 @@ export class Render2d implements MapRenderer {
       // items; a door or a staircase is built in and lies with the ground
       else this.drawTileCell(ctx, cell, sx, sy, cs, cell.freestanding ? upright : lean)
     }
+    // on the floor, under what stands on it
+    if (scene.playerOnLevel && this.opts.facing != null) this.drawFacing(ctx, (scene.player.x - ox + 0.5) * cs, (scene.player.y - oy + 0.5) * cs, cs, this.opts.facing)
     if (!minimap && !glyphs) {
       // things standing in cells, in scene order, then their badges
       for (const b of scene.billboards) {
@@ -616,6 +631,28 @@ export class Render2d implements MapRenderer {
     }
     ctx.restore()
     this.seam = 0
+  }
+
+  /**
+   * The facing cone about the player's cell centre `mx`, `my`: a wedge of
+   * light as wide as the view that fades out over FACING_REACH cells, on
+   * the ground's axes so it keeps its heading on a turned map.
+   */
+  private drawFacing(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, mx: number, my: number, cs: number, { yaw, fov }: { yaw: number; fov: number }) {
+    const r = cs * FACING_REACH
+    // canvas angles start east and run clockwise; yaw starts north
+    const a = yaw - Math.PI / 2
+    const g = ctx.createRadialGradient(mx, my, cs * 0.3, mx, my, r)
+    g.addColorStop(0, 'rgba(255,240,200,0.25)')
+    g.addColorStop(1, 'rgba(255,240,200,0)')
+    ctx.save()
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.moveTo(mx, my)
+    ctx.arc(mx, my, r, a - fov / 2, a + fov / 2)
+    ctx.closePath()
+    ctx.fill()
+    ctx.restore()
   }
 
   private drawMinimapCell(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, cell: SceneCell, sx: number, sy: number, cs: number) {

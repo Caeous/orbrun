@@ -549,6 +549,18 @@ export class GameScreen {
     return (this.settingsCache ??= this.hooks.settings())
   }
 
+  /**
+   * How wide the 3D view opens across, in radians: the Field of view setting
+   * is the vertical angle, so the across one follows the view's shape. The
+   * parked view's own lens while the level map has it put away.
+   */
+  private viewFov(): number {
+    const lens = (this.renderer instanceof Render3d ? this.renderer : this.park.kept)?.projector()
+    const tanHalfY = lens ? lens.tanHalfY : Math.tan((this.settings().fov * Math.PI) / 360)
+    const aspect = lens ? lens.aspect : this.viewPx && this.viewPx.height ? this.viewPx.width / this.viewPx.height : 16 / 9
+    return 2 * Math.atan(tanHalfY * aspect)
+  }
+
   private render3dOptions(st: Settings) {
     return { eyeHeight: st.eyeHeight, fov: st.fov, viewmodel: st.viewmodel, wallInset: WALL_INSET, chamfer: CHAMFER, motion: !this.cam.reducedMotion }
   }
@@ -735,8 +747,9 @@ export class GameScreen {
       perf?.mark('viewmodel')
       // dungeon_renderer.js set_view_center: the 2D view sits on the server's view
       // centre (`vgrdc`), the player in normal play and the map cursor while the
-      // level map is open, so the map scrolls under the cursor as WebTiles' does
-      if (this.renderer instanceof Render2d) this.renderer.setOptions({ center: st.map.viewCenter })
+      // level map is open, so the map scrolls under the cursor as WebTiles' does. A map borrowed from the
+      // 3D view marks the way that view faces, which a north-up map otherwise loses.
+      if (this.renderer instanceof Render2d) this.renderer.setOptions({ center: st.map.viewCenter, facing: this.mapBorrowed2d ? { yaw: this.cam.camera.yaw, fov: this.viewFov() } : null })
       this.renderer.setScene(this.session.scene, now / 1000)
       this.renderer.setCamera(this.cam.camera)
       const r3d = this.renderer instanceof Render3d ? this.renderer : null

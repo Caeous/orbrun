@@ -42,6 +42,11 @@ export class RendererPark {
     return p
   }
 
+  /** The kept renderer, left in the slot. */
+  get kept(): Render3d | null {
+    return this.slot?.renderer ?? null
+  }
+
   get held(): boolean {
     return this.slot !== null
   }
