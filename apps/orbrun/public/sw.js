@@ -77,8 +77,9 @@ self.addEventListener('fetch', (e) => {
   if (appCache && req.mode === 'navigate' && url.origin === self.location.origin && isApp(url)) {
     const page = keptPage()
     e.respondWith(page.then((p) => p || fetch(req)))
-    // an install that had no connection tries again with this load
-    e.waitUntil(page.then((p) => p || keepApp().catch(() => {})))
+    // an install that failed (no connection, a file that would not come) tries again with this load, even
+    // while an older version's page stands in for it: otherwise that older page is what every load gets
+    e.waitUntil(page.then(() => keepApp()).catch(() => {}))
     return
   }
   if (appFiles.has(url.origin + url.pathname) || (appCache && url.origin === self.location.origin && url.pathname.startsWith('/assets/'))) {

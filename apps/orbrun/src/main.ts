@@ -763,7 +763,11 @@ window.addEventListener('beforeunload', (ev) => {
 // the address bar is the record of where we are (servers.ts Route)
 window.addEventListener('popstate', () => applyRoute(parseRoute()))
 // before the first route is applied, so a game started from it finds the worker keeping the engine it fetches
-keepEngines(() => !!(game || starting) || session?.state.phase === 'loading' || session?.state.phase === 'playing')
+keepEngines(
+  () => !!(game || starting) || session?.state.phase === 'loading' || session?.state.phase === 'playing',
+  // resting: the home screen and nothing over it (an exit report is its own view), so a reload loses nothing
+  () => !game && !starting && !boot && !intent && lobby?.view === 'home',
+)
 applyRoute(parseRoute())
 
 // last, so the beacon never delays the first screen (see analytics.ts)

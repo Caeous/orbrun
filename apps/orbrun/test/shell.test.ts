@@ -77,3 +77,71 @@ describe('the app kept on the device', () => {
     expect(() => withShell('self.addEventListener()', { version: 'v1', files: [], network: [] })).toThrow()
   })
 })
+
+/** A device's CacheStorage, shared by every version of sw.js run on it; `addAll` fails while `failing` holds. */
+function device() {
+  const stores = new Map<string, Map<string, unknown>>()
+  const dev = {
+    failing: false,
+    caches: {
+      open: async (name: string) => {
+        if (!stores.has(name)) stores.set(name, new Map())
+        const m = stores.get(name)!
+        return {
+          match: async (url: string) => m.get(url),
+          put: async (url: string, res: unknown) => void m.set(url, res),
+          addAll: async (rs: { url: string }[]) => {
+            if (dev.failing) throw new Error('a file would not come')
+            for (const r of rs) m.set(r.url, `${name} page`)
+          },
+        }
+      },
+      keys: async () => [...stores.keys()],
+      delete: async (name: string) => stores.delete(name),
+      match: async () => undefined,
+    },
+  }
+  return dev
+}
+
+/** sw.js of app version `version`, on `dev`: its install, and a page load of `/` once all it set off has settled */
+function serviceWorker(dev: ReturnType<typeof device>, version: string) {
+  const on: Record<string, (e: unknown) => void> = {}
+  const self = {
+    location: { href: 'https://orbrun.app/sw.js', origin: 'https://orbrun.app' },
+    addEventListener: (type: string, f: (e: unknown) => void) => (on[type] = f),
+    skipWaiting: async () => {},
+    clients: { claim: async () => {} },
+  }
+  class Request {
+    constructor(readonly url: string) {}
+  }
+  new Function('self', 'caches', 'Request', 'fetch', withShell(sw, { version, files: ['/'], network: [] }))(self, dev.caches, Request, async () => 'network page')
+  const settle = async (type: string, event: object) => {
+    const waits: Promise<unknown>[] = []
+    let answer: Promise<unknown> = Promise.resolve()
+    on[type]({ ...event, waitUntil: (p: Promise<unknown>) => waits.push(p), respondWith: (p: Promise<unknown>) => (answer = p) })
+    const out = await answer
+    await Promise.all(waits)
+    return out
+  }
+  return {
+    install: () => settle('install', {}),
+    load: () => settle('fetch', { request: { method: 'GET', url: 'https://orbrun.app/', mode: 'navigate' } }),
+  }
+}
+
+describe('a new version of the app', () => {
+  it('is kept on a later page load when keeping it failed at install, rather than the older one standing in for good', async () => {
+    const dev = device()
+    await serviceWorker(dev, 'v1').install()
+    const v2 = serviceWorker(dev, 'v2')
+    dev.failing = true
+    await v2.install()
+    // the older version stands in, so the app still opens; and this load tries again
+    expect(await v2.load()).toBe('orbrun-app-v1 page')
+    dev.failing = false
+    expect(await v2.load()).toBe('orbrun-app-v1 page')
+    expect(await v2.load()).toBe('orbrun-app-v2 page')
+  })
+})

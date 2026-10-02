@@ -11,7 +11,7 @@ import { addAccount, addServer, ensureDeviceAccount, removeServer, openPage, cha
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import type { Session } from './session'
 import { deleteProfileSaves, profileName, type EngineInfo, type EngineNote } from '@orbrun/offline'
-import { engines } from './engines'
+import { engines, updateApp } from './engines'
 import type { PadEvent, PadKind } from './gamepad'
 import { Osk, oskPrompts } from './osk'
 import { glyph, glyphName, type GlyphName } from './glyphs'
@@ -1092,6 +1092,8 @@ export class FrontEnd {
   showHome() {
     // the home screen is where offline builds update: never under a game, never in the player's way
     if (offlineOffered() && offlineRuns()) void engines.update()
+    // and the app itself: once this screen is up, so it is the one a switch to a new version finds at rest
+    queueMicrotask(updateApp)
     ensureDeviceAccount()
     this.adding = null
     this.watchOn = null
