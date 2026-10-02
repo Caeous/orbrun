@@ -343,6 +343,12 @@ export class Hud {
   minimapUpright = 0
   /** The minimap turns with the player (the "Minimap rotation" setting); north up, it needs no north mark. */
   minimapTurns = true
+  /**
+   * How wide the 3D view opens across, in radians (game `viewFov`), drawn on
+   * a north-up minimap as the cone the view faces, which the map otherwise
+   * loses; null draws none, as on a minimap that turns with the view.
+   */
+  minimapFov: number | null = null
   private minimapTiles: Gamedata | null = null
   /** The level map is open: the minimap has become it and stays out of sight. */
   private minimapHidden = false
@@ -1264,7 +1270,7 @@ export class Hud {
     if (this.minimapHidden || !this.minimapSize.w) return
     // the map is a full redraw of every known cell: only when something it shows moved.
     // The rc's palette rides `rev.player` (state.ts: `options` and `set_option` bump it).
-    const key = `${scene.revision}|${cam.x},${cam.y},${cam.yaw},${this.minimapUp},${this.minimapUpright},${this.minimapTurns}|${state.rev.player}|${gd?.version}`
+    const key = `${scene.revision}|${cam.x},${cam.y},${cam.yaw},${this.minimapUp},${this.minimapUpright},${this.minimapTurns},${this.minimapFov}|${state.rev.player}|${gd?.version}`
     if (key === this.minimapKey) return
     this.minimapKey = key
     const opts = state.options
@@ -1290,6 +1296,7 @@ export class Hud {
       up: mapFacingOf(cam.facing),
       upYaw: this.minimapUp,
       uprightYaw: this.minimapUpright,
+      facing: this.minimapFov != null ? { yaw: cam.yaw, fov: this.minimapFov } : null,
       mfColours,
       filterScaling: opts.tile_filter_scaling === true,
       glyphFont: rcFont(opts.glyph_mode_font),

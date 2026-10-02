@@ -737,6 +737,8 @@ export class GameScreen {
     this.hud.minimapTurns = settings.minimapTurns
     this.hud.minimapUp = settings.minimapTurns ? this.cam.mapYaw : 0
     this.hud.minimapUpright = settings.minimapTurns ? this.cam.mapUprightYaw : 0
+    // and marks the way the 3D view faces instead, as the level map does
+    this.hud.minimapFov = !settings.minimapTurns && this.renderer instanceof Render3d ? this.viewFov() : null
     this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours)
     this.chat.update(st, this.chatOn && (st.phase === 'playing' || st.phase === 'watching'), !!st.lobby.username)
     this.syncTarget()
