@@ -436,4 +436,23 @@ describe('Render2d view centre', () => {
     r.render()
     expect(r.pick(55, 55)).toBe(cellKey(1, 1))
   })
+
+  it('centres on the part above the foot, and draws on under it', () => {
+    const { canvas } = fakeCanvas()
+    const r = new Render2d({ cellSize: 10, follow: true, foot: 40 })
+    r.mount(canvas)
+    r.setTiles(tiles)
+    r.resize(100, 100, 1)
+    r.setScene(farScene())
+    r.setCamera(makeCamera(1, 1, 0))
+    // six rows above the foot, the centre the fourth of them, where it would be the sixth of ten without it
+    r.setOptions({ center: { x: 15, y: 25 } })
+    r.render()
+    expect(r.pick(55, 35)).toBe(cellKey(15, 25))
+    expect(r.pick(55, 55)).toBe(null)
+    // a cell five rows down from the centre lies under the foot, and is still there
+    r.setOptions({ center: { x: 15, y: 20 } })
+    r.render()
+    expect(r.pick(55, 85)).toBe(cellKey(15, 25))
+  })
 })

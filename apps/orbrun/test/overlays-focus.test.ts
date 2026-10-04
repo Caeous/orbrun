@@ -31,7 +31,7 @@ function setup() {
   st.phase = 'playing' as GameState['phase']
   st.inputMode = MouseMode.COMMAND
   /** one frame of the game loop: overlays, context, prompt strip, focus */
-  const frame = (device: 'pad' | 'keyboard' | 'pointer' = 'pad'): Context => {
+  const frame = (device: 'pad' | 'keyboard' | 'pointer' | 'touch' = 'pad'): Context => {
     ov.setDevice(device)
     ov.update(st)
     const ctx = deriveContext(st, scene, cam, 'micro')
@@ -1188,13 +1188,15 @@ describe('the travel depth prompt', () => {
     expect(host.querySelector('.osk')).toBeNull()
   })
 
-  it("spells its hint line the way the dialogs do: a glyph and a label per button, the keys at the end", () => {
+  it("spells its hint line the way the dialogs do: a glyph and a label per button, the keys at the end; a number pad has no shift or space", () => {
     const { st, frame, host } = setup()
     reduce(st, { msg: 'init_input', type: 'messages', tag: 'travel_depth', prompt: 'What level of Dungeon? (default D:3, ? - help) ', maxlen: 100 })
-    frame()
+    const ctx = frame()
     const line = host.querySelector('.osk .more')!
-    expect(Array.from(line.querySelectorAll('.osk-prompt')).map((p) => p.getAttribute('aria-label'))).toEqual(['A Type', 'X Backspace', 'RB Space', 'LB Shift', 'Y Done'])
-    expect(line.querySelectorAll('.osk-prompt svg').length).toBe(5)
+    expect(Array.from(line.querySelectorAll('.osk-prompt')).map((p) => p.getAttribute('aria-label'))).toEqual(['A Type', 'X Backspace', 'Y Done'])
+    expect(line.querySelectorAll('.osk-prompt svg').length).toBe(3)
+    expect(bindingTable(ctx).LB).toBeUndefined()
+    expect(bindingTable(ctx).RB).toBeUndefined()
     expect(line.textContent!.endsWith(' · Enter / Esc')).toBe(true)
     expect(host.querySelector('.osk .muted')).toBeNull()
   })
@@ -1207,24 +1209,81 @@ describe('the travel depth prompt', () => {
     expect(bindingTable(ctx).Y).toBeUndefined()
     expect(bindingTable(ctx).START).toEqual({ kind: 'osk', op: 'submit' })
     const line = host.querySelector('.osk .more')!
-    expect(Array.from(line.querySelectorAll('.osk-prompt')).map((p) => p.getAttribute('aria-label'))).toEqual(['A Type', 'X Backspace', 'RB Space', 'LB Shift', 'Menu Done'])
+    expect(Array.from(line.querySelectorAll('.osk-prompt')).map((p) => p.getAttribute('aria-label'))).toEqual(['A Type', 'X Backspace', 'Menu Done'])
   })
 
-  it('up and down keep their column: a wide row into the narrow extras row lands on its last key, not sideways', () => {
+  it("is a number pad under the prompt's own keys: up and down keep their column, the gap beside the 0 is stepped over", () => {
     const { ov, st, frame, host } = setup()
     reduce(st, { msg: 'init_input', type: 'messages', tag: 'travel_depth', prompt: 'What level of Dungeon? (default D:3, ? - help) ', maxlen: 100 })
     frame()
+    expect(host.querySelector('.osk')?.classList.contains('numpad')).toBe(true)
+    expect(Array.from(host.querySelectorAll('.osk .keys .row')).map((r) => r.textContent)).toEqual(['123', '456', '789', '0⌫'])
     const focused = () => host.querySelector('.osk .key.focused')?.textContent
     ov.oskOp('move', 4)
-    for (let i = 0; i < 9; i++) ov.oskOp('move', 2)
-    expect(focused()).toBe('0')
+    expect(focused()).toBe('1')
     ov.oskOp('move', 4)
-    expect(focused()).toBe('p')
-    ov.oskOp('move', 0)
+    ov.oskOp('move', 4)
+    expect(focused()).toBe('7')
+    // no point in a depth: down from the 7 is the 0 beside the gap, and left from the 0 goes round to the backspace
+    ov.oskOp('move', 4)
     expect(focused()).toBe('0')
+    ov.oskOp('move', 6)
+    expect(focused()).toBe('⌫')
     ov.oskOp('move', 0)
+    expect(focused()).toBe('9')
+    // the extras row is a key wider than the pad: its last comes down to the pad's last column
+    ov.oskOp('move', 0)
+    ov.oskOp('move', 0)
+    ov.oskOp('move', 0)
+    expect(focused()).toBe('^ Entrance')
+    ov.oskOp('move', 2)
     expect(focused()).toBe('$ Deepest')
     ov.oskOp('move', 4)
-    expect(focused()).toBe('4')
+    expect(focused()).toBe('3')
+  })
+
+  it("a skill target's pad has a point; its backspace key erases, and a key pressed by a finger is lit", () => {
+    const { ov, st, sent, frame, host } = setup()
+    reduce(st, { msg: 'init_input', type: 'messages', tag: 'skill_target', prompt: 'Enter a skill target for Armour: ', maxlen: 5, size: 5 })
+    frame()
+    expect(Array.from(host.querySelectorAll('.osk .keys .row')).map((r) => r.textContent)).toEqual(['123', '456', '789', '.0⌫'])
+    const key = (t: string) => Array.from(host.querySelectorAll<HTMLElement>('.osk .key')).find((k) => k.textContent === t)!
+    key('1').click()
+    key('2').click()
+    key('.').click()
+    key('5').click()
+    const input = host.querySelector<HTMLInputElement>('.popup input.text')!
+    expect(input.value).toBe('12.5')
+    expect(host.querySelector('.osk .key.focused')?.textContent).toBe('5')
+    key('⌫').click()
+    expect(input.value).toBe('12.')
+    // the pad's A on the lit backspace erases too
+    expect(host.querySelector('.osk .key.focused')?.textContent).toBe('⌫')
+    ov.oskOp('type')
+    expect(input.value).toBe('12')
+    ov.oskOp('submit')
+    expect(sent).toEqual([{ msg: 'key', keycode: 21 }, { msg: 'key', keycode: 11 }, { msg: 'text_input', text: '12\r' }])
+  })
+
+  it('a finger gets the number pad at once, with no phone keyboard to cover it, and no hint line: the touch bar names the buttons', () => {
+    const { st, frame, host } = setup()
+    reduce(st, { msg: 'init_input', type: 'messages', tag: 'skill_target', prompt: 'Enter a skill target for Armour: ', maxlen: 5, size: 5 })
+    frame('touch')
+    expect(host.querySelectorAll('.osk.numpad').length).toBe(1)
+    expect(host.querySelector<HTMLInputElement>('.popup input.text')!.inputMode).toBe('none')
+    expect(host.querySelector('.overlay-stack')!.classList.contains('device-touch')).toBe(true)
+    // the mouse puts it away as it puts the pad's away; the finger brings it back
+    frame('pointer')
+    expect(host.querySelector('.osk')).toBeNull()
+    frame('touch')
+    expect(host.querySelectorAll('.osk.numpad').length).toBe(1)
+  })
+
+  it("a line of words waits for the touch bar's Type: the phone keyboard can take it", () => {
+    const { st, frame, host } = setup()
+    reduce(st, { msg: 'init_input', type: 'messages', tag: 'inscribe', prompt: 'Inscribe with what? ', maxlen: 80 })
+    frame('touch')
+    expect(host.querySelector('.osk')).toBeNull()
+    expect(host.querySelector<HTMLInputElement>('.popup input.text')!.inputMode).toBe('')
   })
 })

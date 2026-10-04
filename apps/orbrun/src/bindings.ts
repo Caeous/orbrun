@@ -1,4 +1,4 @@
-import { Keys, MenuFlag, colouredText } from '@orbrun/webtiles'
+import { Keys, MenuFlag, colouredText, type InvItem } from '@orbrun/webtiles'
 import type { Dir8 } from '@orbrun/scene'
 import type { Button, PadEvent } from './gamepad'
 import { DEFAULT_YESNO, LOG_DEFAULT_COLOUR, isFocusMode, type Context, type MenuContext, type ParsedPrompt, type ShopContext } from './context'
@@ -115,7 +115,7 @@ const COMMAND: Partial<Record<Button, Action>> = {
   // that is not attacking. Explore and autofight, the tightest loop there is, stay on opposite
   // hands, so the pair you alternate constantly never shares a finger. Wait and rest are the
   // same verb at two lengths, so they share LB, beside autoexplore: the left hand passes the time.
-  LB: hold(k('.', 'Wait one turn'), k('5', 'Rest')),
+  LB: hold(k('.', 'Wait'), k('5', 'Rest')),
   RB: { kind: 'fire' },
   LT: k('o', 'Autoexplore'),
   RT: { kind: 'fight' },
@@ -423,17 +423,29 @@ const TEXT: Partial<Record<Button, Action>> = {
   SELECT: { kind: 'osk', op: 'cancel' },
 }
 
+// a number pad (osk.ts) has no case to shift and no space to put
+const NUMBER_TEXT: Partial<Record<Button, Action>> = (({ LB: _lb, RB: _rb, ...rest }) => rest)(TEXT)
+
 /**
  * The skill target prompt (skill_menu.cc read_skill_target) opens off Y on a
  * skill row (overlays.ts crtBody: Set target), so Y does not also submit it:
  * a second press, or one held a beat, would send an empty target straight
  * back. Start alone confirms there.
  */
-const SKILL_TARGET_TEXT: Partial<Record<Button, Action>> = (({ Y: _y, ...rest }) => rest)(TEXT)
+const SKILL_TARGET_TEXT: Partial<Record<Button, Action>> = (({ Y: _y, ...rest }) => rest)(NUMBER_TEXT)
 
 /** The prompts whose keyboard Y does not submit (see SKILL_TARGET_TEXT). */
 export function submitOnStartOnly(textTag: string | undefined): boolean {
   return textTag === 'skill_target'
+}
+
+/**
+ * The prompts that take a number, where the on-screen keyboard is a number
+ * pad (osk.ts `OskTarget.numpad`): a skill target, which may have a point
+ * (skill-menu.cc _keyfun_target_input), and a depth to travel to.
+ */
+export function numberPrompt(textTag: string | undefined): 'whole' | 'decimal' | undefined {
+  return textTag === 'skill_target' ? 'decimal' : textTag === 'travel_depth' ? 'whole' : undefined
 }
 
 const SPECTATING: Partial<Record<Button, Action>> = {
@@ -539,7 +551,7 @@ export function bindingTable(ctx: Context): Partial<Record<Button, Action>> {
     case 'levelmap':
       return levelmapTable(ctx)
     case 'text':
-      return submitOnStartOnly(ctx.textTag) ? SKILL_TARGET_TEXT : TEXT
+      return submitOnStartOnly(ctx.textTag) ? SKILL_TARGET_TEXT : numberPrompt(ctx.textTag) ? NUMBER_TEXT : TEXT
     case 'spectating':
       return SPECTATING
     case 'lobby':
@@ -582,6 +594,134 @@ function buildBarLabels(ctx: Context): BindingLabel[] {
     } else out.push({ button: b, label: actionLabel(a, ctx, b), action: a, contextual: isContextual(a, ctx) })
   }
   return out
+}
+
+/**
+ * The touch bar's fifteen cells, row by row from the top (hud.ts
+ * `renderTouchBar`). Every button keeps its cell on every screen, and a
+ * button a screen does not have leaves its cell empty rather than letting
+ * another slide in: the finger learns where Back is once. The top row reads
+ * A, B, then the bumpers; the d-pad's four make an arrow cluster at the
+ * right edge beneath them; the middle buttons and a stick click stand in
+ * a column of their own at the left, Start over Select over L3. The other
+ * stick click has no cell: a hold on the view is R3 (game.ts), and L3 is
+ * the one that differs from it where they differ (the palette in a menu,
+ * Find on the level map).
+ */
+export const TOUCH_GRID: readonly (readonly Button[])[] = [
+  ['START', 'A', 'B', 'LB', 'RB'],
+  ['SELECT', 'X', 'LT', 'DU', 'RT'],
+  ['L3', 'Y', 'DL', 'DD', 'DR'],
+]
+
+/** A button's cell on the touch bar (`TOUCH_GRID`), from the top left; null for one that has none. */
+export function touchCell(b: Button): { row: number; col: number } | null {
+  for (let row = 0; row < TOUCH_GRID.length; row++) {
+    const col = TOUCH_GRID[row].indexOf(b)
+    if (col >= 0) return { row, col }
+  }
+  return null
+}
+
+/**
+ * A touch bar button: the binding it presses (`button`), standing in that
+ * button's cell (`cell`), with crawl's command icon by name (`icon`) or an
+ * item's own tile (`item`) over the word, and how many of it (`count`).
+ */
+export type TouchLabel = BindingLabel & { cell: Button; icon?: string; item?: InvItem['tile']; count?: number }
+
+/**
+ * The touch bar's buttons (hud.ts `renderTouchBar`): the bindings as the bar
+ * lists them (`barLabels`, or a panel of ours' own) that have a cell
+ * (`TOUCH_GRID`), each in its own, less what a finger has no use for: a
+ * button that does nothing here, and Start and Select on the map itself (a
+ * tap on the stats pane opens what Start does, a tap on the minimap the level
+ * map). B stands on every screen, the map's too. `panel`: the labels are a
+ * panel of ours' (Overlays.padPrompts), up over the map: the map's rules are
+ * not theirs. The d-pad's arrows are added wherever the
+ * d-pad moves something (it is no binding of the tables, see `resolve`). The
+ * loop's two buttons go by the short word (`TOUCH_WORDS`): a button is read
+ * at a glance.
+ */
+export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel = false): TouchLabel[] {
+  const map = ctx.mode === 'command' && !panel
+  const out: TouchLabel[] = []
+  for (const l of labels) {
+    if (l.teaching || l.label === NO_ACTION || (map && (l.button === 'START' || l.button === 'SELECT'))) continue
+    const cell = l.button as Button
+    if (!touchCell(cell) || cell.startsWith('D')) continue
+    if (!panel && ctx.mode === 'command' && l.action.kind === 'fire' && ctx.readiedAction) {
+      out.push({ ...l, cell, ...touchShot(ctx.readiedAction, ctx.readiedTile) })
+      continue
+    }
+    const icon = panel ? undefined : touchIcon(l.action, ctx)
+    out.push({ ...l, label: TOUCH_WORDS[l.label] ?? l.label, cell, ...(icon ? { icon } : {}) })
+  }
+  if (panel || dpadMoves(ctx)) for (const [b, label] of TOUCH_ARROWS) out.push({ button: b, cell: b, label, action: { kind: 'keys', label, seq: [] }, contextual: false })
+  return out
+}
+
+/**
+ * The quivered shot on the touch bar (touchLabels): the server's whole line
+ * ("Drink: 3 potions of curing") is cut off on a button a fifth of a phone
+ * wide. An item is drawn instead, under its verb, with the count from the
+ * line ("Throw", 23 darts); a spell or an ability has no tile of its own and
+ * goes by its name under crawl's icon for casting or using one.
+ */
+export function touchShot(readied: string, tile: InvItem['tile'] | undefined): { label: string; icon?: string; item?: InvItem['tile']; count?: number } {
+  const m = /^([^:]+):\s*(.*)$/.exec(readied)
+  if (!m) return { label: readied }
+  const [, verb, what] = m
+  if (tile !== undefined) {
+    const n = /^(\d+)\s/.exec(what)
+    return { label: verb, item: tile, ...(n ? { count: Number(n[1]) } : {}) }
+  }
+  return { label: what || verb, icon: verb === 'Cast' ? 'CMD_CAST_SPELL' : 'CMD_USE_ABILITY' }
+}
+
+/** the touch bar's own words for crawl's (touchLabels) */
+const TOUCH_WORDS: Record<string, string> = { Autoexplore: 'Explore', Autofight: 'Fight' }
+
+/**
+ * A touch button's icon, as a tile name (overlays.ts `commandTileId`):
+ * crawl's own, from the command bar its touch screens have (tilereg-cmd.cc,
+ * the GUI atlas's `CMD_*`), for the buttons that always mean one command
+ * there -- on the map and on the level map. X and Y wear the icon of the
+ * tab they open on, as their words name it; Examine, which on the map
+ * only ever opens look mode, the magnifier. A button whose meaning changes
+ * with the situation (A) has none, rather than one that is wrong half the
+ * time; the shot on RB wears what is quivered (`touchShot`).
+ */
+function touchIcon(a: Action, ctx: Context): string | undefined {
+  const last = a.kind === 'keys' ? a.seq[a.seq.length - 1] : undefined
+  const key = last === undefined ? undefined : 'text' in last ? last.text : last.key
+  if (ctx.mode === 'command') {
+    if (a.kind === 'fight') return 'CMD_AUTOFIGHT'
+    // crawl's magnifier, from its help lookup: Examine here is looking about, which is what the glass says
+    if (a.kind === 'examine') return 'CMD_LOOKUP_HELP'
+    if (a.kind === 'ui') return ({ commands: 'CMD_CAST_SPELL', equipment: 'CMD_DISPLAY_INVENTORY' } as Record<string, string>)[a.op]
+    return ({ o: 'CMD_EXPLORE', '.': 'CMD_WAIT' } as Record<string, string>)[String(key)]
+  }
+  if (ctx.mode === 'levelmap') {
+    // Find… is crawl's stash search (Ctrl-F), Overview its dungeon overview (Ctrl-O)
+    return ({ '<': 'CMD_MAP_FIND_UPSTAIR', '>': 'CMD_MAP_FIND_DOWNSTAIR', '@': 'CMD_MAP_FIND_YOU', '.': 'CMD_MAP_GOTO_TARGET', G: 'CMD_INTERLEVEL_TRAVEL', 6: 'CMD_SEARCH_STASHES', 15: 'CMD_DISPLAY_OVERMAP' } as Record<string, string>)[String(key)]
+  }
+  return undefined
+}
+
+/** the d-pad's cells, by their arrows (touchLabels) */
+const TOUCH_ARROWS: readonly (readonly [Button, string])[] = [
+  ['DU', '↑'],
+  ['DL', '←'],
+  ['DD', '↓'],
+  ['DR', '→'],
+]
+
+/** Whether the d-pad moves something here (`resolve`'s directions): the player, a cursor, a list. A yes/no has no cursor. */
+function dpadMoves(ctx: Context): boolean {
+  if (ctx.mode === 'yesno' || ctx.prompt?.yesno) return false
+  if (isFocusMode(ctx)) return true
+  return ctx.mode === 'command' || ctx.mode === 'menu' || ctx.mode === 'targeting' || ctx.mode === 'levelmap' || ctx.mode === 'text'
 }
 
 /** Contextual prompts plus menu confirmation, the readied action and bump attacks. B stays implicit. */

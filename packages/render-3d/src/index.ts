@@ -15,7 +15,9 @@ import {
   type TileSource,
   type Viewmodel,
 } from '@orbrun/scene'
-import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, handsFootprint, type HandPose, type HandRect } from './hands.js'
+import { lensFov } from './lens.js'
+export { lensFov }
+import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, handsFootprint, handsScale, scaledPose, type HandPose, type HandRect } from './hands.js'
 import { LevelGrid } from './grid.js'
 import { LevelMesher, MARK_MARGIN, uvFor, type ChunkGeometry, type LevelStats, type MeshContext, type TileDraw } from './level-mesh.js'
 import { Movers, monsterId } from './motion.js'
@@ -310,6 +312,10 @@ export class Render3d implements MapRenderer {
   private handCache = new Map<string, Hand | null>()
   private vmLift = NaN
   private lift = NaN
+  /** the css px along the view's foot the HUD's touch bar stands over (`setFoot`) */
+  private footPx = 0
+  /** the view is a phone's held upright (`setUpright`): the Field of view setting is the angle across (lens.ts) */
+  private upright = false
   // ---- the peel
   private peelWorker: Worker | null | undefined = undefined
   private peelId = 0
@@ -577,7 +583,7 @@ export class Render3d implements MapRenderer {
       this.vmLift = NaN
     }
     Object.assign(this.opts, opts)
-    this.cam.fov = this.opts.fov
+    this.cam.fov = lensFov(this.opts.fov, this.cam.aspect, this.upright)
     this.cam.updateProjectionMatrix()
     this.mesher.invalidate()
     this.builtRevision = -1
@@ -630,6 +636,28 @@ export class Render3d implements MapRenderer {
     this.cursor = cursor
   }
 
+  /**
+   * Orbrun's own, for a phone: the view's bottom `px` lie under the HUD's
+   * touch bar, which stands over the dungeon there, so the hands stand on
+   * the bar rather than at the view's own bottom edge, out of sight.
+   */
+  setFoot(px: number): void {
+    this.footPx = Math.max(0, px)
+  }
+
+  /** Orbrun's own: the view is a phone's held upright, where the Field of view setting is the angle across (lens.ts). */
+  setUpright(on: boolean): void {
+    if (on === this.upright) return
+    this.upright = on
+    this.cam.fov = lensFov(this.opts.fov, this.cam.aspect, on)
+    this.cam.updateProjectionMatrix()
+  }
+
+  /** `footPx` as a share of the view's height, never above half of it. */
+  private get footShare(): number {
+    return Math.min(0.5, this.footPx / this.height)
+  }
+
   setViewmodel(vm: Viewmodel | null): void {
     this.viewmodel = vm
     const key = vm ? JSON.stringify([vm.weapon?.layers, vm.offhand?.layers]) : ''
@@ -657,6 +685,7 @@ export class Render3d implements MapRenderer {
       this.renderer.setSize(this.width, this.height, false)
     }
     this.cam.aspect = this.width / this.height
+    this.cam.fov = lensFov(this.opts.fov, this.cam.aspect, this.upright)
     this.cam.updateProjectionMatrix()
     this.vmCam.aspect = this.cam.aspect
     this.vmCam.updateProjectionMatrix()
@@ -1171,7 +1200,7 @@ export class Render3d implements MapRenderer {
   handsFootprint(): HandRect[] {
     if (!this.vmVisible) return []
     const vm = this.viewmodel!
-    return handsFootprint({ weapon: !!vm.weapon, offhand: !vm.offhand ? 'none' : vm.offhand.name?.startsWith('HAND2_') ? 'shield' : 'weapon' }, this.cam.aspect)
+    return handsFootprint({ weapon: !!vm.weapon, offhand: !vm.offhand ? 'none' : vm.offhand.name?.startsWith('HAND2_') ? 'shield' : 'weapon' }, this.cam.aspect, this.footShare)
   }
 
   private get vmVisible(): boolean {
@@ -1297,12 +1326,16 @@ export class Render3d implements MapRenderer {
     const lift = this.lift
     const tint = scene.level.tint
     const flash = flashOf(getCell(scene, scene.player.x, scene.player.y))
-    const pose = (h: Hand | null, p: HandPose, push = 0) => {
+    const k = handsScale(asp)
+    const foot = this.footShare
+    const pose = (h: Hand | null, rest: HandPose, push = 0) => {
       if (!h) return
       const m = h.batch.mesh
       m.visible = true
+      const p = scaledPose(rest, k)
       const len = Math.hypot(p.x * asp, p.y) || 1
-      m.position.set(p.x * asp * (1 - push / len), p.y * (1 - push / len), 0)
+      m.position.set(p.x * asp * (1 - push / len), p.y * (1 - push / len) + 2 * foot, 0)
+      m.scale.setScalar(k)
       m.rotation.set(p.pitch, p.yaw, p.roll, 'YXZ')
       m.updateMatrixWorld()
       ;(h.material.uniforms.modelInverse.value as THREE.Matrix4).copy(m.matrixWorld).invert()

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { initialState, reduce } from '@orbrun/webtiles'
-import { crtPlainText, scrapeCrt, scrapeSkills, knownCrtScreen } from '../src/crt-scrape'
+import { crtPlainText, scrapeCrt, scrapeSkills, knownCrtScreen, sliceCrtHtml, stackSkills } from '../src/crt-scrape'
 import fixture from './fixtures/skills-crt.json'
 
 /**
@@ -96,5 +96,78 @@ describe('skills screen', () => {
 
   it('a species with distributed training (no hotkeys) yields no rows', () => {
     expect(scrapeSkills(['      Skill           Level Cost   Apt', '    + Fighting         2.6   3.0    0'])).toEqual([])
+  })
+})
+
+describe('crt html slices', () => {
+  const line = '  <span class="fg8 bg0">b - Maces &amp; Flails   0.0   </span><span class="fg3 bg0">0.8   </span><span class="fg15 bg0">+1    k * Translocations'
+  it('opens the span a cut falls inside again, and closes what the server left open', () => {
+    expect(sliceCrtHtml(line, 41)).toBe('<span class="fg15 bg0">k * Translocations</span>')
+  })
+  it('counts an escaped character as one column and drops the trailing spaces', () => {
+    expect(sliceCrtHtml(line, 0, 21)).toBe('  <span class="fg8 bg0">b - Maces &amp; Flails</span>')
+    expect(sliceCrtHtml(line, 29, 41)).toBe('<span class="fg3 bg0">0.8   </span><span class="fg15 bg0">+1</span>')
+    expect(sliceCrtHtml(line, 37, 41)).toBe('')
+  })
+})
+
+describe('skills screen in one column', () => {
+  const plain = (lines: string[]) => lines.map((l) => crtPlainText(l))
+
+  it('stands the right column under the left, under one header, with the blank lines closed up', () => {
+    expect(plain(stackSkills(linesAfter(2)))).toEqual([
+      '      Skill           Level Cost   Apt',
+      '  a - Fighting         2.6   3.0    0',
+      '',
+      '  b - Maces & Flails   0.0   0.8   +1',
+      '  c - Unarmed Combat   0.0   0.8   +1',
+      '  d - Throwing         0.0   1.0    0',
+      '',
+      '  e - Ranged Weapons   0.0   0.8   +1',
+      '',
+      '  f - Armour           0.0   0.8   +1',
+      '  g - Dodging          3.0   3.4   +1',
+      '  h - Stealth          2.0   2.5   +1',
+      '',
+      '  i - Spellcasting     3.0   4.8   -1',
+      '',
+      '  j - Conjurations     6.0   4.2   +3',
+      '  k * Translocations   3.4   5.7   -2',
+      '',
+      '  l - Evocations       0.0   1.0    0',
+      '',
+      ' The relative cost of raising each skill is in cyan.',
+      ' The species aptitude is in white.',
+      '',
+      ' [?] Help',
+      ' [=] set a skill target',
+      ' [/] auto|manual mode',
+      ' [*] useful|all skills',
+      ' [!] training|cost|targets',
+    ])
+  })
+
+  it('keeps the colours the server printed', () => {
+    const stacked = stackSkills(linesAfter(2))
+    expect(stacked[16]).toBe('  <span class="fg15 bg0">k * Translocations   3.4   </span><span class="fg3 bg0">5.7   </span><span class="fg15 bg0">-2</span>')
+    expect(stacked[23]).toBe(' <span class="fg7 bg0">[</span><span class="fg14 bg0">?</span><span class="fg7 bg0">] Help</span>')
+  })
+
+  it('the scraper reads one column of rows in letter order, and every switch', () => {
+    const hot = scrapeCrt('skills', stackSkills(linesAfter(2)))
+    const rows = hot.filter((h) => h.kind === 'row')
+    expect(rows.map((r) => r.key).join('')).toBe('abcdefghijkl')
+    expect(new Set(rows.map((r) => r.group + ':' + r.col))).toEqual(new Set(['col0:2']))
+    expect(hot.filter((h) => h.kind === 'footer').map((f) => f.key + ':' + f.label)).toEqual(['?:Help', '=:set a skill target', '/:auto|manual mode', '*:useful|all skills', '!:training|cost|targets'])
+  })
+
+  it('splits a range switch off as well (the target view)', () => {
+    const stacked = plain(stackSkills(linesAfter(4)))
+    expect(stacked.slice(-6)).toEqual([' [?] Help', ' [a-z] set skill target', ' [-] clear selected target', ' [/] auto|manual mode', ' [*] useful|all skills', ' [!] training|cost|targets'])
+  })
+
+  it('leaves a screen with no rows as it is', () => {
+    const lines = ['      Skill           Level Cost   Apt', '    + Fighting         2.6   3.0    0']
+    expect(stackSkills(lines)).toBe(lines)
   })
 })

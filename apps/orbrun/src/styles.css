@@ -81,7 +81,8 @@ body {
   background: #000;
   color: #ddd;
   font-family: var(--mono);
-  font-size: calc(15px * var(--ui-scale));
+  /* --phone-shrink: on a phone, in a game, the menus come down as far as the grid's text did (game.ts shrinkText) */
+  font-size: calc(15px * var(--ui-scale) * var(--phone-shrink, 1));
   font-weight: var(--text-weight);
   overflow: hidden;
 }
@@ -2039,9 +2040,13 @@ a.item.beside {
   pointer-events: auto;
 }
 
-/* the WebTiles stats pane (player.js / game.html) as rows on its cells at the view's top-left corner; the widths are in grid/stats.ts */
+/* the WebTiles stats pane (player.js / game.html) as rows on its cells at the view's top-left corner; the widths are in grid/stats.ts.
+   A press anywhere on it opens the character screen (hud.ts `onStatsClick`), so its text is not for selecting */
 .stats {
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 /* the portrait (hud.md): the player's cell on the pane's first rows, the title and god lines beside it */
 .stats canvas.portrait {
@@ -2111,7 +2116,8 @@ canvas.minimap.hidden {
 }
 
  /* the status strip (hud.ts renderStatuses): the player's own corner badges blown up in rows running leftward from the
-   minimap's left edge, STATUS_BADGE_ROWS of the grid square each (hud.ts layout places it). Bare over the view like the
+   minimap's left edge, or under it when the stats pane leaves no room, STATUS_BADGE_ROWS of the grid square each
+   (hud.ts layout places it). Bare over the view like the
    minimap and shadowed the same way */
 .statuses {
   display: block;
@@ -2244,10 +2250,10 @@ canvas.minimap.hidden {
     0 0 3px #000,
     0 1px 2px #000;
 }
-/* the player can dismiss it: a click on the pane sends space (hud.ts). A spectator cannot, so its pane takes none */
-.messages.more.dismissable {
-  pointer-events: auto;
-  cursor: pointer;
+/* the pane takes no pointer: a drag that starts on the log turns the view under it, and a tap there reaches the view,
+   which sends space on a --more-- the player can dismiss (hud.ts dismissesMoreAt) */
+.hud > .messages {
+  pointer-events: none;
 }
 /* the world stops while the more is pending: everything under the message pane
    and the bar (the map, the stats, the sidebar) goes behind a lighter cousin of the
@@ -2297,6 +2303,136 @@ canvas.minimap.hidden {
 }
 .actionbar[hidden] {
   display: none;
+}
+
+/*
+ * The touch bar (hud.ts renderTouchBar): every button the screen has, by its
+ * word, along the view's foot for a player with only a finger. Big enough to
+ * hit without looking (44px, the platforms' least touch target), four
+ * across, the most-used row nearest the thumb; the dungeon shows between the
+ * buttons, each on a dark backing of its own.
+ */
+.touchbar {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  /* bindings.ts TOUCH_GRID: three rows of five, every button in its own cell on every screen; no wider than a phone's
+     widest, the bar standing at the right on a wide screen, under the thumb that has the d-pad */
+  grid-template-columns: repeat(5, minmax(0, 88px));
+  justify-content: end;
+  grid-template-rows: repeat(3, auto);
+  gap: 6px;
+  padding: 6px 8px max(8px, env(safe-area-inset-bottom, 0px));
+  /* the view runs on under the bar (console.ts gameSplit `foot`), the panes stopping above it */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  z-index: 3;
+  /* the buttons' words are sized from the bar's width (.tb's font-size) */
+  container-type: inline-size;
+}
+.touchbar[hidden] {
+  display: none;
+}
+/* on its side, at the right column's foot under the minimap (hud.ts layout) */
+.touchbar.beside {
+  right: auto;
+  padding-top: 0;
+  padding-left: 0;
+  padding-right: max(8px, env(safe-area-inset-right, 0px));
+  padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
+  /* hud.ts layout stands it just under the minimap: the rows share what the map leaves, never under 44px
+     (TOUCH_ROW_LEAST), the gaps between them tighter than along the foot */
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  row-gap: 4px;
+}
+.touchbar.beside .tb {
+  min-height: 0;
+  padding: 1px 2px;
+}
+.touchbar .tb {
+  position: relative;
+  min-height: 44px;
+  padding: 4px 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font: inherit;
+  /* the grid's own text size (host.ts --fs), so a button never reads bigger than the stats beside it; and no bigger
+     than lets "Character" fit one of five buttons across the bar (about 5.6em of a button's width less its padding),
+     nor under 10px */
+  font-size: max(10px, min(var(--fs, 12px), calc((100cqi - 40px) / 28)));
+  line-height: 1.15;
+  color: var(--color-7);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  text-align: center;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+.touchbar .tb .label {
+  max-width: 100%;
+  overflow: hidden;
+  /* two lines before a label is cut */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* under an icon the word is the caption, not the button: smaller, quieter, one line */
+.touchbar .tb.has-icon .label {
+  font-size: 0.85em;
+  color: var(--ink-dim);
+  -webkit-line-clamp: 1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  display: block;
+}
+/* a tap-or-hold one's caption names both, Wait [Rest] (hud.ts renderTouchBar): as small as keeps it to the button's
+   width, its --chars at the monospace font's 0.6em advance, and no bigger than another caption */
+.touchbar .tb.has-icon.has-hold {
+  container-type: inline-size;
+}
+.touchbar .tb.has-icon.has-hold .label {
+  font-size: min(0.85em, calc(100cqi / var(--chars, 1) / 0.61));
+}
+/* crawl's own command icon, or the quivered item, over the word (hud.ts touchArt) */
+.touchbar .tb canvas.tile,
+.touchbar .tb svg.arrow {
+  flex: none;
+  pointer-events: none;
+}
+/* how many of the quivered item there are, in the button's corner as on crawl's item tiles */
+.touchbar .tb .count {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  font-size: 0.85em;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
+  pointer-events: none;
+}
+/* a cell whose button this screen lacks: held open, so nothing slides into it (hud.ts renderTouchBar) */
+.touchbar .tb.empty {
+  background: none;
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.05);
+}
+/* A: what the screen is for here (Interact, Select, --more--) */
+.touchbar .tb.A {
+  border-color: rgba(255, 212, 92, 0.55);
+}
+.touchbar .tb.down {
+  background: rgba(255, 212, 92, 0.25);
+  border-color: var(--accent);
+}
+.touchbar .tb.down .label {
+  color: var(--color-7);
 }
 
 /* one cluster of the controller: face, shoulders, sticks, system */
@@ -2471,6 +2607,30 @@ canvas.minimap.hidden {
   padding: 0;
   transition: none;
 }
+/* A and B keep one width under every panel, so each glyph stands in the same place whatever the label (hud.ts renderBar);
+   a longer label is cut short rather than pushing B along */
+.actionbar.contextual.row.under .chip.A,
+.actionbar.contextual.row.under .chip.B {
+  width: 11em;
+  min-width: 0;
+}
+.actionbar.contextual.row.under .chip.A .text,
+.actionbar.contextual.row.under .chip.B .text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.actionbar.contextual.row.under .chip.A .label,
+.actionbar.contextual.row.under .chip.B .label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the place of a button this screen lacks: held, never drawn */
+.actionbar.contextual .chip.slot {
+  visibility: hidden;
+  pointer-events: none;
+}
 /* the panel's key-help line stands over the dim the panel stands on (.overlay-stack), not under it with the world */
 .hud > .actionbar.under {
   z-index: 21;
@@ -2639,7 +2799,9 @@ canvas.minimap.hidden {
 
 .overlay-stack {
   position: absolute;
-  inset: 0;
+  /* short of the touch bar (game.ts relayout): on its side the right column, along the foot its rows, so its buttons
+     stay in reach under any popup and its dim */
+  inset: 0 var(--touch-right, 0px) var(--touch-bottom, 0px) 0;
   pointer-events: none;
   z-index: 20;
 }
@@ -2665,7 +2827,8 @@ canvas.minimap.hidden {
   font-family: var(--mono);
   font-size: 0.95em;
   max-width: min(94vw, 78rem);
-  max-height: calc(95vh - 2 * var(--popup-top));
+  /* the stack's height, not the screen's: it stops short of the touch bar */
+  max-height: min(calc(95vh - 2 * var(--popup-top)), calc(100% - 2 * var(--popup-top)));
   min-width: 24rem;
   display: flex;
   flex-direction: column;
@@ -2685,6 +2848,13 @@ canvas.minimap.hidden {
 
 .popup.hidden {
   display: none;
+}
+
+/* a line of text the server asks for (overlays.ts renderTextInput) stands low, over the message log */
+.popup.text-input {
+  top: auto;
+  bottom: 9rem;
+  min-width: 20rem;
 }
 
 .popup .title,
@@ -2811,6 +2981,10 @@ canvas.minimap.hidden {
   position: relative;
   min-height: 1.2em;
   line-height: 1.2em;
+}
+/* the skills screen in one column (overlays.ts crtLayout): the prose under its rows wraps, the rows and switches keep their columns */
+.crt .crt-line.wrap {
+  white-space: pre-wrap;
 }
 .crt .crt-hot {
   position: absolute;
@@ -4019,6 +4193,43 @@ canvas.minimap.hidden {
   box-shadow: inset 0 0 0 1px var(--gold), 0 0 12px rgba(216, 180, 95, 0.35);
   color: #fff;
 }
+/* a number prompt's keyboard (osk.ts numpad): a phone's number pad, in the prompt's box under its question and
+   field rather than over them, its keys big enough for a thumb */
+.popup .osk.numpad {
+  position: static;
+  transform: none;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0 0.8rem 0.6rem;
+}
+.osk.numpad .preview {
+  display: none;
+}
+.osk.numpad .keys {
+  width: min(100%, 15rem);
+  margin: 0 auto;
+  gap: 0.3em;
+}
+.osk.numpad .keys .row {
+  gap: 0.3em;
+}
+.osk.numpad .keys .key {
+  flex: 1 1 0;
+  width: auto;
+  height: max(2.4em, 44px);
+  font-size: 1.25em;
+}
+.osk.numpad .keys .key.backspace {
+  font-size: 1.6em;
+}
+.osk .key.gap {
+  visibility: hidden;
+}
+/* a finger has the touch bar, which names the buttons in words */
+.overlay-stack.device-touch .osk .more {
+  display: none;
+}
 /* the hint line, as a dialog's .more: glyphs for the buttons, the keys spelled at the end */
 .osk .more,
 .chat .chat_read_hints {
@@ -4108,4 +4319,16 @@ canvas.minimap.hidden {
 /* a server's ping, written in after the row: it breaks onto a new line whole or not at all */
 .frame.menu-frame .item .sub .ping {
   white-space: nowrap;
+}
+
+/* on a phone (game.ts shrinkText) a popup spans the screen, a gutter either side: centred from its middle, a box
+   that fits its content wraps in half the screen and leaves the other half bare, and a wide one runs off the edge.
+   Last, and as specific as the widest popup's own width (.popup.menu.game.command-menu.tabbed), so it wins over each */
+.screen.game.phone .overlay-stack > .popup {
+  left: max(8px, env(safe-area-inset-left, 0px));
+  right: max(8px, env(safe-area-inset-right, 0px));
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  transform: translateY(var(--popup-y));
 }

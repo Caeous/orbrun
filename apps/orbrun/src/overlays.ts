@@ -18,8 +18,8 @@ import { h, clear, escapeHtml, onDprChange, snapToPixels } from './dom'
 import { Osk, oskPrompts, type OskOp, type OskTarget } from './osk'
 import commands from '../data/commands.json'
 import { FocusNav, focusStep, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
-import { scrapeCrt } from './crt-scrape'
-import { focusFallback, promptButtons, submitOnStartOnly, type Action, type BindingLabel } from './bindings'
+import { crtPlainText, scrapeCrt, stackSkills } from './crt-scrape'
+import { focusFallback, numberPrompt, promptButtons, submitOnStartOnly, type Action, type BindingLabel } from './bindings'
 import { CHARACTER_COMMANDS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandMenu } from './command-menu'
 import { VIEW_OPTIONS } from './servers'
 import { settingGroups, type SettingGroup } from './settings-rows'
@@ -105,7 +105,7 @@ export interface PopupAction {
  * pixelated path while the canvas was a layer of its own and a filtered one
  * once the window lost focus, and the icon changed under the player.
  */
-function tileCanvas(gd: Gamedata | null, tiles: TileRef[], scale = 1, size = 32 * scale): HTMLCanvasElement {
+export function tileCanvas(gd: Gamedata | null, tiles: TileRef[], scale = 1, size = 32 * scale): HTMLCanvasElement {
   const c = h('canvas', { class: 'tile' })
   c.style.width = size + 'px'
   c.style.height = size + 'px'
@@ -466,6 +466,8 @@ export class Overlays {
   root: HTMLElement
   private hooks: OverlayHooks
   private lastUiRev = -1
+  /** the skills screen as last laid out, for a resize to lay it out again when its room changes (`crtLayout`) */
+  private crtFitted: { tag: string; lines: string[]; key: string; el: HTMLElement } | null = null
   private menuEl: HTMLElement | null = null
   /** the menu `menuEl` shows (the top one), for the scroll memo */
   private menuTop: MenuState | null = null
@@ -580,6 +582,7 @@ export class Overlays {
     this.root.addEventListener('pointermove', (ev) => this.pointerWakes(ev), { passive: true })
     // a click is the mouse speaking: the hover under it counts again, so a click straight after a key lands where the mouse is
     this.root.addEventListener('pointerdown', (ev) => this.pointerWakes(ev, true), { passive: true })
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.refitCrt()).observe(this.root)
   }
 
   /** A mouse event over an overlay. Only a move that really moved wakes the pointer: a list scrolled under a still mouse can report one that did not. */
@@ -667,6 +670,7 @@ export class Overlays {
       if (he === this.promptEl) continue
       if (!he.dataset.client || he.classList.contains('osk')) he.remove()
     }
+    this.crtFitted = null
     this.menuEl = null
     this.menuTop = null
     this.menuMore = null
@@ -760,9 +764,9 @@ export class Overlays {
     // its keys at once; the keyboard follows the field across rebuilds. After a physical keyboard or the
     // mouse the field stands alone and takes the typing (the on-screen keyboard would cover it and its
     // prompt, and show none of what was typed); X still brings it up (`oskOp`). The new game's seed
-    // field waits to be asked.
+    // field waits to be asked. A finger gets the number pad of a number prompt at once (`oskFor`).
     const tt = this.currentTextTarget() // reassigned by the render helpers above
-    const prompt = !!ti && ti.type !== 'seed-selection' && !this.hooks.watching() && this.device === 'pad'
+    const prompt = !!ti && ti.type !== 'seed-selection' && !this.hooks.watching() && !!tt && this.oskFor(tt, this.device)
     if (tt && (oskWasUp || prompt)) this.osk.attach(tt, tt.input.closest('.popup') || this.root)
     else if (!tt && !this.clientOverlay) this.osk.detach()
     // now that the new elements are laid out: the reader's place, or the scroll the server asked for
@@ -2073,21 +2077,29 @@ export class Overlays {
    * official text.js injects it verbatim), so no formatted-string pass here.
    * On a screen the scraper knows (the skills screen), each hotkey the text
    * prints gets a cursor marker over its row, measured in `ch` since the
-   * screen is monospace; the markers are the focusables.
+   * screen is monospace; the markers are the focusables. Where the popup is
+   * too narrow for crawl's two columns of skills, they stand in one
+   * (`crtLayout`).
    */
   private crtBody(state: GameState, tag: string, top: boolean): HTMLElement {
     const pre = h('div', { class: 'crt' })
-    const lines: string[] = []
+    let lines: string[] = []
     const areas = [state.crt.lines, ...Array.from(state.crt.areas.entries()).filter(([k]) => k !== 'crt').map(([, v]) => v)]
     for (const area of areas) {
       const max = Math.max(-1, ...area.keys())
       for (let i = 0; i <= max; i++) lines.push(area.get(i) || '')
     }
-    const els = lines.map((l) => h('div', { class: 'crt-line', html: l || ' ' }))
+    const layout = tag === 'skills' ? this.crtLayout(tag, lines) : null
+    if (layout) this.crtFitted = { tag, lines, key: layout.key, el: pre }
+    if (layout?.stacked) {
+      lines = layout.stacked
+      if (layout.font) pre.style.fontSize = layout.font + 'px'
+    }
+    const hotkeys = scrapeCrt(tag, lines)
+    const els = lines.map((l, i) => h('div', { class: 'crt-line' + (layout?.prose?.has(i) ? ' wrap' : ''), html: l || ' ' }))
     pre.append(...els)
     if (!top) return pre
     const items: Focusable[] = []
-    const hotkeys = scrapeCrt(tag, lines)
     // skill-menu.cc: `=` puts the screen in set-target mode (set_flag, so a second `=` is harmless)
     // and a skill's letter then prompts for its target (read_skill_target, text input `skill_target`).
     // A row's Y sends both, so one press asks for the target without a mode switch first. The screen
@@ -2113,6 +2125,57 @@ export class Overlays {
     // only one of them: left / right cross columns rather than staying on the line
     this.registerFocus('crt:' + tag, items, { wrap: true, pageRows: 8, columns: true })
     return pre
+  }
+
+  /**
+   * How the skills screen stands in its popup: as crawl lays it out where
+   * its widest line fits, else in one column (crt-scrape.ts `stackSkills`),
+   * the font brought down only where even that column is too wide for the
+   * popup; the prose under the rows (`prose`, line numbers) wraps instead.
+   * `key` names the layout, so a resize lays the screen out again only when
+   * it changes (`refitCrt`). Null where nothing is laid out to measure.
+   */
+  private crtLayout(tag: string, lines: string[]): { key: string; stacked?: string[]; font?: number; prose?: Set<number> } | null {
+    const cls = 'popup menu menu_' + tag
+    const room = this.crtRoom(cls, lines.length)
+    if (!room) return null
+    const width = (ls: string[]) => Math.max(0, ...ls.map((l) => crtPlainText(l).trimEnd().length))
+    if (width(lines) <= room.cols) return { key: 'wide' }
+    const stacked = stackSkills(lines)
+    const hotkeys = scrapeCrt(tag, stacked)
+    const hot = new Set(hotkeys.map((hk) => hk.line))
+    const rows = Math.max(-1, ...hotkeys.filter((hk) => hk.kind === 'row').map((hk) => hk.line))
+    const prose = new Set(stacked.flatMap((_, i) => (i > rows && !hot.has(i) ? [i] : [])))
+    const tall = this.crtRoom(cls, stacked.length) ?? room
+    const need = width(stacked.filter((_, i) => !prose.has(i)))
+    const font = need > tall.cols ? Math.floor((tall.font * tall.cols * 10) / need) / 10 : undefined
+    return { key: 'stacked:' + (font ?? ''), stacked, font, prose }
+  }
+
+  /**
+   * The width a CRT popup of class `cls` may grow to, in columns of its font:
+   * a stand-in as wide as it can be, `lines` tall so a scrollbar takes its
+   * share as the real one's would, measured and taken away again.
+   */
+  private crtRoom(cls: string, lines: number): { cols: number; font: number } | null {
+    const probe = h('span', null, 'x'.repeat(200))
+    const rows = Array.from({ length: Math.max(0, lines - 1) }, () => h('div', { class: 'crt-line' }, ' '))
+    const crt = h('div', { class: 'crt' }, h('div', { class: 'crt-line' }, probe), ...rows)
+    const el = h('div', { class: cls, style: { visibility: 'hidden' } }, crt)
+    this.root.append(el)
+    const cs = getComputedStyle(crt)
+    const ch = probe.getBoundingClientRect().width / 200
+    const inner = crt.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+    const font = parseFloat(cs.fontSize)
+    el.remove()
+    return ch > 0 && inner > 0 ? { cols: inner / ch, font } : null
+  }
+
+  /** The overlay stack resized: where the skills screen's layout no longer fits its room, the next update builds it again. */
+  private refitCrt() {
+    const f = this.crtFitted
+    if (!f?.el.isConnected) return
+    if (this.crtLayout(f.tag, f.lines)?.key !== f.key) this.lastUiRev = -1
   }
 
   // ------------------------------------------------------------ focus layer
@@ -2476,7 +2539,7 @@ export class Overlays {
 
   private renderTextInput(state: GameState): HTMLElement {
     const ti = state.textInput!
-    const el = h('div', { class: 'popup', style: { top: 'auto', bottom: '9rem', transform: 'translateX(-50%)', minWidth: '20rem' } })
+    const el = h('div', { class: 'popup text-input' })
     const input = h('input', { class: 'text', type: 'text', maxlength: ti.maxlen, size: ti.size })
     el.append(h('div', { class: 'header', html: formattedStringToHtml(ti.prompt || 'Input here (ESC to cancel): ') }), h('div', { class: 'body' }, input))
     this.wireInput(input, ti, true)
@@ -2549,6 +2612,9 @@ export class Overlays {
     if (tag === 'travel_depth') target.extras = TRAVEL_DEPTH_KEYS
     // the prompt opened off Y (Set target on a skill row), so Y does not also confirm it: Start does (bindings.ts SKILL_TARGET_TEXT)
     if (submitOnStartOnly(tag)) target.submitButton = 'START'
+    // a number is typed on the number pad: a tap on the field brings up no phone keyboard over it
+    target.numpad = seed ? undefined : numberPrompt(tag)
+    input.inputMode = target.numpad ? 'none' : ''
     input.addEventListener('keydown', (ev) => {
       ev.stopPropagation()
       if (ev.key === 'Escape') {
@@ -2869,16 +2935,29 @@ export class Overlays {
    */
   setDevice(device: InputDevice) {
     const cls = device === 'pad' ? 'device-pad' : 'device-keyboard'
+    const was = this.device
     this.device = device
-    if (this.root.classList.contains(cls)) return
+    if (this.root.classList.contains(cls) && was === device) return
     this.root.classList.remove('device-pad', 'device-keyboard')
     this.root.classList.add(cls)
+    // a finger reads the touch bar, not the keyboard's hint line (styles.css .device-touch)
+    this.root.classList.toggle('device-touch', device === 'touch')
     // a server text prompt that is up: the pad taking over brings the on-screen keyboard with it, and a
     // physical key or the mouse puts it away so the field it was covering shows what is typed
     const t = this.textTarget
     if (!t || this.clientOverlay) return
-    if (device === 'pad' && !this.osk.visible) this.osk.attach(t, t.input.closest('.popup') || this.root)
-    else if (device !== 'pad' && this.osk.visible && this.osk.input === t.input) this.osk.detach()
+    const wanted = this.oskFor(t, device)
+    if (wanted && !this.osk.visible) this.osk.attach(t, t.input.closest('.popup') || this.root)
+    else if (!wanted && this.osk.visible && this.osk.input === t.input) this.osk.detach()
+  }
+
+  /**
+   * Whether a server text prompt comes with the on-screen keyboard up for the
+   * device that spoke last: the pad's, always; a finger's, where it is a
+   * number pad, there being no phone keyboard for a number (`wireInput`).
+   */
+  private oskFor(t: OskTarget, device: InputDevice): boolean {
+    return device === 'pad' || (device === 'touch' && !!t.numpad)
   }
 
   showChoices(title: string, choices: { label: string; key?: string; sub?: string; tile?: string; sep?: boolean; run(): void }[], back?: () => void, remember = title) {

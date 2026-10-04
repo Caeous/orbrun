@@ -139,7 +139,29 @@ describe('the prompt stack in the corner of the view', () => {
     }
     const l = (button: BindingLabel['button'], label: string) => ({ button, label, action: { kind: 'menu', op: 'select' }, contextual: true }) as BindingLabel
     inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('A', 'select'), l('X', 'Examine'), l('Y', 'Swap weapons'), l('LT', 'Shout')], true)
-    expect([...bar.querySelectorAll('.chip')].map((c) => c.textContent)).toEqual(['LTShout', 'YSwap weapons', 'XExamine', 'Aselect'])
+    expect([...bar.querySelectorAll('.chip:not(.slot)')].map((c) => c.textContent)).toEqual(['LTShout', 'YSwap weapons', 'XExamine', 'Aselect'])
+  })
+  it('keeps A and B in their places under a panel, held empty when the screen lacks one', () => {
+    const { hud, bar } = setup()
+    const inner = hud as unknown as {
+      renderBar(ctx: Context, kind: string, spectating: boolean, device: string, hints: boolean, padLabels: BindingLabel[], under: boolean): void
+    }
+    const l = (button: BindingLabel['button'], label: string) => ({ button, label, action: { kind: 'menu', op: 'select' }, contextual: true }) as BindingLabel
+    const order = () => [...bar.querySelectorAll('.chip')].map((c) => (c.classList.contains('slot') ? '(' + [...c.classList].at(-1) + ')' : c.textContent))
+    inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('X', 'Examine'), l('B', 'cancel')], true)
+    expect(order()).toEqual(['XExamine', 'Bcancel', '(A)'])
+    inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('A', 'select'), l('X', 'Examine')], true)
+    expect(order()).toEqual(['XExamine', '(B)', 'Aselect'])
+  })
+  it('keeps the corner\'s lowest line for A when there is none', () => {
+    const { hud, bar } = setup()
+    const inner = hud as unknown as {
+      renderBar(ctx: Context, kind: string, spectating: boolean, device: string, hints: boolean, padLabels: BindingLabel[], under: boolean): void
+    }
+    const l = (button: BindingLabel['button'], label: string) => ({ button, label, action: { kind: 'menu', op: 'select' }, contextual: true }) as BindingLabel
+    inner.renderBar(context, 'xbox', false, 'pad', true, [l('RB', 'Fire dart')], false)
+    const chips = [...bar.querySelectorAll('.chip')]
+    expect(chips.map((c) => c.classList.contains('slot'))).toEqual([true, false])
   })
 })
 

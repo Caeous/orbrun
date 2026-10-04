@@ -16,6 +16,26 @@ export const VM_WEAPON_REST: HandPose = { x: 0.52, y: -1.12, roll: 0, pitch: 0, 
 export const VM_OFFWEAPON_REST: HandPose = { x: -0.52, y: -1.12, roll: 0, pitch: 0, yaw: 0 }
 export const VM_SHIELD_REST: HandPose = { x: -0.5, y: -1.2, roll: 0, pitch: 0, yaw: 0 }
 
+/**
+ * Orbrun's own, for a phone held upright: on a view narrower than it is
+ * tall the hands shrink with its width, hanging from the same points of the
+ * bottom edge, so a weapon two-fifths of the height high does not fill the
+ * whole width. A view at least as wide as it is tall keeps them whole.
+ */
+export function handsScale(aspect: number): number {
+  return Math.min(1, aspect)
+}
+
+/**
+ * A pose at `k` of its size: scaled about the view's bottom edge, x as a
+ * share of the width as before. Orbrun's own, for a phone: with `foot` of
+ * the view's height under the HUD's touch bar, the pose hangs from the
+ * bar's top edge instead, where the bar does not hide it.
+ */
+export function scaledPose(p: HandPose, k: number, foot = 0): HandPose {
+  return k === 1 && !foot ? p : { ...p, y: -1 + 2 * foot + (p.y + 1) * k }
+}
+
 /** What the hands hold, as far as their footprint cares. */
 export interface HandsHeld {
   weapon: boolean
@@ -35,16 +55,20 @@ export interface HandRect {
  * HUD to keep clear of (hud.ts `keepClear`). Each icon is a VM_SIZE square
  * hanging from its pose's point, its bottom centre; the pose's x is scaled
  * by the aspect, as the renderer scales it, so the hands keep their place
- * against the edge on every screen. The attack thrust (a few percent of the
- * height) is ignored: the prompts need not dodge a swing.
+ * against the edge on every screen; `foot` lifts them as `scaledPose` does.
+ * The attack thrust (a few percent of the height) is ignored: the prompts
+ * need not dodge a swing.
  */
-export function handsFootprint(held: HandsHeld, aspect: number): HandRect[] {
+export function handsFootprint(held: HandsHeld, aspect: number, foot = 0): HandRect[] {
   const out: HandRect[] = []
-  const rect = (p: HandPose) => {
+  const k = handsScale(aspect)
+  const rect = (rest: HandPose) => {
+    const p = scaledPose(rest, k, foot)
     const cx = p.x * aspect
+    const size = VM_SIZE * k
     const fx = (x: number) => Math.min(1, Math.max(0, (x / aspect + 1) / 2))
     const fy = (y: number) => Math.min(1, Math.max(0, (1 - y) / 2))
-    out.push({ x0: fx(cx - VM_SIZE / 2), x1: fx(cx + VM_SIZE / 2), y0: fy(p.y + VM_SIZE), y1: fy(p.y) })
+    out.push({ x0: fx(cx - size / 2), x1: fx(cx + size / 2), y0: fy(p.y + size), y1: fy(p.y) })
   }
   if (held.weapon) rect(VM_WEAPON_REST)
   if (held.offhand === 'shield') rect(VM_SHIELD_REST)

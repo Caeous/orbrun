@@ -12,6 +12,17 @@ import type { PadKind } from './gamepad'
 
 const OSK_ROWS = ['1234567890-=', 'qwertyuiop[]', "asdfghjkl;'\\", 'zxcvbnm,./`', '!@#$%^&*()_+', '{}|:"<>?~ ']
 
+/** The number pad's backspace key: a number pad has room for one, as a phone's does. */
+const BACKSPACE = '\b'
+
+/** A key the cursor can stand on, or a gap in a row (a number pad with no point to type). */
+type Key = string | null
+
+/** A number pad (`OskTarget.numpad`), laid out as a phone's: the point, if the number takes one, beside the 0. */
+function numpadRows(numpad: 'whole' | 'decimal'): Key[][] {
+  return [['1', '2', '3'], ['4', '5', '6'], ['7', '8', '9'], [numpad === 'decimal' ? '.' : null, '0', BACKSPACE]]
+}
+
 export type OskOp = 'move' | 'type' | 'backspace' | 'space' | 'submit' | 'cancel' | 'shift'
 
 /** One button on the keyboard's hint line: the button and what it does here. */
@@ -59,6 +70,12 @@ export interface OskTarget {
    * `special`, which sends it.
    */
   extras?: { ch: string; label: string }[]
+  /**
+   * The prompt takes a number (a skill target, a depth): the letters give
+   * way to a number pad, with a point where the number may have one. There
+   * is no case to shift and no space to put.
+   */
+  numpad?: 'whole' | 'decimal'
 }
 
 /**
@@ -85,6 +102,7 @@ export class Osk {
     const kind = this.padKind()
     const line = h('div', { class: 'more' })
     for (const p of this.prompts) {
+      if (this.target?.numpad && (p.button === 'LB' || p.button === 'RB')) continue
       const button = p.submit && this.target?.submitButton ? this.target.submitButton : p.button
       line.append(h('span', { class: 'osk-prompt', 'aria-label': `${glyphName(button, kind)} ${p.label}` }, glyph(button, kind), ' ' + p.label), ' · ')
     }
@@ -112,7 +130,7 @@ export class Osk {
     this.target = target
     const rows = this.rows()
     if (this.row >= rows.length) this.row = 0
-    this.col = Math.min(this.col, rows[this.row].length - 1)
+    this.col = onKey(rows[this.row], Math.min(this.col, rows[this.row].length - 1))
     this.el?.remove()
     this.el = null
     container.append(this.render())
@@ -134,36 +152,55 @@ export class Osk {
     container.append(this.render())
   }
 
-  /** The rows the cursor walks: the target's extras first when it has them, then the letters. */
-  private rows(): string[] {
-    const ex = this.target?.extras
-    return ex && ex.length ? [ex.map((e) => e.ch).join(''), ...OSK_ROWS] : OSK_ROWS
+  /** The rows the cursor walks: the target's extras first when it has them, then the letters or the number pad. */
+  private rows(): Key[][] {
+    const t = this.target
+    const keys = t?.numpad ? numpadRows(t.numpad) : OSK_ROWS.map((r) => [...r])
+    return t?.extras?.length ? [t.extras.map((e) => e.ch), ...keys] : keys
   }
 
   private render(): HTMLElement {
-    const el = h('div', { class: 'osk', 'data-client': '1' })
+    const numpad = this.target?.numpad
+    const el = h('div', { class: 'osk' + (numpad ? ' numpad' : ''), 'data-client': '1' })
     const keys = h('div', { class: 'keys' })
     const ex = this.target?.extras
+    const at = (r: number, c: number) => (r === this.row && c === this.col ? ' focused' : '')
+    // a key pressed by a finger or the mouse is lit, as the pad's cursor would have it; the field keeps the focus
+    const press = (k: HTMLElement, r: number, c: number, run: () => void) => {
+      k.addEventListener('mousedown', (ev) => ev.preventDefault())
+      k.addEventListener('click', () => {
+        this.row = r
+        this.col = c
+        run()
+        this.redraw()
+      })
+    }
     if (ex && ex.length) {
       const row = h('div', { class: 'extras' })
       ex.forEach((e, c) => {
-        const k = h('div', { class: 'key extra' + (this.row === 0 && c === this.col ? ' focused' : '') }, h('b', null, e.ch), ' ' + e.label)
-        k.addEventListener('click', () => this.type(e.ch))
+        const k = h('div', { class: 'key extra' + at(0, c) }, h('b', null, e.ch), ' ' + e.label)
+        press(k, 0, c, () => this.type(e.ch))
         row.append(k)
       })
       el.append(row)
     }
     // one element per row, so a row of keys is a row on screen whatever the widths,
     // and the cursor's up and down stay in their column
-    OSK_ROWS.forEach((row, r0) => {
-      const r = ex && ex.length ? r0 + 1 : r0
+    this.rows().forEach((row, r) => {
+      if (ex && ex.length && r === 0) return
       const line = h('div', { class: 'row' })
-      for (let c = 0; c < row.length; c++) {
-        const ch = this.shift ? row[c].toUpperCase() : row[c]
-        const k = h('div', { class: 'key' + (r === this.row && c === this.col ? ' focused' : '') }, ch === ' ' ? '␣' : ch)
-        k.addEventListener('click', () => this.type(ch))
+      row.forEach((key, c) => {
+        if (key === null) return line.append(h('div', { class: 'key gap' }))
+        if (key === BACKSPACE) {
+          const k = h('div', { class: 'key backspace' + at(r, c), 'aria-label': 'Backspace' }, '⌫')
+          press(k, r, c, () => this.backspace())
+          return line.append(k)
+        }
+        const ch = this.shift ? key.toUpperCase() : key
+        const k = h('div', { class: 'key' + at(r, c) }, ch === ' ' ? '␣' : ch)
+        press(k, r, c, () => this.type(ch))
         line.append(k)
-      }
+      })
       keys.append(line)
     })
     const input = this.target?.input
@@ -220,17 +257,21 @@ export class Osk {
         this.row = (this.row + dy + rows.length) % rows.length
         const len = rows[this.row].length
         // left and right wrap along the row; up and down keep the column, clamped to
-        // a shorter row's end (the extras row is four keys wide, the letters twelve)
-        if (dx) this.col = (this.col + dx + len) % len
-        else this.col = Math.min(this.col, len - 1)
+        // a shorter row's end (the extras row is four keys wide, the letters twelve).
+        // A gap is stepped over: on along the row, or up and down to the nearest key
+        if (dx) {
+          this.col = (this.col + dx + len) % len
+          while (rows[this.row][this.col] === null) this.col = (this.col + dx + len) % len
+        } else this.col = onKey(rows[this.row], Math.min(this.col, len - 1))
         this.redraw()
         break
       }
       case 'type': {
-        const rows = this.rows()
-        const ch = rows[this.row][this.col]
+        const key = this.rows()[this.row][this.col]
+        if (key === null) break
+        if (key === BACKSPACE) this.backspace()
         // an extra is sent as it is; a letter follows the shift
-        this.type(this.shift && rows !== OSK_ROWS && this.row === 0 ? ch : this.shift ? ch.toUpperCase() : ch)
+        else this.type(this.shift && !(this.target?.extras?.length && this.row === 0) ? key.toUpperCase() : key)
         break
       }
       case 'backspace':
@@ -254,6 +295,15 @@ export class Osk {
   }
 }
 
+
+/** The column of the key nearest `col` in `row`: `col` itself unless it is a gap. */
+function onKey(row: Key[], col: number): number {
+  for (let d = 0; d < row.length; d++) {
+    if (row[col + d] != null) return col + d
+    if (row[col - d] != null) return col - d
+  }
+  return 0
+}
 
 /** A box of text shows only the line being typed on: the whole file would not fit over the keyboard. */
 function caretLine(t: HTMLTextAreaElement): string {

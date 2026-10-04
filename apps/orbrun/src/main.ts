@@ -710,8 +710,8 @@ function leaveFor(s: Session) {
 // game's key handlers see the key.
 installPadKeys(gamepad)
 
-window.addEventListener('pointerdown', () => {
-  lastInput = 'pointer'
+window.addEventListener('pointerdown', (ev) => {
+  lastInput = ev.pointerType === 'touch' ? 'touch' : 'pointer'
 }, true)
 window.addEventListener('keydown', (ev) => {
   lastInput = 'keyboard'
@@ -730,7 +730,8 @@ function tick(now: number) {
   pollFrame = 0
   gamepad.poll(now)
   lobby?.updateInputHints()
-  if (gamepad.connected) pollFrame = requestAnimationFrame(tick)
+  // a touch bar arrow held down repeats on the pad's timing, so it is polled as a pad would be
+  if (gamepad.connected || gamepad.virtualHeld) pollFrame = requestAnimationFrame(tick)
   else pollTimer = window.setTimeout(() => { pollFrame = requestAnimationFrame(tick) }, IDLE_POLL_MS)
 }
 window.addEventListener('gamepadconnected', () => {
@@ -739,6 +740,12 @@ window.addEventListener('gamepadconnected', () => {
   pollFrame = requestAnimationFrame(tick)
 })
 gamepad.on((e) => {
+  // a finger on the touch bar wakes the loop now rather than at the next idle look, for a held arrow's repeat
+  if (e.type === 'press' && e.touch && !gamepad.connected) {
+    clearTimeout(pollTimer)
+    cancelAnimationFrame(pollFrame)
+    pollFrame = requestAnimationFrame(tick)
+  }
   if (isPadActivity(e)) {
     lastInput = 'pad'
   }

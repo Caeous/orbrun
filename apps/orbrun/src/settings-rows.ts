@@ -77,29 +77,39 @@ export const EYE_HEIGHTS = [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.
 export const CAM_ANGLES: readonly number[] = [-30, -25, -20, -15, -10, -5, 0, 5, 10]
 
 /**
- * Minimap size (hud.md "Minimap"), in tiles across: how much of the level
- * the map shows. Every odd count from MINIMAP_TILES_MIN to MINIMAP_TILES_MAX,
- * two tiles a step, so the player always stands on the centre tile; the
- * default is 21, the sidebar column's width on the reference layout, as
- * minimap.js `fit_to` makes it. The map follows the player at the cell the
- * "Minimap tile size" row sets, so more tiles show more of the level rather
- * than smaller cells.
+ * The minimap rows' first stop and default: the screen picks, the map
+ * reading as hud.ts MINIMAP_TILES_DEFAULT tiles of MINIMAP_CELL_DEFAULT in
+ * proportion to it, fewer where that would take more than MINIMAP_SHARE of
+ * it (`minimapFit`). Saved as 0, which `minimapFit` takes for Auto.
  */
-const MINIMAP_TILES_MIN = 9
-export const MINIMAP_TILES_MAX = 61
-export const MINIMAP_TILES: readonly number[] = Array.from({ length: (MINIMAP_TILES_MAX - MINIMAP_TILES_MIN) / 2 + 1 }, (_, i) => MINIMAP_TILES_MIN + 2 * i)
+export const MINIMAP_AUTO = 0
+const autoOr = (fmt: (v: number) => string) => (v: number) => (v === MINIMAP_AUTO ? 'Auto' : fmt(v))
 
 /**
- * Minimap tile size, in css px: how big each of those tiles is drawn. The
- * default is 16, the cell the map has always followed the player at; the
- * stops go down to 8, near the 4px cell WebTiles' own auto-sized minimap
+ * Minimap size (hud.md "Minimap"), in tiles across: how much of the level
+ * the map shows. Auto, then every odd count from MINIMAP_TILES_MIN (crawl's
+ * line of sight, hud.ts MINIMAP_TILES_LEAST) to MINIMAP_TILES_MAX,
+ * two tiles a step, so the player always stands on the centre tile. The map
+ * follows the player at the cell the "Minimap tile size" row sets, so more
+ * tiles show more of the level rather than smaller cells.
+ */
+const MINIMAP_TILES_MIN = 15
+export const MINIMAP_TILES_MAX = 61
+export const MINIMAP_TILES: readonly number[] = [MINIMAP_AUTO, ...Array.from({ length: (MINIMAP_TILES_MAX - MINIMAP_TILES_MIN) / 2 + 1 }, (_, i) => MINIMAP_TILES_MIN + 2 * i)]
+
+/**
+ * Minimap tile size, in css px on a 1080-tall screen (a taller one draws it
+ * larger in proportion, hud.ts `minimapFit`): how big each of those
+ * tiles is drawn. Auto, then
+ * stops down to 8, near the 4px cell WebTiles' own auto-sized minimap
  * comes out at on the reference column (minimap.js `fit_to` fits all `gxm`
  * columns in, since it shows the whole level rather than following), and up
  * to 32, `tile_cell_pixels`, a full dungeon tile. The count of tiles stays what the "Minimap size"
  * row says, so a bigger cell is the same map drawn larger, until the map
- * meets the caps in `minimapBox` and loses tiles off the count.
+ * meets the caps in `minimapFit`; then the tiles shrink to fit, down to
+ * 20px (15px on a phone), and past that the map loses tiles off the count.
  */
-export const MINIMAP_CELLS: readonly number[] = [8, 10, 12, 14, 16, 20, 24, 28, 32]
+export const MINIMAP_CELLS: readonly number[] = [MINIMAP_AUTO, 8, 10, 12, 14, 16, 20, 24, 28, 32]
 
 /**
  * The rows that only make sense while 2D is offered (`VIEW_OPTIONS` in
@@ -150,8 +160,8 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
     (v) => (v === 'list' ? 'Monster list' : 'Edge pips'),
     (s) => s.renderer !== '3d',
   ),
-  row('Interface', 'Minimap size', 'minimapTiles', MINIMAP_TILES, 'How many tiles across the minimap shows: it grows out of its corner over the view, at the same cell size.', (v) => v + ' tiles'),
-  row('Interface', 'Minimap tile size', 'minimapCell', MINIMAP_CELLS, 'How big each minimap tile is drawn: the same tiles, larger, until the map runs out of room over the view.', (v) => v + 'px'),
+  row('Interface', 'Minimap size', 'minimapTiles', MINIMAP_TILES, 'How many tiles across the minimap shows: it grows out of its corner over the view, at the same cell size. Auto fits it to the screen.', autoOr((v) => v + ' tiles')),
+  row('Interface', 'Minimap tile size', 'minimapCell', MINIMAP_CELLS, 'How big each minimap tile is drawn on a 1080p screen, larger in step on a bigger one: the same tiles, larger, until the map runs out of room over the view. Auto fits it to the screen.', autoOr((v) => v + 'px')),
   row('Interface', 'Minimap rotation', 'minimapTurns', [true, false], 'Whether the minimap turns with you, so ahead is always up, or stays still with north up.', (v) => (v ? 'Turns with you' : 'North up')),
 ]
 
