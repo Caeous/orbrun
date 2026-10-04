@@ -2379,7 +2379,8 @@ canvas.minimap.hidden {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  z-index: 3;
+  /* over the popups' dim (.overlay-stack::before), which runs on under it */
+  z-index: 21;
 }
 .touchbar[hidden] {
   display: none;
@@ -3783,9 +3784,17 @@ canvas.minimap.hidden {
   font-size: 0.82rem;
 }
 
+/* the dim is a layer of the stack's own that runs on under the touch bar, so the whole screen dims while the stack
+   itself stops short of the bar (the bar stands over the dim, .touchbar) */
+.overlay-stack::before {
+  content: '';
+  position: absolute;
+  inset: 0 calc(-1 * var(--touch-right, 0px)) calc(-1 * var(--touch-bottom, 0px)) 0;
+  z-index: -1;
+}
 /* the pause menu takes the screen: the world dims and blurs behind it (a pending --more-- has a lighter cousin, .more-scrim) */
-.overlay-stack:has(> .popup.sysmenu),
-.overlay-stack.dim {
+.overlay-stack:has(> .popup.sysmenu)::before,
+.overlay-stack.dim::before {
   background: radial-gradient(ellipse at center, rgba(3, 2, 6, 0.5), rgba(3, 2, 6, 0.86));
   backdrop-filter: blur(3px) saturate(0.7);
   -webkit-backdrop-filter: blur(3px) saturate(0.7);
@@ -3799,12 +3808,12 @@ canvas.minimap.hidden {
 /* the pack, X's actions and the character overview stand on the world dimmed, as WebTiles' popups stand on its .ui-popup-overlay:
    flat and unblurred, lighter than the pause menu, and eased rather than animated in, so a turn from one
    tab to the next (crawl's menu gone a moment before the next is up) never flashes the world bright */
-.overlay-stack {
+.overlay-stack::before {
   transition: background-color 160ms ease;
 }
-.overlay-stack:has(> .popup.paged-pack),
-.overlay-stack:has(> .popup.action-tabs),
-.overlay-stack:has(> .popup.type-formatted-scroller[data-tag='resists']) {
+.overlay-stack:has(> .popup.paged-pack)::before,
+.overlay-stack:has(> .popup.action-tabs)::before,
+.overlay-stack:has(> .popup.type-formatted-scroller[data-tag='resists'])::before {
   background-color: rgba(3, 2, 6, 0.55);
 }
 
@@ -4312,11 +4321,11 @@ canvas.minimap.hidden {
 @media (prefers-reduced-motion: reduce) {
   .popup.ours,
   .popup.menu.game,
-  .overlay-stack:has(> .popup.sysmenu),
-  .overlay-stack.dim {
+  .overlay-stack:has(> .popup.sysmenu)::before,
+  .overlay-stack.dim::before {
     animation: none;
   }
-  .overlay-stack {
+  .overlay-stack::before {
     transition: none;
   }
 }
