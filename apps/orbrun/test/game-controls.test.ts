@@ -301,7 +301,7 @@ describe('direct game input', () => {
     expect(h.send).not.toHaveBeenCalled()
   })
 
-  it('Select opens the level map; there a tap closes it and a hold opens its palette', () => {
+  it('Select opens the level map, and there closes it, held or not', () => {
     const h = harness()
     h.execute.mockImplementation((a) => { if (a.kind === 'ui') h.screen.uiOp(a.op) })
     h.event({ type: 'press', button: 'SELECT', t: 0 })
@@ -315,7 +315,8 @@ describe('direct game input', () => {
     h.event({ type: 'press', button: 'SELECT', t: 400 })
     h.screen.fireHolds(400 + HOLD_MS)
     h.event({ type: 'release', button: 'SELECT', t: 400 + HOLD_MS + 100, held: HOLD_MS + 100 })
-    expect(h.execute).toHaveBeenLastCalledWith({ kind: 'ui', op: 'palette', category: 'levelmap', section: undefined })
+    expect(h.execute).toHaveBeenLastCalledWith({ kind: 'keys', seq: [{ key: 27 }], label: 'Close' })
+    expect(h.overlays.showPalette).not.toHaveBeenCalled()
   })
 
   it("X opens the actions on crawl's own menu; Y opens the pack itself", () => {
@@ -367,7 +368,7 @@ describe('direct game input', () => {
     expect(h.send).not.toHaveBeenCalled()
   })
 
-  it('off the map the menu keys open only what the pad opens there', () => {
+  it('off the map F3 and F4 open nothing, and F2 the palette, which no button opens', () => {
     const h = harness()
     h.ctx.mode = 'targeting'
     for (const key of ['F3', 'F4']) h.screen.onKeyDown(new KeyboardEvent('keydown', { key, code: key, cancelable: true }))

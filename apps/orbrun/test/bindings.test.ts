@@ -204,19 +204,23 @@ describe('focus modes share one binding set', () => {
   })
 })
 
-describe('every non-command mode can reach its section of the palette', () => {
-  for (const [mode, section] of [
-    ['targeting', 'targeting'],
-    ['levelmap', 'levelmap'],
-    ['menu', 'menu'],
-    ['crt', 'command'],
-    ['prompt', 'command'],
-  ] as const) {
-    it(`${mode} -> ${section}`, () => {
-      const t = bindingTable(ctx({ mode, menu: mode === 'menu' ? ({ menu: { items: [], flags: 0 } as never, hoverable: [], arrowsSelect: false, multiselect: false, wrap: false }) : undefined }))
-      // on the level map the palette is Select's hold, under its close
-      const pal = Object.values(t).map((a) => (a.kind === 'hold' ? a.hold : a)).find((a) => a.kind === 'ui' && a.op === 'palette')
-      expect(pal).toMatchObject({ category: section })
+describe('no button opens the palette', () => {
+  const menu = { menu: { items: [], flags: 0 } as never, hoverable: [], arrowsSelect: false, multiselect: false, wrap: false }
+  for (const c of [
+    ctx({}),
+    ctx({ mode: 'targeting' }),
+    ctx({ mode: 'targeting', examining: { label: 'goblin' } as never }),
+    ctx({ mode: 'levelmap' }),
+    ctx({ mode: 'menu', menu }),
+    ctx({ mode: 'menu', menu: { ...menu, shop: { mode: 'buy', canBuy: true } as never } }),
+    ctx({ mode: 'crt' }),
+    ctx({ mode: 'prompt' }),
+    ctx({ mode: 'yesno' }),
+    ctx({ mode: 'popup' }),
+  ]) {
+    it(c.mode + (c.examining ? ' (look)' : c.menu?.shop ? ' (shop)' : ''), () => {
+      const actions = Object.values(bindingTable(c)).flatMap((a) => (a.kind === 'hold' ? [a.tap, a.hold] : [a]))
+      expect(actions.filter((a) => a.kind === 'ui' && a.op === 'palette')).toEqual([])
     })
   }
 })

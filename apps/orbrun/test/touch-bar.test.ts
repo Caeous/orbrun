@@ -75,10 +75,10 @@ describe('the touch bar keeps one keypad\'s shape', () => {
     for (const c of ['corner', 'wait', 'actions', 'gear']) expect(b.cell(c).classList.contains('empty')).toBe(true)
     b.finger(b.cell('up'), 'pointerdown')
     expect(b.onTouchButton).not.toHaveBeenCalled()
-    // Back with nothing to do (the stat gain) is still where Back is
+    // Esc with nothing to do (the stat gain) is still where Esc is
     b.render([lab('A', 'select', 'Strength')])
     expect(b.cell('esc').classList.contains('idle')).toBe(true)
-    expect(b.cell('esc').textContent).toBe('Back')
+    expect(b.cell('esc').textContent).toBe('Esc')
   })
   it('a button two cells wide covers both, and is the verb where it covers Select\'s: the aim\'s Fire', () => {
     const b = bar()

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { TOUCH_ANCHORS, TOUCH_CELLS, barLabels, NO_ACTION, touchLabels, touchShot, type BindingLabel, type TouchCell, type TouchLabel } from '../src/bindings'
+import { TOUCH_GLYPHS } from '../src/touch-glyphs'
 import { PHONE_COLS, PHONE_ROWS, fitPx } from '../src/grid/host'
 import type { Context, MenuContext } from '../src/context'
 import { STAT_WIDTH, TOUCH_SIDE_PX, fitGrid, gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from '../src/grid/console'
@@ -33,7 +34,7 @@ const words = (c: Context) => drawn(c, (l) => l.label)
 const cellOf = (c: Context, button: string) => touchLabels(barLabels(c), c).find((l) => l.button === button)?.cell
 
 describe('the touch bar: every screen one keypad', () => {
-  it('Back in the bottom-left corner, the arrows an upturned T, Examine and the verb along the top: the anchors, on every screen', () => {
+  it('Esc in the bottom-left corner, the arrows an upturned T, Examine and the verb along the top: the anchors, on every screen', () => {
     expect(TOUCH_CELLS[2][0]).toBe('esc')
     expect([TOUCH_CELLS[1][2], ...TOUCH_CELLS[2].slice(1, 4)]).toEqual(['up', 'left', 'down', 'right'])
     expect([TOUCH_CELLS[0][2], TOUCH_CELLS[0][4]]).toEqual(['examine', 'select'])
@@ -57,7 +58,7 @@ describe('the touch bar: every screen one keypad', () => {
     ['the shop', menu({ shop: { canBuy: true, anyMarked: true, anyListed: false, mode: 'buy' } } as unknown as Partial<MenuContext>, 'shop')],
   ]
   for (const [name, c] of screens) {
-    it(name + ': one button a cell, and Back and the arrows where the finger knows them', () => {
+    it(name + ': one button a cell, and Esc and the arrows where the finger knows them', () => {
       const labels = touchLabels(barLabels(c), c)
       const flat = drawn(c).flat().filter((b) => b !== '·')
       // a button two cells wide is the one button
@@ -80,7 +81,7 @@ describe('the screens drawn cell by cell', () => {
     expect(words(stairs)).toEqual([
       ['·', 'Wait', 'Examine', 'Fire', 'Descend'],
       ['·', 'Explore', '↑', 'Fight', 'Spells'],
-      ['Cancel', '←', '↓', '→', 'Gear'],
+      ['Esc', '←', '↓', '→', 'Gear'],
     ])
     // a finger holds as a thumb does: Wait, hold for Rest
     expect(touchLabels(barLabels(stairs), stairs).find((l) => l.button === 'LB')?.hold).toBe('Rest')
@@ -139,26 +140,26 @@ describe('the screens drawn cell by cell', () => {
 })
 
 describe('a screen with no layout of its own keeps its few buttons together', () => {
-  it('a --more--: Continue in the verb\'s cell, Skip in Back\'s, and nothing else', () => {
+  it('a --more--: Continue in the verb\'s cell, Skip (Esc) in Esc\'s, and nothing else', () => {
     const c = ctx({ mode: 'more', moreText: '--more--' })
     expect(words(c)).toEqual([
       ['·', '·', '·', '·', 'Continue'],
       ['·', '·', '·', '·', '·'],
-      ['Skip', '·', '·', '·', '·'],
+      ['Esc', '·', '·', '·', '·'],
     ])
   })
-  it('a yes/no: Yes in the verb\'s cell, No in Back\'s, Always under Yes', () => {
+  it('a yes/no: Yes in the verb\'s cell, No (Esc) in Esc\'s, Always under Yes', () => {
     const c = ctx({ mode: 'yesno', prompt: { text: 'Really?', yesno: true, options: [{ hotkey: 'Y', label: 'Yes' }, { hotkey: 'N', label: 'No' }, { hotkey: 'A', label: 'Always' }] } as Context['prompt'] })
     expect(words(c)).toEqual([
       ['·', '·', '·', '·', 'Yes'],
       ['·', '·', '·', '·', 'Always'],
-      ['No', '·', '·', '·', '·'],
+      ['Esc', '·', '·', '·', '·'],
     ])
   })
-  it('a multiselect menu: A marks the lit row, accepting stands under it, then the rest down the edge and beside the arrow', () => {
+  it('a multiselect menu: A marks the lit row, accepting stands under it, then the rest down the edge', () => {
     expect(drawn(menu({ multiselect: true, anyMarked: true }))).toEqual([
       ['·', '·', 'X', '·', 'A'],
-      ['·', 'LT', 'DU', 'L3', 'START'],
+      ['·', 'LT', 'DU', '·', 'START'],
       ['B', 'DL', 'DD', 'DR', 'R3'],
     ])
   })
@@ -172,7 +173,7 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     expect(words(ctx({ mode: 'text' }))).toEqual([
       ['·', 'Shift', '·', 'Space', 'Type'],
       ['·', '·', '↑', '·', 'Done'],
-      ['Cancel', '←', '↓', '→', 'Backspace'],
+      ['Esc', '←', '↓', '→', 'Backspace'],
     ])
   })
   it('the bumpers stand nowhere else: menus, tabs and popups turn by a tap', () => {
@@ -180,54 +181,101 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
       expect(touchLabels(barLabels({ ...c, pageable: true }), { ...c, pageable: true }).some((l) => l.button === 'LB' || l.button === 'RB')).toBe(false)
     }
   })
-  it('a spectator: Back opens the Orbrun menu, Stop watching on it, the one way out on a phone', () => {
+  it('a spectator: Esc opens the Orbrun menu, Stop watching on it, the one way out on a phone', () => {
     const c = ctx({ mode: 'spectating' })
     const labels = touchLabels(barLabels(c), c)
     expect(labels.find((l) => l.cell === 'esc')?.action).toEqual({ kind: 'ui', op: 'system' })
     // Start opens the same: once is enough
     expect(labels.filter((l) => l.action.kind === 'ui' && l.action.op === 'system')).toHaveLength(1)
   })
-  it('a panel of ours over the map is no map: its own buttons by the same rule, Back in Back\'s cell, its tabs a tap', () => {
+  it('a panel of ours over the map is no map: its own buttons by the same rule, Esc in Esc\'s cell, its tabs a tap', () => {
     const lab = (button: BindingLabel['button'], label: string): BindingLabel => ({ button, label, action: { kind: 'keys', label, seq: [] }, contextual: false })
     const panel = [lab('A', 'Save'), lab('B', 'Back'), lab('RB', 'Next tab'), lab('START', 'Close')]
     expect(drawn(ctx({}), (l) => l.label, panel, true)).toEqual([
       ['·', '·', '·', '·', 'Save'],
       ['·', '·', '↑', '·', 'Close'],
-      ['Back', '←', '↓', '→', '·'],
+      ['Esc', '←', '↓', '→', '·'],
     ])
   })
 })
 
-describe('the touch bar wears crawl’s command icons where a button always means one command', () => {
-  const icons = (c: Context, panel = false) => Object.fromEntries(touchLabels(barLabels(c), c, panel).map((l) => [l.button, l.icon]))
-  // the GUI atlas's names, as the server's tileinfo-gui.js lists them
-  const gui = readFileSync(new URL('../../../packages/scene-webtiles/test/fixtures/gamedata/acd3d60e20f899c1c8a546953d6ffa0f6c7fe0c8/tileinfo-gui.js', import.meta.url), 'utf8')
-  const inAtlas = (name: string) => gui.includes('exports.' + name + ' = ')
-
-  it('on the map: explore, fight, wait, examine, and the tab X and Y open on', () => {
-    expect(icons(ctx({}))).toMatchObject({ LT: 'CMD_EXPLORE', RT: 'CMD_AUTOFIGHT', LB: 'CMD_WAIT', L3: 'CMD_LOOKUP_HELP', X: 'CMD_CAST_SPELL', Y: 'CMD_DISPLAY_INVENTORY' })
+describe('every touch button has a picture: crawl’s art where it has one, a glyph of ours where not', () => {
+  const icons = (c: Context, panel = false) => Object.fromEntries(touchLabels(barLabels(c), c, panel).map((l) => [l.button, l.icon ?? l.glyph]))
+  // the atlases' names, as the server's tileinfo files list them
+  const tileinfo = (atlas: string) => readFileSync(new URL(`../../../packages/scene-webtiles/test/fixtures/gamedata/acd3d60e20f899c1c8a546953d6ffa0f6c7fe0c8/tileinfo-${atlas}.js`, import.meta.url), 'utf8')
+  const atlases = [tileinfo('gui'), tileinfo('main')]
+  const inAtlas = (name: string) => atlases.some((src) => src.includes('exports.' + name + ' = '))
+  const lab = (button: BindingLabel['button'], label: string, action: BindingLabel['action'] = { kind: 'keys', label, seq: [] }): BindingLabel => ({ button, label, action, contextual: false })
+  const screens: [string, Context, boolean?][] = [
+    ['the map', stairs],
+    ['the map, nothing quivered', ctx({})],
+    ['a --more--', ctx({ mode: 'more', moreText: '--more--' })],
+    ['an aim', ctx({ mode: 'targeting', hostilesInView: 2, aimQuiver: true })],
+    ['a spell\'s aim', ctx({ mode: 'targeting', hostilesInView: 2 })],
+    ['look mode', ctx({ mode: 'targeting', examining: { label: 'goblin' } as Context['examining'], monstersInView: 2 })],
+    ['the level map', ctx({ mode: 'levelmap' })],
+    ['the level map on you', ctx({ mode: 'levelmap', mapCursorHome: true })],
+    ['a popup', ctx({ mode: 'popup', popupActions: [{ key: '!', label: 'Description | Status | Quote' }] })],
+    ['a popup with a verb', ctx({ mode: 'popup', popupActions: [{ key: 'u', label: '(u)nwield' }] })],
+    ['a yes/no', ctx({ mode: 'yesno', prompt: { text: 'Really?', yesno: true, options: [{ hotkey: 'Y', label: 'Yes' }, { hotkey: 'N', label: 'No' }, { hotkey: 'A', label: 'Always' }] } as Context['prompt'] })],
+    ['a prompt the parser made nothing of', ctx({ mode: 'prompt' })],
+    ['the skills', ctx({ mode: 'crt', focus: { label: 'Fighting', altLabel: 'Set target' } as Context['focus'] })],
+    ['new game', ctx({ mode: 'newgame' })],
+    ['typing', ctx({ mode: 'text' })],
+    ['a number', ctx({ mode: 'text', textTag: 'travel_depth' })],
+    ['a spectator', ctx({ mode: 'spectating' })],
+    ['a macro', ctx({ mode: 'macro' })],
+    ['a multiselect menu', menu({ multiselect: true, anyMarked: true, filter: true })],
+    ['the pack', ctx({ ...menu({ sections: true, helpKey: '_' }, 'inventory'), pageable: true })],
+    ['the pack turning pages', ctx({ ...menu({ sections: true, pack: { next: 'Potions', prev: 'Scrolls' } } as unknown as Partial<MenuContext>, 'inventory'), pageable: true })],
+    ['X\'s actions', menu({ actions: { next: 'Abilities', prev: 'Quiver' } } as unknown as Partial<MenuContext>, 'spell')],
+    ['the shop', menu({ shop: { canBuy: true, anyMarked: true, anyListed: false, mode: 'buy', sortOrder: 'type' } } as unknown as Partial<MenuContext>, 'shop')],
+    ['the shop, examining', menu({ shop: { canBuy: true, anyMarked: false, anyListed: false, mode: 'examine' } } as unknown as Partial<MenuContext>, 'shop')],
+  ]
+  for (const [name, c] of screens) {
+    it(name + ': a picture on every button but the arrows, which the bar draws, and one this version of crawl has', () => {
+      for (const l of touchLabels(barLabels(c), c)) {
+        if (l.button.startsWith('D')) continue
+        expect(l.icon ?? l.glyph ?? l.item, `${l.button} (${l.label})`).toBeDefined()
+        if (l.icon) expect(inAtlas(l.icon), l.icon).toBe(true)
+        if (l.glyph) expect(TOUCH_GLYPHS).toContain(l.glyph)
+      }
+    })
+  }
+  it('a panel of ours: its buttons have theirs too, Esc its cross', () => {
+    const panel = [lab('A', 'select', { kind: 'focus', op: 'select' }), lab('Y', 'Swap weapons', { kind: 'keys', label: 'Swap weapons', seq: [{ key: 27 }, { text: "'" }] }), lab('B', 'Back')]
+    const labels = touchLabels(panel, ctx({}), true)
+    expect(Object.fromEntries(labels.filter((l) => !l.button.startsWith('D')).map((l) => [l.button, l.icon ?? l.glyph]))).toEqual({ A: 'PROMPT_YES', Y: 'swap', B: 'PROMPT_NO' })
   })
-  it('on the map, what changes with the situation has none: A, and the arrows (drawn by the bar itself)', () => {
-    for (const b of ['A', 'B', 'DU']) expect(icons(stairs)[b]).toBeUndefined()
+  it('B is Esc on every screen, whatever the screen calls it, under crawl’s cross', () => {
+    for (const [, c] of screens) {
+      const b = touchLabels(barLabels(c), c).find((l) => l.button === 'B')
+      if (b) expect([b.label, b.icon], c.mode).toEqual(['Esc', 'PROMPT_NO'])
+    }
+    expect(TOUCH_ANCHORS.esc).toEqual({ label: 'Esc', icon: 'PROMPT_NO' })
   })
-  it('the shot on RB wears what is quivered: an item by its verb and count, a spell by its name', () => {
+  it('on the map: explore, fight, wait, examine, the tab X and Y open on, and the verb crawl’s tick', () => {
+    expect(icons(stairs)).toMatchObject({ A: 'PROMPT_YES', LT: 'CMD_EXPLORE', RT: 'CMD_AUTOFIGHT', LB: 'CMD_WAIT', L3: 'CMD_LOOKUP_HELP', X: 'CMD_CAST_SPELL', Y: 'CMD_DISPLAY_INVENTORY' })
+  })
+  it('the shot on RB wears what is quivered: an item by its verb and count, a spell by its name, the quiver’s own picture when nothing is', () => {
     const c = ctx({ readiedAction: 'Drink: 3 potions of curing', readiedTile: [1234] })
     expect(touchLabels(barLabels(c), c).find((l) => l.button === 'RB')).toMatchObject({ label: 'Drink', item: [1234], count: 3 })
     expect(touchShot('Throw: a boomerang', 7)).toEqual({ label: 'Throw', item: 7 })
     expect(touchShot('Cast: Magic Dart', undefined)).toEqual({ label: 'Magic Dart', icon: 'CMD_CAST_SPELL' })
     expect(touchShot('Fire', undefined)).toEqual({ label: 'Fire' })
+    expect(icons(ctx({})).RB).toBe('MI_BOOMERANG')
+    // an aim that is no quiver's fires at the cursor's target
+    expect(icons(ctx({ mode: 'targeting', hostilesInView: 2 }))).toMatchObject({ RB: 'target', LB: 'cycle', X: 'CMD_LOOKUP_HELP' })
   })
-  it('on the level map: the stairs, finding yourself, travel, search and the overview', () => {
-    expect(icons(ctx({ mode: 'levelmap', mapCursorHome: true }))).toMatchObject({ LB: 'CMD_MAP_FIND_UPSTAIR', RB: 'CMD_MAP_FIND_DOWNSTAIR', Y: 'CMD_INTERLEVEL_TRAVEL', L3: 'CMD_SEARCH_STASHES' })
+  it('on the level map: the stairs, finding yourself, travel, search and zoom', () => {
+    expect(icons(ctx({ mode: 'levelmap', mapCursorHome: true }))).toMatchObject({ LB: 'CMD_MAP_FIND_UPSTAIR', RB: 'CMD_MAP_FIND_DOWNSTAIR', Y: 'CMD_INTERLEVEL_TRAVEL', L3: 'CMD_SEARCH_STASHES', LT: 'zoom-out', RT: 'zoom-in' })
     expect(icons(ctx({ mode: 'levelmap' }))).toMatchObject({ A: 'CMD_MAP_GOTO_TARGET', Y: 'CMD_MAP_FIND_YOU' })
   })
-  it('menus, prompts and panels of ours have none', () => {
-    for (const c of [ctx({ mode: 'more' }), ctx({ mode: 'yesno' }), ctx({ mode: 'targeting', hostilesInView: 1 })]) expect(Object.values(icons(c)).filter(Boolean)).toEqual([])
-    expect(Object.values(icons(ctx({}), true)).filter(Boolean)).toEqual([])
-  })
-  it('every icon is one crawl’s GUI atlas has', () => {
-    const all = [ctx({}), ctx({ mode: 'levelmap' }), ctx({ mode: 'levelmap', mapCursorHome: true })].flatMap((c) => Object.values(icons(c)).filter((x): x is string => !!x))
-    for (const name of all) expect(inAtlas(name), name).toBe(true)
+  it('a key that means another thing on another screen wears that screen’s picture', () => {
+    // `.` waits on the map and travels in look mode; `*` is the next item there and Random in a new game; Ctrl-F searches from the level map and filters a menu
+    expect(icons(ctx({ mode: 'targeting', examining: { label: 'goblin' } as Context['examining'], monstersInView: 2 }))).toMatchObject({ A: 'CMD_LOOKUP_HELP', X: 'CMD_MAP_GOTO_TARGET', RT: 'CMD_MAP_FIND_STASH', RB: 'cycle' })
+    expect(icons(ctx({ mode: 'newgame' }))).toMatchObject({ X: 'ERROR', Y: 'STARTUP_HINTS' })
+    expect(icons(menu({ multiselect: true, filter: true }))).toMatchObject({ SELECT: 'filter', LT: 'toggle', R3: 'all' })
   })
 })
 

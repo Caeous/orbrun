@@ -5,7 +5,8 @@ import { monsterGroups } from '@orbrun/scene-webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
 import { h, clear, escapeHtml, replace, snapToPixels } from './dom'
 import { commandTileId, tileCanvas } from './overlays'
-import { CONTINUE, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, buttonGroup, promptLabels, type Action, type BindingLabel, type TouchCell, type TouchLabel } from './bindings'
+import { CONTINUE, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, buttonGroup, promptLabels, type Action, type BindingLabel, type TouchCell, type TouchIcon, type TouchLabel } from './bindings'
+import { glyphPath, type TouchGlyph } from './touch-glyphs'
 
 /** A tap-or-hold button down: which, and the press's length as a fraction of the hold (bindings.ts HOLD_MS). */
 export interface HoldProgress {
@@ -1778,7 +1779,7 @@ export class Hud {
    * by its word, in a block of big buttons for a player with nothing but a
    * finger, each in its cell (bindings.ts `TOUCH_CELLS`). An anchor the
    * screen gives nothing to do stands dim under its own word (bindings.ts
-   * `TOUCH_ANCHORS`), so Back and the arrows are where the finger knows them
+   * `TOUCH_ANCHORS`), so Esc and the arrows are where the finger knows them
    * on every screen; any other cell left over is empty, and the block keeps
    * its size. A button is the pad's own: down and up go to the game as
    * that button's press and release (`onTouchButton`), so a tap-or-hold one
@@ -1788,8 +1789,8 @@ export class Hud {
    */
   private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null) {
     // the icons come in with the gamedata, and are drawn for the screen's density (`touchArtScale`)
-    const art = (l: TouchLabel) => (gd ? '#' + (l.icon ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') : '')
-    const key = labels ? labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.auto ? '!' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) : ''
+    const art = (l: TouchLabel) => '#' + (l.icon ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '')
+    const key = labels ? labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.auto ? '!' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
     this.touchbar.hidden = !labels?.length
@@ -1831,7 +1832,7 @@ export class Hud {
         } else {
           letGo(old)
           const idle = TOUCH_ANCHORS[cell]
-          el = l ? this.touchButton(covers, l, gd) : idle ? idleTouchButton(cell, idle) : h('span', { class: 'tb empty', 'data-cell': cell })
+          el = l ? this.touchButton(covers, l, gd) : idle ? idleTouchButton(cell, idle, gd) : h('span', { class: 'tb empty', 'data-cell': cell })
           if (old) old.replaceWith(el)
           else if (last) last.after(el)
           else this.touchbar.prepend(el)
@@ -1875,18 +1876,17 @@ export class Hud {
    * (styles.css).
    */
   private fillTouchButton(btn: HTMLElement, covers: readonly TouchCell[], l: TouchLabel, gd: Gamedata | null) {
-    // the d-pad's cells are their arrows alone; the others are their art over the word, the word being what is read last
+    // the d-pad's cells are their arrows alone; the others are their picture over the word, the word being what is read last
     const arrow = TOUCH_ARROW_ROT[covers[0]]
-    const icon = arrow !== undefined ? touchArrow(arrow) : touchArt(gd, l.icon, l.item)
+    const icon = arrow !== undefined ? touchArrow(arrow) : touchPicture(gd, l, l.item)
     // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
     const words = l.hold ? l.label + ' [' + l.hold + ']' : l.label
     btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.auto ? ' auto' : '') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (btn.classList.contains('down') ? ' down' : '')
     btn.setAttribute('aria-label', formattedStringToText(l.label))
     const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, arrow !== undefined ? null : label(words)]
     btn.replaceChildren(...parts.filter((n): n is Element => n !== null))
-    // sized by its length to keep to that line (styles.css .tb.has-hold)
-    if (l.hold) btn.style.setProperty('--chars', String(formattedStringToText(words).length))
-    else btn.style.removeProperty('--chars')
+    // sized by its length to keep to its one line (styles.css .tb.has-icon .label)
+    btn.style.setProperty('--chars', String(formattedStringToText(words).length))
   }
 
   /**
@@ -2000,7 +2000,7 @@ function touchArt(gd: Gamedata | null, icon: string | undefined, item: TouchLabe
     if (hh <= 0) continue
     ctx.drawImage(img as CanvasImageSource, rect.sx, rect.sy, rect.w, hh, (rect.ox - TOUCH_ART_INSET) * k, (rect.oy - TOUCH_ART_INSET) * k, rect.w * k, hh * k)
   }
-  if (item === undefined) {
+  if (item === undefined && /^(CMD|PROMPT)_/.test(icon ?? '')) {
     // the command art's black ground lets the button's own show through (a dark backing over the dungeon on its side)
     try {
       const px = ctx.getImageData(0, 0, c.width, c.height)
@@ -2037,10 +2037,27 @@ function touchArtScale(): number {
 /** each d-pad cell's arrow, as a turn of the one pointing up (`touchArrow`) */
 const TOUCH_ARROW_ROT: Partial<Record<TouchCell, number>> = { up: 0, right: 90, down: 180, left: 270 }
 
-/** An anchor with nothing to do on this screen (bindings.ts `TOUCH_ANCHORS`): its arrow or its word, dim, pressing nothing. */
-function idleTouchButton(cell: TouchCell, word: string): HTMLElement {
+/** An anchor with nothing to do on this screen (bindings.ts `TOUCH_ANCHORS`): its arrow, or its picture over its word, dim, pressing nothing. */
+function idleTouchButton(cell: TouchCell, idle: TouchIcon & { label: string }, gd: Gamedata | null): HTMLElement {
   const arrow = TOUCH_ARROW_ROT[cell]
-  return h('span', { class: 'tb idle at-' + cell + (arrow !== undefined ? ' has-icon' : ''), 'data-cell': cell, 'aria-hidden': 'true' }, arrow !== undefined ? touchArrow(arrow) : label(word))
+  const icon = arrow !== undefined ? touchArrow(arrow) : touchPicture(gd, idle)
+  const el = h('span', { class: 'tb idle at-' + cell + (icon ? ' has-icon' : ''), 'data-cell': cell, 'aria-hidden': 'true' }, icon, arrow !== undefined ? null : label(idle.label))
+  el.style.setProperty('--chars', String(idle.label.length))
+  return el
+}
+
+/**
+ * A touch button's picture: the item, or crawl's art by name, or a glyph of
+ * ours; crawl's art this version of the game lacks is our step on, so no
+ * button goes without. Null only for crawl's art before the gamedata has
+ * come.
+ */
+function touchPicture(gd: Gamedata | null, face: TouchIcon, item?: TouchLabel['item']): Element | null {
+  if (item !== undefined || face.icon) {
+    const art = touchArt(gd, face.icon, item)
+    if (art || !gd) return art
+  }
+  return touchGlyph(face.glyph ?? 'action')
 }
 
 /**
@@ -2048,21 +2065,36 @@ function idleTouchButton(cell: TouchCell, word: string): HTMLElement {
  * drawn the same size), where a font's arrow read thin beside crawl's art.
  */
 function touchArrow(deg: number): SVGSVGElement {
-  const k = touchArtScale()
-  const side = (TOUCH_ART * k) / (window.devicePixelRatio || 1)
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  svg.setAttribute('class', 'arrow')
-  svg.setAttribute('viewBox', '0 0 26 26')
-  svg.setAttribute('width', String(side))
-  svg.setAttribute('height', String(side))
-  svg.setAttribute('shape-rendering', 'crispEdges')
-  svg.setAttribute('aria-hidden', 'true')
+  const svg = touchSvg('arrow')
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
   // a head 18 wide over a shaft 6 wide, 20 tall in all, stepped two pixels at a time as crawl's own arrows are
   path.setAttribute('d', 'M12 3h2v2h2v2h2v2h2v2h2v2h-6v10h-6V13H4v-2h2V9h2V7h2V5h2z')
   path.setAttribute('fill', 'currentColor')
   path.setAttribute('transform', `rotate(${deg} 13 13)`)
   svg.append(path)
+  return svg
+}
+
+/** A glyph of ours (touch-glyphs.ts), drawn as the arrows are. */
+function touchGlyph(name: TouchGlyph): SVGSVGElement {
+  const svg = touchSvg('glyph')
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  path.setAttribute('d', glyphPath(name))
+  path.setAttribute('fill', 'currentColor')
+  svg.append(path)
+  return svg
+}
+
+/** an empty 26px square at the icons' size, for a pixel drawing of ours */
+function touchSvg(cls: string): SVGSVGElement {
+  const side = (TOUCH_ART * touchArtScale()) / (window.devicePixelRatio || 1)
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('class', cls)
+  svg.setAttribute('viewBox', '0 0 26 26')
+  svg.setAttribute('width', String(side))
+  svg.setAttribute('height', String(side))
+  svg.setAttribute('shape-rendering', 'crispEdges')
+  svg.setAttribute('aria-hidden', 'true')
   return svg
 }
 

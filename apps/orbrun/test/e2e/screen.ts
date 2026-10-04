@@ -20,8 +20,8 @@ export interface Screen {
   log: string[]
   /** a server menu where rows are marked, not taken (drop, pickup, the shop) */
   multiselect: boolean
-  /** the touch bar, cell by cell (bindings.ts TOUCH_CELLS): the button each cell presses, and its word */
-  touch: { cell: string; button: string; label: string }[]
+  /** the touch bar, cell by cell (bindings.ts TOUCH_CELLS): the button each cell presses, its word, and its picture's name */
+  touch: { cell: string; button: string; label: string; picture?: string }[]
 }
 
 export function screen(g: E2e): Screen {
@@ -47,7 +47,7 @@ export function screen(g: E2e): Screen {
   // an overlay of Orbrun's own (an empty tab of X's actions) puts the bar away: its footer says what the buttons do
   const ours = !!g.root.querySelector('.overlay-stack > [data-client]')
   if (!ours) for (const l of barLabels(ctx)) bar[l.button] = formattedStringToText(l.label)
-  const touch = ours ? [] : touchLabels(barLabels(ctx), ctx).map((l) => ({ cell: l.cell, button: l.button, label: formattedStringToText(l.label) }))
+  const touch = ours ? [] : touchLabels(barLabels(ctx), ctx).map((l) => ({ cell: l.cell, button: l.button, label: formattedStringToText(l.label), picture: l.item !== undefined ? 'item' : (l.icon ?? l.glyph) }))
   return {
     mode: ctx.mode,
     surface,

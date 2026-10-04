@@ -2423,26 +2423,24 @@ canvas.minimap.hidden {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
-/* under an icon the word is the caption, not the button: smaller, quieter, one line */
+/* under an icon the word is the caption, not the button: smaller, quieter, one line. A long one (Leave dungeon, a
+   tap-or-hold one's Wait [Rest]) is as small as keeps it to the button's width, its --chars (hud.ts renderTouchBar) at
+   the monospace font's 0.6em advance, down to 7px; past that it is cut */
+.touchbar .tb.has-icon {
+  container-type: inline-size;
+}
 .touchbar .tb.has-icon .label {
-  font-size: 0.85em;
+  font-size: max(7px, min(0.85em, calc(100cqi / var(--chars, 1) / 0.61)));
   color: var(--ink-dim);
   -webkit-line-clamp: 1;
   white-space: nowrap;
   text-overflow: ellipsis;
   display: block;
 }
-/* a tap-or-hold one's caption names both, Wait [Rest] (hud.ts renderTouchBar): as small as keeps it to the button's
-   width, its --chars at the monospace font's 0.6em advance, and no bigger than another caption */
-.touchbar .tb.has-icon.has-hold {
-  container-type: inline-size;
-}
-.touchbar .tb.has-icon.has-hold .label {
-  font-size: min(0.85em, calc(100cqi / var(--chars, 1) / 0.61));
-}
-/* crawl's own command icon, or the quivered item, over the word (hud.ts touchArt) */
+/* crawl's own command icon, the quivered item, or a glyph of ours, over the word (hud.ts touchPicture) */
 .touchbar .tb canvas.tile,
-.touchbar .tb svg.arrow {
+.touchbar .tb svg.arrow,
+.touchbar .tb svg.glyph {
   flex: none;
   pointer-events: none;
 }

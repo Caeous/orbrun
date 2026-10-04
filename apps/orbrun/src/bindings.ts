@@ -4,7 +4,8 @@ import type { Button, PadEvent } from './gamepad'
 import { DEFAULT_YESNO, LOG_DEFAULT_COLOUR, isFocusMode, type Context, type MenuContext, type ParsedPrompt, type ShopContext } from './context'
 import type { FocusOp } from './focus'
 import { menuHasSections } from './menu-nav'
-import { SHOUT, SWAP_WEAPONS } from './action-tabs'
+import { SHOUT, SHOUT_KEY, SWAP_WEAPONS, SWAP_WEAPONS_KEY } from './action-tabs'
+import type { TouchGlyph } from './touch-glyphs'
 
 export type RelDir = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7
 
@@ -93,7 +94,6 @@ const ENTER: Action = kc(Keys.ENTER, 'Confirm')
  */
 export const CONTINUE: Action = kc(Keys.SPACE, '--more--')
 const SPACE = CONTINUE
-const palette = (category: CommandCategory, section?: string): Action => ({ kind: 'ui', op: 'palette', category, section })
 const SYSTEM: Action = { kind: 'ui', op: 'system' }
 const hold = (tap: Action, hold: Action): Action => ({ kind: 'hold', tap, hold })
 /** A keys binding the situation created (a shop with rows marked): the bar shows it unasked (`isContextual`). */
@@ -144,7 +144,6 @@ function menuTable(m: MenuContext | undefined, ctx: Context): Partial<Record<But
   const t: Partial<Record<Button, Action>> = {
     A: { kind: 'menu', op: 'select' },
     B: { kind: 'menu', op: 'cancel' },
-    L3: palette('menu'),
   }
   if (!m) return t
   // the menu's own help, on the key it names (the inventory's `_`); a menu that names none has none
@@ -155,7 +154,7 @@ function menuTable(m: MenuContext | undefined, ctx: Context): Partial<Record<But
     return { ...t, LB: { kind: 'ui', op: 'actionTab', arg: -1 }, RB: { kind: 'ui', op: 'actionTab', arg: 1 }, Y: SWAP_WEAPONS, LT: SHOUT }
   }
   // the hovered row, described where it stands (the spell, ability and item menus' "[?] toggle ... description"
-  // without the toggle, see Overlays.menuAction); `!` cycles the mode from the palette, or Left/Right on a row
+  // without the toggle, see Overlays.menuAction); Left/Right on a row cycles the mode, as `!` does
   if (EXAMINING_MENUS.has(m.menu.tag) && !m.togglesAtOnce) t.X = { kind: 'menu', op: 'examine' }
   // the previous / next section (menu.cc cycle_headers, both ways); a menu without headers pages, when it has pages.
   // In the pack the bumpers turn its pages, as Left and Right do (pack-tabs.ts), and the sections move to the triggers beside them
@@ -176,7 +175,7 @@ function menuTable(m: MenuContext | undefined, ctx: Context): Partial<Record<But
     // Start is Enter here (screenKey): it takes what is marked, so it is there once something is
     if (m.anyMarked) t.START = situational(kc(Keys.ENTER, 'accept'))
   }
-  // Select stays the filter (documented); the palette's menu section holds the rest
+  // Select is the filter
   if (m.filter) t.SELECT = ctrl('F', 'Filter')
   if (turns && sectioned) {
     t.LT = { kind: 'menu', op: 'sectionPrev' }
@@ -205,7 +204,6 @@ function shopTable(shop: ShopContext, pageable: boolean): Partial<Record<Button,
     A: { kind: 'menu', op: 'select' },
     B: { kind: 'menu', op: 'cancel' },
     Y: { kind: 'menu', op: 'altSelect' },
-    L3: palette('menu'),
     R3: k('/', shop.sortOrder ? `sort (${shop.sortOrder})` : 'Sort'),
   }
   if (pageable) {
@@ -233,10 +231,9 @@ function targetingTable(ctx: Context): Partial<Record<Button, Action>> {
     // the same button as opened the aim confirms it, so tapping RB again and again fires shot after shot as `f f f` does
     RB: { kind: 'fire' },
     X: k('v', 'Describe'),
-    SELECT: palette('targeting'),
   }
-  // one button walks the targets, so the other bumper can stay the shot: `-` (previous) is in the
-  // palette, and the cycle wraps; with one target there is nowhere to walk
+  // one button walks the targets, so the other bumper can stay the shot: the cycle wraps, so `-` (previous)
+  // is not missed; with one target there is nowhere to walk
   if (ctx.hostilesInView > 1) t.LB = k('+', 'Next target')
   // the quiver, cycled inside the aim (CMD_TARGET_CYCLE_QUIVER_FORWARD / _BACKWARD): the shot to take is chosen
   // where it is aimed, and the bar's Fire label follows the server's new quiver line. A spell's aim cycles nothing
@@ -256,7 +253,7 @@ function targetingTable(ctx: Context): Partial<Record<Button, Action>> {
  * own and the corner shows them (`situational`). The bumpers cycle monsters
  * (`-`/`+`), the triggers the items in view (`/`/`*`, cmd-keys.h
  * OBJ_CYCLE_BACK/FORWARD), B cancels; the finds (`<`, `>`, `_`, `^`, Tab, `r`)
- * live in the palette.
+ * have no button.
  */
 function examineTable(ctx: Context): Partial<Record<Button, Action>> {
   const t: Partial<Record<Button, Action>> = {
@@ -266,7 +263,6 @@ function examineTable(ctx: Context): Partial<Record<Button, Action>> {
     Y: situational(k('?', 'Help')),
     LT: k('/', 'Previous item'),
     RT: k('*', 'Next item'),
-    SELECT: palette('targeting'),
   }
   // the monsters in view, one way and the other; with none there is nothing to cycle
   if (ctx.monstersInView > 0) {
@@ -295,8 +291,7 @@ const offMap = (label: string, key: KeyOrText): Action => ({ kind: 'keys', seq: 
  * Travel to a branch (`G`), the overview (Ctrl-O) and the stash search
  * (Ctrl-F) are main-map commands: inside the map `G` views another level
  * (CMD_MAP_GOTO_LEVEL) and Ctrl-F forgets it (CMD_MAP_FORGET), so those
- * buttons close the map first. Select closes it again, held it opens the
- * map's palette, with the waypoints and exclusions.
+ * buttons close the map first. Select closes it again.
  */
 function levelmapTable(ctx: Context): Partial<Record<Button, Action>> {
   const t: Partial<Record<Button, Action>> = {
@@ -309,7 +304,7 @@ function levelmapTable(ctx: Context): Partial<Record<Button, Action>> {
     RT: { kind: 'keys', seq: [{ text: '}' }], label: 'Zoom in', contextual: true, repeats: true },
     L3: offMap('Find…', { key: 6 }),
     R3: offMap('Overview', { key: 15 }),
-    SELECT: hold(kc(Keys.ESC, 'Close'), palette('levelmap')),
+    SELECT: kc(Keys.ESC, 'Close'),
   }
   // the cursor away from the player: somewhere to travel to, and a way back to them; on them, Y travels further
   if (!ctx.mapCursorHome) {
@@ -327,7 +322,6 @@ function levelmapTable(ctx: Context): Partial<Record<Button, Action>> {
 const FOCUS: Partial<Record<Button, Action>> = {
   A: focus('select'),
   B: focus('cancel'),
-  SELECT: palette('command'),
 }
 
 /** The focus set, with the bumpers where there is a page to turn (`Context.pageable`). */
@@ -371,7 +365,7 @@ const YESNO_BUTTONS: Record<string, Button> = { Y: 'A', N: 'B', A: 'X' }
 function promptTable(prompt: ParsedPrompt, ctx: Context): Partial<Record<Button, Action>> {
   // a yes/no: its answers are its buttons (there is no cursor), whatever crawl's default
   if (prompt.yesno) {
-    const t: Partial<Record<Button, Action>> = { SELECT: FOCUS.SELECT }
+    const t: Partial<Record<Button, Action>> = {}
     for (const [hotkey, button] of promptButtons(prompt)) t[button] = { kind: 'prompt', hotkey }
     return t
   }
@@ -620,21 +614,36 @@ export function isTouchCell(s: string): s is TouchCell {
 }
 
 /**
- * The cells that are for the same thing on every screen: Back in the
+ * A touch button's picture: crawl's art by tile name (`icon`, overlays.ts
+ * `commandTileId`), or a glyph of ours (`glyph`, touch-glyphs.ts) where
+ * crawl draws none.
+ */
+export type TouchIcon = { icon?: string; glyph?: TouchGlyph }
+
+/**
+ * The cells that are for the same thing on every screen: Esc in the
  * bottom-left corner, the arrows an upturned T, Examine in the middle of the
  * top row and the screen's verb at its end. Where the screen gives one
- * nothing to do it stands dim under this word (hud.ts), so every screen is
- * one keypad's shape and only what lights up changes.
+ * nothing to do it stands dim under this word and picture (hud.ts), so every
+ * screen is one keypad's shape and only what lights up changes.
  */
-export const TOUCH_ANCHORS: Partial<Record<TouchCell, string>> = { esc: 'Back', up: '↑', left: '←', down: '↓', right: '→', examine: 'Examine', select: 'Select' }
+export const TOUCH_ANCHORS: Partial<Record<TouchCell, TouchIcon & { label: string }>> = {
+  esc: { label: 'Esc', icon: 'PROMPT_NO' },
+  up: { label: '↑' },
+  left: { label: '←' },
+  down: { label: '↓' },
+  right: { label: '→' },
+  examine: { label: 'Examine', icon: 'CMD_LOOKUP_HELP' },
+  select: { label: 'Select', icon: 'PROMPT_YES' },
+}
 
 /**
  * A touch bar button: the binding it presses (`button`), standing in `cell`
- * and the `span` - 1 cells right of it, with crawl's command icon by name
- * (`icon`) or an item's own tile (`item`) over the word, and how many of it
- * (`count`). `auto`: it goes on by itself, turn after turn (`runsOn`).
+ * and the `span` - 1 cells right of it, with its picture (`TouchIcon`) or an
+ * item's own tile (`item`) over the word, and how many of it (`count`).
+ * `auto`: it goes on by itself, turn after turn (`runsOn`).
  */
-export type TouchLabel = BindingLabel & { cell: TouchCell; span?: number; icon?: string; item?: InvItem['tile']; count?: number; auto?: boolean }
+export type TouchLabel = BindingLabel & TouchIcon & { cell: TouchCell; span?: number; item?: InvItem['tile']; count?: number; auto?: boolean }
 
 type TouchLayout = readonly (readonly (Button | null)[])[]
 
@@ -689,7 +698,7 @@ function touchLayout(ctx: Context, panel: boolean): TouchLayout | null {
 }
 
 /**
- * Where a screen without a layout of its own puts a button: Back, the arrows
+ * Where a screen without a layout of its own puts a button: Esc, the arrows
  * and A in their anchors, the triggers either side of the up arrow and the
  * bumpers either side of Examine, as on the map.
  */
@@ -707,8 +716,8 @@ const GENERIC_FREE: readonly TouchCell[] = ['actions', 'gear', 'explore', 'fight
  * a layout each (`touchLayout`); every other screen places its buttons by
  * one rule (`GENERIC_HOME`), and there the bumpers stand only on a keyboard,
  * whose Shift has no key of its own (the tabs and pages they turn elsewhere
- * are a finger's to tap and scroll), the palette only in a crawl menu, and a
- * button that does what another already does not at all. `panel`: the
+ * are a finger's to tap and scroll), and a button that does what another
+ * already does not at all. `panel`: the
  * labels are a panel of ours' (Overlays.padPrompts), up over the map: the
  * map's rules are not theirs. The d-pad's arrows are added wherever the
  * d-pad moves something (it is no binding of the tables, see `resolve`).
@@ -738,7 +747,6 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
   const fits = (l: BindingLabel) => {
     const a = l.action
     if (placed.includes(JSON.stringify(a))) return false
-    if (a.kind === 'ui' && a.op === 'palette') return ctx.mode === 'menu' && !panel
     return (l.button !== 'LB' && l.button !== 'RB') || a.kind === 'osk'
   }
   const place = (l: BindingLabel, cell: TouchCell) => {
@@ -763,21 +771,25 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
 
 /**
  * A button's face on the touch bar (touchLabels): its word, short where
- * crawl's is long (`TOUCH_WORDS`), crawl's icon for it on the map and the
- * level map (`touchIcon`), and the quivered shot drawn on the button that
- * shoots it, on the map and in the aim it opens (`touchShot`), where the
- * aim's own word ("Fire at goblin") stays under the picture.
+ * crawl's is long (`TOUCH_WORDS`), its picture (`touchIcon`), and the
+ * quivered shot drawn on the button that shoots it, on the map and in the
+ * aim it opens (`touchShot`), where the aim's own word ("Fire at goblin")
+ * stays under the picture. B is Esc on every screen, whatever it is called
+ * there (Cancel, Back, Close, Skip, No): one key, one name.
  */
 function touchFace(l: BindingLabel, ctx: Context, panel: boolean): Omit<TouchLabel, 'cell'> {
   const auto = !panel && runsOn(l.action, ctx)
   const face = { ...l, ...(auto ? { auto } : {}) }
+  // the d-pad's cells are their arrows, which the bar draws itself
+  if (TOUCH_ARROWS.some(([b]) => b === l.button)) return face
+  if (l.button === 'B') return { ...face, label: TOUCH_ANCHORS.esc!.label, ...ESC_ICON }
+  const word = TOUCH_WORDS[l.label] ?? (l.action.kind === 'keys' ? TOUCH_WORDS[l.action.label] : undefined) ?? l.label
+  const out = { ...face, label: word, ...touchIcon(l.action, ctx, panel) }
   if (!panel && l.action.kind === 'fire' && ctx.readiedAction && (ctx.mode === 'command' || (ctx.mode === 'targeting' && ctx.aimQuiver))) {
     const shot = touchShot(ctx.readiedAction, ctx.readiedTile)
-    return { ...face, ...shot, label: ctx.mode === 'command' ? shot.label : l.label }
+    return { ...out, ...shot, label: ctx.mode === 'command' ? shot.label : l.label }
   }
-  const icon = panel ? undefined : touchIcon(l.action, ctx)
-  const word = TOUCH_WORDS[l.label] ?? (l.action.kind === 'keys' ? TOUCH_WORDS[l.action.label] : undefined) ?? l.label
-  return { ...face, label: word, ...(icon ? { icon } : {}) }
+  return out
 }
 
 /**
@@ -820,30 +832,178 @@ export function touchShot(readied: string, tile: InvItem['tile'] | undefined): {
 /** the touch bar's own words for crawl's (touchLabels) */
 const TOUCH_WORDS: Record<string, string> = { Autoexplore: 'Explore', Autofight: 'Fight', '--more--': 'Continue' }
 
+const ours = (glyph: TouchGlyph): TouchIcon => ({ glyph })
+const YES: TouchIcon = { icon: 'PROMPT_YES' }
+const ESC_ICON: TouchIcon = { icon: 'PROMPT_NO' }
+const LOOK: TouchIcon = { icon: 'CMD_LOOKUP_HELP' }
+const LIST: TouchIcon = { icon: 'CMD_REPLAY_MESSAGES' }
+const KEYBOARD: TouchIcon = { icon: 'CMD_KEYBOARD' }
+const TRAVEL: TouchIcon = { icon: 'CMD_MAP_GOTO_TARGET' }
+/** the Quiver tab's own picture (action-tabs.ts) */
+const QUIVER: TouchIcon = { icon: 'MI_BOOMERANG' }
+/** crawl's own help, the `?` it lists its commands under */
+const HELP: TouchIcon = { icon: 'CMD_DISPLAY_COMMANDS' }
+const NEXT = ours('next')
+const PREV = ours('prev')
+
 /**
- * A touch button's icon, as a tile name (overlays.ts `commandTileId`):
- * crawl's own, from the command bar its touch screens have (tilereg-cmd.cc,
- * the GUI atlas's `CMD_*`), for the buttons that always mean one command
- * there -- on the map and on the level map. X and Y wear the icon of the
- * tab they open on, as their words name it; Examine, which on the map
- * only ever opens look mode, the magnifier. A button whose meaning changes
- * with the situation (A) has none, rather than one that is wrong half the
- * time; the shot on RB wears what is quivered (`touchShot`).
+ * A keys binding's picture, by the last key it sends: crawl's command art
+ * for the key's command where its touch command bar has one (tilereg-cmd.cc,
+ * the GUI atlas's `CMD_*`), a glyph of ours where it has none.
  */
-function touchIcon(a: Action, ctx: Context): string | undefined {
-  const key = lastKey(a)
-  if (ctx.mode === 'command') {
-    if (a.kind === 'fight') return 'CMD_AUTOFIGHT'
-    // crawl's magnifier, from its help lookup: Examine here is looking about, which is what the glass says
-    if (a.kind === 'examine') return 'CMD_LOOKUP_HELP'
-    if (a.kind === 'ui') return ({ commands: 'CMD_CAST_SPELL', equipment: 'CMD_DISPLAY_INVENTORY' } as Record<string, string>)[a.op]
-    return ({ o: 'CMD_EXPLORE', '.': 'CMD_WAIT' } as Record<string, string>)[String(key)]
+const KEY_ICONS: Record<string, TouchIcon> = {
+  o: { icon: 'CMD_EXPLORE' },
+  '.': { icon: 'CMD_WAIT' },
+  5: { icon: 'CMD_WAIT' },
+  v: LOOK,
+  ',': ours('all'),
+  [SWAP_WEAPONS_KEY]: ours('swap'),
+  [SHOUT_KEY]: ours('shout'),
+  ')': QUIVER,
+  '(': QUIVER,
+  '+': ours('cycle'),
+  '-': ours('cycle'),
+  // the next item in view, as the level map's search for one draws it
+  '*': { icon: 'CMD_MAP_FIND_STASH' },
+  '/': { icon: 'CMD_MAP_FIND_STASH' },
+  '<': { icon: 'CMD_MAP_FIND_UPSTAIR' },
+  '>': { icon: 'CMD_MAP_FIND_DOWNSTAIR' },
+  '@': { icon: 'CMD_MAP_FIND_YOU' },
+  G: { icon: 'CMD_INTERLEVEL_TRAVEL' },
+  // Find… is crawl's stash search (Ctrl-F), Overview its dungeon overview (Ctrl-O)
+  6: { icon: 'CMD_SEARCH_STASHES' },
+  15: { icon: 'CMD_DISPLAY_OVERMAP' },
+  123: ours('zoom-out'),
+  '}': ours('zoom-in'),
+  // the shop's buy|examine flip, and its shopping list
+  '!': ours('swap'),
+  $: LIST,
+  [Keys.ENTER]: ours('enter'),
+  [Keys.ESC]: ESC_ICON,
+  [Keys.SPACE]: YES,
+}
+
+/** the keys that mean another thing on one screen */
+const MODE_KEY_ICONS: Partial<Record<Context['mode'], Record<string, TouchIcon>>> = {
+  levelmap: { '.': TRAVEL },
+  targeting: { '.': TRAVEL },
+  menu: { 6: ours('filter'), '/': ours('sort') },
+  // the new-game screens' Random is crawl's question mark, Recommended its hint
+  newgame: { '*': { icon: 'ERROR' }, '+': { icon: 'STARTUP_HINTS' } },
+  prompt: { '*': LIST },
+}
+
+const MENU_ICONS: Record<Extract<Action, { kind: 'menu' }>['op'], TouchIcon> = {
+  select: YES,
+  altSelect: LIST,
+  examine: LOOK,
+  toggle: ours('toggle'),
+  cancel: ESC_ICON,
+  next: NEXT,
+  pageNext: NEXT,
+  sectionNext: NEXT,
+  right: NEXT,
+  last: NEXT,
+  prev: PREV,
+  pagePrev: PREV,
+  sectionPrev: PREV,
+  left: PREV,
+  first: PREV,
+}
+
+const FOCUS_ICONS: Record<FocusOp, TouchIcon> = {
+  select: YES,
+  cancel: ESC_ICON,
+  // a skill row's Set target
+  altSelect: ours('target'),
+  next: NEXT,
+  pageNext: NEXT,
+  right: NEXT,
+  last: NEXT,
+  prev: PREV,
+  pagePrev: PREV,
+  left: PREV,
+  first: PREV,
+}
+
+const UI_ICONS: Partial<Record<Extract<Action, { kind: 'ui' }>['op'], TouchIcon>> = {
+  // X and Y wear the icon of the tab they open on, as their words name it
+  commands: { icon: 'CMD_CAST_SPELL' },
+  equipment: { icon: 'CMD_DISPLAY_INVENTORY' },
+  // the palette is the screen's keys, for a player with no keyboard
+  palette: KEYBOARD,
+  keyboard: KEYBOARD,
+  system: { icon: 'CMD_GAME_MENU' },
+  levelmap: { icon: 'CMD_DISPLAY_MAP' },
+  scrollLog: LIST,
+  faceHostile: ours('target'),
+}
+
+/** a popup's verb, by its key: a describe screen's panes, the overview's travel, a feature's stairs */
+const POPUP_ICONS: Record<string, TouchIcon> = {
+  '!': ours('panes'),
+  G: { icon: 'CMD_INTERLEVEL_TRAVEL' },
+  '<': { icon: 'CMD_MAP_PREV_LEVEL' },
+  '>': { icon: 'CMD_MAP_NEXT_LEVEL' },
+  d: { icon: 'CMD_DROP' },
+  Y: YES,
+  y: YES,
+}
+
+const OSK_ICONS: Partial<Record<Extract<Action, { kind: 'osk' }>['op'], TouchIcon>> = {
+  type: KEYBOARD,
+  backspace: ours('backspace'),
+  space: ours('space'),
+  submit: ours('enter'),
+  cancel: ESC_ICON,
+  shift: ours('shift'),
+}
+
+/**
+ * A touch button's picture (`TouchIcon`), so every button has one: the
+ * screen's verb crawl's tick and the way back its cross (the art its touch
+ * prompts answer with), the rest by what they do (`KEY_ICONS` and the
+ * tables beside it), and a step on (`action`) for a verb there is no
+ * picture for. `panel`: the label is a panel of ours', which the map's
+ * meanings of a key are not.
+ */
+function touchIcon(a: Action, ctx: Context, panel: boolean): TouchIcon {
+  switch (a.kind) {
+    case 'contextual':
+      return YES
+    case 'fight':
+      return { icon: 'CMD_AUTOFIGHT' }
+    case 'examine':
+      // crawl's magnifier, from its help lookup: Examine is looking about, which is what the glass says
+      return LOOK
+    case 'fire':
+      // an aim's Fire is the cursor's target; the quivered shot's own picture goes over either (touchFace)
+      return ctx.mode === 'targeting' ? ours('target') : QUIVER
+    case 'keys': {
+      // a menu's own help, on whichever key it names (the pack's `_`, look mode's `?`)
+      if (a.label === 'Help') return HELP
+      const key = String(lastKey(a))
+      // the shop's Enter, in examine mode, describes
+      if (key === String(Keys.ENTER) && ctx.menu?.shop?.mode === 'examine') return LOOK
+      return (!panel && MODE_KEY_ICONS[ctx.mode]?.[key]) || KEY_ICONS[key] || ours('action')
+    }
+    case 'menu':
+      return a.op === 'select' && ctx.menu?.shop?.mode === 'examine' ? LOOK : MENU_ICONS[a.op]
+    case 'prompt': {
+      const key = a.hotkey.toUpperCase()
+      return key === 'N' ? ESC_ICON : key === 'A' ? ours('always') : YES
+    }
+    case 'focus':
+      return FOCUS_ICONS[a.op]
+    case 'ui':
+      if (a.op === 'popupAction') return POPUP_ICONS[ctx.popupActions?.[a.arg ?? 0]?.key ?? ''] ?? ours('action')
+      if (a.op === 'actionTab') return (a.arg ?? 1) < 0 ? PREV : NEXT
+      return UI_ICONS[a.op] ?? ours('action')
+    case 'osk':
+      return OSK_ICONS[a.op] ?? ours('action')
+    default:
+      return ours('action')
   }
-  if (ctx.mode === 'levelmap') {
-    // Find… is crawl's stash search (Ctrl-F), Overview its dungeon overview (Ctrl-O)
-    return ({ '<': 'CMD_MAP_FIND_UPSTAIR', '>': 'CMD_MAP_FIND_DOWNSTAIR', '@': 'CMD_MAP_FIND_YOU', '.': 'CMD_MAP_GOTO_TARGET', G: 'CMD_INTERLEVEL_TRAVEL', 6: 'CMD_SEARCH_STASHES', 15: 'CMD_DISPLAY_OVERMAP' } as Record<string, string>)[String(key)]
-  }
-  return undefined
 }
 
 /** the d-pad's buttons, by their arrows (touchLabels) */

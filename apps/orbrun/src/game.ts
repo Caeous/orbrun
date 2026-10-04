@@ -1507,7 +1507,7 @@ export class GameScreen {
     else if (this.overlays.hasClientOverlay) this.overlays.clientOverlayInput('close')
     // elsewhere the Orbrun menu opens where Start opens it, and nowhere Start means something else
     else if (menu === 'system') { const a = buttonAction('START', this.ctx); if (a?.kind === 'ui' && a.op === 'system') this.uiOp('system') }
-    // off the map F2 is the Select button there: the palette for the screen
+    // off the map F2 opens the palette for the screen, which no button opens
     else if (menu === 'levelmap') this.overlays.showPalette(this.ctx.mode === 'targeting' || this.ctx.mode === 'menu' ? this.ctx.mode : 'command')
   }
 
