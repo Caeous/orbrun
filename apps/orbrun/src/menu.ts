@@ -312,6 +312,11 @@ export class FrontEnd {
     return this._view
   }
 
+  /** Whether B goes anywhere: every screen but the bare home screen (back.ts lets Android's back leave the app there). */
+  get goesBack(): boolean {
+    return this._view !== 'home' || this.osk.visible
+  }
+
   // ------------------------------------------------------------------ input
 
   /** The element the cursor is on. */
