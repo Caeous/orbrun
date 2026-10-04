@@ -204,6 +204,53 @@ describe('the front end: the home screen', () => {
     expect(Array.from(reserve.children, (el) => el.textContent)).toEqual(hints)
   })
 
+  it('brings its words down until the title screen holds them, as a phone on its side needs, and keeps them there on every screen', () => {
+    // happy-dom lays nothing out: the title screen stands `tall` px at the page's whole font in a 390px screen (an
+    // iPhone on its side), and comes down with the font
+    const shrink = () => document.documentElement.style.getPropertyValue('--front-shrink')
+    let tall = 421
+    const proto = HTMLElement.prototype
+    const saved = { scrollHeight: Object.getOwnPropertyDescriptor(proto, 'scrollHeight'), clientHeight: Object.getOwnPropertyDescriptor(proto, 'clientHeight') }
+    const getter = (k: string) => {
+      let p: object | null = proto
+      while (p && !Object.getOwnPropertyDescriptor(p, k)) p = Object.getPrototypeOf(p)
+      return p ? Object.getOwnPropertyDescriptor(p, k)!.get! : () => 0
+    }
+    const was = { scrollHeight: getter('scrollHeight'), clientHeight: getter('clientHeight') }
+    const home = (el: HTMLElement) => el.classList.contains('home-list')
+    Object.defineProperty(proto, 'scrollHeight', { configurable: true, get(this: HTMLElement) { return home(this) ? Math.round(tall * Number(shrink() || 1)) : was.scrollHeight.call(this) } })
+    Object.defineProperty(proto, 'clientHeight', { configurable: true, get(this: HTMLElement) { return home(this) ? 390 : was.clientHeight.call(this) } })
+    try {
+      const { screen } = make()
+      expect(shrink()).toBe('0.92')
+      // every other screen stands at the title screen's size, so the words keep one size from screen to screen
+      pick(screen, 'Settings')
+      expect(screen.view).toBe('settings')
+      expect(shrink()).toBe('0.92')
+      // the screen changes size under Settings (the room says so): the title screen is measured out of sight, and
+      // never under the least, where a title screen that still cannot be held scrolls instead
+      tall = 2000
+      ;(screen as unknown as { roomView: { onfit: () => void } }).roomView.onfit()
+      expect(shrink()).toBe('0.75')
+      expect(screen.view).toBe('settings')
+      expect(screen.root.querySelector('.frame.home-list')).toBeNull()
+      tall = 421
+      pad(screen, 'B')
+      expect(screen.view).toBe('home')
+      expect(shrink()).toBe('0.92')
+      pick(screen, 'Watch')
+      expect(shrink()).toBe('0.92')
+      // and the game comes up at the whole size
+      screen.destroy()
+      expect(shrink()).toBe('')
+    } finally {
+      for (const [k, d] of Object.entries(saved)) {
+        if (d) Object.defineProperty(proto, k, d)
+        else delete (proto as unknown as Record<string, unknown>)[k]
+      }
+    }
+  })
+
   it('with an account: the way in first, the utilities under it, and Log in in Play’s place before the login', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))

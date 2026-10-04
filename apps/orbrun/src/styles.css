@@ -81,8 +81,10 @@ body {
   background: #000;
   color: #ddd;
   font-family: var(--mono);
-  /* --phone-shrink: on a phone, in a game, the menus come down as far as the grid's text did (game.ts shrinkText) */
-  font-size: calc(15px * var(--ui-scale) * var(--phone-shrink, 1));
+  /* --phone-shrink: on a phone, in a game, the menus come down as far as the grid's text did (game.ts shrinkText);
+     --front-shrink: the front end's words come down until the title screen holds them, on every screen of it
+     (menu.ts fitHome) */
+  font-size: calc(15px * var(--ui-scale) * var(--phone-shrink, 1) * var(--front-shrink, 1));
   font-weight: var(--text-weight);
   overflow: hidden;
 }
@@ -169,6 +171,10 @@ select {
   background:
     linear-gradient(90deg, rgba(3, 2, 6, 0.9) 0%, rgba(3, 2, 6, 0.8) 40%, rgba(3, 2, 6, 0.45) 56%, rgba(3, 2, 6, 0.12) 74%, rgba(3, 2, 6, 0.06) 100%),
     linear-gradient(180deg, rgba(3, 2, 6, 0.45), transparent 25%, transparent 70%, rgba(3, 2, 6, 0.7));
+}
+/* the title screen has no column: its shade hangs off the menu itself (.home-actions::before) */
+.home:has(> .frame.home-list)::before {
+  content: none;
 }
 
 /* the room behind the screen (room/view.ts): a place of a real game, drawn by the game's renderer; in once its first frame is drawn */
@@ -703,6 +709,31 @@ a.item.beside {
 .frame.home-list .brand .head {
   margin: auto 0;
 }
+/* the rows' shade, wherever the menu stands: from just over the first row down past the screen's foot and out past
+   its left edge, fading up toward the title and off to the right, so the room shows above the menu on a phone held
+   upright, and above and beside it on a wide screen. Shadows of a line along the rows' top, since a shadow paints
+   without adding to what the frame scrolls: each is `r - S` `S - t` blur `S`, for a shade from `t` over the rows to
+   `r` past their right, with `S` past any screen. Three, each fainter, further out and softer than the last, so the
+   shade has no edge to see: the first keeps to the words, the others reach by the screen's short side, a long
+   fade on a desktop and a short one on a phone */
+.frame.home-list .home-actions {
+  position: relative;
+}
+.frame.home-list .home-actions::before {
+  --far: 100vmax;
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0;
+  z-index: -1;
+  pointer-events: none;
+  box-shadow:
+    calc(-1 * var(--far)) calc(var(--far) - 1rem) 8rem var(--far) rgba(3, 2, 6, 0.4),
+    calc(11vmin - var(--far)) calc(var(--far) - 7vmin) 32vmin var(--far) rgba(3, 2, 6, 0.3),
+    calc(25vmin - var(--far)) calc(var(--far) - 14vmin) 57vmin var(--far) rgba(3, 2, 6, 0.25);
+}
 /* the wordmark's own face, latin range only, self-hosted (public/fonts, from Google Fonts, OFL): Grenze Gotisch Bold.
    Preloaded from index.html so it is usually in hand before the title is laid out; when it is not, `block` keeps the
    title blank for the moment rather than drawing it in the mono fallback and reshaping it (wider, taller, the lede
@@ -745,7 +776,9 @@ a.item.beside {
   font: 400 1.1rem/1.55 var(--mono);
   letter-spacing: 0.02em;
   color: var(--ink-dim);
-  text-shadow: 0 1px 8px #000;
+  /* the title has no shade of its own (the menu's stops short of it): its small words carry a dark cloud wide
+     enough to read on a lit wall and loose enough not to thicken the letters */
+  text-shadow: 0 1px 8px #000, 0 0 1.4rem #000, 0 0 2.8rem rgba(0, 0, 0, 0.7);
 }
 /* a phone balances the lines instead: two even ones, where filling the first would leave three */
 @media (max-width: 600px) {
@@ -763,6 +796,7 @@ a.item.beside {
   line-height: 1.5;
   color: var(--ink-dim);
   opacity: 0.85;
+  text-shadow: 0 1px 8px #000, 0 0 1.4rem #000, 0 0 2.8rem rgba(0, 0, 0, 0.7);
 }
 .frame.home-list .brand .head .splash::before {
   content: '“';
@@ -1354,10 +1388,6 @@ a.item.beside {
   }
 }
 @media (max-width: 600px) {
-  /* on a phone the words stand right on the room: dim it so they read */
-  .frame.home-list {
-    background: linear-gradient(180deg, rgba(3, 2, 6, 0.55), rgba(3, 2, 6, 0.75));
-  }
   .frame.home-list .item.chip {
     flex: 1 1 calc(50% - 0.2rem);
     min-width: 0;
@@ -1405,6 +1435,14 @@ a.item.beside {
   }
   .frame.home-list .menu-msg {
     min-height: 1.5em;
+  }
+}
+/* a phone on its side has no room for the line saying what the lit row does; and a finger takes a row without
+   lighting it first, so the line would only ever speak for the row the screen opened on. It is still there while
+   the words are fitted (menu.ts fitHome, `.fitting`), so they keep the size they would have beside it */
+@media (orientation: landscape) and (max-height: 500px) {
+  .frame.home-list:not(.fitting) .home-menu-help {
+    display: none;
   }
 }
 

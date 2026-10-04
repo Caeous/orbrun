@@ -61,6 +61,9 @@ const CONN_WORDS = { wait: 'connecting', down: 'not connected' } as const
 /** how long a server has to answer for an rc file before the editor says it did not */
 const RC_MS = 10_000
 
+/** the least the front end's words come down to (fitHome); past it, the title screen scrolls */
+const HOME_LEAST_SHRINK = 0.75
+
 /**
  * The rc file on show (showRc): whose, and which. A server keeps one file per
  * account and rc directory, named by the first game that reads it (GameLink
@@ -279,6 +282,9 @@ export class FrontEnd {
     this.root.addEventListener('focusin', this.onNativeFocus)
     // each visit the room stands in the next place round the cycle (places.ts)
     this.roomView = new RoomView(this.root, nextHomePlace().id)
+    // the room fills the screen, so it is the one to say the screen changed size; a web font landing can rewrap a line
+    this.roomView.onfit = this.fitHome
+    document.fonts?.addEventListener('loadingdone', this.fitHome, { signal: this.aborter.signal })
     // an offline build checked for, downloading, or new is said on its game's row
     this.unwatchEngines = engines.onChange(() => {
       if (this._view === 'home') this.showHome()
@@ -305,6 +311,7 @@ export class FrontEnd {
     this.unsub?.()
     this.unwatchEngines()
     if (this.frame) cancelAnimationFrame(this.frame)
+    document.documentElement.style.removeProperty('--front-shrink')
     this.osk.detach()
     this.roomView.destroy()
     this.root.remove()
@@ -690,6 +697,41 @@ export class FrontEnd {
       this.rosterTable = null
     }
   }
+
+  /**
+   * The front end's words come down until the title screen holds them, as a phone's game menus come down with
+   * its grid (game.ts shrinkText): the page's font (styles.css html) at a share of its size, a step at a time
+   * from the whole. A phone on its side has no room for them at full size. Every other screen stands at the
+   * size the title screen comes to, so the words keep one size from screen to screen: with another screen on
+   * show (the phone turned on Settings, a font landing), the title screen as last drawn stands in again out of
+   * sight to be measured. It is measured with its hint line, even where a phone on its side hides that line
+   * (styles.css `.fitting`): the words keep the size they would have beside it, not the whole size the room
+   * the line leaves would allow.
+   */
+  private fitHome = () => {
+    const frame = this.homeFrame
+    if (!frame || this.destroyed) return
+    const away = !frame.isConnected
+    if (away) {
+      frame.style.visibility = 'hidden'
+      this.root.append(frame)
+    }
+    const st = document.documentElement.style
+    st.removeProperty('--front-shrink')
+    frame.classList.add('fitting')
+    let shrink = 1
+    while (shrink > HOME_LEAST_SHRINK && frame.scrollHeight > frame.clientHeight) {
+      shrink = Math.round(shrink * 100 - 1) / 100
+      st.setProperty('--front-shrink', String(shrink))
+    }
+    frame.classList.remove('fitting')
+    if (away) {
+      frame.remove()
+      frame.style.visibility = ''
+    }
+  }
+  /** the title screen as last drawn: the one every screen's words are sized by (fitHome) */
+  private homeFrame: HTMLElement | null = null
 
   /** Put the screen on show in the address bar, unless it is there already; `force` says it again whatever it said last. */
   private at(r: Route, force = false) {
@@ -1222,6 +1264,8 @@ export class FrontEnd {
     this.shape.set('home', shape)
     const first = rows.find((r) => r.main)?.id ?? rows[0]?.id
     this.list({ cls: 'home-list' + (redraw ? ' still' : ''), title: 'Orbrun', lede: 'An unofficial first\u2011person client for Dungeon\u00a0Crawl\u00a0Stone\u00a0Soup.', splash: this.splash, rows, utilities, notices, extra, focus: keep ?? this.marks.get('home') ?? first })
+    this.homeFrame = this.root.querySelector<HTMLElement>('.frame.home-list')
+    this.fitHome()
     if (report) this.showExit(report.s, report.exit, report.why, report.words)
   }
 
