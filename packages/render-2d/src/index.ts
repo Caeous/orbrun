@@ -234,6 +234,11 @@ export class Render2d implements MapRenderer {
     }
   }
 
+  /** css px of one cell on the canvas */
+  get cellSize(): number {
+    return this.opts.cellSize
+  }
+
   setOptions(opts: Render2dOptions) {
     if (opts.cellSize !== undefined) this.opts.cellSize = opts.cellSize
     if (opts.mode !== undefined) this.opts.mode = opts.mode

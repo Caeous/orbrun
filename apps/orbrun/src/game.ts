@@ -11,7 +11,7 @@ import { CameraController } from './camera'
 import { deriveContext, deriveMode, type Context } from './context'
 import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchLabels, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
 import type { CommandMenu } from './command-menu'
-import { Runner, type LastStep } from './runner'
+import { ORBIT_WINDOW_MS, Runner, type LastStep } from './runner'
 import { Hud, rcFont } from './hud'
 import { GridHost, isPhone } from './grid/host'
 import { gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from './grid/console'
@@ -44,6 +44,10 @@ const WARM_DELAY_MS = 2000
 const DRAG_SLOP = 6
 /** level-map cells per unit of right-stick look while the map is open */
 const MAP_PAN_RATE = 0.12
+/** tileweb.cc `zoom_dungeon`: `tile_map_scale` in percent, a step a zoom key, clamped to 20..300 */
+const MAP_SCALE_STEP = 10
+const MAP_SCALE_MIN = 20
+const MAP_SCALE_MAX = 300
 /** game.js `show_diameter`: the cells across a full field of view, which the view is fitted to */
 const SHOW_DIAMETER = 17
 
@@ -68,6 +72,8 @@ interface Drag {
   touch: boolean
   hold?: number
   held?: boolean
+  /** a finger dragging the level map: css px moved and not yet a whole cell (`panMapBy`) */
+  pan?: { x: number; y: number }
 }
 
 /** The device the player touched last; the prompt strip is drawn for it. A finger is `touch`, a mouse or a pen `pointer`. */
@@ -205,6 +211,8 @@ export class GameScreen {
   private lastCursor: SceneCursor | null = null
   private lastOptKey = ''
   private drag: Drag | null = null
+  /** Two fingers on the level map: where each is, how far apart they came down, and the zoom steps sent so far (`pinchMap`). */
+  private pinch: { pts: Map<number, { x: number; y: number }>; d0: number; scale0: number; sent: number } | null = null
   /** Lets go of a drag with no click behind it: the window lost focus, or the button was released out of sight. */
   private cancelDrag: () => void = () => {}
   /** One per screen, however many canvases it goes through: a renderer swap must not leave the old canvas's listener behind. */
@@ -235,6 +243,8 @@ export class GameScreen {
   private pickMemo: CellKey | null | undefined
   /** the canvas's place on the screen, from the last relayout, in css px */
   private viewPx: { left: number; top: number; width: number; height: number } | null = null
+  /** The last tap on the level map: where the cursor stood and where it was sent (`tapMapCursor`). */
+  private mapTap: { from: { x: number; y: number }; to: { x: number; y: number }; t: number } | null = null
   /** css px of the level map's canvas under the touch bar (`relayout`) */
   private mapFoot = 0
   /**
@@ -1101,10 +1111,11 @@ export class GameScreen {
    * dungeon_renderer.js `fit_to`: the cells from the rc options, shrunk to fit
    * if a full field of view (game.js `show_diameter`) would not otherwise
    * stand in the view. Glyph modes size their cells from the font instead, so
-   * they are left alone.
+   * they are left alone. The level map is not fitted, as WebTiles' is: on a
+   * phone the fit already holds its default scale, and zooming in did nothing.
    */
   private cellPixels(cell: number, mode: string): number {
-    if (mode === 'glyphs') return cell
+    if (mode === 'glyphs' || this.mapShown) return cell
     const w = this.canvas.clientWidth
     const h = this.canvas.clientHeight - (this.mapShown ? this.mapFoot : 0)
     if (!w || h <= 0) return cell
@@ -1651,7 +1662,10 @@ export class GameScreen {
       this.hud.hideTooltip()
       // a click is the mouse speaking: its selection is live again, so a click right after a key still acts on the hovered cell
       if (ev.pointerType === 'mouse') this.pointerLive = true
-      if (this.drag) return
+      if (this.drag) {
+        if (this.startPinch(this.drag, ev)) c.setPointerCapture(ev.pointerId)
+        return
+      }
       const d: Drag = (this.drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, moved: false, button: ev.button, touch: ev.pointerType === 'touch' })
       // a finger held still on the view is R3, the stick click the touch bar has no cell for (bindings.ts TOUCH_CELLS):
       // what is ahead examined on the map, the overview on the level map; the lift then does nothing more
@@ -1675,6 +1689,7 @@ export class GameScreen {
         this.wake()
         this.armCellTooltip(ev.pageX, ev.pageY)
       }
+      if (this.pinch?.pts.has(ev.pointerId)) return this.pinchMap(ev)
       const d = this.drag
       if (!d || ev.pointerId !== d.id) return
       // the button came up somewhere the page could not see it (off the window
@@ -1690,6 +1705,7 @@ export class GameScreen {
       if (d.held) return
       d.moved = true
       clearTimeout(d.hold)
+      if (d.touch && this.panMapBy(d, dx, dy)) return
       const st = this.hooks.settings()
       // radians per css pixel; a full drag across the view is about a half turn
       const k = (Math.PI / Math.max(300, this.canvas.clientWidth)) * st.lookSensitivity
@@ -1699,12 +1715,19 @@ export class GameScreen {
       this.needsRender = true
     })
     const end = (ev: PointerEvent) => {
+      if (this.pinch?.pts.has(ev.pointerId)) {
+        // either finger lifting ends the pinch, and the one left on the glass does nothing more
+        for (const id of this.pinch.pts.keys()) if (c.hasPointerCapture(id)) c.releasePointerCapture(id)
+        this.pinch = null
+        this.drag = null
+        return
+      }
       const d = this.drag
       if (!d || ev.pointerId !== d.id) return
       this.drag = null
       clearTimeout(d.hold)
       if (c.hasPointerCapture(ev.pointerId)) c.releasePointerCapture(ev.pointerId)
-      if (d.held) return
+      if (d.held || d.pan) return
       if (d.moved) {
         this.cam.endDrag()
         this.needsRender = true
@@ -1713,6 +1736,7 @@ export class GameScreen {
         if (this.hud.dismissesMoreAt(ev.clientX, ev.clientY)) return this.runner.execute(CONTINUE)
         if (d.touch && this.tapSteps()) return this.stepForward()
         const rect = this.canvas.getBoundingClientRect()
+        if (d.touch && this.tapMapCursor(ev.clientX - rect.left, ev.clientY - rect.top)) return
         this.onPointer(ev.clientX - rect.left, ev.clientY - rect.top, d.button)
       }
     }
@@ -1722,12 +1746,18 @@ export class GameScreen {
     this.onWindowBlur ??= () => this.cancelDrag()
     window.addEventListener('blur', this.onWindowBlur)
     this.cancelDrag = () => {
+      if (this.pinch) {
+        for (const id of this.pinch.pts.keys()) if (c.hasPointerCapture(id)) c.releasePointerCapture(id)
+        this.pinch = null
+        this.drag = null
+        return
+      }
       const d = this.drag
       if (!d) return
       this.drag = null
       clearTimeout(d.hold)
       if (c.hasPointerCapture(d.id)) c.releasePointerCapture(d.id)
-      if (!d.moved) return
+      if (!d.moved || d.pan) return
       this.cam.endDrag()
       this.needsRender = true
     }
@@ -1902,6 +1932,86 @@ export class GameScreen {
    */
   private tapSteps(): boolean {
     return this.ctx.mode === 'command' && !this.session.watching && !this.overlays.hasClientOverlay
+  }
+
+  /**
+   * A finger's tap on the level map puts its cursor on the cell tapped, as a
+   * click does in local tiles; a WebTiles click there does nothing.
+   */
+  private tapMapCursor(px: number, py: number): boolean {
+    if (this.ctx.mode !== 'levelmap' || this.session.watching) return false
+    const c = this.session.state.cursors[2]
+    const key = this.renderer.pick(px, py)
+    if (!c || key === null) return true
+    this.inputActed()
+    // taps quicker than the server's echo walk on from the last one's cell
+    const t = this.mapTap
+    const from = t && t.from.x === c.x && t.from.y === c.y && performance.now() - t.t < ORBIT_WINDOW_MS ? t.to : c
+    const to = { x: (key & 1023) - 512, y: (key >> 10) - 512 }
+    this.mapTap = { from: { x: c.x, y: c.y }, to, t: performance.now() }
+    this.runner.mapCursorBy(to.x - from.x, to.y - from.y)
+    return true
+  }
+
+  /**
+   * A finger dragging the level map grabs it, as a drag grabs the 3D view:
+   * the map follows the finger, so its cursor, which the map is centred on,
+   * walks the other way a cell for each cell's width dragged.
+   */
+  private panMapBy(d: Drag, dx: number, dy: number): boolean {
+    if (this.ctx.mode !== 'levelmap' || this.session.watching || !(this.renderer instanceof Render2d)) return false
+    const cs = this.renderer.cellSize
+    // the first move counts from where the finger came down: the slop it crossed is part of the drag
+    const p = (d.pan ??= { x: d.x - d.x0 - dx, y: d.y - d.y0 - dy })
+    p.x += dx
+    p.y += dy
+    const cx = Math.trunc(p.x / cs)
+    const cy = Math.trunc(p.y / cs)
+    if (!cx && !cy) return true
+    p.x -= cx * cs
+    p.y -= cy * cs
+    this.inputActed()
+    this.mapTap = null
+    this.runner.mapCursorBy(-cx, -cy)
+    return true
+  }
+
+  /**
+   * A second finger down on the level map while the first is on it starts a
+   * pinch. Crawl owns the map's zoom (tileweb.cc `zoom_dungeon`, a tenth of
+   * `tile_map_scale` a step), so the pinch only decides how many steps of
+   * the zoom keys to send.
+   */
+  private startPinch(d: Drag, ev: PointerEvent): boolean {
+    if (!d.touch || ev.pointerType !== 'touch' || d.held || this.ctx.mode !== 'levelmap' || this.session.watching) return false
+    clearTimeout(d.hold)
+    const pts = new Map([
+      [d.id, { x: d.x, y: d.y }],
+      [ev.pointerId, { x: ev.clientX, y: ev.clientY }],
+    ])
+    const d0 = Math.max(1, Math.hypot(ev.clientX - d.x, ev.clientY - d.y))
+    const o = this.session.state.options.tile_map_scale
+    this.pinch = { pts, d0, scale0: typeof o === 'number' && o > 0 ? o : 60, sent: 0 }
+    this.inputActed()
+    return true
+  }
+
+  /** The fingers moved apart or together: zoom by as many steps as the spread asks, within crawl's 20%..300%. */
+  private pinchMap(ev: PointerEvent) {
+    const p = this.pinch!
+    p.pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY })
+    const [a, b] = [...p.pts.values()]
+    const want = p.scale0 * (Math.hypot(a.x - b.x, a.y - b.y) / p.d0)
+    const steps = Math.round((Math.min(MAP_SCALE_MAX, Math.max(MAP_SCALE_MIN, want)) - p.scale0) / MAP_SCALE_STEP)
+    while (p.sent < steps) {
+      p.sent++
+      this.runner.sendKeys([{ text: '}' }])
+    }
+    while (p.sent > steps) {
+      p.sent--
+      // `{` as text would open a JSON message (keys.ts)
+      this.runner.sendKeys([{ key: 123 }])
+    }
   }
 
   private stepForward() {

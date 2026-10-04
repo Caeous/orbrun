@@ -483,6 +483,23 @@ export class Runner {
     this.send(cm.clickCell(x, y, button))
   }
 
+  /**
+   * The level map's cursor moved `dx, dy` cells. WebTiles' map takes no click
+   * (local tiles' moves the cursor to the clicked cell, viewmap.cc), so the
+   * cursor walks there with the map's own one-cell keys, diagonals first,
+   * which keeps every cell on the way inside the box the two ends span.
+   */
+  mapCursorBy(dx: number, dy: number) {
+    if (this.hooks.context().mode !== 'levelmap') return
+    while (dx || dy) {
+      const sx = Math.sign(dx)
+      const sy = Math.sign(dy)
+      this.send(dirMessage(dirFromDelta(sx, sy)!, {}))
+      dx -= sx
+      dy -= sy
+    }
+  }
+
   /** A monster a step into `abs` would hit: anything but a friendly, which is swapped with instead. */
   private targetIsMonster(abs: Dir8): boolean {
     const scene = this.session.scene
