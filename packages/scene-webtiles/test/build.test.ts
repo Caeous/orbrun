@@ -128,6 +128,10 @@ describe('classification', () => {
     expect(stanceFor('DNGN_GRANITE_STATUE', undefined)).toBe('upright')
     expect(stanceFor('DNGN_TREE', undefined)).toBe('upright')
     expect(stanceFor('DNGN_MANGROVE', undefined)).toBe('upright')
+    // the standards a decorative floor plants (orcish, infernal, caliginous) are flags on poles
+    expect(stanceFor('DNGN_ENSIGN_BEOGH', undefined)).toBe('upright')
+    expect(stanceFor('DNGN_ENSIGN_GEHENNA', undefined)).toBe('upright')
+    expect(stanceFor('DNGN_ENSIGN_DARK', undefined)).toBe('upright')
   })
   it('tells a feature that stands on the dungeon from one built into it', () => {
     // what stands in its cell: turned upright over a turning map
@@ -135,6 +139,7 @@ describe('classification', () => {
     expect(standsFree('DNGN_ALTAR_ZIN', { type: 'altar' })).toBe(true)
     expect(standsFree('DNGN_BLUE_FOUNTAIN', { type: 'fountain', kind: 'blue' })).toBe(true)
     expect(standsFree('DNGN_TREE', undefined)).toBe(true)
+    expect(standsFree('DNGN_ENSIGN_DARK', undefined)).toBe(true)
     // built in: doors and gates in any state, Zot's wall-bedded runelights,
     // and the stairs and hatches cut into the floor
     expect(standsFree('DNGN_CLOSED_DOOR', { type: 'door', state: 'closed' })).toBe(false)
