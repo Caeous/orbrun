@@ -22,9 +22,9 @@ function harness(over: { mode: string; ours?: boolean }) {
     tooltipTimer: 0,
     wake: vi.fn(), inputFrom: vi.fn(),
   }) as { onDocPointer(ev: PointerEvent): void }
-  const press = (el: Element) => {
+  const press = (el: Element, pointerType = 'touch', button = 0) => {
     if (!el.isConnected) document.body.append(el)
-    const ev = Object.assign(new Event('pointerdown', { cancelable: true }), { pointerType: 'touch', button: 0 })
+    const ev = Object.assign(new Event('pointerdown', { cancelable: true }), { pointerType, button })
     Object.defineProperty(ev, 'target', { value: el })
     screen.onDocPointer(ev as unknown as PointerEvent)
   }
@@ -61,5 +61,25 @@ describe('a tap outside what is up closes it, as Escape does', () => {
     const h = harness({ mode: 'command' })
     h.press(h.el('view'))
     expect(h.sent).toEqual([])
+  })
+})
+
+describe('a mouse keeps what it had: only a popup or dialog closes on a click outside it (ui.js)', () => {
+  it('a crawl menu stays up under a click beside it, and a right click inside it is no Escape (menu.js takes it)', () => {
+    const h = harness({ mode: 'menu' })
+    h.press(h.el('view'), 'mouse')
+    h.press(h.el('popup'), 'mouse', 2)
+    expect(h.sent).toEqual([])
+  })
+  it('a panel of ours stays up: the view beside it is the mouse\'s to drag while a setting is tuned', () => {
+    const h = harness({ mode: 'command', ours: true })
+    h.press(h.el('view'), 'mouse')
+    expect(h.overlayInput).not.toHaveBeenCalled()
+  })
+  it('a server popup closes on a click outside, and on a right click anywhere', () => {
+    const h = harness({ mode: 'popup' })
+    h.press(h.el('view'), 'mouse')
+    h.press(h.el('popup'), 'mouse', 2)
+    expect(h.sent).toEqual([{ msg: 'key', keycode: 27 }, { msg: 'key', keycode: 27 }])
   })
 })

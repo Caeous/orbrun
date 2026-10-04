@@ -29,8 +29,8 @@ describe('hands footprint (rendering-3d.md II.7)', () => {
 
 describe('hands on a phone held upright', () => {
   it('shrink with the width on a view taller than wide, still hanging from the bottom edge', () => {
-    const square = handsFootprint({ weapon: true, offhand: 'shield' }, 1)
-    const phone = handsFootprint({ weapon: true, offhand: 'shield' }, 390 / 844)
+    const square = handsFootprint({ weapon: true, offhand: 'shield' }, 1, 0, true)
+    const phone = handsFootprint({ weapon: true, offhand: 'shield' }, 390 / 844, 0, true)
     for (let i = 0; i < 2; i++) {
       expect(phone[i].y1).toBe(1)
       expect(phone[i].y1 - phone[i].y0).toBeLessThan(square[i].y1 - square[i].y0)
@@ -39,15 +39,21 @@ describe('hands on a phone held upright', () => {
     }
   })
   it('a view at least as wide as tall keeps them whole', () => {
-    expect(handsScale(1)).toBe(1)
-    expect(handsScale(16 / 9)).toBe(1)
+    expect(handsScale(1, true)).toBe(1)
+    expect(handsScale(16 / 9, true)).toBe(1)
+  })
+  it('a tall view that is no phone\'s keeps them whole: a narrow desktop window, a portrait monitor', () => {
+    expect(handsScale(390 / 844)).toBe(1)
+    expect(handsFootprint({ weapon: true, offhand: 'shield' }, 390 / 844)).toEqual(handsFootprint({ weapon: true, offhand: 'shield' }, 390 / 844, 0, false))
+    expect(handsFootprint({ weapon: true, offhand: 'none' }, 390 / 844)[0].y1 - handsFootprint({ weapon: true, offhand: 'none' }, 390 / 844)[0].y0)
+      .toBeGreaterThan(handsFootprint({ weapon: true, offhand: 'none' }, 390 / 844, 0, true)[0].y1 - handsFootprint({ weapon: true, offhand: 'none' }, 390 / 844, 0, true)[0].y0)
   })
 })
 
 describe('hands over a touch bar along the foot', () => {
   it('stand on the bar\'s top edge, the same size and across as without it', () => {
-    const bare = handsFootprint({ weapon: true, offhand: 'shield' }, 390 / 844)
-    const lifted = handsFootprint({ weapon: true, offhand: 'shield' }, 390 / 844, 0.25)
+    const bare = handsFootprint({ weapon: true, offhand: 'shield' }, 390 / 844, 0, true)
+    const lifted = handsFootprint({ weapon: true, offhand: 'shield' }, 390 / 844, 0.25, true)
     for (let i = 0; i < 2; i++) {
       // lifted by the bar's share of the height, the grip reaching a touch past its edge as it does past the view's
       expect(lifted[i].y0).toBeCloseTo(bare[i].y0 - 0.25, 5)

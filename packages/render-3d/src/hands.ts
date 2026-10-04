@@ -17,13 +17,14 @@ export const VM_OFFWEAPON_REST: HandPose = { x: -0.52, y: -1.12, roll: 0, pitch:
 export const VM_SHIELD_REST: HandPose = { x: -0.5, y: -1.2, roll: 0, pitch: 0, yaw: 0 }
 
 /**
- * Orbrun's own, for a phone held upright: on a view narrower than it is
- * tall the hands shrink with its width, hanging from the same points of the
- * bottom edge, so a weapon two-fifths of the height high does not fill the
- * whole width. A view at least as wide as it is tall keeps them whole.
+ * Orbrun's own, for a phone held upright (`upright`): on a view narrower
+ * than it is tall the hands shrink with its width, hanging from the same
+ * points of the bottom edge, so a weapon two-fifths of the height high does
+ * not fill the whole width. A view at least as wide as it is tall keeps them
+ * whole, and so does any view that is not a phone's.
  */
-export function handsScale(aspect: number): number {
-  return Math.min(1, aspect)
+export function handsScale(aspect: number, upright = false): number {
+  return upright ? Math.min(1, aspect) : 1
 }
 
 /**
@@ -55,13 +56,14 @@ export interface HandRect {
  * HUD to keep clear of (hud.ts `keepClear`). Each icon is a VM_SIZE square
  * hanging from its pose's point, its bottom centre; the pose's x is scaled
  * by the aspect, as the renderer scales it, so the hands keep their place
- * against the edge on every screen; `foot` lifts them as `scaledPose` does.
+ * against the edge on every screen; `foot` lifts them as `scaledPose` does,
+ * and `upright` shrinks them as `handsScale` does.
  * The attack thrust (a few percent of the height) is ignored: the prompts
  * need not dodge a swing.
  */
-export function handsFootprint(held: HandsHeld, aspect: number, foot = 0): HandRect[] {
+export function handsFootprint(held: HandsHeld, aspect: number, foot = 0, upright = false): HandRect[] {
   const out: HandRect[] = []
-  const k = handsScale(aspect)
+  const k = handsScale(aspect, upright)
   const rect = (rest: HandPose) => {
     const p = scaledPose(rest, k, foot)
     const cx = p.x * aspect

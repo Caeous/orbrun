@@ -2250,9 +2250,13 @@ canvas.minimap.hidden {
     0 0 3px #000,
     0 1px 2px #000;
 }
-/* the pane takes no pointer: a drag that starts on the log turns the view under it, and a tap there reaches the view,
-   which sends space on a --more-- the player can dismiss (hud.ts dismissesMoreAt) */
-.hud > .messages {
+/* the player can dismiss it: a click on the pane sends space (hud.ts). Under a finger the pane takes no pointer: a drag
+   that starts on the log turns the view under it, and a tap there reaches the view, which sends space on a --more--
+   the player can dismiss (hud.ts dismissesMoreAt); a mouse's click stays on the pane, as on #message_pane */
+.messages.more.dismissable {
+  cursor: pointer;
+}
+.hud.touch > .messages {
   pointer-events: none;
 }
 /* the world stops while the more is pending: everything under the message pane
@@ -2324,8 +2328,10 @@ canvas.minimap.hidden {
   grid-template-rows: repeat(3, auto);
   gap: 6px;
   padding: 6px 8px max(8px, env(safe-area-inset-bottom, 0px));
-  /* the view runs on under the bar (console.ts gameSplit `foot`), the panes stopping above it */
-  touch-action: manipulation;
+  /* the view runs on under the bar (console.ts gameSplit `foot`), the panes stopping above it. No pan or zoom starts
+     here: a thumb that drifts on a held button would turn into a pan, and the browser cancels the press (Wait fires
+     for Rest, a held arrow stops); two thumbs would pinch the page */
+  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
