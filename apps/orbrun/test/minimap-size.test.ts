@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
-import { Hud, minimapFit, MINIMAP_CELL_DEFAULT, MINIMAP_CELL_LEAST, MINIMAP_CELL_LEAST_PHONE, MINIMAP_CELL_MOST, MINIMAP_REF_SHORT, MINIMAP_SHARE, MINIMAP_SHARE_PHONE, MINIMAP_TILES_DEFAULT, MINIMAP_TILES_LEAST } from '../src/hud'
+import { Hud, minimapFit, MINIMAP_TILES_UPRIGHT, MINIMAP_CELL_DEFAULT, MINIMAP_CELL_LEAST, MINIMAP_CELL_LEAST_PHONE, MINIMAP_CELL_MOST, MINIMAP_REF_SHORT, MINIMAP_SHARE, MINIMAP_SHARE_PHONE, MINIMAP_TILES_DEFAULT, MINIMAP_TILES_LEAST } from '../src/hud'
 import { MINIMAP_AUTO, MINIMAP_CELLS, MINIMAP_TILES_MAX } from '../src/settings-rows'
 import { GridHost } from '../src/grid/host'
-import { STRIP_ROWS, gameSplit, isPortrait, touchBeside, touchColumn } from '../src/grid/console'
+import { gameSplit, isPortrait, touchBeside, touchColumn } from '../src/grid/console'
 
 // a 1280x720 screen with a 42-cell, 336px sidebar column (game.js stat_width at a 8px cell): the room hud.ts layout gives
 // the map there is half the screen across and 0.7 of the column down
@@ -140,7 +140,7 @@ describe('minimapFit on a phone: tiles of at least 15px, up to 60% of the short 
 
 describe('a phone\'s map in the layout', () => {
   /** the HUD laid out as game.ts relayout lays it out on a phone `w`×`h`, the touch bar showing or not; the map's size */
-  function phoneMap(w: number, h: number, bar: boolean): { map: number; column: number; top: number; cw: number } {
+  function phoneMap(w: number, h: number, bar: boolean): { map: number; across: number; left: number; top: number; bandPx: number; statsTop: number; statsRight: number; sideLeft: number; inBand: boolean; anchor: unknown } {
     const host = document.createElement('div')
     Object.defineProperty(host, 'clientWidth', { value: w })
     Object.defineProperty(host, 'clientHeight', { value: h })
@@ -149,35 +149,65 @@ describe('a phone\'s map in the layout', () => {
     const grid = new GridHost(host, 16)
     grid.setLeast(true)
     const g = grid.grid
-    const priv = hud as unknown as { touchbar: HTMLElement; minimapCanvas: HTMLCanvasElement }
+    const priv = hud as unknown as { root: HTMLElement; touchbar: HTMLElement; minimapCanvas: HTMLCanvasElement; sidebar: HTMLElement; minimap: { opts: { anchor: unknown } } }
+    // the hud covers its host (styles.css .hud inset 0)
+    Object.defineProperty(priv.root, 'clientWidth', { value: w })
+    Object.defineProperty(priv.root, 'clientHeight', { value: h })
     priv.touchbar.hidden = !bar
     const beside = touchBeside(g)
     hud.touchBeside = beside
     // the bar's rows: about what the foot's three rows of buttons take
     const barRows = bar ? Math.ceil(170 / g.ch) : 0
-    const split = (mapCols?: number) => gameSplit(g, 5, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, mapCols)
-    let cells = split()
-    if (isPortrait(g)) cells = split(hud.portraitMapCols(grid, cells.sidebar.h * g.ch))
+    const band = isPortrait(g) ? hud.portraitBand(grid) : { rows: 0, cols: 0 }
+    const cells = gameSplit(g, 5, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, band.rows, band.cols)
     hud.layout(grid, cells, cells.clear, { stats: false, sidebar: false, messages: false })
-    return { map: Number.parseFloat(priv.minimapCanvas.style.width), column: cells.sidebar.w * g.cw, top: cells.sidebar.y, cw: g.cw }
+    const c = priv.minimapCanvas
+    const bandPx = grid.px(cells.band)
+    host.remove()
+    return {
+      map: Number.parseFloat(c.style.height),
+      across: Number.parseFloat(c.style.width),
+      left: Number.parseFloat(c.style.left),
+      top: Number.parseFloat(c.style.top),
+      bandPx: bandPx.top + bandPx.height,
+      statsTop: grid.px(cells.stats).top,
+      statsRight: grid.px(cells.stats).left + grid.px(cells.stats).width,
+      sideLeft: grid.px(cells.sidebar).left,
+      inBand: c.parentElement !== priv.sidebar,
+      anchor: priv.minimap.opts.anchor,
+    }
   }
 
-  it('is the same size whichever way the phone is held, the buttons showing or not', () => {
-    const upright = phoneMap(390, 844, true)
-    expect(upright.map).toBe(225)
-    expect(phoneMap(390, 844, false).map).toBe(225)
+  it('is the same size on its side, the buttons showing or not; upright it is 13 of the same tiles', () => {
     expect(phoneMap(844, 390, true).map).toBe(225)
     expect(phoneMap(844, 390, false).map).toBe(225)
+    expect(phoneMap(390, 844, true).map).toBe(13 * 15)
+    expect(phoneMap(390, 844, false).map).toBe(13 * 15)
   })
 
-  it('upright, the map stands under the stats strip in a column as wide as it, on every phone at 15px tiles or more', () => {
+  it('upright, the map is a band across the top, the player on the middle of a 13-tile square at its right, the stats pane over the rest, on every phone at 15px tiles or more', () => {
     for (const w of [360, 375, 390, 412, 430]) {
       const p = phoneMap(w, 844, true)
-      // tight in the view's top-right corner, beside the strip's status lights' row
-      expect(p.top).toBe(STRIP_ROWS - 1)
-      expect(p.column).toBeGreaterThanOrEqual(p.map)
-      expect(p.column - p.map).toBeLessThan(p.cw)
-      expect(p.map).toBeGreaterThanOrEqual(15 * MINIMAP_CELL_LEAST_PHONE)
+      expect(p.inBand).toBe(true)
+      expect(p.map / MINIMAP_TILES_UPRIGHT).toBeGreaterThanOrEqual(MINIMAP_CELL_LEAST_PHONE)
+      // the whole screen across, its top on the stats pane's
+      expect(p.left).toBe(0)
+      expect(p.across).toBe(w)
+      expect(p.top).toBe(p.statsTop)
+      // the player stands on the middle of the square at the right edge, as tall as the map
+      expect(p.anchor).toEqual({ x: w - p.map / 2, y: p.map / 2 })
+      // the stats pane keeps its cells left of the square, and the band's rows hold the map
+      expect(p.statsRight).toBeLessThan(w - p.map)
+      expect(p.top + p.map).toBeLessThanOrEqual(p.bandPx)
+      expect(p.bandPx - p.top - p.map).toBeLessThan(20)
+      // the monster list's column under the square, starting within its left edge's cell
+      expect(w - p.map - p.sideLeft).toBeGreaterThanOrEqual(0)
     }
+    // on its side the map is back in the column, centred on the player
+    const side = phoneMap(844, 390, true)
+    expect(side.inBand).toBe(false)
+    expect(side.anchor).toBe(null)
   })
+
+
 })

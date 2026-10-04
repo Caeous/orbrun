@@ -22,7 +22,7 @@ const LINE_HEIGHT = 1.2
 /** the smallest font the grid falls back to, in px */
 const MIN_PX = 8
 /**
- * on a phone held upright, the grid is wide enough for the stats strip across the top (stats.ts `stripRows`): the
+ * on a phone held upright, the grid is wide enough for the stats pane beside the minimap (stats.ts `cornerRows`): the
  * portrait, bars long enough to read beside it, and the stats three to a row
  */
 export const PHONE_COLS = 58

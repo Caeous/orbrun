@@ -259,12 +259,12 @@ const rep = (ch: string, n: number) => ch.repeat(Math.max(0, n))
  * the last call; the returned one feeds the next. `portrait` is the cells the
  * first `PORTRAIT_ROWS` rows leave blank at the left for the portrait;
  * those rows keep their layout in the room that is left (the wizmode marker still
- * ends at the pane's right edge, the bars run to it). `strip` lays the same out
- * as a strip across the top of a phone held upright (`stripRows`).
+ * ends at the pane's right edge, the bars run to it). `corner` lays the same out
+ * beside the minimap at the top of a phone held upright (`cornerRows`).
  */
-export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory = {}, width = STAT_WIDTH, portrait = 0, strip = false, lightsRoom = width): { rows: Row[]; prev: BarMemory } {
+export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory = {}, width = STAT_WIDTH, portrait = 0, corner = false): { rows: Row[]; prev: BarMemory } {
   const { split } = statsColumns(width)
-  const compact = strip || compactStats(width)
+  const compact = corner || compactStats(width)
   const rows: Row[] = []
   const next: BarMemory = {}
   // the rows beside the portrait: blank cells under it, then the row on what is left
@@ -362,14 +362,15 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
     lights.push({ text: st.light, fg: st.col ?? 7, title: st.desc || undefined })
   }
 
-  if (strip) {
+  if (corner) {
+    // Doom and Contam without the gap after Str and Int that sets them off there, one cell between them
     const doomContam: Row = []
-    if (showDoomContam(p.doom)) doomContam.push(...right[0].slice(3), { text: ' ' })
-    if (showDoomContam(p.contam)) doomContam.push(...right[1].slice(3), { text: ' ' })
-    // the time without the last action's length after it: the strip has no room to spare for it
+    if (showDoomContam(p.doom)) doomContam.push(...right[0].slice(4), { text: ' ' })
+    if (showDoomContam(p.contam)) doomContam.push(...right[1].slice(4), { text: ' ' })
+    // the time without the last action's length after it: the column has no room to spare for it
     const clockRow: Row = [capShort(true, showTime ? 'Time:' : 'Turn:', 'T:'), { text: ' ' + clock }]
-    const stripped = stripRows(width, lead, { title: titleIn, line2, hp: hpBar, mp: mpValue ? mpBar : null, left, right: right.map((r) => r.slice(0, 3)), doomContam, noise: noiseRow(p, prev, next, STRIP_NOISE, true), time: clockRow, weapon, offhand, quiver, lights, lightsRoom })
-    return { rows: stripped, prev: next }
+    const stacked = cornerRows(width, lead, { title: titleIn, line2, hp: hpBar, mp: mpValue ? mpBar : null, left, right: right.map((r) => r.slice(0, 3)), doomContam, noise: noiseRow(p, prev, next, CORNER_NOISE, true), time: clockRow, weapon, offhand, quiver, lights })
+    return { rows: stacked, prev: next }
   }
 
   rows.push(beside(titleIn(besideW)))
@@ -388,50 +389,35 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
   return { rows, prev: next }
 }
 
-/** the noise bar's room in the strip, as `noiseRow`'s split: a short bar after the caption */
-const STRIP_NOISE = 8
-/** the cells between the strip's left part and its block of stats */
-const STRIP_GAP = 2
-/** the cells the strip's time column keeps for its number, so a long game's `123456.7` fits and a growing count moves nothing */
-const STRIP_CLOCK = 8
-/** the cells the strip keeps clear at its right end, so nothing stands against the screen's edge */
-const STRIP_MARGIN = 1
+/** the noise bar's room in the corner, as `noiseRow`'s split: a short bar after the caption */
+const CORNER_NOISE = 8
+/** the cells between the defences and the attributes */
+const CORNER_GAP = 2
 
 /**
- * The pane as a strip of `width` cells across the top of a phone held
- * upright (console.ts STRIP_ROWS), the minimap standing under it rather than
- * beside it. WebTiles has no such layout. Beside the portrait (`lead` cells)
- * the title, the species line and the two bars stand on the left, taking
- * what the right leaves them, and on the right a block: the level and the
- * noise over the place and the time, then the six stats three to a row, the
- * defences over the attributes; under the portrait, the weapon and the
- * quiver, with Doom and Contam at the right; then the status lights,
- * wrapped at `lightsRoom`, short of the minimap's column beside them
- * (console.ts gameSplit). `left` and `right` are the pane's two columns.
+ * The pane as a column of `width` cells beside the minimap at the top of a
+ * phone held upright (console.ts gameSplit). WebTiles has no such layout.
+ * Beside the portrait (`lead` cells) the title, the species line and the two
+ * bars; under it, the stats as narrow as they go, the band being taller than
+ * it is wide: the defences beside the attributes, a pair a row, as game.html
+ * stands its two columns, then the level, the noise, the place and the time
+ * a row each; then Doom and Contam when they show, the weapon, the off-hand
+ * weapon, the quiver, a row each, and the status lights, wrapped. `left`
+ * and `right` are the pane's two columns.
  */
-function stripRows(width: number, lead: number, r: { title: (room: number) => Row; line2: Row; hp: (room: number) => Row; mp: ((room: number) => Row) | null; left: Row[]; right: Row[]; doomContam: Row; noise: Row; time: Row; weapon: Row; offhand: Row | null; quiver: Row; lights: Row; lightsRoom: number }): Row[] {
-  // the six stats in three columns, each as wide as the wider of its two
-  const defences = r.left.slice(0, 3)
-  const attributes = r.right.slice(0, 3)
-  const colW = [0, 1, 2].map((i) => Math.max(rowLength(defences[i]), rowLength(attributes[i])))
-  const three = (cells: Row[]): Row => cells.flatMap((c, i) => (i < 2 ? padRow(c, colW[i] + 1) : c))
-  // the noise and the time on one column after the wider of the level and the place
-  const levelW = Math.max(rowLength(r.left[3]), rowLength(r.right[3]))
-  const two = (a: Row, b: Row): Row => [...padRow(a, levelW + STRIP_GAP), ...b]
-  const block = [two(r.left[3], r.noise), two(r.right[3], r.time), three(defences), three(attributes)]
-  const clockW = levelW + STRIP_GAP + Math.max(rowLength(r.noise), 'T: '.length + STRIP_CLOCK)
-  const blockW = Math.max(clockW, ...block.map(rowLength))
-  // two cells between the left and the block, so a bar's value never reads into the stat after it
-  const room = Math.max(1, width - lead - blockW - STRIP_GAP - STRIP_MARGIN)
-  const lefts = [r.title(room), cutRow(r.line2, room), r.hp(room), r.mp ? r.mp(room) : []]
-  const rows: Row[] = lefts.map((l, i) => [blank(lead), ...joinRows(l, room + STRIP_GAP, block[i])])
-  // under the portrait: what is in hand, and Doom and Contam at the right end when they show
-  const held: Row = [...r.weapon, ...(r.offhand ? [{ text: '  ' }, ...r.offhand] : []), ...(r.quiver.length ? [{ text: '  ' }, ...r.quiver] : [])]
-  const tail = r.doomContam.length ? r.doomContam.slice(0, -1) : []
-  const at = width - STRIP_MARGIN - rowLength(tail)
-  rows.push(tail.length ? joinRows(cutRow(held, at - 1, true), at, tail) : cutRow(held, width - STRIP_MARGIN, true))
-  for (const l of wrapRow(r.lights, Math.min(width, r.lightsRoom))) if (r.lights.length) rows.push(l)
-  return rows.map((row) => cutRow(row, width))
+function cornerRows(width: number, lead: number, r: { title: (room: number) => Row; line2: Row; hp: (room: number) => Row; mp: ((room: number) => Row) | null; left: Row[]; right: Row[]; doomContam: Row; noise: Row; time: Row; weapon: Row; offhand: Row | null; quiver: Row; lights: Row }): Row[] {
+  const room = Math.max(1, width - lead)
+  const rows: Row[] = [r.title(room), cutRow(r.line2, room), r.hp(room), r.mp ? r.mp(room) : []].map((l) => [blank(lead), ...l])
+  // the attributes on one column after the widest defence
+  const defenceW = Math.max(...r.left.slice(0, 3).map(rowLength))
+  for (let i = 0; i < 3; i++) rows.push([...padRow(r.left[i], defenceW + CORNER_GAP), ...r.right[i]])
+  rows.push(r.left[3], r.noise, r.right[3], r.time)
+  if (r.doomContam.length) rows.push(r.doomContam.slice(0, -1))
+  rows.push(r.weapon)
+  if (r.offhand) rows.push(r.offhand)
+  if (r.quiver.length) rows.push(r.quiver)
+  for (const l of wrapRow(r.lights, width)) if (r.lights.length) rows.push(l)
+  return rows.map((row) => cutRow(row, width, true))
 }
 
 /**

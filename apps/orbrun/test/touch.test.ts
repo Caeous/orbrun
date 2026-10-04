@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { TOUCH_ANCHORS, TOUCH_CELLS, barLabels, NO_ACTION, touchLabels, touchShot, type BindingLabel, type TouchCell, type TouchLabel } from '../src/bindings'
 import { PHONE_COLS, PHONE_ROWS, fitPx } from '../src/grid/host'
 import type { Context, MenuContext } from '../src/context'
-import { STAT_WIDTH, STRIP_ROWS, TOUCH_SIDE_PX, fitGrid, gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from '../src/grid/console'
+import { STAT_WIDTH, TOUCH_SIDE_PX, fitGrid, gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from '../src/grid/console'
 import { GamepadInput, isPadActivity, type PadEvent } from '../src/gamepad'
 
 const ctx = (over: Partial<Context>): Context => ({
@@ -266,20 +266,19 @@ describe('the layout on a phone', () => {
   const phone = { ...fitGrid(390, 844, 9.6, 19), phone: true }
   const laptop = fitGrid(1440, 900, 9.6, 19)
 
-  it('upright, the panes stack: the stats strip across the top, the minimap column under it at the right, messages the whole width', () => {
+  it('upright, the panes stack: a band across the top with the stats pane left of the minimap, the monster list under the map, messages the whole width', () => {
     expect(isPortrait(phone)).toBe(true)
-    const l = gameSplit(phone, 5, undefined, 0, 0, undefined, 20)
-    expect(l.stats).toEqual({ x: 0, y: 0, w: phone.cols, h: STRIP_ROWS })
-    // the map's column is as wide as it is given (hud.ts portraitMapCols), at the right edge, under the strip's printed
-    // rows, in the view's top-right corner beside the status lights' row
-    expect(l.sidebar).toMatchObject({ x: phone.cols - 20, y: STRIP_ROWS - 1, w: 20 })
-    expect(l.sidebar.y).toBe(l.view.y)
-    expect(l.sidebar.y + l.sidebar.h).toBe(l.messages.y)
-    // what no pane covers: under the strip, left of the column, above the messages
-    expect(l.clear).toEqual({ x: 0, y: STRIP_ROWS, w: phone.cols - 20, h: l.sidebar.h - 1 })
+    const l = gameSplit(phone, 5, undefined, 0, 0, undefined, 10, 20)
+    expect(l.band).toEqual({ x: 0, y: 0, w: phone.cols, h: 10 })
+    // the stats pane left of the map's columns, a cell's gutter away
+    expect(l.stats).toEqual({ x: 0, y: 0, w: phone.cols - 20 - 1, h: 10 })
+    // the monster list's column under the map, as wide as it
+    expect(l.sidebar).toEqual({ x: phone.cols - 20, y: 10, w: 20, h: l.messages.y - 10 })
+    // what no pane covers: under the band, left of the column, above the messages
+    expect(l.clear).toEqual({ x: 0, y: 10, w: phone.cols - 20, h: l.messages.y - 10 })
     expect(l.messages.w).toBe(phone.cols)
-    // the view starts below the strip's printed rows rather than behind them: its status lights' row stands over its top edge
-    expect(l.view).toEqual({ x: 0, y: STRIP_ROWS - 1, w: phone.cols, h: phone.rows - STRIP_ROWS + 1 })
+    // the view runs from under the band to the foot
+    expect(l.view).toEqual({ x: 0, y: 10, w: phone.cols, h: phone.rows - 10 })
   })
   it('a desktop window of the same shape keeps its panes side by side: the stack is a phone\'s', () => {
     const narrow = fitGrid(390, 844, 9.6, 19)
@@ -300,10 +299,14 @@ describe('the layout on a phone', () => {
     expect(l.messages.y + l.messages.h).toBe(laptop.rows - 8)
     expect(l.view.h).toBe(laptop.rows)
   })
-  it('upright, the view stands between the stats strip and the touch bar, under neither', () => {
-    const l = gameSplit(phone, 5, undefined, 8)
+  it('upright, the view runs from under the band on under the touch bar', () => {
+    const l = gameSplit(phone, 5, undefined, 8, 0, undefined, 10, 20)
     expect(l.messages.y + l.messages.h).toBe(phone.rows - 8)
-    expect(l.view).toEqual({ x: 0, y: STRIP_ROWS - 1, w: phone.cols, h: phone.rows - 8 - STRIP_ROWS + 1 })
+    expect(l.view).toEqual({ x: 0, y: 10, w: phone.cols, h: phone.rows - 10 })
+  })
+  it('upright, the level map takes the band too and reaches the messages, the stats pane over its corner', () => {
+    const l = gameSplit(phone, 5, undefined, 8, 0, undefined, 10, 20)
+    expect(levelMapSplit(phone, l, {})).toEqual({ x: 0, y: 0, w: phone.cols, h: l.messages.y })
   })
   it('the level map grown over the messages runs on under the touch bar, its edges kept above it', () => {
     const l = gameSplit(phone, 5, undefined, 8)

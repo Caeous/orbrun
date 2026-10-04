@@ -240,68 +240,72 @@ describe('stats pane on a narrow sidebar', () => {
   })
 })
 
-/** The strip across the top of a phone held upright (grid/stats.ts `stripRows`), which WebTiles has no counterpart for. */
-describe('stats pane as a strip', () => {
+/** The column beside the minimap at the top of a phone held upright (grid/stats.ts `cornerRows`), which WebTiles has no counterpart for. */
+describe('stats pane beside the minimap', () => {
   const st = recordedState()
   const text = (row: Row) => row.map((s) => s.text).join('')
   const lead = 9
+  const width = 28
 
-  it('stands the title, the species line and the bars beside the portrait, the level, the place, the noise, the time and the six stats at the right', () => {
-    for (const width of [58, 62]) {
-      const rows = statsRows(st.player, st.options, {}, width, lead, true).rows
-      for (const row of rows) expect(rowLength(row)).toBeLessThanOrEqual(width)
+  it('stands the title, the species line and the bars beside the portrait, then the stats as narrow as they go, two a row and one', () => {
+    for (const w of [width, 34]) {
+      const rows = statsRows(st.player, st.options, {}, w, lead, true).rows
+      for (const row of rows) expect(rowLength(row)).toBeLessThanOrEqual(w)
       for (let i = 0; i < PORTRAIT_ROWS; i++) expect(rows[i][0].text).toBe(' '.repeat(lead))
-      expect(text(rows[0])).toMatch(/^ +Dwarfsong .* XL: 14 \d+%/)
-      expect(text(rows[1])).toMatch(/^ +Mountain Dwarf .* @: Snake Pit:2/)
+      expect(text(rows[0])).toMatch(/^ +Dwarfsong/)
+      expect(text(rows[1])).toMatch(/^ +Mountain Dwarf/)
       expect(rows[2][1].bg).toBeTypeOf('string')
       expect(rows[3][1].bg).toBeTypeOf('string')
-      // the defences over the attributes, three a row, each column lined up
-      expect(text(rows[2])).toMatch(/AC: 35 EV: 7 +SH: 11$/)
-      expect(text(rows[3])).toMatch(/St: 30 In: 10 Dx: 9 *$/)
-      expect(text(rows[2]).indexOf('EV:')).toBe(text(rows[3]).indexOf('In:'))
-      // the stats block starts on one column down the four rows
-      const at = text(rows[0]).indexOf('XL:')
-      for (const [i, re] of [[1, '@:'], [2, 'AC:'], [3, 'St:']] as const) expect(text(rows[i]).indexOf(re)).toBe(at)
-      // the noise beside the level and the time beside the place, on one column
-      expect(text(rows[0]).indexOf('N:')).toBeGreaterThan(at)
-      expect(text(rows[1]).indexOf('T:')).toBe(text(rows[0]).indexOf('N:'))
-      // the last action's length is left out: the strip has no room for it
-      expect(text(rows[1])).toMatch(/T: \d+(\.\d)?$/)
+      // the bars end with the values at the pane's right edge
+      expect(rowLength(rows[2])).toBe(w)
+      // the defences beside the attributes, as game.html's two columns, the attributes lined up
+      expect(text(rows[4])).toBe('AC: 35  St: 30')
+      expect(text(rows[5])).toBe('EV: 7   In: 10')
+      expect(text(rows[6])).toBe('SH: 11  Dx: 9')
+      // then the level, the noise, the place and the time a row each
+      expect(text(rows[7])).toMatch(/^XL: 14 \d+%$/)
+      expect(text(rows[8])).toMatch(/^N: +$/)
+      expect(text(rows[9])).toBe('@: Snake Pit:2')
+      expect(text(rows[10])).toMatch(/^T: \d+(\.\d)?$/)
+      // the stats no wider than the place
+      for (let i = 4; i <= 10; i++) expect(rowLength(rows[i])).toBeLessThanOrEqual(14)
     }
   })
 
-  it('keeps the time room for a long game\'s count, so it is never cut and a growing count moves nothing, a cell clear of the edge', () => {
-    const at = (time: number) => statsRows({ ...st.player, time, turn: Math.round(time / 10) }, st.options, {}, 58, lead, true).rows
+  it('keeps a long game\'s count whole, and a growing count moves nothing', () => {
+    const at = (time: number) => statsRows({ ...st.player, time, turn: Math.round(time / 10) }, st.options, {}, width, lead, true).rows
     const short = at(10)
     const long = at(1234567)
-    expect(text(long[1])).toMatch(/T: \d{5,7}(\.\d)?$/)
-    for (const rows of [short, long]) for (const row of rows) expect(rowLength(row)).toBeLessThanOrEqual(57)
-    // the bars and the block stand where they stood
-    expect(text(long[1]).indexOf('T:')).toBe(text(short[1]).indexOf('T:'))
+    expect(text(long[10])).toBe('T: 123456.7')
+    for (const rows of [short, long]) for (const row of rows) expect(rowLength(row)).toBeLessThanOrEqual(width)
     expect(text(long[2])).toBe(text(short[2]))
+    expect(text(long[9])).toBe(text(short[9]))
   })
 
-  it('puts what is in hand under the portrait, the whole width of it, then the status lights', () => {
-    const rows = statsRows(st.player, st.options, {}, 58, lead, true).rows
-    expect(text(rows[4])).toBe('e) +2 hand axe (elec)  Throw: 23 darts (poison)')
-    expect(text(rows[5])).toBe('Drain')
-    expect(rows).toHaveLength(6)
-    // Doom and Contam, when they show, stand at its right end
-    const doomed = statsRows({ ...st.player, doom: 40, contam: 120 }, st.options, {}, 58, lead, true).rows
-    expect(text(doomed[4])).toMatch(/^e\) .*Dm: 40% +Cn: 120%$/)
-  })
-
-  it('wraps the status lights short of the minimap\'s column beside them', () => {
+  it('puts what is in hand a row each, then the status lights, wrapped to the pane', () => {
+    const rows = statsRows(st.player, st.options, {}, width, lead, true).rows
+    expect(text(rows[11])).toBe('e) +2 hand axe (elec)')
+    expect(text(rows[12])).toBe('Throw: 23 darts (poison)')
+    expect(text(rows[13])).toBe('Drain')
+    expect(rows).toHaveLength(14)
+    // Doom and Contam, when they show, on a row of their own under the stats
+    const doomed = statsRows({ ...st.player, doom: 40, contam: 120 }, st.options, {}, width, lead, true).rows
+    expect(text(doomed[11])).toBe('Dm: 40% Cn: 120%')
+    expect(text(doomed[12])).toMatch(/^e\) /)
     const lit = { ...st.player, status: ['Slow', 'Poison', 'Might', 'Agile', 'Haste'].map((light) => ({ light, col: 7 })) } as typeof st.player
-    expect(statsRows(lit, st.options, {}, 58, lead, true).rows.slice(5).map(text)).toEqual(['Slow Poison Might Agile Haste'])
-    const short = statsRows(lit, st.options, {}, 58, lead, true, 16).rows.slice(5)
-    expect(short.map((r) => text(r).trimEnd())).toEqual(['Slow Poison', 'Might Agile', 'Haste'])
-    for (const row of short) expect(rowLength(row)).toBeLessThanOrEqual(16)
+    const lights = statsRows(lit, st.options, {}, 16, lead, true).rows.slice(13)
+    expect(lights.map((r) => text(r).trimEnd())).toEqual(['Slow Poison', 'Might Agile', 'Haste'])
   })
 
-  it('a pane with no Magic row keeps its block where it was', () => {
-    const rows = statsRows({ ...st.player, species: 'Djinni' }, st.options, {}, 58, lead, true).rows
-    expect(text(rows[3])).toMatch(/^ +St: 30/)
-    expect(text(rows[3]).indexOf('St:')).toBe(text(rows[0]).indexOf('XL:'))
+  it('cuts what is too long for the pane, the cut marked', () => {
+    const rows = statsRows({ ...st.player, quiver_desc: 'Zap: wand of paralysis (10) and more besides' }, st.options, {}, width, lead, true).rows
+    expect(rowLength(rows[12])).toBe(width)
+    expect(text(rows[12]).endsWith('…')).toBe(true)
+  })
+
+  it('a pane with no Magic row keeps its rows where they were', () => {
+    const rows = statsRows({ ...st.player, species: 'Djinni' }, st.options, {}, width, lead, true).rows
+    expect(text(rows[3]).trim()).toBe('')
+    expect(text(rows[4])).toMatch(/^AC: 35/)
   })
 })

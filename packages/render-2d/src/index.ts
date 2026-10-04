@@ -111,6 +111,14 @@ export interface Render2dOptions {
    * is above, so the cell the view is centred on is never under the bar.
    */
   foot?: number
+  /**
+   * Orbrun: where on the canvas, in css px, the centre of the cell the view
+   * is centred on stands, in place of the canvas's middle: a map wider than
+   * the part of it that is its own, the rest under a pane laid over it
+   * (a phone's stats pane over its minimap). The cells keep to whole css
+   * px. Null (the default) centres the view.
+   */
+  anchor?: { x: number; y: number } | null
 }
 
 /** How far the facing cone reaches, in cells. */
@@ -194,6 +202,8 @@ export class Render2d implements MapRenderer {
   private dpr = 1
   private opts: Required<Omit<Render2dOptions, 'minimapColours'>> & { minimapColours: typeof DEFAULT_MINIMAP }
   private origin = { x: 0, y: 0 }
+  /** the whole css px the cells are drawn right and down of the origin's own place, under an `anchor` */
+  private shift = { x: 0, y: 0 }
   /**
    * How far past its square, in css px, a cell's opaque ground is drawn this
    * frame: nothing on a grid-aligned map, one device pixel on a map turned
@@ -220,6 +230,7 @@ export class Render2d implements MapRenderer {
       uprightYaw: opts.uprightYaw ?? null,
       facing: opts.facing ?? null,
       foot: opts.foot ?? 0,
+      anchor: opts.anchor ?? null,
     }
   }
 
@@ -240,6 +251,7 @@ export class Render2d implements MapRenderer {
     if (opts.uprightYaw !== undefined) this.opts.uprightYaw = opts.uprightYaw
     if (opts.facing !== undefined) this.opts.facing = opts.facing
     if (opts.foot !== undefined) this.opts.foot = opts.foot
+    if (opts.anchor !== undefined) this.opts.anchor = opts.anchor
   }
 
   mount(target: HTMLCanvasElement | OffscreenCanvas): void {
@@ -381,8 +393,8 @@ export class Render2d implements MapRenderer {
 
   pick(px: number, py: number): CellKey | null {
     const cs = this.opts.cellSize
-    const x = Math.floor(px / cs) + this.origin.x
-    const y = Math.floor(py / cs) + this.origin.y
+    const x = Math.floor((px - this.shift.x) / cs) + this.origin.x
+    const y = Math.floor((py - this.shift.y) / cs) + this.origin.y
     if (!this.scene) return null
     const k = cellKey(x, y)
     return this.scene.cells.has(k) ? k : null
@@ -422,7 +434,22 @@ export class Render2d implements MapRenderer {
       ox = b.left - Math.floor((cols - bw) / 2)
       oy = b.top - Math.floor((rows - bh) / 2)
     }
+    // the centred cell's top-left corner on the anchor less half a cell, on a whole css px: the origin a whole cell, and
+    // what is left of the way there a shift of the whole drawing
+    const anchored = this.opts.anchor ? (centre ?? (this.opts.follow && cam ? cam : null)) : null
+    let shiftX = 0
+    let shiftY = 0
+    if (anchored && this.opts.anchor) {
+      const kx = Math.round(this.opts.anchor.x - cs / 2)
+      const ky = Math.round(this.opts.anchor.y - cs / 2)
+      ox = anchored.x - Math.floor(kx / cs)
+      oy = anchored.y - Math.floor(ky / cs)
+      shiftX = kx - Math.floor(kx / cs) * cs
+      shiftY = ky - Math.floor(ky / cs) * cs
+    }
     this.origin = { x: ox, y: oy }
+    this.shift = { x: shiftX, y: shiftY }
+    if (shiftX || shiftY) ctx.translate(shiftX, shiftY)
     // the map turned so `up` (or the easing `upYaw`) is at the top: about the
     // cell the view is centred on, which is where the player stands when following
     const rot = -(this.opts.upYaw ?? dirToYaw(this.opts.up))
@@ -468,7 +495,7 @@ export class Render2d implements MapRenderer {
         sx = pvx + dx * cosR - dy * sinR - cs / 2
         sy = pvy + dx * sinR + dy * cosR - cs / 2
       }
-      return !(sx < -cs || sy < -cs || sx > this.width || sy > this.height)
+      return !(sx + shiftX < -cs || sy + shiftY < -cs || sx + shiftX > this.width || sy + shiftY > this.height)
     }
     if (glyphs || hybrid) ctx.font = `${Math.floor(cs * 0.8)}px ${this.opts.glyphFont}`
     /**
@@ -484,7 +511,7 @@ export class Render2d implements MapRenderer {
      */
     const minimapCells = (): Iterable<SceneCell> => {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-      for (const [cx, cy] of [[-cs / 2, -cs / 2], [this.width + cs / 2, -cs / 2], [this.width + cs / 2, this.height + cs / 2], [-cs / 2, this.height + cs / 2]]) {
+      for (const [cx, cy] of [[-cs / 2 - shiftX, -cs / 2 - shiftY], [this.width + cs / 2 - shiftX, -cs / 2 - shiftY], [this.width + cs / 2 - shiftX, this.height + cs / 2 - shiftY], [-cs / 2 - shiftX, this.height + cs / 2 - shiftY]]) {
         const dx = cx - pvx
         const dy = cy - pvy
         const x = pvx + dx * cosR + dy * sinR

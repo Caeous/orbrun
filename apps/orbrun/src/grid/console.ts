@@ -61,8 +61,10 @@ export function fitGrid(width: number, height: number, cw: number, ch: number): 
 
 /** the game screen's regions, all in cells of the one grid; the panes lie over the view */
 export interface GameLayout {
-  /** the dungeon view: the whole grid, the panes over it; on a phone held upright, between the stats strip and the touch bar (`gameSplit`) */
+  /** the dungeon view: the whole grid, the panes over it; on a phone held upright, everything under the minimap's band (`gameSplit`) */
   view: CellRect
+  /** on a phone held upright, the band across the top of the screen the minimap and the stats pane stand in (`gameSplit`); no rows elsewhere */
+  band: CellRect
   /**
    * The part of the view no pane lies over: left of the sidebar column,
    * above the messages. What rides the view's edges (the action panel, the
@@ -95,15 +97,8 @@ const STATS_ROWS = 13
  * and cuts its numbers off on a narrower one.
  */
 const PORTRAIT_SIDE = 36
-/**
- * In portrait, the stats pane is a strip across the top this many rows tall
- * (stats.ts `stripRows`): four beside the portrait, the row under it, and a
- * row of status lights. The minimap stands under it, so it has the whole
- * screen across rather than what a pane beside it leaves.
- */
-export const STRIP_ROWS = 6
-/** in portrait, the minimap's column when no width is given for it (hud.ts `portraitMapCols` gives one) */
-export const PORTRAIT_MAP_COLS = 34
+/** in portrait, the minimap's columns when no width is given for it (hud.ts `portraitBand` gives one) */
+export const PORTRAIT_MAP_COLS = 30
 
 export function isPortrait(grid: Grid): boolean {
   return !!grid.phone && grid.cols - MIN_VIEW_COLS < PORTRAIT_SIDE && grid.rows * grid.ch > grid.cols * grid.cw
@@ -112,13 +107,21 @@ export function isPortrait(grid: Grid): boolean {
 /** the least column, in cells, the touch bar stands in beside the view (`touchBeside`): four buttons a finger can hit */
 const TOUCH_SIDE_COLS = 20
 /**
- * The least the right column takes, in css px, with the touch bar standing
- * at its foot (`touchColumn`): five buttons of 64px and the gaps between
- * them, so a word as long as "Character" fits a button at a phone's text
- * size. The sidebar's own 42 cells come out at under 300px on a phone on its
- * side, and cut the words to "Charac".
+ * A touch bar button, in css px: one size on every screen, device and
+ * orientation (styles.css .touchbar). As wide as lets a word as long as
+ * "Character" fit at a phone's text size, as tall as the platforms' least
+ * touch target (Apple's 44pt), which still holds an icon over its caption.
  */
-export const TOUCH_SIDE_PX = 5 * 64 + 4 * 6 + 8
+export const TOUCH_BUTTON_W = 60
+export const TOUCH_BUTTON_H = 44
+
+/**
+ * The least the right column takes, in css px, with the touch bar standing
+ * at its foot (`touchColumn`): five buttons and the gaps between them. The
+ * sidebar's own 42 cells come out at under 300px on a phone on its side, and
+ * cut the words to "Charac".
+ */
+export const TOUCH_SIDE_PX = 5 * TOUCH_BUTTON_W + 4 * 6 + 8
 
 /** The right column's width in cells, with the touch bar at its foot: the sidebar's, or wider to TOUCH_SIDE_PX. */
 export function touchColumn(grid: Grid): number {
@@ -150,39 +153,39 @@ export function touchBeside(grid: Grid): boolean {
  * standing over the dungeon rather than on black, but every pane stands
  * above them, so no button covers a line of text. Held
  * upright (`isPortrait`), there is no room for a column beside the view, so
- * the panes stack over it instead: the stats pane as a strip across the top
- * (STRIP_ROWS), the minimap's column under it at the right, `mapCols` wide
- * (the monster list under the map), and the messages across the whole width,
- * above the foot. There the view itself starts under the strip's printed
- * rows and ends above the foot: the strip's last row is the status lights',
- * bare most of the time, so the lights, when there are any, stand over the
- * view's top edge, and the minimap's column starts beside them, in the
- * view's top-right corner (the lights wrap short of it, stats.ts). On
+ * the panes stack instead: a band across the top of the screen, `band` rows
+ * of it, holds the minimap at the right, `mapCols` wide (hud.ts
+ * `portraitBand`), and the stats pane left of it, a cell's gutter away
+ * (stats.ts `cornerRows`); the view runs from under the band to the
+ * screen's foot; the monster list's column stands under the map, as wide as
+ * it, and the messages across the whole width, above the foot. A stats pane
+ * longer than the band (the status lights wrap) runs on over the view. On
  * its side the bar stands at the column's foot instead (`touchBeside`):
  * `sideFoot` rows there are the bar's, the column ends above them, and it
  * is `columnWidth` cells wide (`touchColumn`), wider than the stats pane.
  */
-export function gameSplit(grid: Grid, msgRows: number, statWidth = STAT_WIDTH, foot = 0, sideFoot = 0, columnWidth = statWidth, mapCols = PORTRAIT_MAP_COLS): GameLayout {
+export function gameSplit(grid: Grid, msgRows: number, statWidth = STAT_WIDTH, foot = 0, sideFoot = 0, columnWidth = statWidth, band = 0, mapCols = PORTRAIT_MAP_COLS): GameLayout {
   const rows = Math.max(MIN_ROWS - 4, grid.rows - foot)
   const msgs = Math.max(2, Math.min(msgRows + 1, rows - 4))
   const clearH = rows - msgs
   const view = { x: 0, y: 0, w: grid.cols, h: Math.max(rows, grid.rows) }
   if (isPortrait(grid)) {
-    const top = Math.min(STRIP_ROWS, clearH)
+    const top = Math.max(0, Math.min(band, clearH))
     const side = Math.max(0, Math.min(grid.cols, mapCols))
-    const head = Math.max(0, top - 1)
     return {
-      view: { x: 0, y: head, w: grid.cols, h: rows - head },
+      view: { x: 0, y: top, w: grid.cols, h: grid.rows - top },
+      band: { x: 0, y: 0, w: grid.cols, h: top },
       clear: { x: 0, y: top, w: grid.cols - side, h: clearH - top },
       messages: { x: 0, y: clearH, w: grid.cols, h: msgs },
-      sidebar: { x: grid.cols - side, y: head, w: side, h: clearH - head },
-      stats: { x: 0, y: 0, w: grid.cols, h: top },
+      sidebar: { x: grid.cols - side, y: top, w: side, h: clearH - top },
+      stats: { x: 0, y: 0, w: Math.max(0, grid.cols - side - 1), h: top },
     }
   }
   const side = Math.max(0, Math.min(columnWidth, grid.cols - MIN_VIEW_COLS))
   const leftW = grid.cols - side
   return {
     view,
+    band: { x: 0, y: 0, w: 0, h: 0 },
     clear: { x: 0, y: 0, w: leftW, h: clearH },
     messages: { x: 0, y: clearH, w: leftW, h: msgs },
     sidebar: { x: leftW, y: 0, w: side, h: Math.max(0, rows - sideFoot) },
@@ -196,15 +199,17 @@ export function gameSplit(grid: Grid, msgRows: number, statWidth = STAT_WIDTH, f
  * sidebar with `tile_level_map_hide_sidebar` and over the messages with
  * `tile_level_map_hide_messages`, the panes stepping off the grid. Held
  * upright (`isPortrait`) it takes the whole width: the panes stand over the
- * view there rather than beside it, and the minimap's column, half the
- * screen, would otherwise be a black band down the map's side. Grown over
+ * view there rather than beside it, and the monster list's column, half the
+ * screen, would otherwise be a black band down the map's side. It takes the
+ * minimap's band too, from the screen's top, the map standing in for the
+ * minimap while it is open, the stats pane over its corner as on a desktop. Grown over
  * the messages it ends above the touch bar's rows (`gameSplit` `foot`):
  * this is the map's part no button covers, which what rides its edges keeps
  * to; the canvas itself runs on under the bar (`levelMapCanvas`).
  */
 export function levelMapSplit(grid: Grid, layout: GameLayout, opts: { hideSidebar?: boolean; hideMessages?: boolean }): CellRect {
   const w = opts.hideSidebar || isPortrait(grid) ? layout.view.w : layout.clear.w
-  const h = opts.hideMessages ? layout.messages.y + layout.messages.h : layout.clear.h
+  const h = opts.hideMessages ? layout.messages.y + layout.messages.h : layout.clear.y + layout.clear.h
   return { x: 0, y: 0, w, h }
 }
 
@@ -215,8 +220,7 @@ export function levelMapSplit(grid: Grid, layout: GameLayout, opts: { hideSideba
  * too; with the bar at the right column's foot (`touchBeside`), a map that
  * reaches the foot takes the column across, its minimap off while the map
  * is open. A map that stops above the messages stays as it was: they stand
- * between it and the bar. `rows` is the grid's: held upright, the view
- * itself ends above the bar.
+ * between it and the bar. `rows` is the grid's.
  */
 export function levelMapCanvas(layout: GameLayout, map: CellRect, beside: boolean, rows: number): CellRect {
   const reachesFoot = map.h >= layout.messages.y + layout.messages.h

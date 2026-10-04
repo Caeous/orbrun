@@ -484,25 +484,25 @@ export class GameScreen {
     const barRows = Math.ceil(this.hud.touchbarHeight / g.ch)
     // the Message lines setting, over what the server's `layout` asks for unless it is Auto
     const msgRows = this.settings().messageLines || st.messages.paneHeight
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone].join(',')
+    // upright, the minimap and the stats pane share a band across the top (gameSplit); the level map takes the band too,
+    // standing in for the minimap, the stats pane over its corner
+    const band = isPortrait(g) ? this.hud.portraitBand(this.grid) : { rows: 0, cols: 0 }
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, band.rows, band.cols].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
-    const split = (mapCols?: number) => gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, mapCols)
-    // upright, the minimap's column under the stats strip is as wide as the map (its height is the same either way)
-    let cells = split()
-    if (isPortrait(g)) cells = split(this.hud.portraitMapCols(this.grid, cells.sidebar.h * g.ch))
+    const cells = gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, band.rows, band.cols)
     this.hud.touchBeside = beside
     // the level map's canvas runs on under the touch bar; what rides the map's edges keeps to the part the bar leaves
     const map = mapView ? levelMapSplit(g, cells, { hideSidebar, hideMessages }) : null
     const view = map ? levelMapCanvas(cells, map, beside && barRows > 0, g.rows) : cells.view
     this.grid.place(this.canvas, view)
     const px = this.grid.px(view)
-    // upright, the view runs across the whole screen, the grid's margins too, and ends at the touch bar's top edge
-    // rather than on the last whole row above it (gameSplit)
+    // upright, the view runs across the whole screen, the grid's margins too, from under the minimap's band down to the
+    // screen's foot, under the touch bar (gameSplit)
     if (!map && isPortrait(g)) {
       px.left = 0
       px.width = this.root.clientWidth || px.width
-      if (barRows > 0) px.height = Math.max(px.height, this.root.clientHeight - this.hud.touchbarHeight - px.top)
+      px.height = Math.max(px.height, this.root.clientHeight - px.top)
       this.canvas.style.left = px.left + 'px'
       this.canvas.style.width = px.width.toFixed(2) + 'px'
       this.canvas.style.height = px.height.toFixed(2) + 'px'
@@ -643,10 +643,7 @@ export class GameScreen {
     return (this.settingsCache ??= this.hooks.settings())
   }
 
-  /**
-   * The 3D view is a phone's held upright, where the Field of view setting is
-   * the angle across (render-3d lens.ts); anywhere else it is the vertical one.
-   */
+  /** A phone held upright: the hands shrink with the view's width (render-3d `setUpright`), and the minimap is north up. */
   private get upright(): boolean {
     return this.grid.phone && isPortrait(this.grid.grid)
   }
@@ -835,12 +832,15 @@ export class GameScreen {
         padLabels.splice(at < 0 ? padLabels.length : at, 0, l)
       }
     }
-    // north up: the ground and all on it stand unturned, and the map is drawn without its north mark
-    this.hud.minimapTurns = settings.minimapTurns
-    this.hud.minimapUp = settings.minimapTurns ? this.cam.mapYaw : 0
-    this.hud.minimapUpright = settings.minimapTurns ? this.cam.mapUprightYaw : 0
+    // north up: the ground and all on it stand unturned, and the map is drawn without its north mark. A phone held
+    // upright has it so whatever the setting: the map is a square there (hud.ts bandFit), whose corners would swing in
+    // and out of the level as it turned
+    const turns = settings.minimapTurns && !this.upright
+    this.hud.minimapTurns = turns
+    this.hud.minimapUp = turns ? this.cam.mapYaw : 0
+    this.hud.minimapUpright = turns ? this.cam.mapUprightYaw : 0
     // and marks the way the 3D view faces instead, as the level map does
-    this.hud.minimapFov = !settings.minimapTurns && this.renderer instanceof Render3d ? this.viewFov() : null
+    this.hud.minimapFov = !turns && this.renderer instanceof Render3d ? this.viewFov() : null
     // a finger gets every button the screen has, by its word (bindings.ts touchLabels); a panel of ours names its own.
     // A spectator's too: B and Start open the Orbrun menu, where Stop watching is, the one way out on a phone
     const touch = this.lastInput === 'touch' && !this.chat.capturing ? touchLabels(ours ? withBack(ours) : barLabels(this.ctx), this.ctx, !!ours) : null

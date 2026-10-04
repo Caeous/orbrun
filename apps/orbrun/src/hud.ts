@@ -17,7 +17,7 @@ import type { Context } from './context'
 import type { Button, PadKind } from './gamepad'
 import type { InputDevice } from './game'
 import { mapFacingOf } from './camera'
-import { isPortrait, type CellRect, type GameLayout, type Grid } from './grid/console'
+import { TOUCH_BUTTON_H, TOUCH_BUTTON_W, isPortrait, type CellRect, type GameLayout, type Grid } from './grid/console'
 import type { GridHost } from './grid/host'
 import { paneRows } from './grid/messages'
 import { panelCellAt, panelCellIndex, panelGrid, panelSpan, type PanelBox, type PanelGrid } from './grid/panel'
@@ -208,10 +208,20 @@ export const TRAPPED_FRACTION = 0.8
  * view keeps its left half clear) and MINIMAP_TALLEST of the column down, so
  * the monster list under it keeps some rows even at the biggest stop. The
  * disc is square, so whichever cap is tighter sets its size. Held upright the
- * column itself is the cap (`portraitMapCols` sizes it for the map).
+ * stats pane beside the map is the cap (`bandFit`).
  */
 const MINIMAP_WIDEST = 0.5
 const MINIMAP_TALLEST = 0.7
+/**
+ * Held upright, the tiles across the minimap on Auto: the stats pane stands
+ * beside it there (console.ts gameSplit), and this many at a phone's least
+ * cell leave the pane the cells it needs. It is under MINIMAP_TILES_LEAST,
+ * but the map there is a square, not a disc: 13 tiles square show about as
+ * much of the line of sight as the disc 15 across does (75% to 79%).
+ */
+export const MINIMAP_TILES_UPRIGHT = 13
+/** held upright, the cells the stats pane keeps beside the map, whatever the "Minimap size" setting asks (stats.ts cornerRows) */
+export const CORNER_STATS_LEAST = 24
 
 /**
  * The screen's short side in css px, from the grid: its cells and the margins they are centred in. Not the cells'
@@ -229,7 +239,7 @@ const oddDown = (n: number) => Math.max(1, 2 * Math.ceil(Math.max(1, n) / 2) - 1
 
 /**
  * The minimap's box in css px, in `room` (the most the layout lets it take
- * across and down: `layout`, `portraitMapCols`) on a screen whose short
+ * across and down: `layout`) on a screen whose short
  * side is `short` css px, at the "Minimap size" setting `tiles` and the
  * "Minimap tile size" setting `cell` (0 for Auto), and the cell it is drawn
  * at: a square of that many tiles on a side, taken to an odd count so the
@@ -423,6 +433,8 @@ export class Hud {
   minimapUpright = 0
   /** The minimap turns with the player (the "Minimap rotation" setting); north up, it needs no north mark. */
   minimapTurns = true
+  /** Held upright, the minimap is a band across the top of the screen (`layout`), not a disc: never cut, north up. */
+  private minimapBand = false
   /**
    * How wide the 3D view opens across, in radians (game `viewFov`), drawn on
    * a north-up minimap as the cone the view faces, which the map otherwise
@@ -463,11 +475,10 @@ export class Hud {
   private actionbar = h('div', { class: 'actionbar' })
   /** the pad's standing menu buttons along the view's last row (renderMenus) */
   private menubar = h('div', { class: 'menubar', hidden: true })
-  private touchbar = h('div', { class: 'touchbar', hidden: true })
+  /** every button one size (console.ts TOUCH_BUTTON_W, styles.css .touchbar) */
+  private touchbar = h('div', { class: 'touchbar', hidden: true, style: { '--tb-w': TOUCH_BUTTON_W + 'px', '--tb-h': TOUCH_BUTTON_H + 'px' } })
   /** the touch bar stands at the right column's foot, under the minimap, not along the view's (console.ts touchBeside) */
   touchBeside = false
-  /** the most css px a touch icon stands (`touchArtScale`): TOUCH_ART_MOST, or what a row under the map leaves (`layout`) */
-  private touchArtMost = TOUCH_ART_MOST
   private statusEl = h('div', { class: 'status-line', style: { display: 'none' } })
   private hooks: HudHooks
   private lastMsgKey = ''
@@ -504,15 +515,35 @@ export class Hud {
   }
 
   /**
-   * Held upright (console.ts `isPortrait`), the minimap's column in cells:
-   * as wide as the map (`minimapFit`), which has the whole screen across
-   * under the stats strip, so it is the same size whichever way a phone is
-   * held. `columnPx` is how tall the column is.
+   * Held upright (console.ts `isPortrait`), the minimap is a band across the
+   * top of the screen, north up (game.ts), the stats pane laid over its left
+   * part and the player on the middle of the square at its right, the part
+   * that is the map's own: MINIMAP_TILES_UPRIGHT tiles across on Auto, or
+   * the "Minimap size" setting's count, at the cell it is drawn at on its
+   * side (`minimapFit`), so turning the phone keeps the tiles' size. The
+   * square gives way to the stats pane's CORNER_STATS_LEAST cells, fewer
+   * tiles first, then smaller ones. `w` and `h` are the square's; `cols` is
+   * how many of the grid's columns it covers, from the screen's right edge:
+   * it reaches over the grid's margin there.
    */
-  portraitMapCols(host: GridHost, columnPx: number): number {
+  private bandFit(host: GridHost): { w: number; h: number; cell: number; cols: number } {
     const g = host.grid
-    const { w } = minimapFit({ w: g.cols * g.cw, h: columnPx }, screenShort(g), this.minimapAcross, this.minimapCell, host.phone)
-    return Math.min(g.cols, Math.ceil(w / g.cw - 1e-6))
+    const { cell: fitted } = minimapFit({ w: g.cols * g.cw, h: g.rows * g.ch }, screenShort(g), this.minimapAcross, this.minimapCell, host.phone)
+    const across = this.root.clientWidth || g.cols * g.cw + 2 * g.ox
+    const margin = Math.max(0, across - g.ox - g.cols * g.cw)
+    const room = Math.floor(margin + (g.cols - CORNER_STATS_LEAST - 1) * g.cw)
+    let tiles = this.minimapAcross ? oddUp(this.minimapAcross) : MINIMAP_TILES_UPRIGHT
+    let cell = fitted
+    if (tiles * cell > room) tiles = Math.max(Math.min(tiles, MINIMAP_TILES_UPRIGHT), oddDown(Math.floor(room / cell)))
+    if (tiles * cell > room) cell = Math.max(1, Math.floor(room / tiles))
+    const w = room > 0 ? tiles * cell : 0
+    return { w, h: w, cell, cols: Math.min(g.cols, Math.max(0, Math.ceil((w - margin) / g.cw - 1e-6))) }
+  }
+
+  /** Held upright, the grid rows the minimap's band takes at the top of the screen and the columns at its right (`bandFit`; console.ts gameSplit). */
+  portraitBand(host: GridHost): { rows: number; cols: number } {
+    const { h, cols } = this.bandFit(host)
+    return { rows: Math.ceil(h / host.grid.ch - 1e-6), cols }
   }
 
   constructor(host: HTMLElement, hooks: HudHooks) {
@@ -592,9 +623,9 @@ export class Hud {
     // as many tiles across as the "Minimap size" setting says, each drawn in proportion to the screen and smaller where
     // the room runs out (minimapFit); it hangs off the column's right edge, so a wide one reaches left over the view, but never over the
     // stats pane, a cell's gutter short of it: on a narrow screen the pane and the column share the top rows. Held upright
-    // the pane is a strip above the column instead, and the map keeps to the column, which was sized for it
-    // (portraitMapCols). With the touch bar at the column's foot the map leaves the bar the least its rows take, and
-    // the bar takes what the map leaves.
+    // it stands in the screen's top-right corner instead, the stats pane beside it (bandFit). With the touch bar at the column's foot the map leaves
+    // the bar its three rows.
+    const portrait = isPortrait(host.grid)
     const sidePx = host.px(cells.sidebar)
     const statsPx = host.px(cells.stats)
     const statsRight = this.stats.hidden ? null : statsPx.left + statsPx.width
@@ -604,10 +635,10 @@ export class Hud {
     this.touchbar.classList.toggle('beside', this.touchBeside)
     const bottom = this.root.clientHeight || 2 * host.grid.oy + host.grid.rows * host.grid.ch
     const room = {
-      w: isPortrait(host.grid) ? sidePx.width : Math.min(gridW * MINIMAP_WIDEST, statsRight === null ? Infinity : sidePx.left + sidePx.width - statsRight - host.grid.cw),
-      h: barBeside ? bottom - sidePx.top - this.touchbarSpan(TOUCH_ROW_LEAST) - TOUCH_MAP_GAP : isPortrait(host.grid) ? sidePx.height : sidePx.height * MINIMAP_TALLEST,
+      w: Math.min(gridW * MINIMAP_WIDEST, statsRight === null ? Infinity : sidePx.left + sidePx.width - statsRight - host.grid.cw),
+      h: barBeside ? bottom - sidePx.top - this.touchbarSpan() - TOUCH_MAP_GAP : sidePx.height * MINIMAP_TALLEST,
     }
-    const { w, h: size, cell } = minimapFit(room, short, this.minimapAcross, this.minimapCell, host.phone)
+    const { w, h: size, cell } = portrait ? this.bandFit(host) : minimapFit(room, short, this.minimapAcross, this.minimapCell, host.phone)
     if (cell !== this.minimapDrawn) {
       this.minimapDrawn = cell
       this.minimap.setOptions({ cellSize: cell })
@@ -615,18 +646,31 @@ export class Hud {
       this.minimapSize = { w: 0, h: 0 }
       this.minimapKey = ''
     }
-    if (this.minimapSize.w !== w || this.minimapSize.h !== size || dpr !== this.minimapDpr) {
-      this.minimapSize = { w, h: size }
+    // upright, the map stands in the band across the top of the screen rather than at the column's head (gameSplit), on
+    // the hud itself, its top on the stats pane's first row: the whole screen across, the stats pane over its left part,
+    // the player on the middle of the square at its right (bandFit)
+    this.minimapBand = portrait
+    const across = this.root.clientWidth || gridW + 2 * host.grid.ox
+    const canvasW = portrait ? across : w
+    if (this.minimapSize.w !== canvasW || this.minimapSize.h !== size || dpr !== this.minimapDpr) {
+      this.minimapSize = { w: canvasW, h: size }
       this.minimapDpr = dpr
-      this.minimap.resize(w, size, dpr)
-      this.minimapCanvas.style.width = w + 'px'
+      this.minimap.resize(canvasW, size, dpr)
+      this.minimapCanvas.style.width = canvasW + 'px'
       this.minimapCanvas.style.height = size + 'px'
       this.minimapKey = ''
     }
-    // upright, the map stands tight in the screen's top-right corner: its column starts beside the strip's status lights
-    // (gameSplit), and the map reaches out over the grid's margin to the screen's edge, as the view does (game.ts)
-    const overhang = isPortrait(host.grid) ? Math.max(0, this.root.clientWidth - sidePx.left - sidePx.width) : 0
-    this.minimapCanvas.style.marginRight = overhang ? -overhang + 'px' : ''
+    this.minimap.setOptions({ anchor: portrait ? { x: across - w / 2, y: size / 2 } : null })
+    this.minimapKey = ''
+    if (portrait) {
+      if (this.minimapCanvas.parentElement !== this.root) this.root.insertBefore(this.minimapCanvas, this.stats)
+      this.minimapCanvas.style.left = '0px'
+      this.minimapCanvas.style.top = host.px(cells.band).top + 'px'
+    } else if (this.minimapCanvas.parentElement !== this.sidebar) {
+      this.sidebar.prepend(this.minimapCanvas)
+      this.minimapCanvas.style.left = ''
+      this.minimapCanvas.style.top = ''
+    }
     // the prompts stack upward from the view's last row, their right edge on its (styles.css .actionbar.contextual);
     // under a panel they stand at its foot instead (placeBar)
     this.barCorner = { left: at.left, top: at.top, width: at.width, height: at.height }
@@ -639,31 +683,31 @@ export class Hud {
     this.menubar.style.top = at.top + at.height + 'px'
     this.menubar.style.transform = 'translateY(-100%)'
     this.menuKey = ''
-    // the touch bar: along the foot, or as wide as the column from just under the map to the foot, its rows sharing that
-    // height (styles.css .touchbar.beside) and its icons drawn to fit them; rows no taller than TOUCH_ROW_MOST, the bar
-    // standing at the foot on a tall screen and the monster list getting what is between it and the map
+    // the touch bar: along the foot, or at the foot of the column, as wide as it, the monster list getting what is between
+    // it and the map
     this.touchbar.style.left = this.touchBeside ? sidePx.left + 'px' : ''
     this.touchbar.style.width = this.touchBeside ? sidePx.width + 'px' : ''
-    const barTop = Math.max(sidePx.top + size + TOUCH_MAP_GAP, bottom - this.touchbarSpan(TOUCH_ROW_MOST))
+    const barTop = Math.max(sidePx.top + size + TOUCH_MAP_GAP, bottom - this.touchbarSpan())
     this.touchbar.style.top = barBeside ? barTop + 'px' : ''
-    this.touchArtMost = barBeside ? Math.min(TOUCH_ART_MOST, Math.floor(this.touchbarRow(bottom - barTop) - TOUCH_CAPTION_PX)) : TOUCH_ART_MOST
     // the action panel stands in the strip along the top between the stats pane and the minimap (grid/panel.ts), each a
     // cell's gutter away; the minimap's left edge is where it hangs from the column's right edge, not the column's own
-    const minimapLeft = this.sidebar.hidden || w === 0 ? null : sidePx.left + sidePx.width + overhang - w
+    const minimapLeft = this.sidebar.hidden || w === 0 ? null : sidePx.left + sidePx.width - w
     // a phone has no strip to spare: the panel stands nowhere, its items are a tap away in the pack
     this.panelBox = host.phone ? { left: 0, top: 0, width: 0, height: 0 } : panelSpan(this.freePx, statsRight, minimapLeft, host.grid.cw, PANEL_CELL)
     // the status strip runs leftward from the minimap's left edge, a cell's gutter away: squares STATUS_BADGE_ROWS tall,
     // as many across as fit between the stats pane and the map, another row down past that; with no room for one there,
     // they run leftward under the map from its right edge instead, a cell's gutter down, as many across as the map is wide
     this.statusPx = host.grid.ch * STATUS_BADGE_ROWS
-    // upright, the stats pane is a strip above the map, not beside it: the badges have the view across to its left edge
-    const stripLeft = statsRight === null || isPortrait(host.grid) ? this.freePx.left : statsRight + host.grid.cw
-    const besideCols = minimapLeft === null ? 0 : Math.floor((minimapLeft - host.grid.cw - stripLeft) / this.statusPx)
-    if (minimapLeft === null) this.statusAt = null
-    // beside the map they keep under the strip's lights, which the map's column starts beside upright (gameSplit)
+    // upright, the stats pane stands left of the map, in the band (gameSplit): the badges go under the map, at the head of
+    // the monster list's column
+    const stripLeft = statsRight === null ? this.freePx.left : statsRight + host.grid.cw
+    const besideCols = minimapLeft === null || portrait ? 0 : Math.floor((minimapLeft - host.grid.cw - stripLeft) / this.statusPx)
+    if (portrait) this.statusAt = this.sidebar.hidden || !sidePx.width ? null : { right: across, top: host.px(cells.band).top + size + host.grid.ch, below: host.grid.ch }
+    else if (minimapLeft === null) this.statusAt = null
     else if (besideCols >= 1) this.statusAt = { right: minimapLeft - host.grid.cw, top: Math.max(sidePx.top, at.top), below: 0 }
-    else this.statusAt = { right: sidePx.left + sidePx.width + overhang, top: sidePx.top + size + host.grid.ch, below: host.grid.ch }
-    this.statusCols = !this.statusAt ? 1 : this.statusAt.below ? Math.max(1, Math.floor(w / this.statusPx)) : besideCols
+    else this.statusAt = { right: sidePx.left + sidePx.width, top: sidePx.top + size + host.grid.ch, below: host.grid.ch }
+    const underW = portrait ? sidePx.width : w
+    this.statusCols = !this.statusAt ? 1 : this.statusAt.below ? Math.max(1, Math.floor(underW / this.statusPx)) : besideCols
     this.statusKey = ''
     this.trappedKey = ''
     // left aligned in the strip, where action_panel.js stands it in the dungeon's top-left corner; it shrinks to what it
@@ -789,10 +833,9 @@ export class Hud {
    */
   private renderStats(state: GameState) {
     if (!this.cells) return
-    const strip = !!this.host && isPortrait(this.host.grid)
-    // upright, the lights wrap short of the minimap's column beside them, a cell's gutter away (console.ts gameSplit)
-    const lightsRoom = strip && this.cells.sidebar.w ? this.cells.sidebar.x - 1 : this.cells.stats.w
-    const { rows, prev } = statsRows(state.player, state.options, this.bars, this.cells.stats.w, this.portraitCols, strip, lightsRoom)
+    // upright, the pane stands beside the minimap (console.ts gameSplit)
+    const corner = !!this.host && isPortrait(this.host.grid)
+    const { rows, prev } = statsRows(state.player, state.options, this.bars, this.cells.stats.w, this.portraitCols, corner)
     this.bars = prev
     // the canvas keeps its drawing across the move; the rows beside it left its cells blank
     replace(this.stats, this.portraitCanvas, ...rows.map((r) => paintRow(r)))
@@ -1470,6 +1513,7 @@ export class Hud {
     this.minimap.setScene(scene)
     this.minimap.setCamera(cam)
     this.minimap.render()
+    if (this.minimapBand) return
     this.cutMinimapDisc()
     // no level yet (the character is still being picked): a north mark round an empty disc points at nothing
     if (scene.cells.size && this.minimapTurns) this.drawMinimapNorth()
@@ -1745,11 +1789,9 @@ export class Hud {
   private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null) {
     // the icons come in with the gamedata, and are drawn for the screen's density (`touchArtScale`)
     const art = (l: TouchLabel) => (gd ? '#' + (l.icon ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') : '')
-    const key = labels ? labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.auto ? '!' : '') + art(l)).join(',') + '@' + touchArtScale(this.touchArtMost) + '/' + (window.devicePixelRatio || 1) : ''
+    const key = labels ? labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.auto ? '!' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
-    // what an icon stands, for every button to stand as tall as one with an icon and a caption (styles.css .touchbar .tb)
-    this.touchbar.style.setProperty('--tb-art', (TOUCH_ART * touchArtScale(this.touchArtMost)) / (window.devicePixelRatio || 1) + 'px')
     this.touchbar.hidden = !labels?.length
     if (!labels?.length) {
       // the bar going away under a finger lets go of what it holds: its pointerup will land on nothing
@@ -1789,7 +1831,7 @@ export class Hud {
         } else {
           letGo(old)
           const idle = TOUCH_ANCHORS[cell]
-          el = l ? this.touchButton(covers, l, gd) : idle ? idleTouchButton(cell, idle, this.touchArtMost) : h('span', { class: 'tb empty', 'data-cell': cell })
+          el = l ? this.touchButton(covers, l, gd) : idle ? idleTouchButton(cell, idle) : h('span', { class: 'tb empty', 'data-cell': cell })
           if (old) old.replaceWith(el)
           else if (last) last.after(el)
           else this.touchbar.prepend(el)
@@ -1835,7 +1877,7 @@ export class Hud {
   private fillTouchButton(btn: HTMLElement, covers: readonly TouchCell[], l: TouchLabel, gd: Gamedata | null) {
     // the d-pad's cells are their arrows alone; the others are their art over the word, the word being what is read last
     const arrow = TOUCH_ARROW_ROT[covers[0]]
-    const icon = arrow !== undefined ? touchArrow(arrow, this.touchArtMost) : touchArt(gd, l.icon, l.item, this.touchArtMost)
+    const icon = arrow !== undefined ? touchArrow(arrow) : touchArt(gd, l.icon, l.item)
     // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
     const words = l.hold ? l.label + ' [' + l.hold + ']' : l.label
     btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.auto ? ' auto' : '') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (btn.classList.contains('down') ? ' down' : '')
@@ -1871,16 +1913,10 @@ export class Hud {
     return { pad: (Number.parseFloat(cs.paddingTop) || 0) + (Number.parseFloat(cs.paddingBottom) || 0), gap: Number.parseFloat(cs.rowGap) || 0 }
   }
 
-  /** What the touch bar takes down with rows `row` css px tall, in css px: its three rows, the gaps between them, its padding. */
-  private touchbarSpan(row: number): number {
+  /** What the touch bar takes down, in css px: its three rows, the gaps between them, its padding. */
+  private touchbarSpan(): number {
     const { pad, gap } = this.touchbarFrame()
-    return TOUCH_CELLS.length * row + (TOUCH_CELLS.length - 1) * gap + pad
-  }
-
-  /** a row's height in css px on a touch bar `height` tall */
-  private touchbarRow(height: number): number {
-    const { pad, gap } = this.touchbarFrame()
-    return (height - pad - (TOUCH_CELLS.length - 1) * gap) / TOUCH_CELLS.length
+    return TOUCH_CELLS.length * TOUCH_BUTTON_H + (TOUCH_CELLS.length - 1) * gap + pad
   }
 
   /**
@@ -1937,7 +1973,7 @@ function label(text: string): HTMLElement {
  * art pixel a whole number of device pixels (`touchArtScale`; overlays.ts
  * `tileCanvas` says why).
  */
-function touchArt(gd: Gamedata | null, icon: string | undefined, item: TouchLabel['item'], most = TOUCH_ART_MOST): HTMLCanvasElement | null {
+function touchArt(gd: Gamedata | null, icon: string | undefined, item: TouchLabel['item']): HTMLCanvasElement | null {
   if (!gd) return null
   const layers: { t: number; layer?: string; ymax?: number }[] = []
   if (item !== undefined) {
@@ -1948,7 +1984,7 @@ function touchArt(gd: Gamedata | null, icon: string | undefined, item: TouchLabe
     if (id !== undefined) layers.push({ t: id })
   }
   if (!layers.length) return null
-  const k = touchArtScale(most)
+  const k = touchArtScale()
   const dpr = window.devicePixelRatio || 1
   const c = h('canvas', { class: 'tile' })
   c.width = c.height = TOUCH_ART * k
@@ -1981,42 +2017,38 @@ function touchArt(gd: Gamedata | null, icon: string | undefined, item: TouchLabe
 
 /** the inside of crawl's command art, in its pixels: 28 less the frame's 1 each side */
 const TOUCH_ART = 26
-/** the least a touch bar row stands, in css px: the platforms' least touch target (Apple's 44pt) */
-const TOUCH_ROW_LEAST = 44
-/** the most a touch bar row stands beside the view, in css px: a little over what a full-size icon and its caption take (TOUCH_ART_MOST, TOUCH_CAPTION_PX) */
-const TOUCH_ROW_MOST = 64
 /** the gap between the minimap and the touch bar under it, in css px */
 const TOUCH_MAP_GAP = 4
 /**
  * what a touch button with an icon takes down besides the icon, in css px: its border and padding, the gap and
- * the caption's line at a phone's text size (styles.css .touchbar.beside .tb)
+ * the caption's line (styles.css .touchbar .tb)
  */
 const TOUCH_CAPTION_PX = 18
 /** where that inside starts in the art's 32px cell: the art's offset 2 and the frame's 1 */
 const TOUCH_ART_INSET = 3
-/** the most css px a touch icon stands, so three rows of buttons leave a phone's view its dungeon */
-const TOUCH_ART_MOST = 36
+/** the most css px a touch icon stands: what a button leaves over its caption */
+const TOUCH_ART_MOST = TOUCH_BUTTON_H - TOUCH_CAPTION_PX
 
-/** device pixels to an art pixel on the touch bar: the most that keeps an icon within `most` css px, and at least one */
-function touchArtScale(most = TOUCH_ART_MOST): number {
-  return Math.max(1, Math.floor((most * (window.devicePixelRatio || 1)) / TOUCH_ART))
+/** device pixels to an art pixel on the touch bar: the most that keeps an icon within TOUCH_ART_MOST css px, and at least one */
+function touchArtScale(): number {
+  return Math.max(1, Math.floor((TOUCH_ART_MOST * (window.devicePixelRatio || 1)) / TOUCH_ART))
 }
 
 /** each d-pad cell's arrow, as a turn of the one pointing up (`touchArrow`) */
 const TOUCH_ARROW_ROT: Partial<Record<TouchCell, number>> = { up: 0, right: 90, down: 180, left: 270 }
 
 /** An anchor with nothing to do on this screen (bindings.ts `TOUCH_ANCHORS`): its arrow or its word, dim, pressing nothing. */
-function idleTouchButton(cell: TouchCell, word: string, most: number): HTMLElement {
+function idleTouchButton(cell: TouchCell, word: string): HTMLElement {
   const arrow = TOUCH_ARROW_ROT[cell]
-  return h('span', { class: 'tb idle at-' + cell + (arrow !== undefined ? ' has-icon' : ''), 'data-cell': cell, 'aria-hidden': 'true' }, arrow !== undefined ? touchArrow(arrow, most) : label(word))
+  return h('span', { class: 'tb idle at-' + cell + (arrow !== undefined ? ' has-icon' : ''), 'data-cell': cell, 'aria-hidden': 'true' }, arrow !== undefined ? touchArrow(arrow) : label(word))
 }
 
 /**
  * A d-pad cell's arrow: a pixel arrow in the icons' own grain (their 26px,
  * drawn the same size), where a font's arrow read thin beside crawl's art.
  */
-function touchArrow(deg: number, most = TOUCH_ART_MOST): SVGSVGElement {
-  const k = touchArtScale(most)
+function touchArrow(deg: number): SVGSVGElement {
+  const k = touchArtScale()
   const side = (TOUCH_ART * k) / (window.devicePixelRatio || 1)
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
   svg.setAttribute('class', 'arrow')

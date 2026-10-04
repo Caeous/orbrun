@@ -437,6 +437,35 @@ describe('Render2d view centre', () => {
     expect(r.pick(55, 55)).toBe(cellKey(1, 1))
   })
 
+  it('stands the centred cell on the anchor, on whole pixels, for a map partly under a pane', () => {
+    const { canvas, fills } = fakeCanvas()
+    const r = new Render2d({ cellSize: 10, follow: true, mode: 'minimap' })
+    r.mount(canvas)
+    r.resize(100, 40, 1)
+    const scene = sceneWith([])
+    for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) scene.cells.set(cellKey(x, y), floor(x, y))
+    r.setScene(scene)
+    r.setCamera(makeCamera(20, 20, 0))
+    // the square at the right is 24 px, its middle at 88: the player's cell spans 83..93
+    r.setOptions({ anchor: { x: 88, y: 20 } })
+    r.render()
+    expect(r.pick(88, 20)).toBe(cellKey(20, 20))
+    expect(r.pick(82, 20)).toBe(cellKey(19, 20))
+    expect(r.pick(93, 20)).toBe(cellKey(21, 20))
+    // the map runs on to the canvas's left edge, the cell there cut
+    expect(r.pick(0, 20)).toBe(cellKey(11, 20))
+    expect(r.pick(2, 20)).toBe(cellKey(11, 20))
+    expect(r.pick(3, 20)).toBe(cellKey(12, 20))
+    // the cells are drawn on whole cells and shifted whole pixels as one (the context's translate), so none is off a pixel
+    for (const f of fills) expect(Number.isInteger(f.x) && Number.isInteger(f.y)).toBe(true)
+    expect(fills.length).toBeGreaterThanOrEqual(11 * 5)
+    // and the middle again without one
+    r.setOptions({ anchor: null })
+    r.render()
+    expect(r.pick(55, 25)).toBe(cellKey(20, 20))
+    expect(r.pick(0, 20)).toBe(cellKey(15, 20))
+  })
+
   it('centres on the part above the foot, and draws on under it', () => {
     const { canvas } = fakeCanvas()
     const r = new Render2d({ cellSize: 10, follow: true, foot: 40 })

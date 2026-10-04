@@ -2148,6 +2148,11 @@ canvas.minimap {
      blocks, not thin strokes, so they need less to sit off the view */
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
 }
+/* on a phone held upright, a band across the top of the screen (hud.ts bandFit), north up and uncut, under the stats pane,
+   on the hud itself rather than the column; the view starts under it, so it stands on black and needs no shadow */
+.hud > canvas.minimap {
+  filter: none;
+}
 /* the level map is open: the minimap has become it. Keeps its slot so the monster list holds still. */
 canvas.minimap.hidden {
   visibility: hidden;
@@ -2359,11 +2364,12 @@ canvas.minimap.hidden {
   right: 0;
   bottom: 0;
   display: grid;
-  /* bindings.ts TOUCH_CELLS: three rows of five, each button in the cell its meaning puts it in; no wider than a phone's
-     widest, the bar standing at the right on a wide screen, under the thumb that has the d-pad */
-  grid-template-columns: repeat(5, minmax(0, 88px));
+  /* bindings.ts TOUCH_CELLS: three rows of five, each button in the cell its meaning puts it in; every button one size
+     on every screen and device (console.ts TOUCH_BUTTON_W, hud.ts), the bar standing at the right, under the thumb
+     that has the d-pad, and narrower only where five of them do not fit across */
+  grid-template-columns: repeat(5, minmax(0, var(--tb-w)));
   justify-content: end;
-  grid-template-rows: repeat(3, auto);
+  grid-template-rows: repeat(3, var(--tb-h));
   gap: 6px;
   padding: 6px 8px max(8px, env(safe-area-inset-bottom, 0px));
   /* the view runs on under the bar (console.ts gameSplit `foot`), the panes stopping above it. No pan or zoom starts
@@ -2374,8 +2380,6 @@ canvas.minimap.hidden {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   z-index: 3;
-  /* the buttons' words are sized from the bar's width (.tb's font-size) */
-  container-type: inline-size;
 }
 .touchbar[hidden] {
   display: none;
@@ -2387,21 +2391,12 @@ canvas.minimap.hidden {
   padding-left: 0;
   padding-right: max(8px, env(safe-area-inset-right, 0px));
   padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
-  /* hud.ts layout stands it just under the minimap: the rows share what the map leaves, never under 44px
-     (TOUCH_ROW_LEAST), the gaps between them tighter than along the foot */
-  grid-template-rows: repeat(3, minmax(0, 1fr));
+  /* the rows closer than along the foot, for the minimap over it (hud.ts layout) */
   row-gap: 4px;
-}
-.touchbar.beside .tb {
-  min-height: 0;
-  padding: 1px 2px;
 }
 .touchbar .tb {
   position: relative;
-  /* as tall as an icon over its caption (--tb-art, hud.ts renderTouchBar) whatever this one holds, so the bar is one
-     size on every screen and only what lights up in it changes; never under 44px, the platforms' least touch target */
-  min-height: max(44px, calc(var(--tb-art, 26px) + 1em + 12px));
-  padding: 4px 2px;
+  padding: 1px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2409,9 +2404,8 @@ canvas.minimap.hidden {
   gap: 2px;
   font: inherit;
   /* the grid's own text size (host.ts --fs), so a button never reads bigger than the stats beside it; and no bigger
-     than lets "Character" fit one of five buttons across the bar (about 5.6em of a button's width less its padding),
-     nor under 10px */
-  font-size: max(10px, min(var(--fs, 12px), calc((100cqi - 40px) / 28)));
+     than lets "Character" fit a button (about 5.6em of its width less its border and padding), nor under 10px */
+  font-size: max(10px, min(var(--fs, 12px), calc((var(--tb-w) - 4px) / 5.6)));
   line-height: 1.15;
   color: var(--color-7);
   background: rgba(0, 0, 0, 0.55);
