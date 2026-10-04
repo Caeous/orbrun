@@ -5,7 +5,7 @@ import { monsterGroups } from '@orbrun/scene-webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
 import { h, clear, escapeHtml, replace, snapToPixels } from './dom'
 import { commandTileId, tileCanvas } from './overlays'
-import { CONTINUE, TOUCH_GRID, barLabels, buttonGroup, promptLabels, touchCell, type Action, type BindingLabel, type TouchLabel } from './bindings'
+import { CONTINUE, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, buttonGroup, promptLabels, type Action, type BindingLabel, type TouchCell, type TouchLabel } from './bindings'
 
 /** A tap-or-hold button down: which, and the press's length as a fraction of the hold (bindings.ts HOLD_MS). */
 export interface HoldProgress {
@@ -623,6 +623,10 @@ export class Hud {
       this.minimapCanvas.style.height = size + 'px'
       this.minimapKey = ''
     }
+    // upright, the map stands tight in the screen's top-right corner: its column starts beside the strip's status lights
+    // (gameSplit), and the map reaches out over the grid's margin to the screen's edge, as the view does (game.ts)
+    const overhang = isPortrait(host.grid) ? Math.max(0, this.root.clientWidth - sidePx.left - sidePx.width) : 0
+    this.minimapCanvas.style.marginRight = overhang ? -overhang + 'px' : ''
     // the prompts stack upward from the view's last row, their right edge on its (styles.css .actionbar.contextual);
     // under a panel they stand at its foot instead (placeBar)
     this.barCorner = { left: at.left, top: at.top, width: at.width, height: at.height }
@@ -645,7 +649,7 @@ export class Hud {
     this.touchArtMost = barBeside ? Math.min(TOUCH_ART_MOST, Math.floor(this.touchbarRow(bottom - barTop) - TOUCH_CAPTION_PX)) : TOUCH_ART_MOST
     // the action panel stands in the strip along the top between the stats pane and the minimap (grid/panel.ts), each a
     // cell's gutter away; the minimap's left edge is where it hangs from the column's right edge, not the column's own
-    const minimapLeft = this.sidebar.hidden || w === 0 ? null : sidePx.left + sidePx.width - w
+    const minimapLeft = this.sidebar.hidden || w === 0 ? null : sidePx.left + sidePx.width + overhang - w
     // a phone has no strip to spare: the panel stands nowhere, its items are a tap away in the pack
     this.panelBox = host.phone ? { left: 0, top: 0, width: 0, height: 0 } : panelSpan(this.freePx, statsRight, minimapLeft, host.grid.cw, PANEL_CELL)
     // the status strip runs leftward from the minimap's left edge, a cell's gutter away: squares STATUS_BADGE_ROWS tall,
@@ -656,8 +660,9 @@ export class Hud {
     const stripLeft = statsRight === null || isPortrait(host.grid) ? this.freePx.left : statsRight + host.grid.cw
     const besideCols = minimapLeft === null ? 0 : Math.floor((minimapLeft - host.grid.cw - stripLeft) / this.statusPx)
     if (minimapLeft === null) this.statusAt = null
-    else if (besideCols >= 1) this.statusAt = { right: minimapLeft - host.grid.cw, top: sidePx.top, below: 0 }
-    else this.statusAt = { right: sidePx.left + sidePx.width, top: sidePx.top + size + host.grid.ch, below: host.grid.ch }
+    // beside the map they keep under the strip's lights, which the map's column starts beside upright (gameSplit)
+    else if (besideCols >= 1) this.statusAt = { right: minimapLeft - host.grid.cw, top: Math.max(sidePx.top, at.top), below: 0 }
+    else this.statusAt = { right: sidePx.left + sidePx.width + overhang, top: sidePx.top + size + host.grid.ch, below: host.grid.ch }
     this.statusCols = !this.statusAt ? 1 : this.statusAt.below ? Math.max(1, Math.floor(w / this.statusPx)) : besideCols
     this.statusKey = ''
     this.trappedKey = ''
@@ -784,7 +789,10 @@ export class Hud {
    */
   private renderStats(state: GameState) {
     if (!this.cells) return
-    const { rows, prev } = statsRows(state.player, state.options, this.bars, this.cells.stats.w, this.portraitCols, !!this.host && isPortrait(this.host.grid))
+    const strip = !!this.host && isPortrait(this.host.grid)
+    // upright, the lights wrap short of the minimap's column beside them, a cell's gutter away (console.ts gameSplit)
+    const lightsRoom = strip && this.cells.sidebar.w ? this.cells.sidebar.x - 1 : this.cells.stats.w
+    const { rows, prev } = statsRows(state.player, state.options, this.bars, this.cells.stats.w, this.portraitCols, strip, lightsRoom)
     this.bars = prev
     // the canvas keeps its drawing across the move; the rows beside it left its cells blank
     replace(this.stats, this.portraitCanvas, ...rows.map((r) => paintRow(r)))
@@ -1724,10 +1732,11 @@ export class Hud {
   /**
    * The touch bar: every button the screen has (bindings.ts `touchLabels`),
    * by its word, in a block of big buttons for a player with nothing but a
-   * finger. Each stands in its own cell (bindings.ts `TOUCH_GRID`) on every
-   * screen; a cell whose button the screen lacks stays an empty outline, so
-   * nothing slides under a finger that knows where Back is, and the block
-   * keeps its size. A button is the pad's own: down and up go to the game as
+   * finger, each in its cell (bindings.ts `TOUCH_CELLS`). An anchor the
+   * screen gives nothing to do stands dim under its own word (bindings.ts
+   * `TOUCH_ANCHORS`), so Back and the arrows are where the finger knows them
+   * on every screen; any other cell left over is empty, and the block keeps
+   * its size. A button is the pad's own: down and up go to the game as
    * that button's press and release (`onTouchButton`), so a tap-or-hold one
    * (Wait, hold for Rest) waits or rests by how long the finger stays, as the
    * pad's does. Null hides it: the finger has not spoken last, or there is
@@ -1736,9 +1745,11 @@ export class Hud {
   private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null) {
     // the icons come in with the gamedata, and are drawn for the screen's density (`touchArtScale`)
     const art = (l: TouchLabel) => (gd ? '#' + (l.icon ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') : '')
-    const key = labels ? labels.map((l) => l.cell + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + art(l)).join(',') + '@' + touchArtScale(this.touchArtMost) + '/' + (window.devicePixelRatio || 1) : ''
+    const key = labels ? labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.auto ? '!' : '') + art(l)).join(',') + '@' + touchArtScale(this.touchArtMost) + '/' + (window.devicePixelRatio || 1) : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
+    // what an icon stands, for every button to stand as tall as one with an icon and a caption (styles.css .touchbar .tb)
+    this.touchbar.style.setProperty('--tb-art', (TOUCH_ART * touchArtScale(this.touchArtMost)) / (window.devicePixelRatio || 1) + 'px')
     this.touchbar.hidden = !labels?.length
     if (!labels?.length) {
       // the bar going away under a finger lets go of what it holds: its pointerup will land on nothing
@@ -1751,28 +1762,48 @@ export class Hud {
     // held to Rest. Only a button the screen took away lets go
     const was = new Map<string, HTMLElement>()
     for (const el of Array.from(this.touchbar.children) as HTMLElement[]) if (el.dataset.cell) was.set(el.dataset.cell, el)
-    for (const row of TOUCH_GRID) {
-      for (const cell of row) {
-        const l = labels.find((l) => l.cell === cell)
+    const letGo = (el: HTMLElement | undefined) => {
+      if (el?.classList.contains('down')) this.hooks.onTouchButton(el.dataset.b as Button, false)
+    }
+    let last: HTMLElement | null = null
+    for (let r = 0; r < TOUCH_CELLS.length; r++) {
+      const row: readonly TouchCell[] = TOUCH_CELLS[r]
+      // the cells still under a button that started left of them (the aim's Fire, two cells wide)
+      let under = 0
+      for (let c = 0; c < row.length; c++) {
+        const cell = row[c]
         const old = was.get(cell)
-        if (l && old?.dataset.b === l.button) {
-          this.fillTouchButton(old, cell, l, gd)
+        if (under > 0) {
+          under--
+          letGo(old)
+          old?.remove()
           continue
         }
-        if (old?.classList.contains('down')) this.hooks.onTouchButton(old.dataset.b as Button, false)
-        const at = touchCell(cell)!
-        const el = l ? this.touchButton(cell, l, gd) : h('span', { class: 'tb empty', 'data-cell': cell })
-        el.style.gridArea = at.row + 1 + ' / ' + (at.col + 1)
-        if (old) old.replaceWith(el)
-        else this.touchbar.append(el)
+        const l = labels.find((l) => l.cell === cell)
+        const covers = row.slice(c, c + (l?.span ?? 1))
+        under = covers.length - 1
+        let el: HTMLElement
+        if (l && old?.dataset.b === l.button) {
+          el = old
+          this.fillTouchButton(el, covers, l, gd)
+        } else {
+          letGo(old)
+          const idle = TOUCH_ANCHORS[cell]
+          el = l ? this.touchButton(covers, l, gd) : idle ? idleTouchButton(cell, idle, this.touchArtMost) : h('span', { class: 'tb empty', 'data-cell': cell })
+          if (old) old.replaceWith(el)
+          else if (last) last.after(el)
+          else this.touchbar.prepend(el)
+        }
+        el.style.gridArea = r + 1 + ' / ' + (c + 1) + ' / span 1 / span ' + covers.length
+        last = el
       }
     }
   }
 
-  /** A touch bar button pressing `l.button` for as long as the finger stays on it. */
-  private touchButton(cell: string, l: TouchLabel, gd: Gamedata | null): HTMLElement {
+  /** A touch bar button pressing `l.button` for as long as the finger stays on it, over the cells `covers`. */
+  private touchButton(covers: readonly TouchCell[], l: TouchLabel, gd: Gamedata | null): HTMLElement {
     const b = l.button as Button
-    const btn = h('button', { type: 'button', 'data-b': b, 'data-cell': cell })
+    const btn = h('button', { type: 'button', 'data-b': b, 'data-cell': covers[0] })
     btn.addEventListener('pointerdown', (ev) => {
       ev.preventDefault()
       // the finger may slide off before it lifts: its pointerup still comes here (a pointer the page never saw cannot be captured)
@@ -1791,18 +1822,23 @@ export class Hud {
     btn.addEventListener('pointerup', up)
     btn.addEventListener('pointercancel', up)
     btn.addEventListener('contextmenu', (ev) => ev.preventDefault())
-    this.fillTouchButton(btn, cell, l, gd)
+    this.fillTouchButton(btn, covers, l, gd)
     return btn
   }
 
-  /** What a touch bar button shows for `l`: its art, its count, its word; a press it is under stays. */
-  private fillTouchButton(btn: HTMLElement, cell: string, l: TouchLabel, gd: Gamedata | null) {
+  /**
+   * What a touch bar button shows for `l`: its art, its count, its word; a
+   * press it is under stays. It wears the names of the cells it covers
+   * (`at-select`), so one across Select's is the screen's verb as Select is
+   * (styles.css).
+   */
+  private fillTouchButton(btn: HTMLElement, covers: readonly TouchCell[], l: TouchLabel, gd: Gamedata | null) {
     // the d-pad's cells are their arrows alone; the others are their art over the word, the word being what is read last
-    const arrow = TOUCH_ARROW_ROT[cell]
+    const arrow = TOUCH_ARROW_ROT[covers[0]]
     const icon = arrow !== undefined ? touchArrow(arrow, this.touchArtMost) : touchArt(gd, l.icon, l.item, this.touchArtMost)
     // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
     const words = l.hold ? l.label + ' [' + l.hold + ']' : l.label
-    btn.className = 'tb ' + cell + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (btn.classList.contains('down') ? ' down' : '')
+    btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.auto ? ' auto' : '') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (btn.classList.contains('down') ? ' down' : '')
     btn.setAttribute('aria-label', formattedStringToText(l.label))
     const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, arrow !== undefined ? null : label(words)]
     btn.replaceChildren(...parts.filter((n): n is Element => n !== null))
@@ -1838,13 +1874,13 @@ export class Hud {
   /** What the touch bar takes down with rows `row` css px tall, in css px: its three rows, the gaps between them, its padding. */
   private touchbarSpan(row: number): number {
     const { pad, gap } = this.touchbarFrame()
-    return TOUCH_GRID.length * row + (TOUCH_GRID.length - 1) * gap + pad
+    return TOUCH_CELLS.length * row + (TOUCH_CELLS.length - 1) * gap + pad
   }
 
   /** a row's height in css px on a touch bar `height` tall */
   private touchbarRow(height: number): number {
     const { pad, gap } = this.touchbarFrame()
-    return (height - pad - (TOUCH_GRID.length - 1) * gap) / TOUCH_GRID.length
+    return (height - pad - (TOUCH_CELLS.length - 1) * gap) / TOUCH_CELLS.length
   }
 
   /**
@@ -1967,7 +2003,13 @@ function touchArtScale(most = TOUCH_ART_MOST): number {
 }
 
 /** each d-pad cell's arrow, as a turn of the one pointing up (`touchArrow`) */
-const TOUCH_ARROW_ROT: Partial<Record<string, number>> = { DU: 0, DR: 90, DD: 180, DL: 270 }
+const TOUCH_ARROW_ROT: Partial<Record<TouchCell, number>> = { up: 0, right: 90, down: 180, left: 270 }
+
+/** An anchor with nothing to do on this screen (bindings.ts `TOUCH_ANCHORS`): its arrow or its word, dim, pressing nothing. */
+function idleTouchButton(cell: TouchCell, word: string, most: number): HTMLElement {
+  const arrow = TOUCH_ARROW_ROT[cell]
+  return h('span', { class: 'tb idle at-' + cell + (arrow !== undefined ? ' has-icon' : ''), 'data-cell': cell, 'aria-hidden': 'true' }, arrow !== undefined ? touchArrow(arrow, most) : label(word))
+}
 
 /**
  * A d-pad cell's arrow: a pixel arrow in the icons' own grain (their 26px,

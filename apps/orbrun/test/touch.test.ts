@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { TOUCH_GRID, barLabels, NO_ACTION, touchCell, touchLabels, touchShot } from '../src/bindings'
+import { TOUCH_ANCHORS, TOUCH_CELLS, barLabels, NO_ACTION, touchLabels, touchShot, type BindingLabel, type TouchCell, type TouchLabel } from '../src/bindings'
 import { PHONE_COLS, PHONE_ROWS, fitPx } from '../src/grid/host'
 import type { Context, MenuContext } from '../src/context'
 import { STAT_WIDTH, STRIP_ROWS, TOUCH_SIDE_PX, fitGrid, gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from '../src/grid/console'
@@ -16,49 +16,190 @@ const ctx = (over: Partial<Context>): Context => ({
   ...over,
 })
 
-describe('the touch bar has every button the screen has, by its word', () => {
-  it('on the map: the commands, the arrows, Escape and L3, without Start and Select (the stats pane and the minimap open theirs), a do-nothing A, or R3 (a hold on the view is R3)', () => {
-    const c = ctx({})
-    const labels = touchLabels(barLabels(c), c)
-    const buttons = labels.map((l) => l.button)
-    expect(buttons).toEqual(expect.arrayContaining(['X', 'Y', 'LB', 'RB', 'LT', 'RT', 'DU', 'DL', 'DD', 'DR', 'B', 'L3']))
-    for (const b of ['START', 'SELECT', 'R3']) expect(buttons).not.toContain(b)
-    expect(labels.some((l) => l.label === NO_ACTION)).toBe(false)
-    expect(labels.find((l) => l.button === 'LT')?.label).toBe('Explore')
+const stairs = ctx({ under: { kind: 'feature', feature: { type: 'stairs', dir: 'down' }, label: 'stairs' } })
+const menu = (over: Partial<MenuContext>, tag = 'pickup'): Context =>
+  ctx({ mode: 'menu', menu: { menu: { tag, items: [], flags: 0 }, hoverable: [], ...over } as unknown as MenuContext })
+
+/** the touch bar as the user draws it: what `pick` says of the button in each cell, '·' for none; a button two cells wide is in both */
+function drawn(c: Context, pick: (l: TouchLabel) => string = (l) => l.button, labels: readonly BindingLabel[] = barLabels(c), panel = false): string[][] {
+  const by = new Map<TouchCell, TouchLabel>()
+  for (const l of touchLabels(labels, c, panel)) {
+    const row: readonly TouchCell[] = TOUCH_CELLS.find((r) => (r as readonly TouchCell[]).includes(l.cell))!
+    for (let k = 0; k < (l.span ?? 1); k++) by.set(row[row.indexOf(l.cell) + k], l)
+  }
+  return TOUCH_CELLS.map((row) => row.map((cell) => (by.has(cell) ? pick(by.get(cell)!) : '·')))
+}
+const words = (c: Context) => drawn(c, (l) => l.label)
+const cellOf = (c: Context, button: string) => touchLabels(barLabels(c), c).find((l) => l.button === button)?.cell
+
+describe('the touch bar: every screen one keypad', () => {
+  it('Back in the bottom-left corner, the arrows an upturned T, Examine and the verb along the top: the anchors, on every screen', () => {
+    expect(TOUCH_CELLS[2][0]).toBe('esc')
+    expect([TOUCH_CELLS[1][2], ...TOUCH_CELLS[2].slice(1, 4)]).toEqual(['up', 'left', 'down', 'right'])
+    expect([TOUCH_CELLS[0][2], TOUCH_CELLS[0][4]]).toEqual(['examine', 'select'])
+    expect(Object.keys(TOUCH_ANCHORS).sort()).toEqual(['down', 'esc', 'examine', 'left', 'right', 'select', 'up'])
+  })
+  const screens: [string, Context][] = [
+    ['the map', ctx({})],
+    ['stairs underfoot', stairs],
+    ['a --more--', ctx({ mode: 'more', moreText: '--more--' })],
+    ['an aim', ctx({ mode: 'targeting', hostilesInView: 2, aimQuiver: true })],
+    ['look mode', ctx({ mode: 'targeting', examining: { label: 'goblin' } as Context['examining'], monstersInView: 2 })],
+    ['the level map', ctx({ mode: 'levelmap' })],
+    ['the level map on you', ctx({ mode: 'levelmap', mapCursorHome: true })],
+    ['a popup', ctx({ mode: 'popup', pageable: true })],
+    ['a yes/no', ctx({ mode: 'yesno' })],
+    ['typing', ctx({ mode: 'text' })],
+    ['a spectator', ctx({ mode: 'spectating' })],
+    ['a multiselect menu', menu({ multiselect: true, anyMarked: true })],
+    ['a menu with nothing marked', menu({ multiselect: true, anyMarked: false })],
+    ['the pack', ctx({ ...menu({ sections: true }, 'inventory'), pageable: true })],
+    ['the shop', menu({ shop: { canBuy: true, anyMarked: true, anyListed: false, mode: 'buy' } } as unknown as Partial<MenuContext>, 'shop')],
+  ]
+  for (const [name, c] of screens) {
+    it(name + ': one button a cell, and Back and the arrows where the finger knows them', () => {
+      const labels = touchLabels(barLabels(c), c)
+      const flat = drawn(c).flat().filter((b) => b !== '·')
+      // a button two cells wide is the one button
+      expect(new Set(labels.map((l) => l.cell)).size).toBe(labels.length)
+      expect(flat.length).toBe(labels.reduce((n, l) => n + (l.span ?? 1), 0))
+      const anchors: Record<string, TouchCell> = { B: 'esc', DU: 'up', DL: 'left', DD: 'down', DR: 'right' }
+      for (const l of labels) if (anchors[l.button]) expect(l.cell).toBe(anchors[l.button])
+      expect(labels.some((l) => l.label === NO_ACTION)).toBe(false)
+    })
+  }
+})
+
+describe('the screens drawn cell by cell', () => {
+  it('the map, as the user drew it: Wait over Explore, the shot over Fight, the verb over Spells and Gear', () => {
+    expect(drawn(stairs)).toEqual([
+      ['·', 'LB', 'L3', 'RB', 'A'],
+      ['·', 'LT', 'DU', 'RT', 'X'],
+      ['B', 'DL', 'DD', 'DR', 'Y'],
+    ])
+    expect(words(stairs)).toEqual([
+      ['·', 'Wait', 'Examine', 'Fire', 'Descend'],
+      ['·', 'Explore', '↑', 'Fight', 'Spells'],
+      ['Cancel', '←', '↓', '→', 'Gear'],
+    ])
     // a finger holds as a thumb does: Wait, hold for Rest
-    expect(labels.find((l) => l.button === 'LB')?.hold).toBeTruthy()
+    expect(touchLabels(barLabels(stairs), stairs).find((l) => l.button === 'LB')?.hold).toBe('Rest')
   })
-  it('stairs underfoot put A on the bar, named for them', () => {
-    const c = ctx({ under: { kind: 'feature', feature: { type: 'stairs', dir: 'down' }, label: 'stairs' } })
-    expect(touchLabels(barLabels(c), c).find((l) => l.button === 'A')?.label).toBe('Descend')
+  it('on the map with nothing to act on, the verb\'s cell is left to its anchor; Start, Select and R3 have none (the stats pane, the minimap, a hold on the view)', () => {
+    const labels = touchLabels(barLabels(ctx({})), ctx({}))
+    expect(drawn(ctx({}))[0][4]).toBe('·')
+    for (const b of ['A', 'START', 'SELECT', 'R3']) expect(labels.some((l) => l.button === b)).toBe(false)
   })
-  it('B stands on every screen: a panel of ours up over the map, and the map itself', () => {
-    const c = ctx({})
-    const back = { button: 'B' as const, label: 'Back', action: { kind: 'keys' as const, label: 'Back', seq: [] }, contextual: false }
-    expect(touchLabels([back], c, true).find((l) => l.cell === 'B')?.label).toBe('Back')
-    expect(touchLabels([back], c).find((l) => l.cell === 'B')?.label).toBe('Back')
+  it('an aim keeps the map\'s shape: Fire stands in the shot\'s cell and across Select\'s, so the shot tapped twice is f f', () => {
+    const aim = ctx({ mode: 'targeting', hostilesInView: 2, aimQuiver: true, readiedAction: 'Throw: 23 darts', readiedTile: 7 })
+    expect(drawn(aim)).toEqual([
+      ['·', '·', 'X', 'RB', 'RB'],
+      ['·', 'LB', 'DU', 'Y', '·'],
+      ['B', 'DL', 'DD', 'DR', '·'],
+    ])
+    expect(cellOf(aim, 'RB')).toBe(cellOf(ctx({}), 'RB'))
+    // the darts drawn as on the map's button, under the aim's own word
+    expect(touchLabels(barLabels(aim), aim).find((l) => l.button === 'RB')).toMatchObject({ label: 'Fire', item: 7, count: 23, span: 2 })
+    // a spell's aim has no shot to draw, nor one to cycle
+    const spell = ctx({ mode: 'targeting', hostilesInView: 1, readiedAction: 'Throw: 23 darts', readiedTile: 7 })
+    expect(drawn(spell)[1]).toEqual(['·', '·', 'DU', '·', '·'])
+    expect(touchLabels(barLabels(spell), spell).find((l) => l.button === 'RB')?.item).toBeUndefined()
   })
-  it('Start and Select come back off the map: on a panel of ours over it, and on the level map', () => {
-    const start = { button: 'START' as const, label: 'Close', action: { kind: 'keys' as const, label: 'Close', seq: [] }, contextual: false }
-    expect(touchLabels([start], ctx({}), true).some((l) => l.cell === 'START')).toBe(true)
-    const c = ctx({ mode: 'levelmap' })
-    expect(touchLabels(barLabels(c), c).map((l) => l.button)).toEqual(expect.arrayContaining(['SELECT', 'B']))
+  it('look mode: Examine, tapped again, describes what the cursor rests on; travel there is the verb; the next item and monster flank the up arrow', () => {
+    const look = ctx({ mode: 'targeting', examining: { label: 'goblin' } as Context['examining'], monstersInView: 2 })
+    expect(drawn(look)).toEqual([
+      ['·', '·', 'A', '·', 'X'],
+      ['·', 'RT', 'DU', 'RB', '·'],
+      ['B', 'DL', 'DD', 'DR', '·'],
+    ])
+    expect(cellOf(look, 'A')).toBe(cellOf(ctx({}), 'L3'))
   })
-  it('a spectator has B and Start, the Orbrun menu with Stop watching on it: the one way out on a phone', () => {
+  it('the level map, as the user drew it: zoom down the left, the stairs down the right, travel and the search at the edge', () => {
+    const map = ctx({ mode: 'levelmap' })
+    expect(drawn(map)).toEqual([
+      ['·', 'RT', 'X', 'LB', 'A'],
+      ['·', 'LT', 'DU', 'RB', 'Y'],
+      ['B', 'DL', 'DD', 'DR', 'L3'],
+    ])
+    expect(words(map)[0]).toEqual(['·', 'Zoom in', 'Describe', 'Up stairs', 'Travel here'])
+    expect(words(map)[1]).toEqual(['·', 'Zoom out', '↑', 'Down stairs', 'Find you'])
+    // on you there is nowhere to travel to here, and Y travels further
+    const home = ctx({ mode: 'levelmap', mapCursorHome: true })
+    expect(drawn(home)[0][4]).toBe('·')
+    expect(words(home)[1][4]).toBe('Travel to…')
+  })
+  it('what goes on by itself, turn after turn, is marked: explore, fight and travel', () => {
+    const auto = (c: Context) => touchLabels(barLabels(c), c).filter((l) => l.auto).map((l) => l.button).sort()
+    expect(auto(stairs)).toEqual(['LT', 'RT'])
+    expect(auto(ctx({ mode: 'levelmap' }))).toEqual(['A'])
+    expect(auto(ctx({ mode: 'levelmap', mapCursorHome: true }))).toEqual(['Y'])
+    expect(auto(ctx({ mode: 'targeting', examining: { label: 'goblin' } as Context['examining'] }))).toEqual(['X'])
+    expect(auto(ctx({ mode: 'targeting', hostilesInView: 2 }))).toEqual([])
+  })
+})
+
+describe('a screen with no layout of its own keeps its few buttons together', () => {
+  it('a --more--: Continue in the verb\'s cell, Skip in Back\'s, and nothing else', () => {
+    const c = ctx({ mode: 'more', moreText: '--more--' })
+    expect(words(c)).toEqual([
+      ['·', '·', '·', '·', 'Continue'],
+      ['·', '·', '·', '·', '·'],
+      ['Skip', '·', '·', '·', '·'],
+    ])
+  })
+  it('a yes/no: Yes in the verb\'s cell, No in Back\'s, Always under Yes', () => {
+    const c = ctx({ mode: 'yesno', prompt: { text: 'Really?', yesno: true, options: [{ hotkey: 'Y', label: 'Yes' }, { hotkey: 'N', label: 'No' }, { hotkey: 'A', label: 'Always' }] } as Context['prompt'] })
+    expect(words(c)).toEqual([
+      ['·', '·', '·', '·', 'Yes'],
+      ['·', '·', '·', '·', 'Always'],
+      ['No', '·', '·', '·', '·'],
+    ])
+  })
+  it('a multiselect menu: A marks the lit row, accepting stands under it, then the rest down the edge and beside the arrow', () => {
+    expect(drawn(menu({ multiselect: true, anyMarked: true }))).toEqual([
+      ['·', '·', 'X', '·', 'A'],
+      ['·', 'LT', 'DU', 'L3', 'START'],
+      ['B', 'DL', 'DD', 'DR', 'R3'],
+    ])
+  })
+  it('the pack: describing the lit row is Examine; the bumpers that turn its pages are off, a finger taps the tabs', () => {
+    const pack = ctx({ ...menu({ sections: true }, 'inventory'), pageable: true })
+    expect(barLabels(pack).some((l) => l.button === 'LB' || l.button === 'RB')).toBe(true)
+    expect(drawn(pack)[0]).toEqual(['·', '·', 'X', '·', 'A'])
+    expect(drawn(pack).flat()).not.toContain('LB')
+  })
+  it('a keyboard: Shift and Space either side of Examine, Done under the key, Backspace under that; one Done and one Cancel', () => {
+    expect(words(ctx({ mode: 'text' }))).toEqual([
+      ['·', 'Shift', '·', 'Space', 'Type'],
+      ['·', '·', '↑', '·', 'Done'],
+      ['Cancel', '←', '↓', '→', 'Backspace'],
+    ])
+  })
+  it('the bumpers stand nowhere else: menus, tabs and popups turn by a tap', () => {
+    for (const c of [menu({ sections: true } as Partial<MenuContext>, 'inventory'), menu({ pack: { next: 1 } } as unknown as Partial<MenuContext>, 'inventory'), menu({ actions: true } as unknown as Partial<MenuContext>, 'inventory'), ctx({ mode: 'popup', pageable: true })]) {
+      expect(touchLabels(barLabels({ ...c, pageable: true }), { ...c, pageable: true }).some((l) => l.button === 'LB' || l.button === 'RB')).toBe(false)
+    }
+  })
+  it('a spectator: Back opens the Orbrun menu, Stop watching on it, the one way out on a phone', () => {
     const c = ctx({ mode: 'spectating' })
     const labels = touchLabels(barLabels(c), c)
-    for (const b of ['B', 'START']) expect(labels.find((l) => l.button === b)?.action).toEqual({ kind: 'ui', op: 'system' })
+    expect(labels.find((l) => l.cell === 'esc')?.action).toEqual({ kind: 'ui', op: 'system' })
+    // Start opens the same: once is enough
+    expect(labels.filter((l) => l.action.kind === 'ui' && l.action.op === 'system')).toHaveLength(1)
   })
-  it('a --more-- has its own A, and no arrows', () => {
-    const c = ctx({ mode: 'more' })
-    const labels = touchLabels(barLabels(c), c)
-    expect(labels.find((l) => l.button === 'A')?.label).toBe('--more--')
-    expect(labels.some((l) => l.cell.startsWith('D'))).toBe(false)
+  it('a panel of ours over the map is no map: its own buttons by the same rule, Back in Back\'s cell, its tabs a tap', () => {
+    const lab = (button: BindingLabel['button'], label: string): BindingLabel => ({ button, label, action: { kind: 'keys', label, seq: [] }, contextual: false })
+    const panel = [lab('A', 'Save'), lab('B', 'Back'), lab('RB', 'Next tab'), lab('START', 'Close')]
+    expect(drawn(ctx({}), (l) => l.label, panel, true)).toEqual([
+      ['·', '·', '·', '·', 'Save'],
+      ['·', '·', '↑', '·', 'Close'],
+      ['Back', '←', '↓', '→', '·'],
+    ])
   })
 })
 
 describe('the touch bar wears crawl’s command icons where a button always means one command', () => {
-  const icons = (c: Context, panel = false) => Object.fromEntries(touchLabels(barLabels(c), c, panel).map((l) => [l.cell, l.icon]))
+  const icons = (c: Context, panel = false) => Object.fromEntries(touchLabels(barLabels(c), c, panel).map((l) => [l.button, l.icon]))
   // the GUI atlas's names, as the server's tileinfo-gui.js lists them
   const gui = readFileSync(new URL('../../../packages/scene-webtiles/test/fixtures/gamedata/acd3d60e20f899c1c8a546953d6ffa0f6c7fe0c8/tileinfo-gui.js', import.meta.url), 'utf8')
   const inAtlas = (name: string) => gui.includes('exports.' + name + ' = ')
@@ -67,12 +208,11 @@ describe('the touch bar wears crawl’s command icons where a button always mean
     expect(icons(ctx({}))).toMatchObject({ LT: 'CMD_EXPLORE', RT: 'CMD_AUTOFIGHT', LB: 'CMD_WAIT', L3: 'CMD_LOOKUP_HELP', X: 'CMD_CAST_SPELL', Y: 'CMD_DISPLAY_INVENTORY' })
   })
   it('on the map, what changes with the situation has none: A, and the arrows (drawn by the bar itself)', () => {
-    const c = ctx({ under: { kind: 'feature', feature: { type: 'stairs', dir: 'down' }, label: 'stairs' } })
-    for (const b of ['A', 'B', 'DU']) expect(icons(c)[b]).toBeUndefined()
+    for (const b of ['A', 'B', 'DU']) expect(icons(stairs)[b]).toBeUndefined()
   })
   it('the shot on RB wears what is quivered: an item by its verb and count, a spell by its name', () => {
     const c = ctx({ readiedAction: 'Drink: 3 potions of curing', readiedTile: [1234] })
-    expect(touchLabels(barLabels(c), c).find((l) => l.cell === 'RB')).toMatchObject({ label: 'Drink', item: [1234], count: 3 })
+    expect(touchLabels(barLabels(c), c).find((l) => l.button === 'RB')).toMatchObject({ label: 'Drink', item: [1234], count: 3 })
     expect(touchShot('Throw: a boomerang', 7)).toEqual({ label: 'Throw', item: 7 })
     expect(touchShot('Cast: Magic Dart', undefined)).toEqual({ label: 'Magic Dart', icon: 'CMD_CAST_SPELL' })
     expect(touchShot('Fire', undefined)).toEqual({ label: 'Fire' })
@@ -88,48 +228,6 @@ describe('the touch bar wears crawl’s command icons where a button always mean
   it('every icon is one crawl’s GUI atlas has', () => {
     const all = [ctx({}), ctx({ mode: 'levelmap' }), ctx({ mode: 'levelmap', mapCursorHome: true })].flatMap((c) => Object.values(icons(c)).filter((x): x is string => !!x))
     for (const name of all) expect(inAtlas(name), name).toBe(true)
-  })
-})
-
-describe('every touch button has one cell, on every screen', () => {
-  const menu = (over: Partial<MenuContext>): Context => ctx({ mode: 'menu', menu: { menu: { tag: 'pickup', items: [], flags: 0 }, hoverable: [], multiselect: true, anyMarked: true, ...over } as unknown as MenuContext })
-  const screens: [string, Context][] = [
-    ['the map', ctx({})],
-    ['stairs underfoot', ctx({ under: { kind: 'feature', feature: { type: 'stairs', dir: 'down' }, label: 'stairs' } })],
-    ['a --more--', ctx({ mode: 'more' })],
-    ['an aim', ctx({ mode: 'targeting', hostilesInView: 2 })],
-    ['look mode', ctx({ mode: 'targeting', examining: { label: 'goblin' } as Context['examining'] })],
-    ['the level map', ctx({ mode: 'levelmap' })],
-    ['a popup', ctx({ mode: 'popup' })],
-    ['a yes/no', ctx({ mode: 'yesno' })],
-    ['typing', ctx({ mode: 'text' })],
-    ['a multiselect menu', menu({})],
-    ['a menu with nothing marked', menu({ anyMarked: false })],
-  ]
-  for (const [name, c] of screens) {
-    it(name + ': each button in its own cell (TOUCH_GRID), no two in one', () => {
-      const labels = touchLabels(barLabels(c), c)
-      const cells = labels.map((l) => l.cell)
-      expect(new Set(cells).size).toBe(cells.length)
-      for (const l of labels) {
-        expect(touchCell(l.cell)).not.toBeNull()
-        expect(l.cell).toBe(l.button)
-      }
-    })
-  }
-  it('in a menu where Start takes what is marked, Start keeps its own cell, and A its own', () => {
-    const labels = touchLabels(barLabels(menu({})), menu({}))
-    expect(labels.find((l) => l.cell === 'START')?.button).toBe('START')
-    expect(labels.find((l) => l.cell === 'A')?.button).toBe('A')
-  })
-  it('the top row reads A, B, LB, RB after Start; Start, Select and L3 down the left', () => {
-    expect(TOUCH_GRID[0]).toEqual(['START', 'A', 'B', 'LB', 'RB'])
-    expect(['START', 'SELECT', 'L3'].map((b) => touchCell(b as never))).toEqual([{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }])
-  })
-  it('the grid is fifteen cells, each button once', () => {
-    const all = TOUCH_GRID.flat()
-    expect(all).toHaveLength(15)
-    expect(new Set(all).size).toBe(15)
   })
 })
 
@@ -172,13 +270,16 @@ describe('the layout on a phone', () => {
     expect(isPortrait(phone)).toBe(true)
     const l = gameSplit(phone, 5, undefined, 0, 0, undefined, 20)
     expect(l.stats).toEqual({ x: 0, y: 0, w: phone.cols, h: STRIP_ROWS })
-    // the map's column is as wide as it is given (hud.ts portraitMapCols), at the right edge, under the strip
-    expect(l.sidebar).toMatchObject({ x: phone.cols - 20, y: STRIP_ROWS, w: 20 })
+    // the map's column is as wide as it is given (hud.ts portraitMapCols), at the right edge, under the strip's printed
+    // rows, in the view's top-right corner beside the status lights' row
+    expect(l.sidebar).toMatchObject({ x: phone.cols - 20, y: STRIP_ROWS - 1, w: 20 })
+    expect(l.sidebar.y).toBe(l.view.y)
     expect(l.sidebar.y + l.sidebar.h).toBe(l.messages.y)
     // what no pane covers: under the strip, left of the column, above the messages
-    expect(l.clear).toEqual({ x: 0, y: STRIP_ROWS, w: phone.cols - 20, h: l.sidebar.h })
+    expect(l.clear).toEqual({ x: 0, y: STRIP_ROWS, w: phone.cols - 20, h: l.sidebar.h - 1 })
     expect(l.messages.w).toBe(phone.cols)
-    expect(l.view).toEqual({ x: 0, y: 0, w: phone.cols, h: phone.rows })
+    // the view starts below the strip's printed rows rather than behind them: its status lights' row stands over its top edge
+    expect(l.view).toEqual({ x: 0, y: STRIP_ROWS - 1, w: phone.cols, h: phone.rows - STRIP_ROWS + 1 })
   })
   it('a desktop window of the same shape keeps its panes side by side: the stack is a phone\'s', () => {
     const narrow = fitGrid(390, 844, 9.6, 19)
@@ -195,29 +296,34 @@ describe('the layout on a phone', () => {
     expect(levelMapSplit(laptop, wide, {}).w).toBe(wide.clear.w)
   })
   it('the touch bar keeps its rows at the foot: the messages end above them, the view runs on under the buttons', () => {
+    const l = gameSplit(laptop, 5, undefined, 8)
+    expect(l.messages.y + l.messages.h).toBe(laptop.rows - 8)
+    expect(l.view.h).toBe(laptop.rows)
+  })
+  it('upright, the view stands between the stats strip and the touch bar, under neither', () => {
     const l = gameSplit(phone, 5, undefined, 8)
     expect(l.messages.y + l.messages.h).toBe(phone.rows - 8)
-    expect(l.view.h).toBe(phone.rows)
+    expect(l.view).toEqual({ x: 0, y: STRIP_ROWS - 1, w: phone.cols, h: phone.rows - 8 - STRIP_ROWS + 1 })
   })
   it('the level map grown over the messages runs on under the touch bar, its edges kept above it', () => {
     const l = gameSplit(phone, 5, undefined, 8)
     const map = levelMapSplit(phone, l, { hideMessages: true })
     expect(map.h).toBe(phone.rows - 8)
-    expect(levelMapCanvas(l, map, false)).toEqual({ x: 0, y: 0, w: phone.cols, h: phone.rows })
+    expect(levelMapCanvas(l, map, false, phone.rows)).toEqual({ x: 0, y: 0, w: phone.cols, h: phone.rows })
     // with the messages between, the map stops above them, as it was
     const above = levelMapSplit(phone, l, {})
-    expect(levelMapCanvas(l, above, false)).toEqual(above)
+    expect(levelMapCanvas(l, above, false, phone.rows)).toEqual(above)
     // no bar: the official layout
     const wide = gameSplit(laptop, 5)
-    expect(levelMapCanvas(wide, levelMapSplit(laptop, wide, { hideMessages: true }), false)).toEqual({ x: 0, y: 0, w: wide.clear.w, h: laptop.rows })
+    expect(levelMapCanvas(wide, levelMapSplit(laptop, wide, { hideMessages: true }), false, laptop.rows)).toEqual({ x: 0, y: 0, w: wide.clear.w, h: laptop.rows })
   })
   it('on its side, the level map runs on under the touch bar\'s column', () => {
     const side = fitGrid(844, 390, 13.2, 17)
     const l = gameSplit(side, 5, undefined, 0, 6)
     const map = levelMapSplit(side, l, { hideMessages: true })
     expect(map.w).toBe(l.clear.w)
-    expect(levelMapCanvas(l, map, true)).toEqual({ x: 0, y: 0, w: side.cols, h: side.rows })
-    expect(levelMapCanvas(l, levelMapSplit(side, l, {}), true)).toEqual(levelMapSplit(side, l, {}))
+    expect(levelMapCanvas(l, map, true, side.rows)).toEqual({ x: 0, y: 0, w: side.cols, h: side.rows })
+    expect(levelMapCanvas(l, levelMapSplit(side, l, {}), true, side.rows)).toEqual(levelMapSplit(side, l, {}))
   })
   it('on its side, the touch bar stands at the right column\'s foot and the view keeps its height', () => {
     // an iPhone 14 on its side at a phone's text size (host.ts PHONE_COLS)

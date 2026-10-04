@@ -598,67 +598,205 @@ function buildBarLabels(ctx: Context): BindingLabel[] {
 
 /**
  * The touch bar's fifteen cells, row by row from the top (hud.ts
- * `renderTouchBar`). Every button keeps its cell on every screen, and a
- * button a screen does not have leaves its cell empty rather than letting
- * another slide in: the finger learns where Back is once. The top row reads
- * A, B, then the bumpers; the d-pad's four make an arrow cluster at the
- * right edge beneath them; the middle buttons and a stick click stand in
- * a column of their own at the left, Start over Select over L3. The other
- * stick click has no cell: a hold on the view is R3 (game.ts), and L3 is
- * the one that differs from it where they differ (the palette in a menu,
- * Find on the level map).
+ * `renderTouchBar`), named for what the map puts in them. A button stands
+ * where its meaning puts it, not where the pad button it presses is: glass
+ * has no feel, so a button's place and its word are all a finger has. Seven
+ * cells hold the same thing on every screen (`TOUCH_ANCHORS`); the rest are
+ * the screen's own (`touchLayout`, or `GENERIC_HOME` and `GENERIC_FREE`).
+ * Start and Select have no cell on the map (a tap on the stats pane opens
+ * what Start does, a tap on the minimap the level map), nor R3 (a hold on
+ * the view, game.ts).
  */
-export const TOUCH_GRID: readonly (readonly Button[])[] = [
-  ['START', 'A', 'B', 'LB', 'RB'],
-  ['SELECT', 'X', 'LT', 'DU', 'RT'],
-  ['L3', 'Y', 'DL', 'DD', 'DR'],
+export const TOUCH_CELLS = [
+  ['corner', 'wait', 'examine', 'quiver', 'select'],
+  ['spare', 'explore', 'up', 'fight', 'actions'],
+  ['esc', 'left', 'down', 'right', 'gear'],
+] as const
+
+export type TouchCell = (typeof TOUCH_CELLS)[number][number]
+
+export function isTouchCell(s: string): s is TouchCell {
+  return TOUCH_CELLS.some((row) => (row as readonly string[]).includes(s))
+}
+
+/**
+ * The cells that are for the same thing on every screen: Back in the
+ * bottom-left corner, the arrows an upturned T, Examine in the middle of the
+ * top row and the screen's verb at its end. Where the screen gives one
+ * nothing to do it stands dim under this word (hud.ts), so every screen is
+ * one keypad's shape and only what lights up changes.
+ */
+export const TOUCH_ANCHORS: Partial<Record<TouchCell, string>> = { esc: 'Back', up: '↑', left: '←', down: '↓', right: '→', examine: 'Examine', select: 'Select' }
+
+/**
+ * A touch bar button: the binding it presses (`button`), standing in `cell`
+ * and the `span` - 1 cells right of it, with crawl's command icon by name
+ * (`icon`) or an item's own tile (`item`) over the word, and how many of it
+ * (`count`). `auto`: it goes on by itself, turn after turn (`runsOn`).
+ */
+export type TouchLabel = BindingLabel & { cell: TouchCell; span?: number; icon?: string; item?: InvItem['tile']; count?: number; auto?: boolean }
+
+type TouchLayout = readonly (readonly (Button | null)[])[]
+
+/**
+ * The map, cell by cell as the user drew it: the passing of time left of the
+ * arrows (Wait over Explore), the attacks right of them (the shot over
+ * Fight), and at the edge the verb over the two screens X and Y open.
+ */
+const MAP_LAYOUT: TouchLayout = [
+  [null, 'LB', 'L3', 'RB', 'A'],
+  [null, 'LT', 'DU', 'RT', 'X'],
+  ['B', 'DL', 'DD', 'DR', 'Y'],
 ]
 
-/** A button's cell on the touch bar (`TOUCH_GRID`), from the top left; null for one that has none. */
-export function touchCell(b: Button): { row: number; col: number } | null {
-  for (let row = 0; row < TOUCH_GRID.length; row++) {
-    const col = TOUCH_GRID[row].indexOf(b)
-    if (col >= 0) return { row, col }
-  }
+/**
+ * An aim keeps the map's shape. The shot's cell fires, so the shot tapped
+ * twice is `f f`; A fires too, and the two cells side by side are one
+ * button across both. The next target and the next shot stand either side
+ * of the up arrow, the shot's under the shot.
+ */
+const AIM_LAYOUT: TouchLayout = [
+  [null, null, 'X', 'RB', 'RB'],
+  [null, 'LB', 'DU', 'Y', null],
+  ['B', 'DL', 'DD', 'DR', null],
+]
+
+/**
+ * Look mode: Examine, tapped again, describes what the cursor rests on, and
+ * the screen's verb is travel there. The next item and the next monster
+ * stand either side of the up arrow (the cycles wrap: one way is enough).
+ */
+const LOOK_LAYOUT: TouchLayout = [
+  [null, null, 'A', null, 'X'],
+  [null, 'RT', 'DU', 'RB', null],
+  ['B', 'DL', 'DD', 'DR', null],
+]
+
+/** The level map, as the user drew it: zoom down the left, the stairs down the right, travel and the search at the edge. */
+const LEVELMAP_LAYOUT: TouchLayout = [
+  [null, 'RT', 'X', 'LB', 'A'],
+  [null, 'LT', 'DU', 'RB', 'Y'],
+  ['B', 'DL', 'DD', 'DR', 'L3'],
+]
+
+/** The screen's own layout, or null for one that places its buttons by the generic rule. A panel of ours over the map is no map. */
+function touchLayout(ctx: Context, panel: boolean): TouchLayout | null {
+  if (panel) return null
+  if (ctx.mode === 'command') return MAP_LAYOUT
+  if (ctx.mode === 'targeting') return ctx.examining ? LOOK_LAYOUT : AIM_LAYOUT
+  if (ctx.mode === 'levelmap') return LEVELMAP_LAYOUT
   return null
 }
 
 /**
- * A touch bar button: the binding it presses (`button`), standing in that
- * button's cell (`cell`), with crawl's command icon by name (`icon`) or an
- * item's own tile (`item`) over the word, and how many of it (`count`).
+ * Where a screen without a layout of its own puts a button: Back, the arrows
+ * and A in their anchors, the triggers either side of the up arrow and the
+ * bumpers either side of Examine, as on the map.
  */
-export type TouchLabel = BindingLabel & { cell: Button; icon?: string; item?: InvItem['tile']; count?: number }
+const GENERIC_HOME: Partial<Record<Button, TouchCell>> = { B: 'esc', A: 'select', DU: 'up', DL: 'left', DD: 'down', DR: 'right', LT: 'explore', RT: 'fight', LB: 'wait', RB: 'quiver' }
+/** the buttons with no home there, in the order they take `GENERIC_FREE` */
+const GENERIC_REST: readonly Button[] = ['START', 'Y', 'X', 'R3', 'L3', 'SELECT']
+/** what is left, down the right edge under A first, so a screen of a few buttons keeps them beside the one it is for */
+const GENERIC_FREE: readonly TouchCell[] = ['actions', 'gear', 'explore', 'fight', 'wait', 'quiver', 'spare', 'corner']
 
 /**
  * The touch bar's buttons (hud.ts `renderTouchBar`): the bindings as the bar
- * lists them (`barLabels`, or a panel of ours' own) that have a cell
- * (`TOUCH_GRID`), each in its own, less what a finger has no use for: a
- * button that does nothing here, and Start and Select on the map itself (a
- * tap on the stats pane opens what Start does, a tap on the minimap the level
- * map). B stands on every screen, the map's too. `panel`: the labels are a
- * panel of ours' (Overlays.padPrompts), up over the map: the map's rules are
- * not theirs. The d-pad's arrows are added wherever the
- * d-pad moves something (it is no binding of the tables, see `resolve`). The
- * loop's two buttons go by the short word (`TOUCH_WORDS`): a button is read
- * at a glance.
+ * lists them (`barLabels`, or a panel of ours' own), each in its cell, less
+ * what a finger has no use for: a button that does nothing here, and one the
+ * screen has no cell for. The map, an aim, look mode and the level map have
+ * a layout each (`touchLayout`); every other screen places its buttons by
+ * one rule (`GENERIC_HOME`), and there the bumpers stand only on a keyboard,
+ * whose Shift has no key of its own (the tabs and pages they turn elsewhere
+ * are a finger's to tap and scroll), the palette only in a crawl menu, and a
+ * button that does what another already does not at all. `panel`: the
+ * labels are a panel of ours' (Overlays.padPrompts), up over the map: the
+ * map's rules are not theirs. The d-pad's arrows are added wherever the
+ * d-pad moves something (it is no binding of the tables, see `resolve`).
  */
 export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel = false): TouchLabel[] {
-  const map = ctx.mode === 'command' && !panel
+  const has = new Map<Button, BindingLabel>()
+  for (const l of labels) if (!l.teaching && l.label !== NO_ACTION && !has.has(l.button as Button)) has.set(l.button as Button, l)
+  if (panel || dpadMoves(ctx)) for (const [b, label] of TOUCH_ARROWS) has.set(b, { button: b, label, action: { kind: 'keys', label, seq: [] }, contextual: false })
   const out: TouchLabel[] = []
-  for (const l of labels) {
-    if (l.teaching || l.label === NO_ACTION || (map && (l.button === 'START' || l.button === 'SELECT'))) continue
-    const cell = l.button as Button
-    if (!touchCell(cell) || cell.startsWith('D')) continue
-    if (!panel && ctx.mode === 'command' && l.action.kind === 'fire' && ctx.readiedAction) {
-      out.push({ ...l, cell, ...touchShot(ctx.readiedAction, ctx.readiedTile) })
-      continue
-    }
-    const icon = panel ? undefined : touchIcon(l.action, ctx)
-    out.push({ ...l, label: TOUCH_WORDS[l.label] ?? l.label, cell, ...(icon ? { icon } : {}) })
+  const put = (l: BindingLabel, cell: TouchCell, span = 1) => out.push({ ...touchFace(l, ctx, panel), cell, ...(span > 1 ? { span } : {}) })
+  const layout = touchLayout(ctx, panel)
+  if (layout) {
+    layout.forEach((row, r) =>
+      row.forEach((b, c) => {
+        const l = b && has.get(b)
+        // a button in two cells side by side is one button across both
+        if (!l || (c > 0 && row[c - 1] === b)) return
+        let span = 1
+        while (row[c + span] === b) span++
+        put(l, TOUCH_CELLS[r][c], span)
+      }),
+    )
+    return out
   }
-  if (panel || dpadMoves(ctx)) for (const [b, label] of TOUCH_ARROWS) out.push({ button: b, cell: b, label, action: { kind: 'keys', label, seq: [] }, contextual: false })
+  const taken = new Set<TouchCell>()
+  const placed: string[] = []
+  const fits = (l: BindingLabel) => {
+    const a = l.action
+    if (placed.includes(JSON.stringify(a))) return false
+    if (a.kind === 'ui' && a.op === 'palette') return ctx.mode === 'menu' && !panel
+    return (l.button !== 'LB' && l.button !== 'RB') || a.kind === 'osk'
+  }
+  const place = (l: BindingLabel, cell: TouchCell) => {
+    taken.add(cell)
+    placed.push(JSON.stringify(l.action))
+    put(l, cell)
+  }
+  // a menu's describe of the lit row is Examine
+  const home = (b: Button, l: BindingLabel) => (b === 'X' && l.action.kind === 'menu' && l.action.op === 'examine' ? 'examine' : GENERIC_HOME[b])
+  for (const [b, l] of has) {
+    const cell = home(b, l)
+    if (cell && fits(l)) place(l, cell)
+  }
+  for (const b of GENERIC_REST) {
+    const l = has.get(b)
+    if (!l || home(b, l) || !fits(l)) continue
+    const cell = GENERIC_FREE.find((c) => !taken.has(c))
+    if (cell) place(l, cell)
+  }
   return out
+}
+
+/**
+ * A button's face on the touch bar (touchLabels): its word, short where
+ * crawl's is long (`TOUCH_WORDS`), crawl's icon for it on the map and the
+ * level map (`touchIcon`), and the quivered shot drawn on the button that
+ * shoots it, on the map and in the aim it opens (`touchShot`), where the
+ * aim's own word ("Fire at goblin") stays under the picture.
+ */
+function touchFace(l: BindingLabel, ctx: Context, panel: boolean): Omit<TouchLabel, 'cell'> {
+  const auto = !panel && runsOn(l.action, ctx)
+  const face = { ...l, ...(auto ? { auto } : {}) }
+  if (!panel && l.action.kind === 'fire' && ctx.readiedAction && (ctx.mode === 'command' || (ctx.mode === 'targeting' && ctx.aimQuiver))) {
+    const shot = touchShot(ctx.readiedAction, ctx.readiedTile)
+    return { ...face, ...shot, label: ctx.mode === 'command' ? shot.label : l.label }
+  }
+  const icon = panel ? undefined : touchIcon(l.action, ctx)
+  const word = TOUCH_WORDS[l.label] ?? (l.action.kind === 'keys' ? TOUCH_WORDS[l.action.label] : undefined) ?? l.label
+  return { ...face, label: word, ...(icon ? { icon } : {}) }
+}
+
+/**
+ * Whether a button goes on by itself, turn after turn, until something
+ * happens: explore, fight, and travel from the level map or look mode
+ * (styles.css `.tb.auto`).
+ */
+function runsOn(a: Action, ctx: Context): boolean {
+  if (a.kind === 'fight') return true
+  const key = lastKey(a)
+  if (ctx.mode === 'command') return key === 'o'
+  if (ctx.mode === 'levelmap') return key === '.' || key === 'G'
+  return ctx.mode === 'targeting' && !!ctx.examining && key === '.'
+}
+
+/** the last key a keys action sends, as text or a keycode */
+function lastKey(a: Action): string | number | undefined {
+  const last = a.kind === 'keys' ? a.seq[a.seq.length - 1] : undefined
+  return last === undefined ? undefined : 'text' in last ? last.text : last.key
 }
 
 /**
@@ -680,7 +818,7 @@ export function touchShot(readied: string, tile: InvItem['tile'] | undefined): {
 }
 
 /** the touch bar's own words for crawl's (touchLabels) */
-const TOUCH_WORDS: Record<string, string> = { Autoexplore: 'Explore', Autofight: 'Fight' }
+const TOUCH_WORDS: Record<string, string> = { Autoexplore: 'Explore', Autofight: 'Fight', '--more--': 'Continue' }
 
 /**
  * A touch button's icon, as a tile name (overlays.ts `commandTileId`):
@@ -693,8 +831,7 @@ const TOUCH_WORDS: Record<string, string> = { Autoexplore: 'Explore', Autofight:
  * time; the shot on RB wears what is quivered (`touchShot`).
  */
 function touchIcon(a: Action, ctx: Context): string | undefined {
-  const last = a.kind === 'keys' ? a.seq[a.seq.length - 1] : undefined
-  const key = last === undefined ? undefined : 'text' in last ? last.text : last.key
+  const key = lastKey(a)
   if (ctx.mode === 'command') {
     if (a.kind === 'fight') return 'CMD_AUTOFIGHT'
     // crawl's magnifier, from its help lookup: Examine here is looking about, which is what the glass says
@@ -709,7 +846,7 @@ function touchIcon(a: Action, ctx: Context): string | undefined {
   return undefined
 }
 
-/** the d-pad's cells, by their arrows (touchLabels) */
+/** the d-pad's buttons, by their arrows (touchLabels) */
 const TOUCH_ARROWS: readonly (readonly [Button, string])[] = [
   ['DU', '↑'],
   ['DL', '←'],

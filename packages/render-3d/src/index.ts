@@ -15,8 +15,6 @@ import {
   type TileSource,
   type Viewmodel,
 } from '@orbrun/scene'
-import { lensFov } from './lens.js'
-export { lensFov }
 import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, handsFootprint, handsScale, scaledPose, type HandPose, type HandRect } from './hands.js'
 import { LevelGrid } from './grid.js'
 import { LevelMesher, MARK_MARGIN, uvFor, type ChunkGeometry, type LevelStats, type MeshContext, type TileDraw } from './level-mesh.js'
@@ -314,7 +312,7 @@ export class Render3d implements MapRenderer {
   private lift = NaN
   /** the css px along the view's foot the HUD's touch bar stands over (`setFoot`) */
   private footPx = 0
-  /** the view is a phone's held upright (`setUpright`): the Field of view setting is the angle across (lens.ts) */
+  /** the view is a phone's held upright (`setUpright`): the hands shrink with the width (hands.ts `handsScale`) */
   private upright = false
   // ---- the peel
   private peelWorker: Worker | null | undefined = undefined
@@ -583,7 +581,7 @@ export class Render3d implements MapRenderer {
       this.vmLift = NaN
     }
     Object.assign(this.opts, opts)
-    this.cam.fov = lensFov(this.opts.fov, this.cam.aspect, this.upright)
+    this.cam.fov = this.opts.fov
     this.cam.updateProjectionMatrix()
     this.mesher.invalidate()
     this.builtRevision = -1
@@ -645,12 +643,9 @@ export class Render3d implements MapRenderer {
     this.footPx = Math.max(0, px)
   }
 
-  /** Orbrun's own: the view is a phone's held upright, where the Field of view setting is the angle across (lens.ts) and the hands shrink with the width (hands.ts `handsScale`). */
+  /** Orbrun's own: the view is a phone's held upright, where the hands shrink with the width (hands.ts `handsScale`). */
   setUpright(on: boolean): void {
-    if (on === this.upright) return
     this.upright = on
-    this.cam.fov = lensFov(this.opts.fov, this.cam.aspect, on)
-    this.cam.updateProjectionMatrix()
   }
 
   /** `footPx` as a share of the view's height, never above half of it. */
@@ -685,7 +680,6 @@ export class Render3d implements MapRenderer {
       this.renderer.setSize(this.width, this.height, false)
     }
     this.cam.aspect = this.width / this.height
-    this.cam.fov = lensFov(this.opts.fov, this.cam.aspect, this.upright)
     this.cam.updateProjectionMatrix()
     this.vmCam.aspect = this.cam.aspect
     this.vmCam.updateProjectionMatrix()

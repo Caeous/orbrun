@@ -291,6 +291,14 @@ describe('stats pane as a strip', () => {
     expect(text(doomed[4])).toMatch(/^e\) .*Dm: 40% +Cn: 120%$/)
   })
 
+  it('wraps the status lights short of the minimap\'s column beside them', () => {
+    const lit = { ...st.player, status: ['Slow', 'Poison', 'Might', 'Agile', 'Haste'].map((light) => ({ light, col: 7 })) } as typeof st.player
+    expect(statsRows(lit, st.options, {}, 58, lead, true).rows.slice(5).map(text)).toEqual(['Slow Poison Might Agile Haste'])
+    const short = statsRows(lit, st.options, {}, 58, lead, true, 16).rows.slice(5)
+    expect(short.map((r) => text(r).trimEnd())).toEqual(['Slow Poison', 'Might Agile', 'Haste'])
+    for (const row of short) expect(rowLength(row)).toBeLessThanOrEqual(16)
+  })
+
   it('a pane with no Magic row keeps its block where it was', () => {
     const rows = statsRows({ ...st.player, species: 'Djinni' }, st.options, {}, 58, lead, true).rows
     expect(text(rows[3])).toMatch(/^ +St: 30/)

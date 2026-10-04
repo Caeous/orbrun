@@ -61,7 +61,7 @@ export function fitGrid(width: number, height: number, cw: number, ch: number): 
 
 /** the game screen's regions, all in cells of the one grid; the panes lie over the view */
 export interface GameLayout {
-  /** the dungeon view: the whole grid, the panes over it */
+  /** the dungeon view: the whole grid, the panes over it; on a phone held upright, between the stats strip and the touch bar (`gameSplit`) */
   view: CellRect
   /**
    * The part of the view no pane lies over: left of the sidebar column,
@@ -153,7 +153,11 @@ export function touchBeside(grid: Grid): boolean {
  * the panes stack over it instead: the stats pane as a strip across the top
  * (STRIP_ROWS), the minimap's column under it at the right, `mapCols` wide
  * (the monster list under the map), and the messages across the whole width,
- * above the foot. On
+ * above the foot. There the view itself starts under the strip's printed
+ * rows and ends above the foot: the strip's last row is the status lights',
+ * bare most of the time, so the lights, when there are any, stand over the
+ * view's top edge, and the minimap's column starts beside them, in the
+ * view's top-right corner (the lights wrap short of it, stats.ts). On
  * its side the bar stands at the column's foot instead (`touchBeside`):
  * `sideFoot` rows there are the bar's, the column ends above them, and it
  * is `columnWidth` cells wide (`touchColumn`), wider than the stats pane.
@@ -166,11 +170,12 @@ export function gameSplit(grid: Grid, msgRows: number, statWidth = STAT_WIDTH, f
   if (isPortrait(grid)) {
     const top = Math.min(STRIP_ROWS, clearH)
     const side = Math.max(0, Math.min(grid.cols, mapCols))
+    const head = Math.max(0, top - 1)
     return {
-      view,
+      view: { x: 0, y: head, w: grid.cols, h: rows - head },
       clear: { x: 0, y: top, w: grid.cols - side, h: clearH - top },
       messages: { x: 0, y: clearH, w: grid.cols, h: msgs },
-      sidebar: { x: grid.cols - side, y: top, w: side, h: clearH - top },
+      sidebar: { x: grid.cols - side, y: head, w: side, h: clearH - head },
       stats: { x: 0, y: 0, w: grid.cols, h: top },
     }
   }
@@ -210,11 +215,12 @@ export function levelMapSplit(grid: Grid, layout: GameLayout, opts: { hideSideba
  * too; with the bar at the right column's foot (`touchBeside`), a map that
  * reaches the foot takes the column across, its minimap off while the map
  * is open. A map that stops above the messages stays as it was: they stand
- * between it and the bar.
+ * between it and the bar. `rows` is the grid's: held upright, the view
+ * itself ends above the bar.
  */
-export function levelMapCanvas(layout: GameLayout, map: CellRect, beside: boolean): CellRect {
+export function levelMapCanvas(layout: GameLayout, map: CellRect, beside: boolean, rows: number): CellRect {
   const reachesFoot = map.h >= layout.messages.y + layout.messages.h
   if (!reachesFoot) return map
-  return { x: 0, y: 0, w: beside ? layout.view.w : map.w, h: layout.view.h }
+  return { x: 0, y: 0, w: beside ? layout.view.w : map.w, h: rows }
 }
 

@@ -173,7 +173,8 @@ describe('a phone\'s map in the layout', () => {
   it('upright, the map stands under the stats strip in a column as wide as it, on every phone at 15px tiles or more', () => {
     for (const w of [360, 375, 390, 412, 430]) {
       const p = phoneMap(w, 844, true)
-      expect(p.top).toBe(STRIP_ROWS)
+      // tight in the view's top-right corner, beside the strip's status lights' row
+      expect(p.top).toBe(STRIP_ROWS - 1)
       expect(p.column).toBeGreaterThanOrEqual(p.map)
       expect(p.column - p.map).toBeLessThan(p.cw)
       expect(p.map).toBeGreaterThanOrEqual(15 * MINIMAP_CELL_LEAST_PHONE)

@@ -262,7 +262,7 @@ const rep = (ch: string, n: number) => ch.repeat(Math.max(0, n))
  * ends at the pane's right edge, the bars run to it). `strip` lays the same out
  * as a strip across the top of a phone held upright (`stripRows`).
  */
-export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory = {}, width = STAT_WIDTH, portrait = 0, strip = false): { rows: Row[]; prev: BarMemory } {
+export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory = {}, width = STAT_WIDTH, portrait = 0, strip = false, lightsRoom = width): { rows: Row[]; prev: BarMemory } {
   const { split } = statsColumns(width)
   const compact = strip || compactStats(width)
   const rows: Row[] = []
@@ -368,7 +368,7 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
     if (showDoomContam(p.contam)) doomContam.push(...right[1].slice(3), { text: ' ' })
     // the time without the last action's length after it: the strip has no room to spare for it
     const clockRow: Row = [capShort(true, showTime ? 'Time:' : 'Turn:', 'T:'), { text: ' ' + clock }]
-    const stripped = stripRows(width, lead, { title: titleIn, line2, hp: hpBar, mp: mpValue ? mpBar : null, left, right: right.map((r) => r.slice(0, 3)), doomContam, noise: noiseRow(p, prev, next, STRIP_NOISE, true), time: clockRow, weapon, offhand, quiver, lights })
+    const stripped = stripRows(width, lead, { title: titleIn, line2, hp: hpBar, mp: mpValue ? mpBar : null, left, right: right.map((r) => r.slice(0, 3)), doomContam, noise: noiseRow(p, prev, next, STRIP_NOISE, true), time: clockRow, weapon, offhand, quiver, lights, lightsRoom })
     return { rows: stripped, prev: next }
   }
 
@@ -406,9 +406,10 @@ const STRIP_MARGIN = 1
  * noise over the place and the time, then the six stats three to a row, the
  * defences over the attributes; under the portrait, the weapon and the
  * quiver, with Doom and Contam at the right; then the status lights,
- * wrapped. `left` and `right` are the pane's two columns.
+ * wrapped at `lightsRoom`, short of the minimap's column beside them
+ * (console.ts gameSplit). `left` and `right` are the pane's two columns.
  */
-function stripRows(width: number, lead: number, r: { title: (room: number) => Row; line2: Row; hp: (room: number) => Row; mp: ((room: number) => Row) | null; left: Row[]; right: Row[]; doomContam: Row; noise: Row; time: Row; weapon: Row; offhand: Row | null; quiver: Row; lights: Row }): Row[] {
+function stripRows(width: number, lead: number, r: { title: (room: number) => Row; line2: Row; hp: (room: number) => Row; mp: ((room: number) => Row) | null; left: Row[]; right: Row[]; doomContam: Row; noise: Row; time: Row; weapon: Row; offhand: Row | null; quiver: Row; lights: Row; lightsRoom: number }): Row[] {
   // the six stats in three columns, each as wide as the wider of its two
   const defences = r.left.slice(0, 3)
   const attributes = r.right.slice(0, 3)
@@ -429,7 +430,7 @@ function stripRows(width: number, lead: number, r: { title: (room: number) => Ro
   const tail = r.doomContam.length ? r.doomContam.slice(0, -1) : []
   const at = width - STRIP_MARGIN - rowLength(tail)
   rows.push(tail.length ? joinRows(cutRow(held, at - 1, true), at, tail) : cutRow(held, width - STRIP_MARGIN, true))
-  for (const l of wrapRow(r.lights, width)) if (r.lights.length) rows.push(l)
+  for (const l of wrapRow(r.lights, Math.min(width, r.lightsRoom))) if (r.lights.length) rows.push(l)
   return rows.map((row) => cutRow(row, width))
 }
 

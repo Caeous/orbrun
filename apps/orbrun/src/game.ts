@@ -1,7 +1,7 @@
 import { cm, mapKey, MouseMode, MSGCH, UiState, formattedStringToText, keyMessage, topMenu, type ClientMessage, type GameMessage, type GameState } from '@orbrun/webtiles'
 import { autofightTarget, cellKey, dirFromDelta, isThreat, type Billboard, type CellKey, type MapRenderer, type Scene, type SceneCursor } from '@orbrun/scene'
 import { linesSince, namedInWarnings, namedMonster } from './warnings'
-import { Render3d, lensFov } from '@orbrun/render-3d'
+import { Render3d } from '@orbrun/render-3d'
 import { viewmodelFor } from '@orbrun/scene-webtiles'
 import { Render2d } from '@orbrun/render-2d'
 import { RendererPark } from './park'
@@ -494,9 +494,19 @@ export class GameScreen {
     this.hud.touchBeside = beside
     // the level map's canvas runs on under the touch bar; what rides the map's edges keeps to the part the bar leaves
     const map = mapView ? levelMapSplit(g, cells, { hideSidebar, hideMessages }) : null
-    const view = map ? levelMapCanvas(cells, map, beside && barRows > 0) : cells.view
+    const view = map ? levelMapCanvas(cells, map, beside && barRows > 0, g.rows) : cells.view
     this.grid.place(this.canvas, view)
     const px = this.grid.px(view)
+    // upright, the view runs across the whole screen, the grid's margins too, and ends at the touch bar's top edge
+    // rather than on the last whole row above it (gameSplit)
+    if (!map && isPortrait(g)) {
+      px.left = 0
+      px.width = this.root.clientWidth || px.width
+      if (barRows > 0) px.height = Math.max(px.height, this.root.clientHeight - this.hud.touchbarHeight - px.top)
+      this.canvas.style.left = px.left + 'px'
+      this.canvas.style.width = px.width.toFixed(2) + 'px'
+      this.canvas.style.height = px.height.toFixed(2) + 'px'
+    }
     this.viewPx = px
     // the map is centred, and its cells fitted, on its part above the touch bar (render-2d `foot`)
     const mapPx = map ? this.grid.px(map) : null
@@ -643,14 +653,13 @@ export class GameScreen {
 
   /**
    * How wide the 3D view opens across, in radians: the Field of view setting
-   * is the vertical angle (but on a phone held upright, `upright`), so the
-   * across one follows the view's shape. The parked view's own lens while the
-   * level map has it put away.
+   * is the vertical angle, so the across one follows the view's shape. The
+   * parked view's own lens while the level map has it put away.
    */
   private viewFov(): number {
     const lens = (this.renderer instanceof Render3d ? this.renderer : this.park.kept)?.projector()
     const aspect = lens ? lens.aspect : this.viewPx && this.viewPx.height ? this.viewPx.width / this.viewPx.height : 16 / 9
-    const tanHalfY = lens ? lens.tanHalfY : Math.tan((lensFov(this.settings().fov, aspect, this.upright) * Math.PI) / 360)
+    const tanHalfY = lens ? lens.tanHalfY : Math.tan((this.settings().fov * Math.PI) / 360)
     return 2 * Math.atan(tanHalfY * aspect)
   }
 
@@ -1622,7 +1631,7 @@ export class GameScreen {
       if (ev.pointerType === 'mouse') this.pointerLive = true
       if (this.drag) return
       const d: Drag = (this.drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, moved: false, button: ev.button, touch: ev.pointerType === 'touch' })
-      // a finger held still on the view is R3, the stick click the touch bar has no cell for (bindings.ts TOUCH_GRID):
+      // a finger held still on the view is R3, the stick click the touch bar has no cell for (bindings.ts TOUCH_CELLS):
       // what is ahead examined on the map, the overview on the level map; the lift then does nothing more
       if (d.touch) {
         d.hold = window.setTimeout(() => {

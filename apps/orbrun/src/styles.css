@@ -2350,8 +2350,8 @@ canvas.minimap.hidden {
 /*
  * The touch bar (hud.ts renderTouchBar): every button the screen has, by its
  * word, along the view's foot for a player with only a finger. Big enough to
- * hit without looking (44px, the platforms' least touch target), four
- * across, the most-used row nearest the thumb; the dungeon shows between the
+ * hit without looking (44px, the platforms' least touch target), five
+ * across, the arrows nearest the thumb; the dungeon shows between the
  * buttons, each on a dark backing of its own.
  */
 .touchbar {
@@ -2359,7 +2359,7 @@ canvas.minimap.hidden {
   right: 0;
   bottom: 0;
   display: grid;
-  /* bindings.ts TOUCH_GRID: three rows of five, every button in its own cell on every screen; no wider than a phone's
+  /* bindings.ts TOUCH_CELLS: three rows of five, each button in the cell its meaning puts it in; no wider than a phone's
      widest, the bar standing at the right on a wide screen, under the thumb that has the d-pad */
   grid-template-columns: repeat(5, minmax(0, 88px));
   justify-content: end;
@@ -2398,7 +2398,9 @@ canvas.minimap.hidden {
 }
 .touchbar .tb {
   position: relative;
-  min-height: 44px;
+  /* as tall as an icon over its caption (--tb-art, hud.ts renderTouchBar) whatever this one holds, so the bar is one
+     size on every screen and only what lights up in it changes; never under 44px, the platforms' least touch target */
+  min-height: max(44px, calc(var(--tb-art, 26px) + 1em + 12px));
   padding: 4px 2px;
   display: flex;
   flex-direction: column;
@@ -2461,15 +2463,33 @@ canvas.minimap.hidden {
   text-shadow: 1px 1px 0 #000;
   pointer-events: none;
 }
-/* a cell whose button this screen lacks: held open, so nothing slides into it (hud.ts renderTouchBar) */
+/* a cell this screen has nothing for: held open, so nothing slides into it (hud.ts renderTouchBar) */
 .touchbar .tb.empty {
-  background: none;
-  border-style: dashed;
-  border-color: rgba(255, 255, 255, 0.05);
+  visibility: hidden;
 }
-/* A: what the screen is for here (Interact, Select, --more--) */
-.touchbar .tb.A {
+/* the arrows move: you, or a cursor */
+.touchbar .tb.at-up,
+.touchbar .tb.at-left,
+.touchbar .tb.at-down,
+.touchbar .tb.at-right {
+  border-color: color-mix(in srgb, var(--color-10) 50%, transparent);
+}
+/* Select: what the screen is for here (Descend, Continue), and the aim's Fire across it */
+.touchbar .tb.at-select {
   border-color: rgba(255, 212, 92, 0.55);
+}
+/* what goes on by itself, turn after turn, until something happens: explore, fight, travel (bindings.ts runsOn),
+   Select's travel too */
+.touchbar .tb.auto {
+  border-color: color-mix(in srgb, var(--color-9) 75%, transparent);
+}
+/* an anchor this screen gives nothing to do (bindings.ts TOUCH_ANCHORS): there, so the keypad keeps its shape, but out of
+   the way of what lights up */
+.touchbar .tb.idle {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.06);
+  color: var(--ink-dim);
+  opacity: 0.45;
 }
 .touchbar .tb.down {
   background: rgba(255, 212, 92, 0.25);

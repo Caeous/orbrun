@@ -20,7 +20,7 @@ export interface Screen {
   log: string[]
   /** a server menu where rows are marked, not taken (drop, pickup, the shop) */
   multiselect: boolean
-  /** the touch bar, cell by cell (bindings.ts TOUCH_GRID): the button each cell presses, and its word */
+  /** the touch bar, cell by cell (bindings.ts TOUCH_CELLS): the button each cell presses, and its word */
   touch: { cell: string; button: string; label: string }[]
 }
 
