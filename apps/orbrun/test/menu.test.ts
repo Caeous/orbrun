@@ -1868,7 +1868,7 @@ describe('the front end: settings and marks', () => {
     expect(value('Field of view')).toBe('Auto (85°)')
     // back at the default, so it is not written down at all: a default we move later moves for this player too
     expect('fov' in JSON.parse(localStorage.getItem('orbrun.settings')!)).toBe(false)
-    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('How wide the first-person view opens. Auto is 85°, or on a phone 75° on its side and 120° upright.')
+    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('How wide the first-person view opens. Auto is 85°, or on a phone 75° on its side and 110° upright.')
     // the page's Back is the settings again, on the group it was opened from
     pad(screen, 'B')
     expect(screen.view).toBe('settings')

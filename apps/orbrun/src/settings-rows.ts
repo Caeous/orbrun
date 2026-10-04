@@ -115,7 +115,7 @@ export function setAutoMinimap(shown: { tiles: number; cell: number } | null): v
 export const FOV_AUTO = 0
 const FOV_DESKTOP = 85
 const FOV_PHONE = 75
-const FOV_UPRIGHT = 120
+const FOV_UPRIGHT = 110
 export const FOVS: readonly number[] = [FOV_AUTO, ...Array.from({ length: 15 }, (_, i) => 50 + 5 * i)]
 /** The field of view `s` asks for, in degrees: its own, or Auto's for this device held this way. */
 export function fovOf(s: Settings, phone = isPhone(), tall = upright()): number {
