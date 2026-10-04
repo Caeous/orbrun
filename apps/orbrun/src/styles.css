@@ -2884,8 +2884,12 @@ canvas.minimap.hidden {
   font-family: var(--mono);
   font-size: 0.95em;
   max-width: min(94vw, 78rem);
-  /* the stack's height, not the screen's: it stops short of the touch bar */
-  max-height: min(calc(95vh - 2 * var(--popup-top)), calc(100% - 2 * var(--popup-top)));
+  /* the stack's height, not the screen's: it stops short of the touch bar, and of the pad's prompts under it (hud.ts
+     placeBar --bar-room) where they need more than the bottom margin */
+  max-height: min(
+    calc(95vh - var(--popup-top) - max(var(--popup-top), var(--bar-room, 0px))),
+    calc(100% - var(--popup-top) - max(var(--popup-top), var(--bar-room, 0px)))
+  );
   min-width: 24rem;
   display: flex;
   flex-direction: column;

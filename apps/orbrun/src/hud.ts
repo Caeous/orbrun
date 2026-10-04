@@ -1672,8 +1672,8 @@ export class Hud {
    * Where the prompts stand: up from the free view's bottom-right corner, or
    * while a panel is up (`under`), right below the top one, their right edge
    * on its, so they read as the panel's own key help wherever it hangs
-   * (styles.css .popup). Never past the view's foot: a panel that reaches it
-   * has them over its own last lines. Measured every update, since a menu
+   * (styles.css .popup). The panels leave room for them above the view's
+   * foot (`--bar-room`), and they never go past it. Measured every update, since a menu
    * grows and shrinks with what the server sends without the prompts
    * changing; written only when it moved.
    */
@@ -1682,8 +1682,13 @@ export class Hud {
     const corner = this.barCorner
     if (!corner) return
     let panel: DOMRect | null = null
+    const stack = this.root.parentElement?.querySelector<HTMLElement>('.overlay-stack')
+    const room = under && !this.actionbar.hidden ? this.actionbar.offsetHeight + BAR_GAP + 'px' : ''
+    // the panels stop short of the line under them, so a tall one (any menu on a phone) keeps it off its last lines
+    // (styles.css .popup --bar-room)
+    if (stack && stack.style.getPropertyValue('--bar-room') !== room) stack.style.setProperty('--bar-room', room)
     if (under && !this.actionbar.hidden) {
-      const shown = this.root.parentElement?.querySelectorAll<HTMLElement>('.overlay-stack > .popup:not(.hidden)')
+      const shown = stack?.querySelectorAll<HTMLElement>(':scope > .popup:not(.hidden)')
       const top = shown?.[shown.length - 1]
       if (top) panel = top.getBoundingClientRect()
     }
