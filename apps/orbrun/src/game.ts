@@ -23,7 +23,7 @@ import { gamepadHints, type PadHintEvidence } from './gamepad-hints'
 import { isPack, openPackKeys } from './pack-tabs'
 import { OKAY_THEN, SHOUT_KEY, SWAP_WEAPONS_KEY, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
 import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INSET, type Settings } from './servers'
-import { type SettingGroup } from './settings-rows'
+import { fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap, type SettingGroup } from './settings-rows'
 import { PerfOverlay, type LogContext } from './perf'
 import { MapHold } from './map-hold'
 
@@ -410,6 +410,8 @@ export class GameScreen {
   }
 
   destroy() {
+    setAutoMessageLines(null)
+    setAutoMinimap(null)
     this.destroyed = true
     // a finger on the touch bar as it goes (a reconnect, the screen torn down under it) never lifts where the page
     // can hear it: let go here, or a held arrow walks on into the next game. The releases land on nothing (`pad`)
@@ -482,8 +484,10 @@ export class GameScreen {
     // foot, the column ends above them and the view keeps its height (touchBeside); with the column gone, the foot
     const beside = touchBeside(g) && !hideSidebar
     const barRows = Math.ceil(this.hud.touchbarHeight / g.ch)
-    // the Message lines setting, over what the server's `layout` asks for unless it is Auto
-    const msgRows = this.settings().messageLines || st.messages.paneHeight
+    // the Message lines setting; on Auto a phone's few, elsewhere what the server's `layout` asks for
+    const msgRows = messageLinesOf(this.settings(), st.messages.paneHeight, this.grid.phone)
+    // off a phone, the settings' Message lines row reads Auto with what this server asks for
+    setAutoMessageLines(st.messages.paneHeight)
     // upright, the minimap and the stats pane share a band across the top (gameSplit); the level map takes the band too,
     // standing in for the minimap, the stats pane over its corner
     const band = isPortrait(g) ? this.hud.portraitBand(this.grid) : { rows: 0, cols: 0 }
@@ -517,10 +521,17 @@ export class GameScreen {
     if (this.renderer instanceof Render3d) {
       this.renderer.setFoot(mapView ? 0 : px.top + px.height - msgPx.top - msgPx.height)
       this.renderer.setUpright(this.upright)
+      // Auto's field of view is a phone's or a computer's, and a browser's device toolbar can turn one into the other
+      if (this.grid.phone !== this.lensPhone) {
+        this.lensPhone = this.grid.phone
+        if (!this.settings().fov) this.renderer.setOptions(this.render3dOptions(this.settings()))
+      }
     }
     // what rides the view's edges keeps clear of the panes
     const free = map ?? cells.clear
     this.hud.layout(this.grid, cells, free, { stats: hideStats, sidebar: hideSidebar, messages: hideMessages })
+    // the settings' minimap rows read Auto with what it came out as here (kept while the level map has the column)
+    if (this.hud.minimapShown) setAutoMinimap(this.hud.minimapShown)
     // a popup and its dim stop short of the touch bar, so its buttons stay in reach under any of them (styles.css .overlay-stack)
     const inset = this.hud.touchbarInset
     this.overlays.root.style.setProperty('--touch-right', inset.right + 'px')
@@ -656,12 +667,15 @@ export class GameScreen {
   private viewFov(): number {
     const lens = (this.renderer instanceof Render3d ? this.renderer : this.park.kept)?.projector()
     const aspect = lens ? lens.aspect : this.viewPx && this.viewPx.height ? this.viewPx.width / this.viewPx.height : 16 / 9
-    const tanHalfY = lens ? lens.tanHalfY : Math.tan((this.settings().fov * Math.PI) / 360)
+    const tanHalfY = lens ? lens.tanHalfY : Math.tan((fovOf(this.settings(), this.grid.phone) * Math.PI) / 360)
     return 2 * Math.atan(tanHalfY * aspect)
   }
 
+  /** whether the 3D view's Auto field of view was last set for a phone (`relayout`) */
+  private lensPhone = false
+
   private render3dOptions(st: Settings) {
-    return { eyeHeight: st.eyeHeight, fov: st.fov, viewmodel: st.viewmodel, wallInset: WALL_INSET, chamfer: CHAMFER, motion: !this.cam.reducedMotion }
+    return { eyeHeight: st.eyeHeight, fov: fovOf(st, this.grid.phone), viewmodel: st.viewmodel, wallInset: WALL_INSET, chamfer: CHAMFER, motion: !this.cam.reducedMotion }
   }
 
   /** A melee attack lifts the weapon a touch (rendering-3d.md II.7); frames follow until it settles. */

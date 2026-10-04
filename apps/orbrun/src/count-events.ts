@@ -46,7 +46,7 @@ export function countedHost(hostname: string): boolean {
 export const COUNTED_SETTINGS = {
   eyeHeight: [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9],
   restPitch: [-30, -25, -20, -15, -10, -5, 0, 5, 10],
-  fov: [60, 70, 75, 85, 95],
+  fov: [0, 60, 70, 75, 85, 95],
   viewmodel: [true, false],
   leftRightKeys: ['turn', 'strafe'],
   leftRightPad: ['turn', 'strafe'],

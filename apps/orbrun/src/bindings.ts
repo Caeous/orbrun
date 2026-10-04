@@ -744,29 +744,46 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
   }
   const taken = new Set<TouchCell>()
   const placed: string[] = []
-  const fits = (l: BindingLabel) => {
-    const a = l.action
-    if (placed.includes(JSON.stringify(a))) return false
-    return (l.button !== 'LB' && l.button !== 'RB') || a.kind === 'osk'
-  }
-  const place = (l: BindingLabel, cell: TouchCell) => {
+  const bumper = (l: BindingLabel) => (l.button !== 'LB' && l.button !== 'RB') || l.action.kind === 'osk'
+  const fits = (l: BindingLabel) => !placed.includes(JSON.stringify(l.action)) && bumper(l)
+  // a button the screen shows only now and then (the shop's buy, a menu's accept) keeps its cell while away, so
+  // the rest never shift along to fill it and back as it comes and goes
+  const away = new Map<Button, BindingLabel>()
+  if (!panel) for (const l of barLabels(touchWidest(ctx))) if (!l.teaching && l.label !== NO_ACTION && !has.has(l.button as Button) && bumper(l)) away.set(l.button as Button, l)
+  const place = (b: Button, l: BindingLabel, cell: TouchCell) => {
     taken.add(cell)
+    if (away.has(b)) return
     placed.push(JSON.stringify(l.action))
     put(l, cell)
   }
   // a menu's describe of the lit row is Examine
   const home = (b: Button, l: BindingLabel) => (b === 'X' && l.action.kind === 'menu' && l.action.op === 'examine' ? 'examine' : GENERIC_HOME[b])
-  for (const [b, l] of has) {
+  const label = (b: Button) => has.get(b) ?? away.get(b)
+  for (const b of [...has.keys(), ...away.keys()]) {
+    const l = label(b)!
     const cell = home(b, l)
-    if (cell && fits(l)) place(l, cell)
+    if (cell && (away.has(b) || fits(l))) place(b, l, cell)
   }
   for (const b of GENERIC_REST) {
-    const l = has.get(b)
-    if (!l || home(b, l) || !fits(l)) continue
+    const l = label(b)
+    if (!l || home(b, l) || !(away.has(b) || fits(l))) continue
     const cell = GENERIC_FREE.find((c) => !taken.has(c))
-    if (cell) place(l, cell)
+    if (cell) place(b, l, cell)
   }
   return out
+}
+
+/**
+ * The screen with every situation its buttons come and go with switched on:
+ * rows marked in a menu or a shop, a row with a second action under the
+ * cursor. `touchLabels` keeps a cell for each button this shows that the
+ * screen does not show now.
+ */
+function touchWidest(ctx: Context): Context {
+  const m = ctx.menu
+  if (ctx.mode === 'menu' && m) return { ...ctx, menu: { ...m, anyMarked: true, ...(m.shop ? { shop: { ...m.shop, anyMarked: true } } : {}) } }
+  if (ctx.focus && !ctx.focus.altLabel) return { ...ctx, focus: { ...ctx.focus, altLabel: ctx.focus.label } }
+  return ctx
 }
 
 /**

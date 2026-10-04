@@ -163,6 +163,24 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
       ['B', 'DL', 'DD', 'DR', 'R3'],
     ])
   })
+  it('a button that comes and goes keeps its cell while away: nothing else moves', () => {
+    const shop = (s: object) => menu({ shop: { canBuy: true, anyMarked: false, anyListed: false, mode: 'buy', sortOrder: 'type', ...s } } as unknown as Partial<MenuContext>, 'shop')
+    const full = drawn(shop({ anyMarked: true }))
+    expect(full).toEqual([
+      ['·', 'R3', '·', '·', 'A'],
+      ['·', 'LT', 'DU', 'X', 'START'],
+      ['B', 'DL', 'DD', 'DR', 'Y'],
+    ])
+    for (const s of [{}, { anyListed: true }, { mode: 'examine' }]) {
+      drawn(shop(s)).forEach((row, r) => row.forEach((b, c) => expect([full[r][c], '·']).toContain(b)))
+    }
+    // a menu's accept, before anything is marked
+    expect(drawn(menu({ multiselect: true, anyMarked: false }))).toEqual([
+      ['·', '·', 'X', '·', 'A'],
+      ['·', 'LT', 'DU', '·', '·'],
+      ['B', 'DL', 'DD', 'DR', 'R3'],
+    ])
+  })
   it('the pack: describing the lit row is Examine; the bumpers that turn its pages are off, a finger taps the tabs', () => {
     const pack = ctx({ ...menu({ sections: true }, 'inventory'), pageable: true })
     expect(barLabels(pack).some((l) => l.button === 'LB' || l.button === 'RB')).toBe(true)

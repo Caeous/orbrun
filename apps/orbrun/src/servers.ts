@@ -526,6 +526,7 @@ export interface Settings {
   renderer: '3d' | '2d'
   /** How high the eye stands, in cells: 0 is the floor, 1 the lid (rendering-3d.md II.11). */
   eyeHeight: number
+  /** The up-and-down field of view in degrees, 0 for Auto (settings-rows.ts `fovOf`). */
   fov: number
   /** Where the camera points at rest, in degrees off the horizon: negative looks down, positive up (rendering-3d.md II.11). */
   restPitch: number
@@ -609,7 +610,7 @@ export const WALL_INSET = 12 / 32
 export const defaultSettings: Settings = {
   renderer: '3d',
   eyeHeight: 0.6,
-  fov: 85,
+  fov: 0,
   restPitch: -5,
   uiScale: 1,
   invertLook: false,

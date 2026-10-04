@@ -510,6 +510,13 @@ export class Hud {
   private minimapCell = 0
   /** the cell the map is drawn at on this screen (`minimapFit`), from `layout` */
   private minimapDrawn = MINIMAP_CELL_DEFAULT
+  /**
+   * What the minimap came out as at the last `layout`, in the two settings'
+   * own units: tiles across, and the cell as the "Minimap tile size" row
+   * counts it, on a 1080-tall screen (a phone's as drawn, `minimapFit`). The
+   * settings read Auto with these (settings-rows.ts `setAutoMinimap`).
+   */
+  minimapShown: { tiles: number; cell: number } | null = null
   setMinimapTiles(tiles: number, cell = 0) {
     this.minimapAcross = tiles >= 1 ? Math.floor(tiles) : 0
     this.minimapCell = cell >= 1 ? Math.floor(cell) : 0
@@ -640,6 +647,7 @@ export class Hud {
       h: barBeside ? bottom - sidePx.top - this.touchbarSpan() - TOUCH_MAP_GAP : sidePx.height * MINIMAP_TALLEST,
     }
     const { w, h: size, cell } = portrait ? this.bandFit(host) : minimapFit(room, short, this.minimapAcross, this.minimapCell, host.phone)
+    this.minimapShown = w > 0 && cell > 0 ? { tiles: Math.round(w / cell), cell: host.phone || !(short > 0) ? cell : Math.round((cell * MINIMAP_REF_SHORT) / short) } : null
     if (cell !== this.minimapDrawn) {
       this.minimapDrawn = cell
       this.minimap.setOptions({ cellSize: cell })

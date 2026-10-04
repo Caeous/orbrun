@@ -1846,15 +1846,15 @@ describe('the front end: settings and marks', () => {
     pick(screen, 'Camera')
     expect(screen.view).toBe('settings-group')
     const value = (label: string) => (Array.from(screen.root.querySelectorAll('li.row')).find((r) => r.querySelector('.label')?.textContent === label)?.querySelector('.val') as HTMLElement).textContent
-    expect(value('Field of view')).toBe('85°')
+    expect(value('Field of view')).toBe('Auto (85°)')
     while (focused(screen) !== 'setting:Field of view') press(screen, 'j')
     press(screen, 'l')
-    expect(value('Field of view')).toBe('95°')
+    expect(value('Field of view')).toBe('60°')
     press(screen, 'h')
-    expect(value('Field of view')).toBe('85°')
+    expect(value('Field of view')).toBe('Auto (85°)')
     // back at the default, so it is not written down at all: a default we move later moves for this player too
     expect('fov' in JSON.parse(localStorage.getItem('orbrun.settings')!)).toBe(false)
-    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('How wide the first-person view opens.')
+    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('How wide the first-person view opens. Auto is 85°, or 75° on a phone.')
     // the page's Back is the settings again, on the group it was opened from
     pad(screen, 'B')
     expect(screen.view).toBe('settings')

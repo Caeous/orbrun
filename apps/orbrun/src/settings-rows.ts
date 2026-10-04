@@ -1,4 +1,6 @@
 import { defaultSettings, getSettings, saveSettings, VIEW_OPTIONS, type LeftRight, type Settings } from './servers'
+import { isPhone } from './grid/host'
+import { MINIMAP_CELL_DEFAULT, MINIMAP_TILES_DEFAULT, MINIMAP_TILES_UPRIGHT } from './hud'
 
 /**
  * Orbrun's own settings, one row each: what it is called, which key it sets,
@@ -83,7 +85,57 @@ export const CAM_ANGLES: readonly number[] = [-30, -25, -20, -15, -10, -5, 0, 5,
  * it (`minimapFit`). Saved as 0, which `minimapFit` takes for Auto.
  */
 export const MINIMAP_AUTO = 0
-const autoOr = (fmt: (v: number) => string) => (v: number) => (v === MINIMAP_AUTO ? 'Auto' : fmt(v))
+
+/**
+ * An Auto stop reads with what it stands for here, in its row's own words
+ * ("Auto (19 tiles)"), so the player sees which stop to pick to keep it.
+ */
+const autoOr = (fmt: (v: number) => string, auto: () => number) => (v: number) => (v === 0 ? `Auto (${fmt(auto())})` : fmt(v))
+
+/** Held upright: a phone taller than it is wide (console.ts `isPortrait`, near enough before there is a grid). */
+const upright = () => isPhone() && window.innerHeight > window.innerWidth
+
+/**
+ * The minimap as a game last drew it (hud.ts `minimapShown`), which its
+ * rows' Auto reads; with no game, what Auto starts from on this device.
+ */
+let autoMinimap: { tiles: number; cell: number } | null = null
+export function setAutoMinimap(shown: { tiles: number; cell: number } | null): void {
+  autoMinimap = shown
+}
+
+/**
+ * The field of view row's first stop and default: FOV_DESKTOP, or FOV_PHONE
+ * on a phone (grid/host.ts `isPhone`), whose view held on its side is wider
+ * than a computer's screen and would see further across at the same angle
+ * (the setting is the up-and-down angle, render-3d `fov`). Saved as 0.
+ */
+export const FOV_AUTO = 0
+const FOV_DESKTOP = 85
+const FOV_PHONE = 75
+export const FOVS: readonly number[] = [FOV_AUTO, 60, 70, 75, 85, 95]
+/** The field of view `s` asks for, in degrees: its own, or Auto's for this device. */
+export function fovOf(s: Settings, phone = isPhone()): number {
+  return s.fov || (phone ? FOV_PHONE : FOV_DESKTOP)
+}
+
+/**
+ * The message pane's lines on Auto: MESSAGE_LINES_PHONE on a phone, whose
+ * view has the fewest rows to give; elsewhere what the game's server asks
+ * for (game.js `handle_set_layout`: the rc's `msg_webtiles_height`, else
+ * crawl's own 6), as WebTiles shows it.
+ */
+const MESSAGE_LINES_PHONE = 4
+const MESSAGE_LINES_CRAWL = 6
+/** The message lines `s` asks for: its own, or Auto's for this device and the `server`'s layout. */
+export function messageLinesOf(s: Settings, server: number, phone = isPhone()): number {
+  return s.messageLines || (phone ? MESSAGE_LINES_PHONE : server)
+}
+/** what the game's server last asked for (`setAutoMessageLines`), which the row's Auto reads off a phone */
+let serverMessageLines = MESSAGE_LINES_CRAWL
+export function setAutoMessageLines(n: number | null): void {
+  serverMessageLines = n && n > 0 ? n : MESSAGE_LINES_CRAWL
+}
 
 /**
  * Minimap size (hud.md "Minimap"), in tiles across: how much of the level
@@ -112,10 +164,8 @@ export const MINIMAP_TILES: readonly number[] = [MINIMAP_AUTO, ...Array.from({ l
 export const MINIMAP_CELLS: readonly number[] = [MINIMAP_AUTO, 8, 10, 12, 14, 16, 20, 24, 28, 32]
 
 /**
- * The message lines row's first stop and default: as many lines as the
- * server's `layout` asks for (game.js `handle_set_layout`: the rc's
- * `msg_webtiles_height`, else crawl's message window, 6 lines and the more
- * row). Saved as 0.
+ * The message lines row's first stop and default: 4 lines on a phone, else
+ * as many as the server's `layout` asks for (`messageLinesOf`). Saved as 0.
  */
 export const MESSAGE_LINES_AUTO = 0
 /**
@@ -160,7 +210,7 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   row('Camera', 'View', 'renderer', ['3d', '2d'], 'In the dungeon in 3D, or from above as the console shows it.', (v) => (v === '3d' ? '3D' : 'Top down (2D)')),
   row('Camera', 'Camera height', 'eyeHeight', EYE_HEIGHTS, 'How high your eyes stand, from the floor to the ceiling.', (v) => (v as number).toFixed(2) + ' cells'),
   row('Camera', 'Camera angle', 'restPitch', CAM_ANGLES, 'Where the view points at rest: level with the horizon, or tipped down toward the floor ahead.', (v) => ((v as number) === 0 ? 'Level' : Math.abs(v as number) + '° ' + ((v as number) < 0 ? 'down' : 'up'))),
-  row('Camera', 'Field of view', 'fov', [60, 70, 75, 85, 95], 'How wide the first-person view opens.', (v) => v + '°'),
+  row('Camera', 'Field of view', 'fov', FOVS, `How wide the first-person view opens. Auto is ${FOV_DESKTOP}°, or ${FOV_PHONE}° on a phone.`, autoOr((v) => v + '°', () => fovOf(defaultSettings))),
   row('Camera', 'Hands', 'viewmodel', [true, false], 'The wielded weapon and off-hand item, drawn in view.', (v) => (v ? 'Weapon and shield shown' : 'Hidden')),
   // Controls
   ...leftRightRows,
@@ -179,10 +229,10 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
     (v) => (v === 'list' ? 'Monster list' : 'Edge pips'),
     (s) => s.renderer !== '3d',
   ),
-  row('Interface', 'Minimap size', 'minimapTiles', MINIMAP_TILES, 'How many tiles across the minimap shows: it grows out of its corner over the view, at the same cell size. Auto fits it to the screen.', autoOr((v) => v + ' tiles')),
-  row('Interface', 'Minimap tile size', 'minimapCell', MINIMAP_CELLS, 'How big each minimap tile is drawn on a 1080p screen, larger in step on a bigger one: the same tiles, larger, until the map runs out of room over the view. Auto fits it to the screen.', autoOr((v) => v + 'px')),
+  row('Interface', 'Minimap size', 'minimapTiles', MINIMAP_TILES, 'How many tiles across the minimap shows: it grows out of its corner over the view, at the same cell size. Auto fits it to the screen.', autoOr((v) => v + ' tiles', () => autoMinimap?.tiles ?? (upright() ? MINIMAP_TILES_UPRIGHT : MINIMAP_TILES_DEFAULT))),
+  row('Interface', 'Minimap tile size', 'minimapCell', MINIMAP_CELLS, 'How big each minimap tile is drawn on a 1080p screen, larger in step on a bigger one: the same tiles, larger, until the map runs out of room over the view. Auto fits it to the screen.', autoOr((v) => v + 'px', () => autoMinimap?.cell ?? MINIMAP_CELL_DEFAULT)),
   row('Interface', 'Minimap rotation', 'minimapTurns', [true, false], 'Whether the minimap turns with you, so ahead is always up, or stays still with north up.', (v) => (v ? 'Turns with you' : 'North up')),
-  row('Interface', 'Message lines', 'messageLines', MESSAGE_LINES, 'How many lines of messages the log along the bottom shows: fewer leave more of the view, more keep more of the story in sight. Auto is what the game asks for, msg_webtiles_height in your rc or 6 lines.', (v) => (v === MESSAGE_LINES_AUTO ? 'Auto' : v + ' lines')),
+  row('Interface', 'Message lines', 'messageLines', MESSAGE_LINES, 'How many lines of messages the log along the bottom shows: fewer leave more of the view, more keep more of the story in sight. Auto is 4 lines on a phone, elsewhere what the game asks for, msg_webtiles_height in your rc or 6 lines.', autoOr((v) => v + ' lines', () => messageLinesOf(defaultSettings, serverMessageLines))),
 ]
 
 /** The offered rows by group, in group order, each with its tab's line; groups with no row left out. */
