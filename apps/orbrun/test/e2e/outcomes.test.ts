@@ -327,4 +327,18 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     await g.press('R3')
     expect(screen(g).surface).toBe('popup:formatted-scroller')
   })
+
+  it("Android's back is B on a screen, and over the map asks to save and exit, which a second back declines", async () => {
+    const g = await at('inventory')
+    await g.back()
+    expect(screen(g).surface).toBe('command')
+    g.clearSent()
+    await g.back()
+    expect(g.sent).toContainEqual({ msg: 'input', text: 'S' })
+    expect(screen(g).surface).toBe('yesno')
+    expect(screen(g).title).toBe('Save game and exit?')
+    await g.back()
+    expect(screen(g).surface).toBe('command')
+    expect(log(g)).toMatch(/Okay, then\.$/)
+  })
 })

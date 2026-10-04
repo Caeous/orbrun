@@ -1702,6 +1702,23 @@ export class GameScreen {
     })
   }
 
+  /**
+   * Android's back (back.ts): B, the way out of whatever is up, but over the
+   * map with nothing up, where crawl ignores Escape, Save and exit as the
+   * Orbrun menu's row sends it. Crawl's S asks first, so a second back is the
+   * B that answers no. The device stays what it was: back is no finger on the
+   * view, nor the pad.
+   */
+  back() {
+    if (this.ctx.mode === 'command' && !this.session.watching && !this.overlays.hasClientOverlay && !this.chat.capturing) {
+      this.runner.send(cm.input('S'))
+      return
+    }
+    const t = performance.now()
+    this.pad({ type: 'press', button: 'B', t, touch: true })
+    this.pad({ type: 'release', button: 'B', t, held: 0, touch: true })
+  }
+
   /** A finger pressing and releasing one of the pad's buttons at once, as the touch bar's do over time. */
   private touchPress(button: Button) {
     this.inputFrom('touch')

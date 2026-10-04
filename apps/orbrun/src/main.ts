@@ -14,6 +14,7 @@ import { settingsPanel } from './settings-panel'
 import { engines, keepEngines } from './engines'
 import { HOME } from './site'
 import { canQuit } from './quit'
+import { installBack } from './back'
 
 const app = document.getElementById('app')!
 const gamepad = new GamepadInput()
@@ -720,6 +721,15 @@ window.addEventListener('keydown', (ev) => {
   }
 }, true)
 
+// Android's back: Save and exit over the map, B everywhere else; only the bare home screen lets it leave the app (back.ts)
+const syncBack = installBack(
+  () => !!game || !!lobby?.goesBack,
+  () => {
+    if (game) game.back()
+    else lobby?.pad({ type: 'press', button: 'B', t: performance.now(), touch: true })
+  },
+)
+
 // gamepad loop: every frame while a pad is there; with none, a look every quarter second on a timer (navigator.getGamepads
 // is not free, and a keyboard-only session should not pay it, or an animation frame, sixty times a second), and at once
 // when one is plugged in
@@ -730,6 +740,7 @@ function tick(now: number) {
   pollFrame = 0
   gamepad.poll(now)
   lobby?.updateInputHints()
+  syncBack()
   // a touch bar arrow held down repeats on the pad's timing, so it is polled as a pad would be
   if (gamepad.connected || gamepad.virtualHeld) pollFrame = requestAnimationFrame(tick)
   else pollTimer = window.setTimeout(() => { pollFrame = requestAnimationFrame(tick) }, IDLE_POLL_MS)
