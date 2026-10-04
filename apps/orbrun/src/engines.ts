@@ -11,12 +11,24 @@ let lastLook = 0
 /** how often an open page asks after a new version, beyond the browser's own look at each page load */
 const LOOK_MS = 5 * 60_000
 
+/** Chromium's Network Information (not in lib.dom): what the device is connected by, and whether the player asked to save data. */
+interface NetworkInformation extends EventTarget {
+  readonly type?: string
+  readonly saveData?: boolean
+}
+
+/** The device's connection, where the browser says what it is (Chromium on Android and ChromeOS); elsewhere nothing counts as metered. */
+export const connection: NetworkInformation | undefined =
+  typeof navigator === 'undefined' ? undefined : (navigator as Navigator & { connection?: NetworkInformation }).connection
+
 /** The offline engine builds kept on this device, and their updates (@orbrun/offline EngineStore). */
 export const engines = new EngineStore({
   // no page to be relative to under node (the session tests), where nothing is kept anyway
   base: new URL(ENGINE_BASE + '/', typeof location === 'undefined' ? 'http://localhost/' : location.href).href,
   caches: typeof caches === 'undefined' ? undefined : caches,
   busy: () => busy(),
+  // a phone on mobile data, or a player saving data: updates wait for Wi-Fi
+  metered: () => connection?.type === 'cellular' || !!connection?.saveData,
 })
 
 /**

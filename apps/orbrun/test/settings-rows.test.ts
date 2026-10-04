@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { CHAMFER, defaultSettings, getSavedView, getSettings, leftRightTurns, saveSettings, saveView, VIEW_OPTIONS, WALL_INSET, type DirSource } from '../src/servers'
 import { REST_PITCH } from '@orbrun/scene'
 import { settingsPanel } from '../src/settings-panel'
-import { adjustSetting, ALL_SETTING_ROWS, groupAtDefaults, resetGroup, settingGroups, CAM_ANGLES, EYE_HEIGHTS, MINIMAP_AUTO, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowOff, SETTING_ROWS, settingValue } from '../src/settings-rows'
+import { adjustSetting, ALL_SETTING_ROWS, groupAtDefaults, resetGroup, settingGroups, CAM_ANGLES, EYE_HEIGHTS, MESSAGE_LINES, MESSAGE_LINES_AUTO, MINIMAP_AUTO, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowOff, SETTING_ROWS, settingValue } from '../src/settings-rows'
 
 // happy-dom's localStorage has no working methods; give servers.ts a plain one
 const store = new Map<string, string>()
@@ -246,6 +246,39 @@ describe('Minimap tile size', () => {
     expect(adjustSetting(cell, -1)).toBe('16px')
     expect(getSettings().minimapCell).toBe(16)
     expect(getSettings().minimapTiles).toBe(defaultSettings.minimapTiles)
+  })
+})
+
+describe('Message lines', () => {
+  beforeEach(() => saveSettings({ ...defaultSettings }))
+
+  it('is an Interface row, Auto by default (the server\'s layout), any other stop reading as lines', () => {
+    const lines = row('Message lines')
+    expect(SETTING_ROWS).toContain(lines)
+    expect(lines.group).toBe('Interface')
+    expect(defaultSettings.messageLines).toBe(MESSAGE_LINES_AUTO)
+    expect(settingValue(lines)).toBe('Auto')
+    saveSettings({ ...defaultSettings, messageLines: 4 })
+    expect(settingValue(lines)).toBe('4 lines')
+    expect(rowOff(lines)).toBe(false)
+    expect(rowHint(lines)).toMatch(/msg_webtiles_height/)
+  })
+
+  it('runs from Auto over every count from 2 to 20, one a step', () => {
+    expect(MESSAGE_LINES[0]).toBe(MESSAGE_LINES_AUTO)
+    expect(MESSAGE_LINES.slice(1)).toEqual(Array.from({ length: 19 }, (_, i) => 2 + i))
+  })
+
+  it('right from Auto is the fewest lines, left the most; then a line a step', () => {
+    const lines = row('Message lines')
+    expect(adjustSetting(lines, 1)).toBe('2 lines')
+    expect(adjustSetting(lines, -1)).toBe('Auto')
+    expect(adjustSetting(lines, -1)).toBe('20 lines')
+    saveSettings({ ...defaultSettings, messageLines: 6 })
+    expect(adjustSetting(lines, 1)).toBe('7 lines')
+    expect(adjustSetting(lines, -1)).toBe('6 lines')
+    expect(adjustSetting(lines, -1)).toBe('5 lines')
+    expect(getSettings().messageLines).toBe(5)
   })
 })
 

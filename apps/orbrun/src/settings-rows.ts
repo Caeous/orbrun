@@ -112,6 +112,25 @@ export const MINIMAP_TILES: readonly number[] = [MINIMAP_AUTO, ...Array.from({ l
 export const MINIMAP_CELLS: readonly number[] = [MINIMAP_AUTO, 8, 10, 12, 14, 16, 20, 24, 28, 32]
 
 /**
+ * The message lines row's first stop and default: as many lines as the
+ * server's `layout` asks for (game.js `handle_set_layout`: the rc's
+ * `msg_webtiles_height`, else crawl's message window, 6 lines and the more
+ * row). Saved as 0.
+ */
+export const MESSAGE_LINES_AUTO = 0
+/**
+ * Message lines, the message pane's rows of messages (the `--more--` row
+ * is one more under them): Auto, then every count from 2 to MESSAGE_LINES_MAX. Unlike
+ * `msg_webtiles_height`, a count under crawl's own window is taken too;
+ * crawl still stops on a `--more--` by its window, and what scrolls off
+ * before then is read back by scrolling the log. The view keeps its least
+ * rows whatever the count (console.ts `gameSplit`).
+ */
+const MESSAGE_LINES_MIN = 2
+export const MESSAGE_LINES_MAX = 20
+export const MESSAGE_LINES: readonly number[] = [MESSAGE_LINES_AUTO, ...Array.from({ length: MESSAGE_LINES_MAX - MESSAGE_LINES_MIN + 1 }, (_, i) => MESSAGE_LINES_MIN + i)]
+
+/**
  * The rows that only make sense while 2D is offered (`VIEW_OPTIONS` in
  * servers.ts): the one that chooses it. It stays written here so bringing the
  * mode back is one flag.
@@ -163,6 +182,7 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   row('Interface', 'Minimap size', 'minimapTiles', MINIMAP_TILES, 'How many tiles across the minimap shows: it grows out of its corner over the view, at the same cell size. Auto fits it to the screen.', autoOr((v) => v + ' tiles')),
   row('Interface', 'Minimap tile size', 'minimapCell', MINIMAP_CELLS, 'How big each minimap tile is drawn on a 1080p screen, larger in step on a bigger one: the same tiles, larger, until the map runs out of room over the view. Auto fits it to the screen.', autoOr((v) => v + 'px')),
   row('Interface', 'Minimap rotation', 'minimapTurns', [true, false], 'Whether the minimap turns with you, so ahead is always up, or stays still with north up.', (v) => (v ? 'Turns with you' : 'North up')),
+  row('Interface', 'Message lines', 'messageLines', MESSAGE_LINES, 'How many lines of messages the log along the bottom shows: fewer leave more of the view, more keep more of the story in sight. Auto is what the game asks for, msg_webtiles_height in your rc or 6 lines.', (v) => (v === MESSAGE_LINES_AUTO ? 'Auto' : v + ' lines')),
 ]
 
 /** The offered rows by group, in group order, each with its tab's line; groups with no row left out. */

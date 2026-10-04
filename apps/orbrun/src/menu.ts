@@ -11,7 +11,7 @@ import { addAccount, addServer, ensureDeviceAccount, removeServer, openPage, cha
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import type { Session } from './session'
 import { deleteProfileSaves, profileName, type EngineInfo, type EngineNote } from '@orbrun/offline'
-import { engines, updateApp } from './engines'
+import { connection, engines, updateApp } from './engines'
 import type { PadEvent, PadKind } from './gamepad'
 import { Osk, oskPrompts } from './osk'
 import { glyph, glyphName, type GlyphName } from './glyphs'
@@ -294,6 +294,8 @@ export class FrontEnd {
       { signal: this.aborter.signal },
     )
     window.addEventListener('offline', () => this._view === 'home' && this.showHome(), { signal: this.aborter.signal })
+    // onto Wi-Fi: an update held back on mobile data comes down now, or the next time this screen comes up
+    connection?.addEventListener('change', () => this._view === 'home' && this.showHome(), { signal: this.aborter.signal })
     this.showHome()
   }
 
@@ -2451,11 +2453,18 @@ function engineHint(note: EngineNote | null): string {
 
 /**
  * Which build an offline game plays, in the message line's small print: crawl's version less its commit hash
- * (`0.35-a0-1079`), and beside it a look for an update or how far a download is.
+ * (`0.35-a0-1079`), and beside it a look for an update, how far a download is, or an update held off mobile data.
  */
 function engineBuild(info: EngineInfo | null, note: EngineNote | null): string | undefined {
   const version = info?.version.replace(/-g[0-9a-f]+$/, '')
-  const doing = note?.kind === 'checking' ? 'checking for updates…' : note && 'percent' in note ? `${note.kind}… ${note.percent}%` : null
+  const doing =
+    note?.kind === 'checking'
+      ? 'checking for updates…'
+      : note?.kind === 'held'
+        ? 'update waits for Wi-Fi'
+        : note && 'percent' in note
+          ? `${note.kind}… ${note.percent}%`
+          : null
   return [version, doing].filter(Boolean).join(' · ') || undefined
 }
 

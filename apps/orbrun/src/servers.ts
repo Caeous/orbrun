@@ -543,6 +543,8 @@ export interface Settings {
   minimapCell: number
   /** Whether the minimap turns with the player (hud.md "Minimap"), or stands with north up. */
   minimapTurns: boolean
+  /** How many lines of messages the message pane shows; 0 is Auto (settings-rows.ts `MESSAGE_LINES_AUTO`), as many as the server's `layout` asks for. */
+  messageLines: number
   /** The gamepad prompts in the corner of the view (gamepad-hints.ts `HintMode`). */
   hints: HintMode
   /** Keyboard (arrows, h/l, numpad 4/6): what left and right do. */
@@ -618,6 +620,7 @@ export const defaultSettings: Settings = {
   minimapTiles: 0,
   minimapCell: 0,
   minimapTurns: true,
+  messageLines: 0,
   hints: 'adaptive',
   leftRightKeys: 'turn',
   leftRightPad: 'turn',

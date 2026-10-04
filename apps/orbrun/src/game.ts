@@ -482,10 +482,12 @@ export class GameScreen {
     // foot, the column ends above them and the view keeps its height (touchBeside); with the column gone, the foot
     const beside = touchBeside(g) && !hideSidebar
     const barRows = Math.ceil(this.hud.touchbarHeight / g.ch)
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, st.messages.paneHeight, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone].join(',')
+    // the Message lines setting, over what the server's `layout` asks for unless it is Auto
+    const msgRows = this.settings().messageLines || st.messages.paneHeight
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
-    const split = (mapCols?: number) => gameSplit(g, st.messages.paneHeight, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, mapCols)
+    const split = (mapCols?: number) => gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, mapCols)
     // upright, the minimap's column under the stats strip is as wide as the map (its height is the same either way)
     let cells = split()
     if (isPortrait(g)) cells = split(this.hud.portraitMapCols(this.grid, cells.sidebar.h * g.ch))
