@@ -123,3 +123,90 @@ export function scrapeCrt(tag: string, htmlLines: string[]): CrtHotkey[] {
   const scraper = SCRAPERS[tag] ?? scrapeSwitches
   return scraper(htmlLines.map(crtPlainText))
 }
+
+/** One character of a CRT line's HTML (an entity `crtPlainText` restores counts as one), or a whole tag. */
+const CRT_TOKEN_RE = /<[^>]*>|&(?:lt|gt|quot|#39|nbsp|amp);|[^]/g
+
+/**
+ * The HTML of plain-text columns `from` up to `to` of a CRT line, trailing
+ * spaces dropped: the spans open at the cut open again before it, and what
+ * is open at the end is closed (the server leaves its last span open).
+ */
+export function sliceCrtHtml(html: string, from: number, to = Infinity): string {
+  const plain = crtPlainText(html)
+  let end = Math.min(to, plain.length)
+  while (end > from && plain[end - 1] === ' ') end--
+  if (end <= from) return ''
+  const open: string[] = []
+  let out = ''
+  let col = 0
+  let started = false
+  for (const [t] of html.matchAll(CRT_TOKEN_RE)) {
+    if (col >= end) break
+    if (t.length > 1 && t[0] === '<') {
+      if (started) out += t
+      if (t[1] === '/') open.pop()
+      else if (!t.endsWith('/>')) open.push(t)
+      continue
+    }
+    if (col >= from && !started) {
+      out += open.join('')
+      started = true
+    }
+    if (started) out += t
+    col++
+  }
+  for (let i = open.length - 1; i >= 0; i--) out += '</' + (/^<\s*(\w+)/.exec(open[i])?.[1] ?? 'span') + '>'
+  return out
+}
+
+/**
+ * The skills screen in one column, for a popup too narrow for the two
+ * crawl lays side by side (skill-menu.cc, across 80 columns): the right
+ * column stands under the left without its header line, the switches stand
+ * one to a line, and runs of blank lines close up to one. Lines stay the
+ * server's HTML, cut at plain-text columns, and each column's rows keep
+ * their place in it, so the scraper reads the result as it reads the
+ * screen. Prose lines come through whole, for the popup to wrap.
+ */
+export function stackSkills(htmlLines: string[]): string[] {
+  const plain = htmlLines.map(crtPlainText)
+  const cols = new Set<number>()
+  let first = -1
+  let last = -1
+  plain.forEach((text, line) => {
+    for (const m of text.matchAll(SKILL_HOTKEY_RE)) {
+      cols.add(m.index ?? 0)
+      if (first < 0) first = line
+      last = line
+    }
+  })
+  if (first < 0) return htmlLines
+  const [left, right = Infinity] = Array.from(cols).sort((a, b) => a - b)
+  const out: string[] = []
+  for (let i = 0; i <= last; i++) out.push(sliceCrtHtml(htmlLines[i], 0, right))
+  if (right < Infinity) {
+    out.push('')
+    // the column's own header is the left one's again; its rows line up under the left's
+    for (let i = first; i <= last; i++) {
+      const cut = sliceCrtHtml(htmlLines[i], right)
+      out.push(cut && ' '.repeat(left) + cut)
+    }
+  }
+  out.push('')
+  for (let i = last + 1; i < htmlLines.length; i++) {
+    const text = plain[i]
+    const margin = text.length - text.trimStart().length
+    if (text[margin] !== '[') {
+      out.push(htmlLines[i])
+      continue
+    }
+    // `[?] Help                [=] set a skill target`: a switch starts at a bracket after a wide gap
+    const starts = [margin, ...Array.from(text.matchAll(/ {2,}\[/g), (m) => (m.index ?? 0) + m[0].length - 1)]
+    starts.forEach((s, k) => out.push(' '.repeat(margin) + sliceCrtHtml(htmlLines[i], s, starts[k + 1])))
+  }
+  const blank = (l: string) => !crtPlainText(l).trim()
+  const closed = out.filter((l, i) => !blank(l) || (i > 0 && !blank(out[i - 1])))
+  while (closed.length && blank(closed[closed.length - 1])) closed.pop()
+  return closed.map((l) => (blank(l) ? '' : l))
+}

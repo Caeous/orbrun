@@ -537,9 +537,9 @@ export interface Settings {
   viewmodel: boolean
   /** What is around you: the monster list, or edge pips on the 3D view (hud.md "What is around you"). */
   nearby: Nearby
-  /** How many tiles the minimap shows across (hud.md "Minimap"); 19 tiles reads at a glance and reaches a little past the reference layout's sidebar column. */
+  /** How many tiles the minimap shows across (hud.md "Minimap"); 0 is Auto (settings-rows.ts `MINIMAP_AUTO`), the screen's pick. */
   minimapTiles: number
-  /** How big a minimap tile is drawn, in css px (hud.md "Minimap"); 20 is the cell the map follows the player at. */
+  /** How big a minimap tile is drawn, in css px on a 1080-tall screen (hud.md "Minimap"); 0 is Auto, the screen's pick. */
   minimapCell: number
   /** Whether the minimap turns with the player (hud.md "Minimap"), or stands with north up. */
   minimapTurns: boolean
@@ -615,8 +615,8 @@ export const defaultSettings: Settings = {
   confirmStairs: false,
   viewmodel: true,
   nearby: 'pips',
-  minimapTiles: 19,
-  minimapCell: 20,
+  minimapTiles: 0,
+  minimapCell: 0,
   minimapTurns: true,
   hints: 'adaptive',
   leftRightKeys: 'turn',

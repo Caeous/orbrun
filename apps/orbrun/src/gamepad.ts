@@ -6,17 +6,20 @@ import type { Dir8 } from '@orbrun/scene'
 
 export type Button = 'A' | 'B' | 'X' | 'Y' | 'LB' | 'RB' | 'LT' | 'RT' | 'SELECT' | 'START' | 'L3' | 'R3' | 'DU' | 'DD' | 'DL' | 'DR' | 'HOME'
 
+const DPAD: readonly Button[] = ['DU', 'DD', 'DL', 'DR']
 const BUTTON_INDEX: Button[] = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'SELECT', 'START', 'L3', 'R3', 'DU', 'DD', 'DL', 'DR', 'HOME']
 
 /** Where a direction came from: the right stick only ever turns (`rightStickTurns`). */
 export type DirSource = 'dpad' | 'lstick' | 'rstick'
 
 export type PadEvent =
-  | { type: 'press'; button: Button; t: number }
-  | { type: 'release'; button: Button; t: number; held: number }
+  /** `touch`: an on-screen button stood in for the pad's (hud.ts touch bar); the pad itself did not speak */
+  | { type: 'press'; button: Button; t: number; touch?: boolean }
+  | { type: 'release'; button: Button; t: number; held: number; touch?: boolean }
   | { type: 'repeat'; button: Button; n: number }
-  | { type: 'dir'; source: DirSource; dir: Dir8 | null }
-  | { type: 'dirRepeat'; source: DirSource; dir: Dir8; n: number }
+  /** `touch` as on a press: the touch bar's arrows moved the d-pad, the pad's own did not */
+  | { type: 'dir'; source: DirSource; dir: Dir8 | null; touch?: boolean }
+  | { type: 'dirRepeat'; source: DirSource; dir: Dir8; n: number; touch?: boolean }
   /** `start`: true on the first frame of a deflection; false on the frames that follow and on the settle to 0,0 */
   | { type: 'look'; dx: number; dy: number; start?: boolean }
 
@@ -30,7 +33,7 @@ export type PadEvent =
  * against a keyboard that spoke since (game.ts `inputFrom`).
  */
 export function isPadActivity(ev: PadEvent): boolean {
-  return ev.type === 'press' || (ev.type === 'dir' && ev.dir !== null) || (ev.type === 'look' && ev.start === true)
+  return (ev.type === 'press' && !ev.touch) || (ev.type === 'dir' && ev.dir !== null && !ev.touch) || (ev.type === 'look' && ev.start === true)
 }
 
 export interface GamepadOptions {
@@ -139,18 +142,28 @@ export class GamepadInput {
    */
   private virtual = new Map<Button, number>()
 
-  /** Press a button as if the pad had. The key's auto-repeat is dropped by the caller, so a held key is one long press. */
-  virtualDown(b: Button, now = performance.now()) {
+  /**
+   * Press a button as if the pad had. The key's auto-repeat is dropped by the caller, so a held key is one long press.
+   * `touch` marks a finger on an on-screen button: a press all the same, but not the pad choosing itself (`isPadActivity`).
+   */
+  virtualDown(b: Button, now = performance.now(), touch = false) {
     if (this.virtual.has(b)) return
     this.virtual.set(b, now)
-    this.emit({ type: 'press', button: b, t: now })
+    this.emit(touch ? { type: 'press', button: b, t: now, touch } : { type: 'press', button: b, t: now })
+    if (DPAD.includes(b)) this.readDpad(now)
   }
 
-  virtualUp(b: Button, now = performance.now()) {
+  virtualUp(b: Button, now = performance.now(), touch = false) {
     const t0 = this.virtual.get(b)
     if (t0 === undefined) return
     this.virtual.delete(b)
-    this.emit({ type: 'release', button: b, t: now, held: now - t0 })
+    this.emit(touch ? { type: 'release', button: b, t: now, held: now - t0, touch } : { type: 'release', button: b, t: now, held: now - t0 })
+    if (DPAD.includes(b)) this.readDpad(now)
+  }
+
+  /** Whether a stand-in button is down: the frame loop polls every frame meanwhile, so a held arrow repeats on time. */
+  get virtualHeld(): boolean {
+    return this.virtual.size > 0
   }
 
   /** Let go of every stand-in button (the window lost focus, and its keyup will never come). */
@@ -227,16 +240,7 @@ export class GamepadInput {
         }
       }
     }
-    // dpad as direction
-    const du = this.pressed.has('DU')
-    const dd = this.pressed.has('DD')
-    const dl = this.pressed.has('DL')
-    const dr = this.pressed.has('DR')
-    const dx = (dr ? 1 : 0) - (dl ? 1 : 0)
-    const dy = (dd ? 1 : 0) - (du ? 1 : 0)
-    const newDpad = dx === 0 && dy === 0 ? null : dirFromDelta(dx, dy)
-    this.dirFrom('dpad', this.dpadDir, newDpad, now)
-    this.dpadDir = newDpad
+    this.readDpad(now)
     // left stick 8-way (or four-way) with hysteresis
     const stick = this.sector(this.stickDir, axes[0] || 0, axes[1] || 0, this.fourWay)
     this.dirFrom('lstick', this.stickDir, stick, now)
@@ -274,6 +278,21 @@ export class GamepadInput {
   }
 
   /**
+   * The d-pad as a direction: the pad's own, or the touch bar's arrows
+   * standing in for it (`virtualDown`), which say so on the event, a finger
+   * not being the pad speaking (`isPadActivity`).
+   */
+  private readDpad(now: number) {
+    const held = (b: Button) => this.pressed.has(b) || this.virtual.has(b)
+    const dx = (held('DR') ? 1 : 0) - (held('DL') ? 1 : 0)
+    const dy = (held('DD') ? 1 : 0) - (held('DU') ? 1 : 0)
+    const newDpad = dx === 0 && dy === 0 ? null : dirFromDelta(dx, dy)
+    const touch = !DPAD.some((b) => this.pressed.has(b)) && DPAD.some((b) => this.virtual.has(b))
+    this.dirFrom('dpad', this.dpadDir, newDpad, now, touch)
+    this.dpadDir = newDpad
+  }
+
+  /**
    * A stick's next direction from `was`, with hysteresis in reach (enterL
    * to start, down to leaveL to keep) and in angle (SECTOR_MARGIN).
    */
@@ -289,9 +308,9 @@ export class GamepadInput {
   }
 
   /** A direction source's change, or its repeat while it is held. */
-  private dirFrom(source: DirSource, was: Dir8 | null, dir: Dir8 | null, now: number) {
+  private dirFrom(source: DirSource, was: Dir8 | null, dir: Dir8 | null, now: number, touch = false) {
     if (dir !== was) {
-      this.emit({ type: 'dir', source, dir })
+      this.emit(touch ? { type: 'dir', source, dir, touch } : { type: 'dir', source, dir })
       if (dir !== null) this.dirRepeat.set(source, { next: now + this.opts.repeatDelay, n: 0 })
       else this.dirRepeat.delete(source)
     } else if (dir !== null) {
@@ -299,7 +318,7 @@ export class GamepadInput {
       if (r && now >= r.next) {
         r.next = now + this.opts.repeatInterval
         r.n++
-        this.emit({ type: 'dirRepeat', source, dir, n: r.n })
+        this.emit(touch ? { type: 'dirRepeat', source, dir, n: r.n, touch } : { type: 'dirRepeat', source, dir, n: r.n })
       }
     }
   }

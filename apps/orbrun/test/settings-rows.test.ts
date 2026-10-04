@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { CHAMFER, defaultSettings, getSavedView, getSettings, leftRightTurns, saveSettings, saveView, VIEW_OPTIONS, WALL_INSET, type DirSource } from '../src/servers'
 import { REST_PITCH } from '@orbrun/scene'
 import { settingsPanel } from '../src/settings-panel'
-import { adjustSetting, ALL_SETTING_ROWS, groupAtDefaults, resetGroup, settingGroups, CAM_ANGLES, EYE_HEIGHTS, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowOff, SETTING_ROWS, settingValue } from '../src/settings-rows'
+import { adjustSetting, ALL_SETTING_ROWS, groupAtDefaults, resetGroup, settingGroups, CAM_ANGLES, EYE_HEIGHTS, MINIMAP_AUTO, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowOff, SETTING_ROWS, settingValue } from '../src/settings-rows'
 
 // happy-dom's localStorage has no working methods; give servers.ts a plain one
 const store = new Map<string, string>()
@@ -183,24 +183,31 @@ describe('Hints', () => {
 describe('Minimap size', () => {
   beforeEach(() => saveSettings({ ...defaultSettings }))
 
-  it('is 19 tiles across by default (enough of the level to read at a glance) and reads as a tile count', () => {
+  it('is Auto by default, and any other stop reads as a tile count', () => {
     const size = row('Minimap size')
-    expect(defaultSettings.minimapTiles).toBe(19)
-    expect(MINIMAP_TILES).toContain(19)
+    expect(defaultSettings.minimapTiles).toBe(MINIMAP_AUTO)
+    expect(settingValue(size)).toBe('Auto')
+    saveSettings({ ...defaultSettings, minimapTiles: 19 })
     expect(settingValue(size)).toBe('19 tiles')
     expect(rowOff(size)).toBe(false)
     expect(rowHint(size)).toMatch(/tiles across/)
   })
 
-  it('runs over every odd count from 9 to 61, two a step, so the player stands on the centre tile', () => {
-    expect(MINIMAP_TILES[0]).toBe(9)
-    expect(MINIMAP_TILES[MINIMAP_TILES.length - 1]).toBe(61)
-    for (const n of MINIMAP_TILES) expect(n % 2).toBe(1)
-    for (let i = 1; i < MINIMAP_TILES.length; i++) expect(MINIMAP_TILES[i] - MINIMAP_TILES[i - 1]).toBe(2)
+  it('runs from Auto over every odd count from 15 (crawl\'s line of sight) to 61, two a step, so the player stands on the centre tile', () => {
+    expect(MINIMAP_TILES[0]).toBe(MINIMAP_AUTO)
+    const counts = MINIMAP_TILES.slice(1)
+    expect(counts[0]).toBe(15)
+    expect(counts[counts.length - 1]).toBe(61)
+    for (const n of counts) expect(n % 2).toBe(1)
+    for (let i = 1; i < counts.length; i++) expect(counts[i] - counts[i - 1]).toBe(2)
   })
 
-  it('right is two tiles more, left two fewer', () => {
+  it('right from Auto is the fewest tiles, left the most; then right is two tiles more, left two fewer', () => {
     const size = row('Minimap size')
+    expect(adjustSetting(size, 1)).toBe('15 tiles')
+    expect(adjustSetting(size, -1)).toBe('Auto')
+    expect(adjustSetting(size, -1)).toBe('61 tiles')
+    saveSettings({ ...defaultSettings, minimapTiles: 19 })
     expect(adjustSetting(size, 1)).toBe('21 tiles')
     expect(getSettings().minimapTiles).toBe(21)
     expect(adjustSetting(size, -1)).toBe('19 tiles')
@@ -212,22 +219,27 @@ describe('Minimap size', () => {
 describe('Minimap tile size', () => {
   beforeEach(() => saveSettings({ ...defaultSettings }))
 
-  it('is the 20px cell the map follows the player at, and reads in px', () => {
+  it('is Auto by default, and any other stop reads in px', () => {
     const cell = row('Minimap tile size')
-    expect(defaultSettings.minimapCell).toBe(20)
-    expect(MINIMAP_CELLS).toContain(20)
+    expect(defaultSettings.minimapCell).toBe(MINIMAP_AUTO)
+    expect(settingValue(cell)).toBe('Auto')
+    saveSettings({ ...defaultSettings, minimapCell: 20 })
     expect(settingValue(cell)).toBe('20px')
     expect(rowOff(cell)).toBe(false)
   })
 
-  it('runs from 8px to 32px, every stop bigger than the last', () => {
-    expect(MINIMAP_CELLS[0]).toBe(8)
+  it('runs from Auto, then 8px to 32px, every stop bigger than the last', () => {
+    expect(MINIMAP_CELLS[0]).toBe(MINIMAP_AUTO)
+    expect(MINIMAP_CELLS[1]).toBe(8)
     expect(MINIMAP_CELLS[MINIMAP_CELLS.length - 1]).toBe(32)
     for (let i = 1; i < MINIMAP_CELLS.length; i++) expect(MINIMAP_CELLS[i]).toBeGreaterThan(MINIMAP_CELLS[i - 1])
   })
 
   it('right is the next cell up, left the one down, and the tile count is left alone', () => {
     const cell = row('Minimap tile size')
+    expect(adjustSetting(cell, 1)).toBe('8px')
+    expect(adjustSetting(cell, -1)).toBe('Auto')
+    saveSettings({ ...defaultSettings, minimapCell: 20 })
     expect(adjustSetting(cell, 1)).toBe('24px')
     expect(getSettings().minimapCell).toBe(24)
     expect(adjustSetting(cell, -1)).toBe('20px')

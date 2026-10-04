@@ -105,6 +105,12 @@ export interface Render2dOptions {
    * draws none.
    */
   facing?: { yaw: number; fov: number } | null
+  /**
+   * Orbrun: css px along the canvas's foot that something stands over (a
+   * phone's touch bar). The map runs on under them but is centred on what
+   * is above, so the cell the view is centred on is never under the bar.
+   */
+  foot?: number
 }
 
 /** How far the facing cone reaches, in cells. */
@@ -213,6 +219,7 @@ export class Render2d implements MapRenderer {
       upYaw: opts.upYaw ?? null,
       uprightYaw: opts.uprightYaw ?? null,
       facing: opts.facing ?? null,
+      foot: opts.foot ?? 0,
     }
   }
 
@@ -232,6 +239,7 @@ export class Render2d implements MapRenderer {
     if (opts.upYaw !== undefined) this.opts.upYaw = opts.upYaw
     if (opts.uprightYaw !== undefined) this.opts.uprightYaw = opts.uprightYaw
     if (opts.facing !== undefined) this.opts.facing = opts.facing
+    if (opts.foot !== undefined) this.opts.foot = opts.foot
   }
 
   mount(target: HTMLCanvasElement | OffscreenCanvas): void {
@@ -394,7 +402,8 @@ export class Render2d implements MapRenderer {
     ctx.fillRect(0, 0, this.width, this.height)
     ctx.imageSmoothingEnabled = this.opts.filterScaling
     const cols = Math.ceil(this.width / cs)
-    const rows = Math.ceil(this.height / cs)
+    // the rows the view is centred in: those above the foot (`foot`)
+    const rows = Math.ceil(Math.max(cs, this.height - this.opts.foot) / cs)
     const cam = this.camera
     let ox: number
     let oy: number

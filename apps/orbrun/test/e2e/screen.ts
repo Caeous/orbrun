@@ -4,7 +4,7 @@
  * does. Read off the client exactly as the player sees it.
  */
 import { formattedStringToText } from '@orbrun/webtiles'
-import { barLabels } from '../../src/bindings'
+import { barLabels, touchLabels } from '../../src/bindings'
 import type { E2e } from './client'
 
 export interface Screen {
@@ -20,6 +20,8 @@ export interface Screen {
   log: string[]
   /** a server menu where rows are marked, not taken (drop, pickup, the shop) */
   multiselect: boolean
+  /** the touch bar, cell by cell (bindings.ts TOUCH_GRID): the button each cell presses, and its word */
+  touch: { cell: string; button: string; label: string }[]
 }
 
 export function screen(g: E2e): Screen {
@@ -45,6 +47,7 @@ export function screen(g: E2e): Screen {
   // an overlay of Orbrun's own (an empty tab of X's actions) puts the bar away: its footer says what the buttons do
   const ours = !!g.root.querySelector('.overlay-stack > [data-client]')
   if (!ours) for (const l of barLabels(ctx)) bar[l.button] = formattedStringToText(l.label)
+  const touch = ours ? [] : touchLabels(barLabels(ctx), ctx).map((l) => ({ cell: l.cell, button: l.button, label: formattedStringToText(l.label) }))
   return {
     mode: ctx.mode,
     surface,
@@ -53,5 +56,6 @@ export function screen(g: E2e): Screen {
     bar,
     log: st.messages.lines.slice(-4).map((l) => formattedStringToText(l.text).trim()),
     multiselect: ctx.mode === 'menu' && !!ctx.menu?.multiselect,
+    touch,
   }
 }

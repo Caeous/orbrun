@@ -97,17 +97,22 @@ function serverEnums(gd: Gamedata): ServerEnums {
  * Every constant the client hardcodes (protocol MouseMode, MenuFlag, UiState,
  * MapFeature; the HALO values; the texture order) checked against enums.js.
  * Map-feature names past what the server publishes (transporters, explore
- * horizon) are only reported when the server publishes a different value.
+ * horizon) are only reported when the server publishes a different value,
+ * and so is menu_flag.PAGED_INVENTORY: menu.h has it (0x200000) but enums.js
+ * has never listed it.
  */
-function enumMismatches(gd: Gamedata): string[] {
+export function enumMismatches(gd: Gamedata): string[] {
   const en = gd.enums as Record<string, unknown>
+  const { PAGED_INVENTORY, ...menuFlag } = MenuFlag
   const out = verifyEnums(gd, {
     mouse_mode: MouseMode as unknown as Record<string, number>,
-    menu_flag: MenuFlag as unknown as Record<string, number>,
+    menu_flag: menuFlag as unknown as Record<string, number>,
     ui: UiState as unknown as Record<string, number>,
     texture: { FLOOR: 0, WALL: 1, FEAT: 2, PLAYER: 3, DEFAULT: 4, GUI: 5, ICONS: 6 },
     '': { HALO_RANGE: HALO_DEFAULT.RANGE, HALO_UMBRA_FIRST: HALO_DEFAULT.UMBRA_FIRST, HALO_UMBRA_LAST: HALO_DEFAULT.UMBRA_LAST },
   })
+  const paged = (en.menu_flag as Record<string, unknown> | undefined)?.PAGED_INVENTORY
+  if (paged !== undefined && paged !== PAGED_INVENTORY) out.push(`enums.js menu_flag.PAGED_INVENTORY = ${String(paged)}, client assumes ${PAGED_INVENTORY}`)
   for (const [k, v] of Object.entries(MapFeature)) {
     const got = en['MF_' + k]
     if (got !== undefined && got !== v) out.push(`enums.js MF_${k} = ${String(got)}, client assumes ${v}`)

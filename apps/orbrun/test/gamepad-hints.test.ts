@@ -50,7 +50,7 @@ describe('adaptive gamepad teaching', () => {
     h.observe(evidence({ mode: 'targeting' }), 10)
     h.attempt(bindingTable(ctx()).SELECT!, ctx(), evidence(), 20)
     h.observe(evidence({ clientOverlay: true }), 30)
-    expect(teaching(h)).toMatchObject([{ button: 'LB', label: 'Wait one turn', hold: 'Rest' }])
+    expect(teaching(h)).toMatchObject([{ button: 'LB', label: 'Wait', hold: 'Rest' }])
     expect(padLesson(bindingTable(ctx()).B!, ctx())).toBeNull()
   })
 

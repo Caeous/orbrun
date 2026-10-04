@@ -330,7 +330,7 @@ describe('direct command controls', () => {
   it('offers wait/rest on LB only while hurt with nothing in view', () => {
     const hurt = ctx({ injured: true })
     const b = promptLabels(hurt).find((l) => l.button === 'LB')!
-    expect(b).toMatchObject({ label: 'Wait one turn', hold: 'Rest', contextual: true })
+    expect(b).toMatchObject({ label: 'Wait', hold: 'Rest', contextual: true })
     // whole: nothing to rest for
     expect(promptLabels(ctx({})).find((l) => l.button === 'LB')).toBeUndefined()
     // a hostile in view: resting is not the move, so autofight takes the corner instead
@@ -406,7 +406,7 @@ describe('direct command controls', () => {
   it('the controls sheet describes Cancel, LB wait/rest and R3 examine', () => {
     const sheet = controlSheet()
     expect(sheet.find((r) => r.button === 'B')?.action).toEqual({ tap: 'Cancel' })
-    expect(sheet.find((r) => r.button === 'LB')?.action).toEqual({ tap: 'Wait one turn', hold: 'Rest' })
+    expect(sheet.find((r) => r.button === 'LB')?.action).toEqual({ tap: 'Wait', hold: 'Rest' })
     expect(sheet.find((r) => r.button === 'R3')?.action).toEqual({ tap: 'Examine' })
   })
   it.each(['R3', 'L3'] as const)('%s examines once on press without repeating or acting on release', (button) => {

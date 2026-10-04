@@ -55,8 +55,8 @@ export const COUNTED_SETTINGS = {
   hints: ['adaptive', 'contextual', 'off'],
   uiScale: [1, 1.15, 1.3, 1.5, 0.85],
   nearby: ['list', 'pips'],
-  minimapTiles: Array.from({ length: 27 }, (_, i) => 9 + 2 * i),
-  minimapCell: [8, 10, 12, 14, 16, 20, 24, 28, 32],
+  minimapTiles: [0, ...Array.from({ length: 24 }, (_, i) => 15 + 2 * i)],
+  minimapCell: [0, 8, 10, 12, 14, 16, 20, 24, 28, 32],
   minimapTurns: [true, false],
   rightStick: ['look', 'turn'],
 } as const satisfies Record<string, readonly (number | boolean | string)[]>

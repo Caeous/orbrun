@@ -224,18 +224,76 @@ describe('stats pane on a narrow sidebar', () => {
     expect(rowWith(rows, / @: /)!.find((s) => s.text === '@:')!.title).toBe('Place')
   })
 
-  it('stands the portrait on two rows, so the bars keep the pane’s full width', () => {
+  it('stands the portrait on four rows, as the wide pane does', () => {
     const lead = 4
     const blank = ' '.repeat(lead)
     const wide = statsRows(st.player, st.options, {}, STAT_WIDTH, lead).rows
     const narrow = statsRows(st.player, st.options, {}, width, lead).rows
-    // the wide pane keeps its four rows beside the portrait; the narrow one the title and the species line
-    expect(wide[1][0].text).toBe(blank)
-    expect(narrow[0][0].text).toBe(blank)
-    expect(narrow[1][0].text).toBe(blank)
-    expect(narrow[2][0].text).not.toBe(blank)
-    // the Health bar starts at the pane's left edge and the row still ends at its right one
-    expect(narrow[HP][0].bg).toBeTypeOf('string')
+    // both keep four rows beside the portrait: the title, the species line and the two bars
+    for (const rows of [wide, narrow]) {
+      for (let i = 0; i < 4; i++) expect(rows[i][0].text).toBe(blank)
+      expect(rows[4][0].text).not.toBe(blank)
+    }
+    // the Health bar starts after the portrait and the row still ends at the pane's right edge
+    expect(narrow[HP][1].bg).toBeTypeOf('string')
     expect(rowLength(narrow[HP])).toBe(width)
+  })
+})
+
+/** The strip across the top of a phone held upright (grid/stats.ts `stripRows`), which WebTiles has no counterpart for. */
+describe('stats pane as a strip', () => {
+  const st = recordedState()
+  const text = (row: Row) => row.map((s) => s.text).join('')
+  const lead = 9
+
+  it('stands the title, the species line and the bars beside the portrait, the level, the place, the noise, the time and the six stats at the right', () => {
+    for (const width of [58, 62]) {
+      const rows = statsRows(st.player, st.options, {}, width, lead, true).rows
+      for (const row of rows) expect(rowLength(row)).toBeLessThanOrEqual(width)
+      for (let i = 0; i < PORTRAIT_ROWS; i++) expect(rows[i][0].text).toBe(' '.repeat(lead))
+      expect(text(rows[0])).toMatch(/^ +Dwarfsong .* XL: 14 \d+%/)
+      expect(text(rows[1])).toMatch(/^ +Mountain Dwarf .* @: Snake Pit:2/)
+      expect(rows[2][1].bg).toBeTypeOf('string')
+      expect(rows[3][1].bg).toBeTypeOf('string')
+      // the defences over the attributes, three a row, each column lined up
+      expect(text(rows[2])).toMatch(/AC: 35 EV: 7 +SH: 11$/)
+      expect(text(rows[3])).toMatch(/St: 30 In: 10 Dx: 9 *$/)
+      expect(text(rows[2]).indexOf('EV:')).toBe(text(rows[3]).indexOf('In:'))
+      // the stats block starts on one column down the four rows
+      const at = text(rows[0]).indexOf('XL:')
+      for (const [i, re] of [[1, '@:'], [2, 'AC:'], [3, 'St:']] as const) expect(text(rows[i]).indexOf(re)).toBe(at)
+      // the noise beside the level and the time beside the place, on one column
+      expect(text(rows[0]).indexOf('N:')).toBeGreaterThan(at)
+      expect(text(rows[1]).indexOf('T:')).toBe(text(rows[0]).indexOf('N:'))
+      // the last action's length is left out: the strip has no room for it
+      expect(text(rows[1])).toMatch(/T: \d+(\.\d)?$/)
+    }
+  })
+
+  it('keeps the time room for a long game\'s count, so it is never cut and a growing count moves nothing, a cell clear of the edge', () => {
+    const at = (time: number) => statsRows({ ...st.player, time, turn: Math.round(time / 10) }, st.options, {}, 58, lead, true).rows
+    const short = at(10)
+    const long = at(1234567)
+    expect(text(long[1])).toMatch(/T: \d{5,7}(\.\d)?$/)
+    for (const rows of [short, long]) for (const row of rows) expect(rowLength(row)).toBeLessThanOrEqual(57)
+    // the bars and the block stand where they stood
+    expect(text(long[1]).indexOf('T:')).toBe(text(short[1]).indexOf('T:'))
+    expect(text(long[2])).toBe(text(short[2]))
+  })
+
+  it('puts what is in hand under the portrait, the whole width of it, then the status lights', () => {
+    const rows = statsRows(st.player, st.options, {}, 58, lead, true).rows
+    expect(text(rows[4])).toBe('e) +2 hand axe (elec)  Throw: 23 darts (poison)')
+    expect(text(rows[5])).toBe('Drain')
+    expect(rows).toHaveLength(6)
+    // Doom and Contam, when they show, stand at its right end
+    const doomed = statsRows({ ...st.player, doom: 40, contam: 120 }, st.options, {}, 58, lead, true).rows
+    expect(text(doomed[4])).toMatch(/^e\) .*Dm: 40% +Cn: 120%$/)
+  })
+
+  it('a pane with no Magic row keeps its block where it was', () => {
+    const rows = statsRows({ ...st.player, species: 'Djinni' }, st.options, {}, 58, lead, true).rows
+    expect(text(rows[3])).toMatch(/^ +St: 30/)
+    expect(text(rows[3]).indexOf('St:')).toBe(text(rows[0]).indexOf('XL:'))
   })
 })

@@ -1,7 +1,7 @@
 import { cm, mapKey, MouseMode, MSGCH, UiState, formattedStringToText, keyMessage, topMenu, type ClientMessage, type GameMessage, type GameState } from '@orbrun/webtiles'
 import { autofightTarget, cellKey, dirFromDelta, isThreat, type Billboard, type CellKey, type MapRenderer, type Scene, type SceneCursor } from '@orbrun/scene'
 import { linesSince, namedInWarnings, namedMonster } from './warnings'
-import { Render3d } from '@orbrun/render-3d'
+import { Render3d, lensFov } from '@orbrun/render-3d'
 import { viewmodelFor } from '@orbrun/scene-webtiles'
 import { Render2d } from '@orbrun/render-2d'
 import { RendererPark } from './park'
@@ -9,12 +9,12 @@ import { escapeHtml, h, onDprChange } from './dom'
 import type { Session } from './session'
 import { CameraController } from './camera'
 import { deriveContext, deriveMode, type Context } from './context'
-import { HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, type Action, type CommandCategory, type RelDir } from './bindings'
+import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchLabels, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
 import type { CommandMenu } from './command-menu'
 import { Runner, type LastStep } from './runner'
 import { Hud, rcFont } from './hud'
-import { GridHost } from './grid/host'
-import { gameSplit, levelMapSplit } from './grid/console'
+import { GridHost, isPhone } from './grid/host'
+import { gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from './grid/console'
 import { Chat } from './chat'
 import { Overlays } from './overlays'
 import { directionKey, isTextEntry, keydownMessage } from './keys'
@@ -47,8 +47,31 @@ const MAP_PAN_RATE = 0.12
 /** game.js `show_diameter`: the cells across a full field of view, which the view is fitted to */
 const SHOW_DIAMETER = 17
 
-/** The device the player touched last; the prompt strip is drawn for it. */
-export type InputDevice = 'pad' | 'keyboard' | 'pointer'
+/**
+ * A panel of ours leaves B unnamed (its footer says Esc, a pad player knows
+ * B): a finger has no B to know, so the touch bar names it, the way back.
+ */
+function withBack(labels: BindingLabel[]): BindingLabel[] {
+  // the press goes the pad's way (Game.pad: B cancels a panel of ours), so the label's action is never run
+  return labels.some((l) => l.button === 'B') ? labels : [...labels, { button: 'B', label: 'Back', action: { kind: 'keys', label: 'Back', seq: [] }, contextual: false }]
+}
+
+/** A press on the view, from down to up: a tap, a look drag, or a finger held still (`hold` its timer, `held` once it fired). */
+interface Drag {
+  id: number
+  x: number
+  y: number
+  x0: number
+  y0: number
+  moved: boolean
+  button: number
+  touch: boolean
+  hold?: number
+  held?: boolean
+}
+
+/** The device the player touched last; the prompt strip is drawn for it. A finger is `touch`, a mouse or a pen `pointer`. */
+export type InputDevice = 'pad' | 'keyboard' | 'pointer' | 'touch'
 
 export interface GameHooks {
   settings(): Settings
@@ -181,7 +204,7 @@ export class GameScreen {
   private overlayOpener: Button | null = null
   private lastCursor: SceneCursor | null = null
   private lastOptKey = ''
-  private drag: { id: number; x: number; y: number; x0: number; y0: number; moved: boolean; button: number } | null = null
+  private drag: Drag | null = null
   /** Lets go of a drag with no click behind it: the window lost focus, or the button was released out of sight. */
   private cancelDrag: () => void = () => {}
   /** One per screen, however many canvases it goes through: a renderer swap must not leave the old canvas's listener behind. */
@@ -212,6 +235,8 @@ export class GameScreen {
   private pickMemo: CellKey | null | undefined
   /** the canvas's place on the screen, from the last relayout, in css px */
   private viewPx: { left: number; top: number; width: number; height: number } | null = null
+  /** css px of the level map's canvas under the touch bar (`relayout`) */
+  private mapFoot = 0
   /**
    * What the player touched last: the prompt strip is drawn for it (pad
    * glyphs, key caps, nothing for the mouse). Merely plugging in a pad is
@@ -255,7 +280,13 @@ export class GameScreen {
     this.perf = new PerfOverlay(this.root, () => this.perfContext())
     this.unsub.push(this.perf.watch(session))
     this.grid = new GridHost(this.root, this.textPx())
-    this.grid.onfit = () => this.relayout(true)
+    // a phone's text comes down to fit a phone's console (host.ts PHONE_COLS), asked again at every resize
+    this.grid.setLeast(isPhone)
+    this.shrinkText()
+    this.grid.onfit = () => {
+      this.shrinkText()
+      this.relayout(true)
+    }
     this.renderer = this.makeRenderer()
     this.cam.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
     this.cam.setRestPitch(radians(st.restPitch))
@@ -267,6 +298,10 @@ export class GameScreen {
       onSelectMonster: (b) => this.faceBillboard(b),
       onBarAction: (a) => this.runner.execute(a),
       onMinimapClick: () => this.runner.execute(LEVEL_MAP),
+      // on the map with nothing of ours up, as the pad's Start opens it there
+      onStatsClick: () => {
+        if (this.ctx.mode === 'command' && !this.session.watching && !this.overlays.hasClientOverlay) this.runner.execute({ kind: 'ui', op: 'system' })
+      },
       // action_panel.js: items act only in command mode
       onPanelItem: (slot, describe) => {
         if (this.session.state.inputMode !== MouseMode.COMMAND) return
@@ -280,6 +315,12 @@ export class GameScreen {
       },
       // WebTiles' own settings menu here is the panel's rc options; Orbrun's settings screen is where those live
       onPanelSettings: () => this.overlays.showSettings(),
+      // the touch bar's buttons are the pad's, pressed by a finger: the press goes the pad's way (`pad`), the device is the finger
+      onTouchButton: (button, down) => {
+        this.inputFrom('touch')
+        if (down) this.hooks.gamepad.virtualDown(button, performance.now(), true)
+        else this.hooks.gamepad.virtualUp(button, performance.now(), true)
+      },
     })
     this.chat = new Chat(this.root, { send: (m) => this.runner.send(m), padKind: () => this.hooks.gamepad.kind })
     this.overlays = new Overlays(this.root, {
@@ -390,9 +431,22 @@ export class GameScreen {
     this.overlays.destroy()
     this.perf.destroy()
     this.grid.destroy()
+    document.documentElement.style.removeProperty('--phone-shrink')
     this.renderer.destroy()
     this.park.clear()
     this.root.remove()
+  }
+
+  /**
+   * On a phone the menus and popups come down with the grid's text (host.ts `setLeast`): they are sized from the
+   * page's font (styles.css html), which would leave them a desktop's size over a phone's console. The `phone`
+   * class spreads them across the screen (styles.css `.game.phone .popup`).
+   */
+  private shrinkText() {
+    this.root.classList.toggle('phone', this.grid.phone)
+    const st = document.documentElement.style
+    if (this.grid.phone && this.grid.shrink < 1) st.setProperty('--phone-shrink', this.grid.shrink.toFixed(3))
+    else st.removeProperty('--phone-shrink')
   }
 
   /** The grid's text size: the console cell's font in px, from the UI scale setting. */
@@ -406,7 +460,8 @@ export class GameScreen {
    * gives them, sized as game.js `layout` sizes them. While the level map is
    * open the canvas keeps to the clear part of the view and grows over the
    * sidebar and the messages exactly when the rc's `tile_level_map_hide_*`
-   * say so (`levelMapSplit`). Cheap to call every frame; only acts on change.
+   * say so (`levelMapSplit`), running on under a phone's touch bar
+   * (`levelMapCanvas`). Cheap to call every frame; only acts on change.
    */
   private relayout(force = false) {
     if (!this.hud) return
@@ -420,18 +475,41 @@ export class GameScreen {
     // the sidebar while the new-game chooser has the UI in CRT state (newgame.cc `choose_game`), until the redraw
     // that sends the first `player` (tileweb.cc `redraw`); a continued game has no sheet before that message either.
     const hideStats = hideSidebar || st.uiState === UiState.CRT || !st.player.received
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, st.messages.paneHeight, hideStats, hideSidebar, hideMessages, window.devicePixelRatio].join(',')
+    // the touch bar's rows are its own: along the foot the panes stand above them; on its side, at the right column's
+    // foot, the column ends above them and the view keeps its height (touchBeside); with the column gone, the foot
+    const beside = touchBeside(g) && !hideSidebar
+    const barRows = Math.ceil(this.hud.touchbarHeight / g.ch)
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, st.messages.paneHeight, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
-    const cells = gameSplit(g, st.messages.paneHeight)
-    const view = mapView ? levelMapSplit(g, cells, { hideSidebar, hideMessages }) : cells.view
+    const split = (mapCols?: number) => gameSplit(g, st.messages.paneHeight, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, mapCols)
+    // upright, the minimap's column under the stats strip is as wide as the map (its height is the same either way)
+    let cells = split()
+    if (isPortrait(g)) cells = split(this.hud.portraitMapCols(this.grid, cells.sidebar.h * g.ch))
+    this.hud.touchBeside = beside
+    // the level map's canvas runs on under the touch bar; what rides the map's edges keeps to the part the bar leaves
+    const map = mapView ? levelMapSplit(g, cells, { hideSidebar, hideMessages }) : null
+    const view = map ? levelMapCanvas(cells, map, beside && barRows > 0) : cells.view
     this.grid.place(this.canvas, view)
     const px = this.grid.px(view)
     this.viewPx = px
+    // the map is centred, and its cells fitted, on its part above the touch bar (render-2d `foot`)
+    const mapPx = map ? this.grid.px(map) : null
+    this.mapFoot = mapPx ? Math.max(0, px.top + px.height - mapPx.top - mapPx.height) : 0
     this.renderer.resize(px.width, px.height, this.viewDpr())
+    // the view runs on under the touch bar along the foot, where the panes stop (gameSplit): the hands stand where they stop
+    const msgPx = this.grid.px(cells.messages)
+    if (this.renderer instanceof Render3d) {
+      this.renderer.setFoot(mapView ? 0 : px.top + px.height - msgPx.top - msgPx.height)
+      this.renderer.setUpright(this.upright)
+    }
     // what rides the view's edges keeps clear of the panes
-    const free = mapView ? view : cells.clear
+    const free = map ?? cells.clear
     this.hud.layout(this.grid, cells, free, { stats: hideStats, sidebar: hideSidebar, messages: hideMessages })
+    // a popup and its dim stop short of the touch bar, so its buttons stay in reach under any of them (styles.css .overlay-stack)
+    const inset = this.hud.touchbarInset
+    this.overlays.root.style.setProperty('--touch-right', inset.right + 'px')
+    this.overlays.root.style.setProperty('--touch-bottom', inset.bottom + 'px')
     // the chat box (client.html #chat) sits at the foot of the right column, as wide as the sidebar
     const side = this.grid.px(cells.sidebar)
     const chat = this.chat.root.style
@@ -533,6 +611,7 @@ export class GameScreen {
     this.cam.setRestPitch(radians(st.restPitch))
     document.documentElement.style.setProperty('--ui-scale', String(st.uiScale))
     this.grid.setTextSize(this.textPx())
+    this.shrinkText()
     const want3d = st.renderer === '3d' && !this.mapBorrowed2d
     // a 3D view parked for the map's close has no close to return to once the setting is 2D
     if (st.renderer !== '3d') this.park.clear()
@@ -550,14 +629,23 @@ export class GameScreen {
   }
 
   /**
+   * The 3D view is a phone's held upright, where the Field of view setting is
+   * the angle across (render-3d lens.ts); anywhere else it is the vertical one.
+   */
+  private get upright(): boolean {
+    return this.grid.phone && isPortrait(this.grid.grid)
+  }
+
+  /**
    * How wide the 3D view opens across, in radians: the Field of view setting
-   * is the vertical angle, so the across one follows the view's shape. The
-   * parked view's own lens while the level map has it put away.
+   * is the vertical angle (but on a phone held upright, `upright`), so the
+   * across one follows the view's shape. The parked view's own lens while the
+   * level map has it put away.
    */
   private viewFov(): number {
     const lens = (this.renderer instanceof Render3d ? this.renderer : this.park.kept)?.projector()
-    const tanHalfY = lens ? lens.tanHalfY : Math.tan((this.settings().fov * Math.PI) / 360)
     const aspect = lens ? lens.aspect : this.viewPx && this.viewPx.height ? this.viewPx.width / this.viewPx.height : 16 / 9
+    const tanHalfY = lens ? lens.tanHalfY : Math.tan((lensFov(this.settings().fov, aspect, this.upright) * Math.PI) / 360)
     return 2 * Math.atan(tanHalfY * aspect)
   }
 
@@ -739,7 +827,9 @@ export class GameScreen {
     this.hud.minimapUpright = settings.minimapTurns ? this.cam.mapUprightYaw : 0
     // and marks the way the 3D view faces instead, as the level map does
     this.hud.minimapFov = !settings.minimapTurns && this.renderer instanceof Render3d ? this.viewFov() : null
-    this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours)
+    // a finger gets every button the screen has, by its word (bindings.ts touchLabels); a panel of ours names its own
+    const touch = this.lastInput === 'touch' && !this.session.watching && !this.chat.capturing ? touchLabels(ours ? withBack(ours) : barLabels(this.ctx), this.ctx, !!ours) : null
+    this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours, touch)
     this.chat.update(st, this.chatOn && (st.phase === 'playing' || st.phase === 'watching'), !!st.lobby.username)
     this.syncTarget()
     perf?.mark('ui')
@@ -903,6 +993,7 @@ export class GameScreen {
       // the cell size is fitted to the view (`cellPixels`), so its size belongs to the key (`relayout` ran first in the frame)
       this.viewPx?.width,
       this.viewPx?.height,
+      this.mapFoot,
       o.tile_cell_pixels,
       o.tile_viewport_scale,
       o.tile_map_scale,
@@ -960,6 +1051,7 @@ export class GameScreen {
       ;(this.renderer as Render2d).setOptions({
         cellSize: this.cellPixels(Math.max(8, Math.round((px * scale) / 100)), mode),
         mode,
+        foot: mapView ? this.mapFoot : 0,
         filterScaling: o.tile_filter_scaling === true,
         glyphFont: rcFont(o.glyph_mode_font),
         minibars,
@@ -977,8 +1069,8 @@ export class GameScreen {
   private cellPixels(cell: number, mode: string): number {
     if (mode === 'glyphs') return cell
     const w = this.canvas.clientWidth
-    const h = this.canvas.clientHeight
-    if (!w || !h) return cell
+    const h = this.canvas.clientHeight - (this.mapShown ? this.mapFoot : 0)
+    if (!w || h <= 0) return cell
     const span = SHOW_DIAMETER * cell
     if (span <= w && span <= h) return cell
     return Math.max(1, Math.floor(cell * Math.min(w / span, h / span)))
@@ -1515,14 +1607,23 @@ export class GameScreen {
   private attachPointer(c: HTMLCanvasElement) {
     c.addEventListener('contextmenu', (ev) => ev.preventDefault())
     c.addEventListener('pointerdown', (ev) => {
-      this.inputFrom('pointer')
+      this.inputFrom(ev.pointerType === 'touch' ? 'touch' : 'pointer')
       // mouse_control.js: any mousedown hides the cell tooltip
       clearTimeout(this.tooltipTimer)
       this.hud.hideTooltip()
       // a click is the mouse speaking: its selection is live again, so a click right after a key still acts on the hovered cell
       if (ev.pointerType === 'mouse') this.pointerLive = true
       if (this.drag) return
-      this.drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, moved: false, button: ev.button }
+      const d: Drag = (this.drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, moved: false, button: ev.button, touch: ev.pointerType === 'touch' })
+      // a finger held still on the view is R3, the stick click the touch bar has no cell for (bindings.ts TOUCH_GRID):
+      // what is ahead examined on the map, the overview on the level map; the lift then does nothing more
+      if (d.touch) {
+        d.hold = window.setTimeout(() => {
+          if (this.drag !== d || d.moved) return
+          d.held = true
+          this.touchPress('R3')
+        }, HOLD_MS)
+      }
       c.setPointerCapture(ev.pointerId)
     })
     c.addEventListener('pointermove', (ev) => {
@@ -1548,7 +1649,9 @@ export class GameScreen {
       d.x = ev.clientX
       d.y = ev.clientY
       if (!d.moved && Math.hypot(ev.clientX - d.x0, ev.clientY - d.y0) < DRAG_SLOP) return
+      if (d.held) return
       d.moved = true
+      clearTimeout(d.hold)
       const st = this.hooks.settings()
       // radians per css pixel; a full drag across the view is about a half turn
       const k = (Math.PI / Math.max(300, this.canvas.clientWidth)) * st.lookSensitivity
@@ -1561,11 +1664,16 @@ export class GameScreen {
       const d = this.drag
       if (!d || ev.pointerId !== d.id) return
       this.drag = null
+      clearTimeout(d.hold)
       if (c.hasPointerCapture(ev.pointerId)) c.releasePointerCapture(ev.pointerId)
+      if (d.held) return
       if (d.moved) {
         this.cam.endDrag()
         this.needsRender = true
       } else if (ev.type === 'pointerup') {
+        // the message pane lets the press through to here (hud.ts dismissesMoreAt): on a pending --more-- it is space
+        if (this.hud.dismissesMoreAt(ev.clientX, ev.clientY)) return this.runner.execute(CONTINUE)
+        if (d.touch && this.tapSteps()) return this.stepForward()
         const rect = this.canvas.getBoundingClientRect()
         this.onPointer(ev.clientX - rect.left, ev.clientY - rect.top, d.button)
       }
@@ -1579,6 +1687,7 @@ export class GameScreen {
       const d = this.drag
       if (!d) return
       this.drag = null
+      clearTimeout(d.hold)
       if (c.hasPointerCapture(d.id)) c.releasePointerCapture(d.id)
       if (!d.moved) return
       this.cam.endDrag()
@@ -1591,6 +1700,14 @@ export class GameScreen {
       clearTimeout(this.tooltipTimer)
       this.hud.hideTooltip()
     })
+  }
+
+  /** A finger pressing and releasing one of the pad's buttons at once, as the touch bar's do over time. */
+  private touchPress(button: Button) {
+    this.inputFrom('touch')
+    const now = performance.now()
+    this.hooks.gamepad.virtualDown(button, now, true)
+    this.hooks.gamepad.virtualUp(button, now, true)
   }
 
   /**
@@ -1643,7 +1760,8 @@ export class GameScreen {
   /** A server popup or dialog is up, and the pointer may close it: ui.js registers its handlers on the same condition. */
   private popupUp(): boolean {
     if (this.session.watching || this.overlays.hasClientOverlay) return false
-    if (this.ctx.mode !== 'popup' && this.ctx.mode !== 'dialog') return false
+    // a menu is a popup too (menu.js shows it with ui.show_popup)
+    if (this.ctx.mode !== 'popup' && this.ctx.mode !== 'dialog' && this.ctx.mode !== 'menu') return false
     return this.session.state.options.tile_web_mouse_control !== false
   }
 
@@ -1655,13 +1773,27 @@ export class GameScreen {
    * (`target_outside_game`) and keeps its clicks. Orbrun adds: a right click
    * closes wherever it lands, inside the popup too, the mirror of the right
    * click that opened a describe, so a look is over as fast as it began.
-   * Orbrun's own overlays are not server popups and handle their own
-   * pointer.
+   * Orbrun's own panels go the same way: a press outside them is their
+   * Escape, a step back (B). The touch bar is no outside: its buttons are
+   * the pad's, and its Back already says what it does.
    */
   private onDocPointer(ev: PointerEvent) {
     this.wake()
-    if (!this.popupUp()) return
+    // a finger anywhere (a menu's row, a prompt's chip) is the finger speaking: the touch bar comes up for it
+    if (ev.pointerType === 'touch') this.inputFrom('touch')
     const t = ev.target instanceof Element ? ev.target : null
+    if (t?.closest('.touchbar')) return
+    if (this.overlays.hasClientOverlay && !this.session.watching) {
+      // inside a panel, on the on-screen keyboard or in the chat, the press is theirs
+      if (t?.closest('.popup, .osk') || (t && this.chat.root.contains(t))) return
+      ev.preventDefault()
+      ev.stopPropagation()
+      this.overlays.clientOverlayInput('cancel')
+      if (!this.overlays.hasClientOverlay) this.overlayOpener = null
+      this.needsRender = true
+      return
+    }
+    if (!this.popupUp()) return
     if (t && this.chat.root.contains(t)) return
     // the perf pane takes its own taps (it saves the log); a tap on it is not a tap outside the popup
     if (t?.closest('.perf')) return
@@ -1697,6 +1829,22 @@ export class GameScreen {
     const key = this.renderer.pick(px, py)
     if (key === null) return
     this.runner.clickCell((key & 1023) - 512, (key >> 10) - 512, button + 1)
+  }
+
+  /**
+   * A finger's tap on the view walks: on the map with nothing up, a tap is a
+   * step the way the view faces, the pad's forward (bindings.ts `resolve`),
+   * a bump attack on whatever stands there. Elsewhere (aiming, the level
+   * map, a popup) it stays crawl's click on the cell, as a mouse's is.
+   */
+  private tapSteps(): boolean {
+    return this.ctx.mode === 'command' && !this.session.watching && !this.overlays.hasClientOverlay
+  }
+
+  private stepForward() {
+    this.inputActed()
+    this.runner.execute({ kind: 'step', dir: 0, turns: true })
+    this.needsRender = true
   }
 
   /**

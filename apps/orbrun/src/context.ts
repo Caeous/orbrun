@@ -1,4 +1,4 @@
-import { MouseMode, UiState, floorItemsLabel, formattedStringToSpans, formattedStringToText, isStationaryItemName, topMenu, topPopup, type GameState, type MenuState, type Monster } from '@orbrun/webtiles'
+import { MouseMode, UiState, floorItemsLabel, formattedStringToSpans, formattedStringToText, isStationaryItemName, topMenu, topPopup, type GameState, type InvItem, type MenuState, type Monster } from '@orbrun/webtiles'
 import { cellAhead, cellUnder, billboardsAt, getCell, isThreat, monstersInView, type Camera, type Feature, type Scene, type SceneCell } from '@orbrun/scene'
 import type { FocusInfo } from './focus'
 import { neighbour, packStrip } from './pack-tabs'
@@ -117,6 +117,8 @@ export interface Context {
   layer: Layer
   /** The server's description of the action fired by LT; absent when nothing is quivered. */
   readiedAction?: string
+  /** the quivered item's tile (`quiver_item` in `inv`), for the touch bar's Fire; absent for a spell or an ability */
+  readiedTile?: InvItem['tile']
   ahead: Target
   under: Target
   prompt?: ParsedPrompt
@@ -670,6 +672,8 @@ export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer
   const hostiles = inView.filter(isThreat).length
   const p = state.player
   const ctx: Context = { mode, layer, ahead, under, hostilesInView: hostiles, monstersInView: inView.length, readiedAction: readiedAction(p.quiver_desc) }
+  const quivered = p.quiver_item >= 0 ? p.inv[p.quiver_item]?.tile : undefined
+  if (ctx.readiedAction && quivered !== undefined) ctx.readiedTile = quivered
   if (p.hp < p.hp_max || p.mp < p.mp_max) ctx.injured = true
   if (mode === 'yesno' || mode === 'prompt') ctx.prompt = parsePrompt(state)
   if (mode === 'more') ctx.moreText = state.messages.moreText || '--more--'
