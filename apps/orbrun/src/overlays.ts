@@ -17,7 +17,7 @@ import { controlsSheet } from './controls-sheet'
 import { h, clear, escapeHtml, onDprChange, snapToPixels } from './dom'
 import { Osk, oskPrompts, type OskOp, type OskTarget } from './osk'
 import commands from '../data/commands.json'
-import { FocusNav, focusStep, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
+import { FocusNav, focusStep, tapLights, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
 import { crtPlainText, scrapeCrt, stackSkills } from './crt-scrape'
 import { focusFallback, numberPrompt, promptButtons, submitOnStartOnly, type Action, type BindingLabel } from './bindings'
 import { CHARACTER_COMMANDS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandMenu } from './command-menu'
@@ -898,6 +898,8 @@ export class Overlays {
       const selectable = (it.level ?? 2) === 2 && (menu.tag === 'use_item' || (it.hotkeys && it.hotkeys.length) || arrows)
       if (selectable) {
         li.classList.add('selectable')
+        // a finger lights the row first, as the arrows would; a tap on the lit row takes it
+        tapLights(li, () => this.hovered === i, () => this.setHover(menu, i, true))
         li.addEventListener('click', () => {
           if (arrows) {
             this.setHover(menu, i, true)
@@ -1943,7 +1945,11 @@ export class Overlays {
         // official: a click sends the letter as text input
         const send = () => this.hooks.send(cm.textInput(s.letter))
         li.addEventListener('click', send)
-        items.push({ label: formattedStringToText(s.title), el: li, activate: send, row: pairRow, col: i % 2, id: 'spell:' + s.letter })
+        const item: Focusable = { label: formattedStringToText(s.title), el: li, activate: send, row: pairRow, col: i % 2, id: 'spell:' + s.letter }
+        // a row the cursor cannot reach counts as lit, so its tap still casts
+        const at = () => (this.nav.count === this.focusables.length ? this.focusables.indexOf(item) : -1)
+        tapLights(li, () => at() < 0 || this.nav.current() === item, () => this.nav.focus(at()))
+        items.push(item)
         ol.append(li)
       })
       c.append(ol)
@@ -2025,6 +2031,11 @@ export class Overlays {
         btn.addEventListener('mouseenter', () => {
           // the pointer moves the one cursor too, so A and Enter take what the mouse is over
           if (!this.pointerLive) return
+          const i = this.focusables.indexOf(item)
+          if (i >= 0 && this.nav.count === this.focusables.length) this.nav.focus(i)
+          else show()
+        })
+        tapLights(btn, () => btn.classList.contains('selected'), () => {
           const i = this.focusables.indexOf(item)
           if (i >= 0 && this.nav.count === this.focusables.length) this.nav.focus(i)
           else show()
@@ -2119,6 +2130,11 @@ export class Overlays {
       const col = hk.kind === 'row' ? n : 10 + n
       const item: Focusable = { label: hk.label, el: marker, activate: send, row: hk.line, col, group: hk.group, id: hk.kind + ':' + hk.key }
       if (targets && hk.kind === 'row') item.alt = { label: 'Set target', activate: () => this.hooks.send(cm.input('=' + hk.key)) }
+      // a finger lights a skill first, as the arrows would; the footer's switches go at once
+      if (hk.kind === 'row') {
+        const at = () => (this.nav.count === this.focusables.length ? this.focusables.indexOf(item) : -1)
+        tapLights(marker, () => at() < 0 || this.nav.current()?.el === marker, () => this.nav.focus(at()))
+      }
       items.push(item)
     }
     // the skills screen is two columns of rows, and a row often has an entry in
@@ -2690,6 +2706,11 @@ export class Overlays {
     this.root.append(el)
     this.clientOverlay = { kind, el, focus: 0, items, back }
     this.itemsTakeMouse(items)
+    // a finger lights a row of the game's own lists first; Orbrun's menus (system, settings, the
+    // shortcuts sheet) take a tap at once, as the front end's do
+    if (kind === 'choices' || kind === 'palette') {
+      items.forEach((it, i) => tapLights(it, () => this.clientOverlay?.items === items && this.clientOverlay.focus === i, () => this.setClientFocus(i, false)))
+    }
     this.setClientFocus(0)
     this.hooks.onClientOverlayChange()
   }

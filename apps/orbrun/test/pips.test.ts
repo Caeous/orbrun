@@ -20,6 +20,15 @@ describe('edgePlace: which edge a camera-space point rides', () => {
     expect(p.v).toBe(0)
     expect(p.u).toBeCloseTo(0.5)
   })
+  it('follows a lens shifted up (a phone held upright): straight ahead stands above the middle', () => {
+    const up = { ...LENS, shiftY: 0.4 }
+    // a third of the way up: in sight on the centred lens, past the top once the lens looks higher
+    expect(edgePlace({ x: 0, y: 0.7, z: -1 }, LENS)).toBeNull()
+    expect(edgePlace({ x: 0, y: 0.7, z: -1 }, up)!.v).toBe(0)
+    // low down: past the bottom on the centred lens, in sight on the shifted one
+    expect(edgePlace({ x: 0, y: -1.3, z: -1 }, LENS)!.v).toBe(1)
+    expect(edgePlace({ x: 0, y: -1.3, z: -1 }, up)).toBeNull()
+  })
   it('puts a thing just behind the left shoulder low on the left edge, whatever its height', () => {
     const p = edgePlace({ x: -3, y: -0.4, z: 1 }, LENS)!
     expect(p.u).toBe(0)

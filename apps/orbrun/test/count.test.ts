@@ -53,7 +53,7 @@ describe('counts: what the Worker keeps', () => {
       'e=play&w=-10',
       'e=play&w=12.5',
       'e=play&fov=orbrun',
-      'e=play&fov=120',
+      'e=play&fov=130',
       'e=play&fov=1e2',
       'e=play&eyeHeight=0.123',
       'e=play&viewmodel=2',
@@ -167,7 +167,7 @@ describe('counts: the settings a game starts on', () => {
   })
 
   it('keeps a number between two stops as it is, and leaves one out of range out', () => {
-    const s: Settings = { ...defaultSettings, eyeHeight: 0.62, fov: 120, invertLook: true }
+    const s: Settings = { ...defaultSettings, eyeHeight: 0.62, fov: 130, invertLook: true }
     const row = parseCount(new URL(countUrl('play', { settings: s }), 'https://orbrun.app').searchParams)!
     expect(row.numbers.eyeHeight).toBe(0.62)
     expect(row.numbers.invertLook).toBe(1)

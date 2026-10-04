@@ -1222,6 +1222,20 @@ describe('the front end: accounts and servers', () => {
     expect(conn(screen)).toBe('orbrun · CKO · Not logged in')
   })
 
+  it('a tap on a row chooses it at once: only the game’s own lists light a row first', () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
+    const { screen, connect } = make()
+    screen.showAccounts()
+    const row = screen.root.querySelector<HTMLElement>('[data-focus="account:cko/orbrun"]')!
+    expect(focused(screen)).not.toBe('account:cko/orbrun')
+    row.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true } as PointerEventInit))
+    row.click()
+    expect(connect).toHaveBeenCalledWith(cko, 'orbrun', undefined)
+    expect(screen.view).toBe('home')
+  })
+
   it('(log in) beside an account whose login is forgotten chooses it and asks for its password', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
@@ -1849,12 +1863,12 @@ describe('the front end: settings and marks', () => {
     expect(value('Field of view')).toBe('Auto (85°)')
     while (focused(screen) !== 'setting:Field of view') press(screen, 'j')
     press(screen, 'l')
-    expect(value('Field of view')).toBe('60°')
+    expect(value('Field of view')).toBe('50°')
     press(screen, 'h')
     expect(value('Field of view')).toBe('Auto (85°)')
     // back at the default, so it is not written down at all: a default we move later moves for this player too
     expect('fov' in JSON.parse(localStorage.getItem('orbrun.settings')!)).toBe(false)
-    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('How wide the first-person view opens. Auto is 85°, or 75° on a phone.')
+    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('How wide the first-person view opens. Auto is 85°, or on a phone 75° on its side and 120° upright.')
     // the page's Back is the settings again, on the group it was opened from
     pad(screen, 'B')
     expect(screen.view).toBe('settings')

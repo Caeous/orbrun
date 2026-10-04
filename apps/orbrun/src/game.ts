@@ -516,14 +516,19 @@ export class GameScreen {
     const mapPx = map ? this.grid.px(map) : null
     this.mapFoot = mapPx ? Math.max(0, px.top + px.height - mapPx.top - mapPx.height) : 0
     this.renderer.resize(px.width, px.height, this.viewDpr())
-    // the view runs on under the touch bar along the foot, where the panes stop (gameSplit): the hands stand where they stop
+    // the view runs on under the touch bar along the foot, where the panes stop (gameSplit): the hands stand where they stop;
+    // upright they stand on the screen's bottom edge, behind the log and the bar, which would lift them halfway up the screen
     const msgPx = this.grid.px(cells.messages)
     if (this.renderer instanceof Render3d) {
-      this.renderer.setFoot(mapView ? 0 : px.top + px.height - msgPx.top - msgPx.height)
+      this.renderer.setFoot(mapView || isPortrait(g) ? 0 : px.top + px.height - msgPx.top - msgPx.height)
       this.renderer.setUpright(this.upright)
-      // Auto's field of view is a phone's or a computer's, and a browser's device toolbar can turn one into the other
-      if (this.grid.phone !== this.lensPhone) {
-        this.lensPhone = this.grid.phone
+      // upright the log and the bar hide the view's foot, so the lens looks ahead into what is left above them
+      this.renderer.setLensFoot(this.upright && !mapView ? px.top + px.height - msgPx.top : 0)
+      // Auto's field of view is a computer's or a phone's on its side or upright, and turning the phone (or a browser's
+      // device toolbar) changes which
+      const lens = this.lensHeld()
+      if (lens !== this.lensKey) {
+        this.lensKey = lens
         if (!this.settings().fov) this.renderer.setOptions(this.render3dOptions(this.settings()))
       }
     }
@@ -667,15 +672,18 @@ export class GameScreen {
   private viewFov(): number {
     const lens = (this.renderer instanceof Render3d ? this.renderer : this.park.kept)?.projector()
     const aspect = lens ? lens.aspect : this.viewPx && this.viewPx.height ? this.viewPx.width / this.viewPx.height : 16 / 9
-    const tanHalfY = lens ? lens.tanHalfY : Math.tan((fovOf(this.settings(), this.grid.phone) * Math.PI) / 360)
+    const tanHalfY = lens ? lens.tanHalfY : Math.tan((fovOf(this.settings(), this.grid.phone, this.upright) * Math.PI) / 360)
     return 2 * Math.atan(tanHalfY * aspect)
   }
 
-  /** whether the 3D view's Auto field of view was last set for a phone (`relayout`) */
-  private lensPhone = false
+  /** how the device was held when the 3D view's Auto field of view was last set (`relayout`) */
+  private lensKey: 'desktop' | 'sideways' | 'upright' = 'desktop'
+  private lensHeld() {
+    return !this.grid.phone ? 'desktop' : this.upright ? 'upright' : 'sideways'
+  }
 
   private render3dOptions(st: Settings) {
-    return { eyeHeight: st.eyeHeight, fov: fovOf(st, this.grid.phone), viewmodel: st.viewmodel, wallInset: WALL_INSET, chamfer: CHAMFER, motion: !this.cam.reducedMotion }
+    return { eyeHeight: st.eyeHeight, fov: fovOf(st, this.grid.phone, this.upright), viewmodel: st.viewmodel, wallInset: WALL_INSET, chamfer: CHAMFER, motion: !this.cam.reducedMotion }
   }
 
   /** A melee attack lifts the weapon a touch (rendering-3d.md II.7); frames follow until it settles. */

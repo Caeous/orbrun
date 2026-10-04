@@ -314,6 +314,8 @@ export class Render3d implements MapRenderer {
   private footPx = 0
   /** the view is a phone's held upright (`setUpright`): the hands shrink with the width (hands.ts `handsScale`) */
   private upright = false
+  /** the css px along the view's foot the lens looks past (`setLensFoot`) */
+  private lensFootPx = 0
   // ---- the peel
   private peelWorker: Worker | null | undefined = undefined
   private peelId = 0
@@ -582,7 +584,7 @@ export class Render3d implements MapRenderer {
     }
     Object.assign(this.opts, opts)
     this.cam.fov = this.opts.fov
-    this.cam.updateProjectionMatrix()
+    this.applyLens()
     this.mesher.invalidate()
     this.builtRevision = -1
     this.builtLayout = -1
@@ -648,6 +650,27 @@ export class Render3d implements MapRenderer {
     this.upright = on
   }
 
+  /**
+   * Orbrun's own, for a phone held upright: the view's bottom `px` lie under
+   * the HUD's log and touch bar, so the lens is shifted up (the walls stay
+   * upright, as a shift lens keeps them) to put straight ahead in the middle
+   * of what is left in sight; centred on the whole view, a wide lens looked
+   * at the ceiling.
+   */
+  setLensFoot(px: number): void {
+    const foot = Math.max(0, Math.min(px, this.height / 2))
+    if (foot === this.lensFootPx) return
+    this.lensFootPx = foot
+    this.applyLens()
+  }
+
+  /** The camera's projection: centred, or shifted by `lensFootPx`. */
+  private applyLens(): void {
+    if (this.lensFootPx) this.cam.setViewOffset(this.width, this.height, 0, this.lensFootPx / 2, this.width, this.height)
+    else this.cam.clearViewOffset()
+    this.cam.updateProjectionMatrix()
+  }
+
   /** `footPx` as a share of the view's height, never above half of it. */
   private get footShare(): number {
     return Math.min(0.5, this.footPx / this.height)
@@ -680,7 +703,7 @@ export class Render3d implements MapRenderer {
       this.renderer.setSize(this.width, this.height, false)
     }
     this.cam.aspect = this.width / this.height
-    this.cam.updateProjectionMatrix()
+    this.applyLens()
     this.vmCam.aspect = this.cam.aspect
     this.vmCam.updateProjectionMatrix()
   }
@@ -724,7 +747,7 @@ export class Render3d implements MapRenderer {
   }
 
   /** The lens after the last frame, for the HUD's edge pips. */
-  projector(): { tanHalfY: number; aspect: number; height: number; toCamera(x: number, y: number, h: number): { x: number; y: number; z: number } } {
+  projector(): { tanHalfY: number; aspect: number; shiftY: number; height: number; toCamera(x: number, y: number, h: number): { x: number; y: number; z: number } } {
     const cam = this.cam
     cam.updateMatrixWorld()
     const inv = cam.matrixWorld.clone().invert()
@@ -732,6 +755,7 @@ export class Render3d implements MapRenderer {
     return {
       tanHalfY: Math.tan((cam.fov * Math.PI) / 360),
       aspect: cam.aspect,
+      shiftY: this.lensFootPx / this.height,
       height: this.height,
       toCamera: (x, y, h) => {
         v.set(x + 0.5, h, y + 0.5).applyMatrix4(inv)

@@ -269,6 +269,22 @@ describe('skills screen (crt menu)', () => {
     ov.focusOp(st, ctx, 'cancel')
     expect(sent).toEqual([{ msg: 'key', keycode: Keys.ESC }])
   })
+  it('a tap lights a skill first, as the arrows would; a tap on the lit skill toggles it', () => {
+    const { ov, st, sent, frame, host } = setup()
+    load(st)
+    let ctx = frame('touch')
+    const conj = Array.from(host.querySelectorAll<HTMLElement>('.crt-hot.row')).find((m) => m.title === 'Conjurations')!
+    const tap = () => {
+      conj.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true } as PointerEventInit))
+      conj.click()
+    }
+    tap()
+    ctx = frame('touch')
+    expect(ov.focusInfo(ctx)?.label).toBe('Conjurations')
+    expect(sent).toEqual([])
+    tap()
+    expect(sent).toEqual([{ msg: 'input', text: 'j' }])
+  })
   it('Y on a skill row sets its target: `=` for set-target mode, then the letter, in one send', () => {
     const { ov, st, sent, frame } = setup()
     load(st)
@@ -995,6 +1011,22 @@ describe('server menus keep their own hover', () => {
     expect(bindingTable(ctx).A).toEqual({ kind: 'menu', op: 'select' })
     ov.menuOp(st, 'next')
     expect(sent[0]).toMatchObject({ msg: 'menu_hover' })
+  })
+
+  it('a tap lights a row first, as the arrows would; a tap on the lit row takes it', () => {
+    const { st, sent, frame, host } = setup()
+    reduce(st, { msg: 'menu', tag: 'inventory', flags: 0, title: { text: 'Inventory' }, items: [{ text: 'a - a dagger', hotkeys: [97], level: 2 }, { text: 'b - a robe', hotkeys: [98], level: 2 }], total_items: 2, last_hovered: -1 })
+    frame('touch')
+    const robe = host.querySelectorAll<HTMLElement>('li.selectable')[1]
+    const tap = () => {
+      robe.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true } as PointerEventInit))
+      robe.click()
+    }
+    tap()
+    expect(sent).toEqual([cm.menuHover(1, true)])
+    expect(robe.classList.contains('hovered')).toBe(true)
+    tap()
+    expect(sent.slice(1)).toEqual([cm.key(98)])
   })
 })
 

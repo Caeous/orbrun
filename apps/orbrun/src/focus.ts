@@ -311,3 +311,32 @@ export class FocusNav {
     if (cur && scroll && !cur.ownScroll) cur.el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 }
+
+const tapped = new WeakSet<HTMLElement>()
+
+/**
+ * A finger lights a row before it chooses it: a tap on a row the cursor is
+ * not on moves the cursor there, as the arrows would, and only a tap on the
+ * lit row does what A does. A mouse click and a key still choose at once.
+ * Whether the row was lit is read as the finger goes down, before a native
+ * focus can move the cursor there. A control of its own inside the row (a
+ * setting's arrows, a field) acts at once. Installed once per element.
+ */
+export function tapLights(el: HTMLElement, lit: () => boolean, light: () => void) {
+  if (tapped.has(el)) return
+  tapped.add(el)
+  let lightOnly = false
+  el.addEventListener('pointerdown', (ev) => {
+    lightOnly = ev.pointerType === 'touch' && !lit()
+  }, { capture: true, passive: true })
+  el.addEventListener('click', (ev) => {
+    const wanted = lightOnly
+    lightOnly = false
+    if (!wanted) return
+    const inner = (ev.target as Element | null)?.closest?.('button, a, input, textarea, select, [role="button"]')
+    if (inner && inner !== el && el.contains(inner)) return
+    ev.preventDefault()
+    ev.stopImmediatePropagation()
+    light()
+  }, { capture: true })
+}

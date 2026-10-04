@@ -27,6 +27,8 @@ export interface Projector {
   tanHalfY: number
   /** width over height */
   aspect: number
+  /** how far up the view straight ahead stands, in halves of its height (render-3d `setLensFoot`) */
+  shiftY?: number
   /** the view's height in CSS pixels, which is what the vertical field of view spans */
   height: number
   /** The centre of cell (x, y) at height h (0 floor, 1 lid) in camera space. */
@@ -104,13 +106,13 @@ export function pipTargets(scene: Scene, mode: EdgePipMode): Billboard[] {
  * clamp is the truth) to abeam (where the walk behind takes over): the pip
  * slides to the middle of the side edge instead of jumping to it.
  */
-export function edgePlace(p: CamPoint, proj: { tanHalfY: number; aspect: number }): EdgePlace | null {
+export function edgePlace(p: CamPoint, proj: { tanHalfY: number; aspect: number; shiftY?: number }): EdgePlace | null {
   const tx = proj.tanHalfY * proj.aspect
   const ty = proj.tanHalfY
   let u: number, v: number
   if (p.z < 0) {
     let dx = p.x / (-p.z * tx)
-    let dy = p.y / (-p.z * ty)
+    let dy = p.y / (-p.z * ty) + (proj.shiftY ?? 0)
     if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) return null
     // the fade: 0 while the lens still has the point between its side walls (|dx| <= 1, so the height is untouched for
     // anything that left over the top or the bottom), 1 abeam, where dy is nothing and the clamp lands on the middle of
