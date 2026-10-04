@@ -60,6 +60,16 @@ async function keptPage() {
   return undefined
 }
 
+/**
+ * One of the app's files: this version's, else an older version's, where an
+ * older page's bundles are. Not caches.match alone: it looks in the oldest
+ * cache first, which for a file kept under a fixed name (the manifest, the
+ * icons, the places) is the last deploy's copy.
+ */
+async function appFile(url) {
+  return (await (await caches.open(appCache)).match(url)) || caches.match(url)
+}
+
 /** Whether a page load of `url` is the app's: anything but the site's pages, in any case, and the build's other files, as the Worker has it. */
 function isApp(url) {
   const page = '/' + url.pathname.split('/').filter(Boolean).join('/').toLowerCase()
@@ -83,8 +93,7 @@ self.addEventListener('fetch', (e) => {
     return
   }
   if (appFiles.has(url.origin + url.pathname) || (appCache && url.origin === self.location.origin && url.pathname.startsWith('/assets/'))) {
-    // an older page's bundles are found in its version's cache
-    e.respondWith(caches.match(url.origin + url.pathname).then((hit) => hit || fetch(req)))
+    e.respondWith(appFile(url.origin + url.pathname).then((hit) => hit || fetch(req)))
     return
   }
   if (!kept.some((p) => req.url.startsWith(p))) return

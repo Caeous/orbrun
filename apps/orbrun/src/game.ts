@@ -411,6 +411,9 @@ export class GameScreen {
 
   destroy() {
     this.destroyed = true
+    // a finger on the touch bar as it goes (a reconnect, the screen torn down under it) never lifts where the page
+    // can hear it: let go here, or a held arrow walks on into the next game. The releases land on nothing (`pad`)
+    this.hooks.gamepad.virtualRelease()
     this.hooks.gamepad.fourWay = false
     this.hooks.gamepad.rightStickTurns = false
     this.saveView()
@@ -827,8 +830,9 @@ export class GameScreen {
     this.hud.minimapUpright = settings.minimapTurns ? this.cam.mapUprightYaw : 0
     // and marks the way the 3D view faces instead, as the level map does
     this.hud.minimapFov = !settings.minimapTurns && this.renderer instanceof Render3d ? this.viewFov() : null
-    // a finger gets every button the screen has, by its word (bindings.ts touchLabels); a panel of ours names its own
-    const touch = this.lastInput === 'touch' && !this.session.watching && !this.chat.capturing ? touchLabels(ours ? withBack(ours) : barLabels(this.ctx), this.ctx, !!ours) : null
+    // a finger gets every button the screen has, by its word (bindings.ts touchLabels); a panel of ours names its own.
+    // A spectator's too: B and Start open the Orbrun menu, where Stop watching is, the one way out on a phone
+    const touch = this.lastInput === 'touch' && !this.chat.capturing ? touchLabels(ours ? withBack(ours) : barLabels(this.ctx), this.ctx, !!ours) : null
     this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours, touch)
     this.chat.update(st, this.chatOn && (st.phase === 'playing' || st.phase === 'watching'), !!st.lobby.username)
     this.syncTarget()
@@ -1330,6 +1334,7 @@ export class GameScreen {
   }
 
   pad(ev: PadEvent) {
+    if (this.destroyed) return
     this.wake()
     // a press, a stick or the d-pad is the pad speaking; a stick settling back to centre is not
     if (isPadActivity(ev)) this.inputFrom('pad')
@@ -1774,11 +1779,15 @@ export class GameScreen {
     if (!this.session.watching) this.runner.send(cm.setOption('action_panel_show', shown))
   }
 
-  /** A server popup or dialog is up, and the pointer may close it: ui.js registers its handlers on the same condition. */
-  private popupUp(): boolean {
+  /**
+   * A server popup or dialog is up, and the pointer may close it: ui.js
+   * registers its handlers on the same condition. Under a finger (`touch`) a
+   * menu is one too, as menu.js shows it with ui.show_popup: on a phone the
+   * menu covers the view, and a tap beside it is the way out a finger reaches.
+   */
+  private popupUp(touch = false): boolean {
     if (this.session.watching || this.overlays.hasClientOverlay) return false
-    // a menu is a popup too (menu.js shows it with ui.show_popup)
-    if (this.ctx.mode !== 'popup' && this.ctx.mode !== 'dialog' && this.ctx.mode !== 'menu') return false
+    if (this.ctx.mode !== 'popup' && this.ctx.mode !== 'dialog' && !(touch && this.ctx.mode === 'menu')) return false
     return this.session.state.options.tile_web_mouse_control !== false
   }
 
@@ -1790,17 +1799,20 @@ export class GameScreen {
    * (`target_outside_game`) and keeps its clicks. Orbrun adds: a right click
    * closes wherever it lands, inside the popup too, the mirror of the right
    * click that opened a describe, so a look is over as fast as it began.
-   * Orbrun's own panels go the same way: a press outside them is their
-   * Escape, a step back (B). The touch bar is no outside: its buttons are
-   * the pad's, and its Back already says what it does.
+   * Under a finger, a crawl menu goes the same way (`popupUp`), and so do
+   * Orbrun's own panels: a tap outside them is their Escape, a step back
+   * (B). A mouse leaves those be, as before: it has the view to drag while
+   * a setting is tuned. The touch bar is no outside: its buttons are the
+   * pad's, and its Back already says what it does.
    */
   private onDocPointer(ev: PointerEvent) {
     this.wake()
     // a finger anywhere (a menu's row, a prompt's chip) is the finger speaking: the touch bar comes up for it
-    if (ev.pointerType === 'touch') this.inputFrom('touch')
+    const touch = ev.pointerType === 'touch'
+    if (touch) this.inputFrom('touch')
     const t = ev.target instanceof Element ? ev.target : null
     if (t?.closest('.touchbar')) return
-    if (this.overlays.hasClientOverlay && !this.session.watching) {
+    if (touch && this.overlays.hasClientOverlay && !this.session.watching) {
       // inside a panel, on the on-screen keyboard or in the chat, the press is theirs
       if (t?.closest('.popup, .osk') || (t && this.chat.root.contains(t))) return
       ev.preventDefault()
@@ -1810,7 +1822,7 @@ export class GameScreen {
       this.needsRender = true
       return
     }
-    if (!this.popupUp()) return
+    if (!this.popupUp(touch)) return
     if (t && this.chat.root.contains(t)) return
     // the perf pane takes its own taps (it saves the log); a tap on it is not a tap outside the popup
     if (t?.closest('.perf')) return
@@ -1826,7 +1838,8 @@ export class GameScreen {
   /** ui.js context_disable: no browser context menu while a popup is up, except on a text input. */
   private onDocContextMenu(ev: MouseEvent) {
     this.wake()
-    if (!this.popupUp()) return
+    // a long press on a menu's row is the finger's (onDocPointer took it as touch first): no callout over the menu
+    if (!this.popupUp(this.lastInput === 'touch')) return
     const t = ev.target instanceof Element ? ev.target : null
     if (t && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement)) return
     ev.preventDefault()

@@ -152,8 +152,8 @@ export class GridHost {
     const cw = px * adv
     const ch = Math.round(px * LINE_HEIGHT)
     this.fittedPx = px
-    const g = fitGrid(w, hgt, cw, ch)
-    const same = g.cols === this.grid.cols && g.rows === this.grid.rows && g.cw === this.grid.cw && g.ch === this.grid.ch && g.ox === this.grid.ox && g.oy === this.grid.oy
+    const g: Grid = { ...fitGrid(w, hgt, cw, ch), phone: this.phone }
+    const same = g.cols === this.grid.cols && g.rows === this.grid.rows && g.cw === this.grid.cw && g.ch === this.grid.ch && g.ox === this.grid.ox && g.oy === this.grid.oy && g.phone === !!this.grid.phone
     this.grid = g
     const st = this.host.style
     st.setProperty('--cw', cw.toFixed(3) + 'px')

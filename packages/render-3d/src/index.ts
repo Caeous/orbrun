@@ -645,7 +645,7 @@ export class Render3d implements MapRenderer {
     this.footPx = Math.max(0, px)
   }
 
-  /** Orbrun's own: the view is a phone's held upright, where the Field of view setting is the angle across (lens.ts). */
+  /** Orbrun's own: the view is a phone's held upright, where the Field of view setting is the angle across (lens.ts) and the hands shrink with the width (hands.ts `handsScale`). */
   setUpright(on: boolean): void {
     if (on === this.upright) return
     this.upright = on
@@ -1200,7 +1200,7 @@ export class Render3d implements MapRenderer {
   handsFootprint(): HandRect[] {
     if (!this.vmVisible) return []
     const vm = this.viewmodel!
-    return handsFootprint({ weapon: !!vm.weapon, offhand: !vm.offhand ? 'none' : vm.offhand.name?.startsWith('HAND2_') ? 'shield' : 'weapon' }, this.cam.aspect, this.footShare)
+    return handsFootprint({ weapon: !!vm.weapon, offhand: !vm.offhand ? 'none' : vm.offhand.name?.startsWith('HAND2_') ? 'shield' : 'weapon' }, this.cam.aspect, this.footShare, this.upright)
   }
 
   private get vmVisible(): boolean {
@@ -1326,7 +1326,7 @@ export class Render3d implements MapRenderer {
     const lift = this.lift
     const tint = scene.level.tint
     const flash = flashOf(getCell(scene, scene.player.x, scene.player.y))
-    const k = handsScale(asp)
+    const k = handsScale(asp, this.upright)
     const foot = this.footShare
     const pose = (h: Hand | null, rest: HandPose, push = 0) => {
       if (!h) return

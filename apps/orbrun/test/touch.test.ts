@@ -44,6 +44,11 @@ describe('the touch bar has every button the screen has, by its word', () => {
     const c = ctx({ mode: 'levelmap' })
     expect(touchLabels(barLabels(c), c).map((l) => l.button)).toEqual(expect.arrayContaining(['SELECT', 'B']))
   })
+  it('a spectator has B and Start, the Orbrun menu with Stop watching on it: the one way out on a phone', () => {
+    const c = ctx({ mode: 'spectating' })
+    const labels = touchLabels(barLabels(c), c)
+    for (const b of ['B', 'START']) expect(labels.find((l) => l.button === b)?.action).toEqual({ kind: 'ui', op: 'system' })
+  })
   it('a --more-- has its own A, and no arrows', () => {
     const c = ctx({ mode: 'more' })
     const labels = touchLabels(barLabels(c), c)
@@ -160,7 +165,7 @@ describe('a finger on the touch bar presses the pad’s button without choosing 
 
 describe('the layout on a phone', () => {
   // an iPhone 14 held upright, a landscape laptop: 390x844 and 1440x900 css px in 9.6x19 cells
-  const phone = fitGrid(390, 844, 9.6, 19)
+  const phone = { ...fitGrid(390, 844, 9.6, 19), phone: true }
   const laptop = fitGrid(1440, 900, 9.6, 19)
 
   it('upright, the panes stack: the stats strip across the top, the minimap column under it at the right, messages the whole width', () => {
@@ -174,6 +179,14 @@ describe('the layout on a phone', () => {
     expect(l.clear).toEqual({ x: 0, y: STRIP_ROWS, w: phone.cols - 20, h: l.sidebar.h })
     expect(l.messages.w).toBe(phone.cols)
     expect(l.view).toEqual({ x: 0, y: 0, w: phone.cols, h: phone.rows })
+  })
+  it('a desktop window of the same shape keeps its panes side by side: the stack is a phone\'s', () => {
+    const narrow = fitGrid(390, 844, 9.6, 19)
+    expect(isPortrait(narrow)).toBe(false)
+    const l = gameSplit(narrow, 5)
+    expect(l.stats.w).toBeLessThan(narrow.cols)
+    expect(l.sidebar.y).toBe(0)
+    expect(l.messages.w).toBe(l.clear.w)
   })
   it('upright, the level map takes the whole width, with no band where the minimap column was', () => {
     const l = gameSplit(phone, 5)

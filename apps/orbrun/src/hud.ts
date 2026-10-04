@@ -5,7 +5,7 @@ import { monsterGroups } from '@orbrun/scene-webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
 import { h, clear, escapeHtml, replace, snapToPixels } from './dom'
 import { commandTileId, tileCanvas } from './overlays'
-import { TOUCH_GRID, barLabels, buttonGroup, promptLabels, touchCell, type Action, type BindingLabel, type TouchLabel } from './bindings'
+import { CONTINUE, TOUCH_GRID, barLabels, buttonGroup, promptLabels, touchCell, type Action, type BindingLabel, type TouchLabel } from './bindings'
 
 /** A tap-or-hold button down: which, and the press's length as a fraction of the hold (bindings.ts HOLD_MS). */
 export interface HoldProgress {
@@ -532,6 +532,11 @@ export class Hud {
     this.attachPanelPointer()
     this.minimapCanvas.addEventListener('click', () => hooks.onMinimapClick())
     this.stats.addEventListener('click', () => hooks.onStatsClick())
+    // a mouse's click on the pane stays there, as on #message_pane: on a pending --more-- it is space, else nothing.
+    // A finger's goes through to the view (styles.css .hud.touch > .messages, dismissesMoreAt)
+    this.messages.addEventListener('click', () => {
+      if (this.messages.classList.contains('dismissable')) hooks.onBarAction(CONTINUE)
+    })
   }
 
   /**
@@ -737,6 +742,8 @@ export class Hud {
       this.renderMessages(state, spectating)
     }
     this.renderMenus(ctx, padKind, menus && device === 'pad' && !spectating)
+    // what takes a finger differs from what takes a mouse (styles.css .hud.touch)
+    this.root.classList.toggle('touch', device === 'touch')
     // a panel of ours (`panel`, overlays.ts padPrompts) is up over the play view's own mode
     const under = panel || POPUP_MODES.has(ctx.mode)
     this.renderBar(ctx, padKind, spectating, device, hints, padLabels, under)
@@ -1733,65 +1740,83 @@ export class Hud {
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
     this.touchbar.hidden = !labels?.length
-    // a button the screen took away under the finger lets go: its pointerup will land on nothing
-    for (const el of this.touchbar.querySelectorAll<HTMLElement>('.tb.down')) this.hooks.onTouchButton(el.dataset.b as Button, false)
-    clear(this.touchbar)
-    if (!labels?.length) return
+    if (!labels?.length) {
+      // the bar going away under a finger lets go of what it holds: its pointerup will land on nothing
+      for (const el of this.touchbar.querySelectorAll<HTMLElement>('.tb.down')) this.hooks.onTouchButton(el.dataset.b as Button, false)
+      clear(this.touchbar)
+      return
+    }
+    // a cell whose button stays keeps its element, filled anew, so a finger on it keeps its press (and the pointer
+    // capture its pointerup needs) while a word changes under it: an arrow held through a menu's lit row, Wait
+    // held to Rest. Only a button the screen took away lets go
+    const was = new Map<string, HTMLElement>()
+    for (const el of Array.from(this.touchbar.children) as HTMLElement[]) if (el.dataset.cell) was.set(el.dataset.cell, el)
     for (const row of TOUCH_GRID) {
       for (const cell of row) {
         const l = labels.find((l) => l.cell === cell)
-        const at = touchCell(cell)!
-        const area = at.row + 1 + ' / ' + (at.col + 1)
-        if (!l) {
-          const empty = h('span', { class: 'tb empty', 'data-cell': cell })
-          empty.style.gridArea = area
-          this.touchbar.append(empty)
+        const old = was.get(cell)
+        if (l && old?.dataset.b === l.button) {
+          this.fillTouchButton(old, cell, l, gd)
           continue
         }
-        const b = l.button as Button
-        // the d-pad's cells are their arrows alone; the others are their art over the word, the word being what is read last
-        const arrow = TOUCH_ARROW_ROT[cell]
-        const icon = arrow !== undefined ? touchArrow(arrow, this.touchArtMost) : touchArt(gd, l.icon, l.item, this.touchArtMost)
-        // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
-        const words = l.hold ? l.label + ' [' + l.hold + ']' : l.label
-        const btn = h(
-          'button',
-          { class: 'tb ' + cell + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : ''), type: 'button', 'data-b': b, 'data-cell': cell, 'aria-label': formattedStringToText(l.label) },
-          icon,
-          l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null,
-          arrow !== undefined ? null : label(words),
-        )
-        // sized by its length to keep to that line (styles.css .tb.has-hold)
-        if (l.hold) btn.style.setProperty('--chars', String(formattedStringToText(words).length))
-        btn.addEventListener('pointerdown', (ev) => {
-          ev.preventDefault()
-          // the finger may slide off before it lifts: its pointerup still comes here (a pointer the page never saw cannot be captured)
-          try {
-            btn.setPointerCapture(ev.pointerId)
-          } catch {}
-          btn.classList.add('down')
-          this.hooks.onTouchButton(b, true)
-        })
-        const up = (ev: PointerEvent) => {
-          if (!btn.classList.contains('down')) return
-          btn.classList.remove('down')
-          if (btn.hasPointerCapture(ev.pointerId)) btn.releasePointerCapture(ev.pointerId)
-          this.hooks.onTouchButton(b, false)
-        }
-        btn.addEventListener('pointerup', up)
-        btn.addEventListener('pointercancel', up)
-        btn.addEventListener('contextmenu', (ev) => ev.preventDefault())
-        btn.style.gridArea = area
-        this.touchbar.append(btn)
+        if (old?.classList.contains('down')) this.hooks.onTouchButton(old.dataset.b as Button, false)
+        const at = touchCell(cell)!
+        const el = l ? this.touchButton(cell, l, gd) : h('span', { class: 'tb empty', 'data-cell': cell })
+        el.style.gridArea = at.row + 1 + ' / ' + (at.col + 1)
+        if (old) old.replaceWith(el)
+        else this.touchbar.append(el)
       }
     }
   }
 
+  /** A touch bar button pressing `l.button` for as long as the finger stays on it. */
+  private touchButton(cell: string, l: TouchLabel, gd: Gamedata | null): HTMLElement {
+    const b = l.button as Button
+    const btn = h('button', { type: 'button', 'data-b': b, 'data-cell': cell })
+    btn.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault()
+      // the finger may slide off before it lifts: its pointerup still comes here (a pointer the page never saw cannot be captured)
+      try {
+        btn.setPointerCapture(ev.pointerId)
+      } catch {}
+      btn.classList.add('down')
+      this.hooks.onTouchButton(b, true)
+    })
+    const up = (ev: PointerEvent) => {
+      if (!btn.classList.contains('down')) return
+      btn.classList.remove('down')
+      if (btn.hasPointerCapture(ev.pointerId)) btn.releasePointerCapture(ev.pointerId)
+      this.hooks.onTouchButton(b, false)
+    }
+    btn.addEventListener('pointerup', up)
+    btn.addEventListener('pointercancel', up)
+    btn.addEventListener('contextmenu', (ev) => ev.preventDefault())
+    this.fillTouchButton(btn, cell, l, gd)
+    return btn
+  }
+
+  /** What a touch bar button shows for `l`: its art, its count, its word; a press it is under stays. */
+  private fillTouchButton(btn: HTMLElement, cell: string, l: TouchLabel, gd: Gamedata | null) {
+    // the d-pad's cells are their arrows alone; the others are their art over the word, the word being what is read last
+    const arrow = TOUCH_ARROW_ROT[cell]
+    const icon = arrow !== undefined ? touchArrow(arrow, this.touchArtMost) : touchArt(gd, l.icon, l.item, this.touchArtMost)
+    // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
+    const words = l.hold ? l.label + ' [' + l.hold + ']' : l.label
+    btn.className = 'tb ' + cell + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (btn.classList.contains('down') ? ' down' : '')
+    btn.setAttribute('aria-label', formattedStringToText(l.label))
+    const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, arrow !== undefined ? null : label(words)]
+    btn.replaceChildren(...parts.filter((n): n is Element => n !== null))
+    // sized by its length to keep to that line (styles.css .tb.has-hold)
+    if (l.hold) btn.style.setProperty('--chars', String(formattedStringToText(words).length))
+    else btn.style.removeProperty('--chars')
+  }
+
   /**
-   * The pane takes no pointer at all (styles.css .hud > .messages), so a
-   * drag that starts on the log turns the view like one anywhere else; the
-   * view's own tap asks here whether it landed on a pane with a --more--
-   * pending, which it dismisses with space, as #message_pane takes a click.
+   * Under a finger the pane takes no pointer (styles.css .hud.touch >
+   * .messages), so a drag that starts on the log turns the view like one
+   * anywhere else; the view's own tap asks here whether it landed on a pane
+   * with a --more-- pending, which it dismisses with space, as #message_pane
+   * takes a click.
    */
   dismissesMoreAt(clientX: number, clientY: number): boolean {
     if (this.messages.hidden || !this.messages.classList.contains('dismissable')) return false

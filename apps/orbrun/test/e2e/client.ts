@@ -316,7 +316,7 @@ async function startClient(t: Transport, device: InputDevice, before: (settle: (
     settings: () => ({ ...getSettings(), renderer: '2d' }),
     settingsPanel: () => ({ el: document.createElement('div'), rows: [] }),
     onSystem() {},
-    gamepad: { kind: 'xbox', isHeld: (b: Button) => held.has(b) } as never,
+    gamepad: { kind: 'xbox', isHeld: (b: Button) => held.has(b), virtualRelease() {} } as never,
     initialInput: device,
     renderer: noRenderer,
   })

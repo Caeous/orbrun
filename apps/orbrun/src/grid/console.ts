@@ -20,6 +20,8 @@ export interface Grid {
   ch: number
   ox: number
   oy: number
+  /** the grid is a phone's (host.ts `setLeast`): only a phone's stacks its panes when held upright (`isPortrait`) */
+  phone?: boolean
 }
 
 /** a rectangle of cells: `x`, `y` are the top-left cell, `w`, `h` the size in cells */
@@ -85,9 +87,12 @@ export interface GameLayout {
 const STATS_ROWS = 13
 
 /**
- * A grid too narrow for even a compact sidebar beside the view's least
- * width, and taller than it is wide: a phone held upright. The panes then
- * stack instead of standing side by side (`gameSplit`).
+ * A phone's grid too narrow for even a compact sidebar beside the view's
+ * least width, and taller than it is wide: a phone held upright. The panes
+ * then stack instead of standing side by side (`gameSplit`). A desktop
+ * window of that shape keeps its panes side by side, compact, as it always
+ * did: the stack is laid out for a phone's least grid (host.ts PHONE_COLS),
+ * and cuts its numbers off on a narrower one.
  */
 const PORTRAIT_SIDE = 36
 /**
@@ -101,7 +106,7 @@ export const STRIP_ROWS = 6
 export const PORTRAIT_MAP_COLS = 34
 
 export function isPortrait(grid: Grid): boolean {
-  return grid.cols - MIN_VIEW_COLS < PORTRAIT_SIDE && grid.rows * grid.ch > grid.cols * grid.cw
+  return !!grid.phone && grid.cols - MIN_VIEW_COLS < PORTRAIT_SIDE && grid.rows * grid.ch > grid.cols * grid.cw
 }
 
 /** the least column, in cells, the touch bar stands in beside the view (`touchBeside`): four buttons a finger can hit */
