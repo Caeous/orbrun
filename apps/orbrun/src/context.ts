@@ -84,8 +84,6 @@ export interface Switch {
   /** the bracketed key and the words as the screen draws them, in its colours (html, `fgN` spans), where it is drawn as text */
   keyHtml?: string
   wordHtml?: string
-  /** the size the screen draws that text at, in css px */
-  keyPx?: number
 }
 
 export interface MenuContext {

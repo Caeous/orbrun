@@ -2468,9 +2468,9 @@ canvas.minimap.hidden {
   flex: none;
   display: flex;
   align-items: center;
-  /* the menus' text, at their size where the screen gives it (hud.ts fillTouchButton) */
+  /* the same text as the words under it, at their size */
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--switch-fs);
   font-weight: 400;
   line-height: 1;
   color: var(--color-15);
@@ -2480,8 +2480,12 @@ canvas.minimap.hidden {
 .touchbar .tb .keycap .bracket {
   color: var(--ink-dim);
 }
+.touchbar .tb.has-keycap {
+  /* the key and its words, one size: as small as fits nine characters a line, at most a caption's */
+  --switch-fs: max(7px, min(0.85em, calc(100cqi / 9 / 0.61)));
+}
 .touchbar .tb.has-keycap .label {
-  font-size: max(7px, min(0.85em, calc(100cqi / 9 / 0.61)));
+  font-size: var(--switch-fs);
   line-height: 1.1;
   /* lines break between words and after a `|` (bindings.ts switchColours), a word alone too long for a line anywhere */
   white-space: normal;

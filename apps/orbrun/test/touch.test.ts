@@ -224,6 +224,14 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     // a word we know nothing of keeps its key, on a key cap
     expect(touchLabels(barLabels(c), { ...c, switches: [{ key: 'z', label: '(z)orble', word: 'zorble' }] }).find((l) => l.button === 'key:z')?.keycap).toBe('z')
   })
+  it('more switches than the top row holds: the next over Esc', () => {
+    const sw = (key: string, word: string) => ({ key, label: `[${key}] ${word}`, word })
+    // the skills screen's six
+    const skills = { ...ctx({ mode: 'menu', menu: { menu: { tag: 'skills', type: 'crt', items: [], flags: 0 }, hoverable: [] } as unknown as MenuContext }), switches: [sw('?', 'Help'), sw('=', 'set a skill target'), sw('/', 'auto|manual mode'), sw('*', 'useful|all skills'), sw('_', 'enhanced|base level'), sw('!', 'training|cost|targets')] }
+    const cells = drawn(skills)
+    expect(cells[0]).toEqual(['key:?', 'key:=', 'key:/', 'key:*', 'key:_'])
+    expect(cells[1][0]).toBe('key:!')
+  })
   it('the pack: describing the lit row is Examine; the bumpers that turn its pages are off, a finger taps the tabs', () => {
     const pack = ctx({ ...menu({ sections: true }, 'inventory'), pageable: true })
     expect(barLabels(pack).some((l) => l.button === 'LB' || l.button === 'RB')).toBe(true)

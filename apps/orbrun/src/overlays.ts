@@ -374,24 +374,15 @@ export function switchColours(root: HTMLElement, start: number, end: number, key
 }
 
 /** what `switchLook` has read off a switch drawn as text, by its element and range */
-const switchLooks = new WeakMap<HTMLElement, Map<string, { keyHtml: string; wordHtml: string; keyPx?: number }>>()
+const switchLooks = new WeakMap<HTMLElement, Map<string, { keyHtml: string; wordHtml: string }>>()
 
-/**
- * A switch drawn as text, for its touch button: its colours (`switchColours`)
- * and the size its text is drawn at (`keyPx`), so the bracketed key on the
- * button is the footer's own text at the footer's size. Read once an element
- * (the touch bar asks every frame); the size once it is on the page.
- */
-function switchLook(root: HTMLElement, start: number, end: number, key: string): { keyHtml: string; wordHtml: string; keyPx?: number } {
+/** A switch drawn as text, in its colours (`switchColours`), read once an element: the touch bar asks every frame. */
+function switchLook(root: HTMLElement, start: number, end: number, key: string): { keyHtml: string; wordHtml: string } {
   let byRange = switchLooks.get(root)
   if (!byRange) switchLooks.set(root, (byRange = new Map()))
   const id = start + ':' + end + ':' + key
   let look = byRange.get(id)
   if (!look) byRange.set(id, (look = switchColours(root, start, end, key)))
-  if (look.keyPx === undefined && root.isConnected) {
-    const px = parseFloat(getComputedStyle(root).fontSize)
-    if (px > 0) look.keyPx = px
-  }
   return look
 }
 

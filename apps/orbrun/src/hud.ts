@@ -1804,7 +1804,7 @@ export class Hud {
    */
   private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null) {
     // the icons come in with the gamedata, and are drawn for the screen's density (`touchArtScale`)
-    const art = (l: TouchLabel) => '#' + (l.icon ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '') + (l.keycapPx ?? '')
+    const art = (l: TouchLabel) => '#' + (l.icon ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '')
     const key = labels ? labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.auto ? '!' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
@@ -1900,12 +1900,8 @@ export class Hud {
     // the d-pad's cells are their arrows alone; the others are their picture over the word, the word being what is read last
     const arrow = TOUCH_ARROW_ROT[covers[0]]
     // a switch the screen prints in brackets wears them, the key bright between them
-    // the key as the screen prints it, at the size it prints it
-    const keycap = () => {
-      const el = l.keycapHtml ? h('span', { class: 'keycap', html: l.keycapHtml }) : h('span', { class: 'keycap' }, h('span', { class: 'bracket' }, '['), l.keycap!, h('span', { class: 'bracket' }, ']'))
-      if (l.keycapPx) el.style.fontSize = l.keycapPx + 'px'
-      return el
-    }
+    // the key as the screen prints it, in its colours
+    const keycap = () => (l.keycapHtml ? h('span', { class: 'keycap', html: l.keycapHtml }) : h('span', { class: 'keycap' }, h('span', { class: 'bracket' }, '['), l.keycap!, h('span', { class: 'bracket' }, ']')))
     const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : touchPicture(gd, l, l.item)
     // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
     const words = l.hold ? l.label + ' [' + l.hold + ']' : l.label

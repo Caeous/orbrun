@@ -654,8 +654,6 @@ export type TouchLabel = Omit<BindingLabel, 'button'> &
     /** a switch's bracketed key and its words in the screen's colours (Switch `keyHtml`, `wordHtml`) */
     keycapHtml?: string
     labelHtml?: string
-    /** the size the screen draws the key at, in css px: the button's key is the same text */
-    keycapPx?: number
   }
 
 /**
@@ -733,6 +731,8 @@ const GENERIC_REST: readonly Button[] = ['START', 'Y', 'X', 'R3', 'L3', 'SELECT'
 const GENERIC_FREE: readonly TouchCell[] = ['gear', 'actions', 'explore', 'fight', 'wait', 'quiver', 'spare', 'corner']
 /** a menu's more-line switches and a popup's verbs, along the top row left to right; Examine's cell too where nothing examines */
 const SWITCH_CELLS: readonly TouchCell[] = ['corner', 'wait', 'examine', 'quiver', 'actions']
+/** where the switches the top row has no room for go: over Esc first, then either side of the up arrow, then up the right edge */
+const SWITCH_OVERFLOW: readonly TouchCell[] = ['spare', 'explore', 'fight', 'gear', 'actions']
 /** the switches that are an anchor's already, by keycode: Esc is Esc, and Enter is the menu's accept or its verb */
 const ANCHOR_SWITCHES = new Set<number>([Keys.ESC, Keys.ENTER])
 
@@ -785,7 +785,7 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
     // full stop is the sentence's, not the button's
     const bracketed = sw.label === `[${sw.key}] ${sw.word}`
     const label = (bracketed ? sw.word : sw.label).replace(/\.$/, '')
-    const picture = bracketed ? { keycap: sw.key, ...(sw.keyHtml ? { keycapHtml: sw.keyHtml } : {}), ...(sw.wordHtml ? { labelHtml: sw.wordHtml } : {}), ...(sw.keyPx ? { keycapPx: sw.keyPx } : {}) } : switchPicture(sw.word, sw.key, sw.item)
+    const picture = bracketed ? { keycap: sw.key, ...(sw.keyHtml ? { keycapHtml: sw.keyHtml } : {}), ...(sw.wordHtml ? { labelHtml: sw.wordHtml } : {}) } : switchPicture(sw.word, sw.key, sw.item)
     out.push({ button: `key:${sw.key}`, label, action: { kind: 'keys', label, seq: [code ? { key: code } : { text: sw.key }] }, contextual: true, ...picture, cell })
   }
   // a menu's describe of the lit row keeps Examine's cell
@@ -818,9 +818,9 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
     const cell = GENERIC_FREE.find((c) => !taken.has(c))
     if (cell) place(b, l, cell)
   }
-  // more switches than the top row has room for take what is left
+  // more switches than the top row has room for take what is left, over Esc first
   for (const sw of switches.slice(switchCells.length)) {
-    const cell = GENERIC_FREE.find((c) => !taken.has(c))
+    const cell = SWITCH_OVERFLOW.find((c) => !taken.has(c))
     if (cell) putSwitch(sw, cell)
   }
   return out
