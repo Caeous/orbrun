@@ -916,6 +916,14 @@ describe('newgame', () => {
     expect(host.querySelector('.button.selected')?.textContent).toBe('Octopode')
   })
 
+  it('sets each button\'s key apart, for an upright phone to drop', () => {
+    const { st, frame, host } = setup()
+    push(st)
+    frame()
+    expect(host.querySelector('.button[data-hotkey="42"] .key-prefix')?.textContent).toBe('* - ')
+    expect(host.querySelector('.button[data-hotkey="97"] .key-prefix')).toBeNull()
+  })
+
   it('stops hovering once a key has the cursor, until the mouse is moved again', () => {
     // the grid scrolls under a resting pointer as the cursor walks it: the
     // `mouseenter` that fires must not drag the cursor back to the mouse

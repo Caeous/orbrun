@@ -3306,6 +3306,22 @@ canvas.minimap.hidden {
   outline: 1px solid var(--accent);
 }
 
+/* a phone held upright: no keys to type, so the buttons drop their letters (overlays.ts markHotkeyPrefix) and the
+   three columns fit without scrolling sideways, with smaller icons (overlays.ts newgameIconSize) and less air */
+@media (max-width: 600px) {
+  .newgame .key-prefix {
+    display: none;
+  }
+  .newgame .grid {
+    gap: 0.2em 0.25em;
+    padding: 0.4rem 0.2rem;
+  }
+  .newgame .button {
+    gap: 0.3em;
+    padding: 0.1em 0.2em;
+  }
+}
+
 .newgame .label {
   color: #fff;
   font-weight: bold;

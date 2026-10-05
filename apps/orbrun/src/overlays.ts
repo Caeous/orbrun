@@ -363,6 +363,33 @@ function clickifyActions(text: string): string {
 }
 
 /**
+ * The new-game buttons' icons: 32px, or on an upright phone about 24, at a
+ * whole number of device pixels per tile pixel where the screen allows, so
+ * they stay crisp (drawTiles). With the letters gone (markHotkeyPrefix) that
+ * fits the background screen's three columns.
+ */
+function newgameIconSize(): number {
+  if (!window.matchMedia(PHONE_UPRIGHT).matches) return 32
+  const dpr = window.devicePixelRatio || 1
+  return (32 * Math.max(1, Math.round((dpr * 24) / 32))) / dpr
+}
+
+/**
+ * Put a new-game button's key ("a - ", "Space - ") in a span of its own, so
+ * an upright phone, which types no letters, can drop it and fit the grid's
+ * three columns (styles.css .newgame .key-prefix).
+ */
+function markHotkeyPrefix(btn: HTMLElement) {
+  const walker = document.createTreeWalker(btn, NodeFilter.SHOW_TEXT)
+  let node: Text | null
+  while ((node = walker.nextNode() as Text | null) && !node.data.trim()) {}
+  const m = node?.data.match(/^\s*\S+ - /)
+  if (!node || !m) return
+  node.splitText(m[0].length)
+  node.replaceWith(h('span', { class: 'key-prefix' }, node.data))
+}
+
+/**
  * A Range over `[start, end)` of an element's text, wherever the tags fall.
  * The range may cross element boundaries (a more-line switch runs from a
  * plain `[` into the coloured span holding its key); `extractContents` then
@@ -461,6 +488,8 @@ interface MoreSwitchEl {
 
 /** LB / RB on a new-game grid move the cursor this many rows. */
 const NEWGAME_PAGE_ROWS = 5
+/** the width styles.css drops the new-game letters at */
+const PHONE_UPRIGHT = '(max-width: 600px)'
 
 export class Overlays {
   root: HTMLElement
@@ -507,9 +536,10 @@ export class Overlays {
    * Scroll position of each server overlay's body, by the state object it
    * draws, so a rebuild (an `update_menu_items` chunk, a `ui-state`, a
    * `menu_scroll`) keeps the reader's place; the official client keeps its
-   * DOM and never has to.
+   * DOM and never has to. Across too: the new-game grid scrolls sideways on
+   * an upright phone, and the echo of a tap on its far column rebuilds it.
    */
-  private scrollMemo = new WeakMap<object, number>()
+  private scrollMemo = new WeakMap<object, { top: number; left: number }>()
   /** the last server scroll line applied per popup (`Popup.scrollSeq`) */
   private popupScrollApplied = new WeakMap<Popup, number>()
   private scrollerTimer: number | null = null
@@ -777,11 +807,11 @@ export class Overlays {
   private memoScroll() {
     if (this.menuTop) {
       const body = this.menuEl?.querySelector('.body') as HTMLElement | null
-      if (body) this.scrollMemo.set(this.menuTop, body.scrollTop)
+      if (body) this.scrollMemo.set(this.menuTop, { top: body.scrollTop, left: body.scrollLeft })
     }
     if (this.popupTop) {
       const body = this.popupScrollBody()
-      if (body) this.scrollMemo.set(this.popupTop, body.scrollTop)
+      if (body) this.scrollMemo.set(this.popupTop, { top: body.scrollTop, left: body.scrollLeft })
     }
   }
 
@@ -798,14 +828,20 @@ export class Overlays {
       this.menuMore?.()
       const body = this.menuEl.querySelector('.body') as HTMLElement | null
       const memo = this.scrollMemo.get(this.menuTop)
-      if (body && memo !== undefined) body.scrollTop = memo
+      if (body && memo) {
+        body.scrollTop = memo.top
+        body.scrollLeft = memo.left
+      }
       this.scrollHoverIntoView()
     }
     const p = this.popupTop
     const body = this.popupScrollBody()
     if (p && body) {
       const memo = this.scrollMemo.get(p)
-      if (memo !== undefined) body.scrollTop = memo
+      if (memo) {
+        body.scrollTop = memo.top
+        body.scrollLeft = memo.left
+      }
       if (p.scrollSeq !== undefined && this.popupScrollApplied.get(p) !== p.scrollSeq) {
         this.popupScrollApplied.set(p, p.scrollSeq)
         if (typeof p.scroll === 'number' && (!p.scrollFromWebtiles || this.hooks.watching())) {
@@ -1987,6 +2023,7 @@ export class Overlays {
     const buttons: HTMLElement[] = []
     // the sub grid's rows follow the main grid's, so down from the last species reaches the random / recommended row
     let rowBase = 0
+    const icon = newgameIconSize()
     const grid = (data: Record<string, unknown> | undefined, cls: string) => {
       const g = h('div', { class: 'grid ' + cls })
       if (!data) return g
@@ -1995,9 +2032,10 @@ export class Overlays {
       let maxRow = -1
       for (const b of (data.buttons as Record<string, unknown>[]) || []) {
         const btn = h('div', { class: 'button hlc-' + (b.highlight_colour ?? 0) })
-        if (Array.isArray(b.tile) && (b.tile as TileRef[]).length) btn.append(tileCanvas(gd, b.tile as TileRef[]))
+        if (Array.isArray(b.tile) && (b.tile as TileRef[]).length) btn.append(tileCanvas(gd, b.tile as TileRef[], 1, icon))
         const labels = (b.labels as string[]) || [String(b.label || '')]
         for (const l of labels) btn.append(h('span', { html: formattedStringToHtml(l) }))
+        markHotkeyPrefix(btn)
         const x = Number(b.x) + 1
         const y = Number(b.y) + 1
         maxCol = Math.max(maxCol, x)
