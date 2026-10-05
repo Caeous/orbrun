@@ -477,7 +477,6 @@ export class GameScreen {
     // can hear it: let go here, or a held arrow walks on into the next game. The releases land on nothing (`pad`)
     this.hooks.gamepad.virtualRelease()
     this.hooks.gamepad.fourWay = false
-    this.hooks.gamepad.rightStickTurns = false
     this.saveView()
     window.removeEventListener('pagehide', this.saveView)
     cancelAnimationFrame(this.raf)
@@ -565,12 +564,20 @@ export class GameScreen {
     this.grid.place(this.canvas, view)
     const px = this.grid.px(view)
     // upright, the view runs across the whole screen, the grid's margins too, from under the minimap's band down to the
-    // screen's foot, under the touch bar (gameSplit)
+    // screen's foot, under the touch bar (gameSplit); the 3D view runs on up under the band too, to the screen's top,
+    // its lens still fitted to the part below the band (render-3d `setLensTop`)
+    let lensTop = 0
     if (!map && isPortrait(g)) {
       px.left = 0
       px.width = this.root.clientWidth || px.width
       px.height = Math.max(px.height, this.root.clientHeight - px.top)
+      if (this.renderer instanceof Render3d) {
+        lensTop = px.top
+        px.height += px.top
+        px.top = 0
+      }
       this.canvas.style.left = px.left + 'px'
+      this.canvas.style.top = px.top + 'px'
       this.canvas.style.width = px.width.toFixed(2) + 'px'
       this.canvas.style.height = px.height.toFixed(2) + 'px'
     }
@@ -585,6 +592,7 @@ export class GameScreen {
     if (this.renderer instanceof Render3d) {
       this.renderer.setFoot(mapView || isPortrait(g) ? 0 : px.top + px.height - msgPx.top - msgPx.height)
       this.renderer.setUpright(this.upright)
+      this.renderer.setLensTop(lensTop)
       // upright the log and the bar hide the view's foot, so the lens looks ahead into what is left above them
       this.renderer.setLensFoot(this.upright && !mapView ? px.top + px.height - msgPx.top : 0)
       // Auto's field of view is a computer's or a phone's on its side or upright, and turning the phone (or a browser's
@@ -871,7 +879,6 @@ export class GameScreen {
     this.ctx = this.deriveContext(st)
     const walking = this.is3d && this.ctx.mode === 'command'
     this.hooks.gamepad.fourWay = walking
-    this.hooks.gamepad.rightStickTurns = walking && this.settings().rightStick === 'turn' && !this.overlays.hasClientOverlay && !this.chat.capturing
     this.fireHolds(now)
     // the server reports targeting alone; the runner knows whether its `x` opened it
     if (this.runner.examining(this.ctx.mode)) this.ctx.examining = true
@@ -1481,14 +1488,7 @@ export class GameScreen {
         return
       }
       this.mapPan = { x: 0, y: 0 }
-      if (this.hooks.gamepad.rightStickTurns) {
-        // on Turn the stick's left and right come as `rstick` directions; a look is only ever up or down
-        this.cam.look(0, 0)
-        this.cam.tilt(ev.dy, st.lookSensitivity, st.invertLook)
-      } else {
-        this.cam.tilt(0)
-        this.cam.look(ev.dx, ev.dy, st.lookSensitivity, st.invertLook)
-      }
+      this.cam.look(ev.dx, ev.dy, st.lookSensitivity, st.invertLook)
       this.needsRender = true
       return
     }

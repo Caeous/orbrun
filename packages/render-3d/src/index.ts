@@ -244,6 +244,7 @@ export class Render3d implements MapRenderer {
   private opts: Required<Render3dOptions>
   private width = 1
   private height = 1
+  private dpr = 1
   private alive = true
   private atlases = new Map<string, AtlasEntry>()
   private box = unitBox()
@@ -316,6 +317,8 @@ export class Render3d implements MapRenderer {
   private upright = false
   /** the css px along the view's foot the lens looks past (`setLensFoot`) */
   private lensFootPx = 0
+  /** the css px along the view's top the lens is not fitted to (`setLensTop`) */
+  private lensTopPx = 0
   // ---- the peel
   private peelWorker: Worker | null | undefined = undefined
   private peelId = 0
@@ -658,22 +661,51 @@ export class Render3d implements MapRenderer {
    * at the ceiling.
    */
   setLensFoot(px: number): void {
-    const foot = Math.max(0, Math.min(px, this.height / 2))
+    const foot = Math.max(0, Math.min(px, this.lensHeight / 2))
     if (foot === this.lensFootPx) return
     this.lensFootPx = foot
     this.applyLens()
   }
 
-  /** The camera's projection: centred, or shifted by `lensFootPx`. */
-  private applyLens(): void {
-    if (this.lensFootPx) this.cam.setViewOffset(this.width, this.height, 0, this.lensFootPx / 2, this.width, this.height)
-    else this.cam.clearViewOffset()
-    this.cam.updateProjectionMatrix()
+  /**
+   * Orbrun's own, for a phone held upright: the view's top `px` run on up
+   * under the HUD's minimap band, as its foot runs on under the log and the
+   * touch bar. The lens, the hands and what the HUD reads of them
+   * (`projector`, `handsFootprint`) stay fitted to the part below, which
+   * looks the same as it did with the view starting there; the top `px`
+   * show what lies further up the same lens.
+   */
+  setLensTop(px: number): void {
+    const top = Math.max(0, Math.min(px, this.height - 1))
+    if (top === this.lensTopPx) return
+    this.lensTopPx = top
+    this.resize(this.width, this.height, this.dpr)
   }
 
-  /** `footPx` as a share of the view's height, never above half of it. */
+  /** The height the lens is fitted to: the view's, less `lensTopPx`. */
+  private get lensHeight(): number {
+    return Math.max(1, this.height - this.lensTopPx)
+  }
+
+  /**
+   * The cameras' projections: centred on the view, or the lens's shifted up
+   * by `lensFootPx`; with `lensTopPx`, both are fitted to the part below it
+   * and run on up over it (a view offset may reach past the frame it is
+   * fitted to).
+   */
+  private applyLens(): void {
+    const h = this.lensHeight
+    if (this.lensFootPx || this.lensTopPx) this.cam.setViewOffset(this.width, h, 0, this.lensFootPx / 2 - this.lensTopPx, this.width, this.height)
+    else this.cam.clearViewOffset()
+    this.cam.updateProjectionMatrix()
+    if (this.lensTopPx) this.vmCam.setViewOffset(this.width, h, 0, -this.lensTopPx, this.width, this.height)
+    else this.vmCam.clearViewOffset()
+    this.vmCam.updateProjectionMatrix()
+  }
+
+  /** `footPx` as a share of the lens's height, never above half of it. */
   private get footShare(): number {
-    return Math.min(0.5, this.footPx / this.height)
+    return Math.min(0.5, this.footPx / this.lensHeight)
   }
 
   setViewmodel(vm: Viewmodel | null): void {
@@ -702,10 +734,10 @@ export class Render3d implements MapRenderer {
       this.renderer.setPixelRatio(dpr)
       this.renderer.setSize(this.width, this.height, false)
     }
-    this.cam.aspect = this.width / this.height
-    this.applyLens()
+    this.dpr = dpr
+    this.cam.aspect = this.width / this.lensHeight
     this.vmCam.aspect = this.cam.aspect
-    this.vmCam.updateProjectionMatrix()
+    this.applyLens()
   }
 
   destroy(): void {
@@ -755,8 +787,8 @@ export class Render3d implements MapRenderer {
     return {
       tanHalfY: Math.tan((cam.fov * Math.PI) / 360),
       aspect: cam.aspect,
-      shiftY: this.lensFootPx / this.height,
-      height: this.height,
+      shiftY: this.lensFootPx / this.lensHeight,
+      height: this.lensHeight,
       toCamera: (x, y, h) => {
         v.set(x + 0.5, h, y + 0.5).applyMatrix4(inv)
         return { x: v.x, y: v.y, z: v.z }
@@ -1214,7 +1246,7 @@ export class Render3d implements MapRenderer {
 
   // ------------------------------------------------------------- viewmodel
 
-  /** Where the hands are drawn, as fractions of the canvas, so the HUD keeps its corner clear of them. */
+  /** Where the hands are drawn, as fractions of the canvas (of its height below `lensTopPx`), so the HUD keeps its corner clear of them. */
   handsFootprint(): HandRect[] {
     if (!this.vmVisible) return []
     const vm = this.viewmodel!

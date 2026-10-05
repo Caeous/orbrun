@@ -9,8 +9,8 @@ export type Button = 'A' | 'B' | 'X' | 'Y' | 'LB' | 'RB' | 'LT' | 'RT' | 'SELECT
 const DPAD: readonly Button[] = ['DU', 'DD', 'DL', 'DR']
 const BUTTON_INDEX: Button[] = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'SELECT', 'START', 'L3', 'R3', 'DU', 'DD', 'DL', 'DR', 'HOME']
 
-/** Where a direction came from: the right stick only ever turns (`rightStickTurns`). */
-export type DirSource = 'dpad' | 'lstick' | 'rstick'
+/** Where a direction came from. */
+export type DirSource = 'dpad' | 'lstick'
 
 export type PadEvent =
   /** `touch`: an on-screen button stood in for the pad's (hud.ts touch bar); the pad itself did not speak */
@@ -80,8 +80,6 @@ export class GamepadInput {
   private repeatState = new Map<Button, { next: number; n: number }>()
   private dpadDir: Dir8 | null = null
   private stickDir: Dir8 | null = null
-  /** the right stick's four-way sector on Turn: left and right turn, up and down tilt */
-  private rstickDir: Dir8 | null = null
   private dirRepeat = new Map<DirSource, { next: number; n: number }>()
   private opts: Required<GamepadOptions>
   private listeners = new Set<(e: PadEvent) => void>()
@@ -96,13 +94,6 @@ export class GamepadInput {
    * walking the 3D view; the level map, an aim and the menus keep all eight).
    */
   fourWay = false
-  /**
-   * The right stick's left and right are the left stick's turn, read the
-   * same way (reach, sectors, repeat) and sent as its `rstick` directions;
-   * only a push up or down is a look, and it only tilts (game.ts sets it on
-   * the Right stick setting's Turn, while walking the 3D view).
-   */
-  rightStickTurns = false
   private looking = false
 
   constructor(opts: GamepadOptions = {}) {
@@ -252,21 +243,7 @@ export class GamepadInput {
     const rx = axes[2] || 0
     const ry = axes[3] || 0
     const rm = Math.hypot(rx, ry)
-    const turnOf = (d: Dir8 | null) => (d === 2 || d === 6 ? d : null)
-    const r = this.rightStickTurns ? this.sector(this.rstickDir, rx, ry, true) : null
-    this.dirFrom('rstick', turnOf(this.rstickDir), turnOf(r), now)
-    this.rstickDir = r
-    if (this.rightStickTurns) {
-      if (r === 0 || r === 4) {
-        const k = ((rm - this.opts.deadzoneR) / (1 - this.opts.deadzoneR)) ** 2
-        const start = !this.looking
-        this.looking = true
-        this.emit({ type: 'look', dx: 0, dy: (ry / rm) * k, start })
-      } else if (this.looking) {
-        this.looking = false
-        this.emit({ type: 'look', dx: 0, dy: 0 })
-      }
-    } else if (rm > (this.looking ? this.opts.deadzoneR : this.opts.enterR)) {
+    if (rm > (this.looking ? this.opts.deadzoneR : this.opts.enterR)) {
       const k = ((rm - this.opts.deadzoneR) / (1 - this.opts.deadzoneR)) ** 2
       const start = !this.looking
       this.looking = true

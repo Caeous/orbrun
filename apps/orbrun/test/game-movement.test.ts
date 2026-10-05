@@ -154,11 +154,13 @@ describe('forward input and confirmed camera motion', () => {
       h.cam.look(1, 0.5)
       h.cam.update(0.1)
       h.cam.look(0, 0)
+      // a let-go stick settles onto its heading first
+      h.cam.update(2)
     }
     const view = h.cam.view
     h.echo(0, -1)
     h.cam.update(0.18)
-    expect(h.cam.view).toEqual(view)
+    expect(h.cam.view.yaw).toBeCloseTo(view.yaw, 9)
     expect(h.cam.camera.eyeY).toBe(-1)
   })
 

@@ -2165,11 +2165,6 @@ canvas.minimap {
      blocks, not thin strokes, so they need less to sit off the view */
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
 }
-/* on a phone held upright, a band across the top of the screen (hud.ts bandFit), north up and uncut, under the stats pane,
-   on the hud itself rather than the column; the view starts under it, so it stands on black and needs no shadow */
-.hud > canvas.minimap {
-  filter: none;
-}
 /* the level map is open: the minimap has become it. Keeps its slot so the monster list holds still. */
 canvas.minimap.hidden {
   visibility: hidden;

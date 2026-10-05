@@ -29,8 +29,9 @@ import {
 /**
  * Camera controller: yaw easing toward the facing goal,
  * free look with the right stick or a mouse or touch drag (yaw
- * unbounded, pitch free short of the poles, nothing snaps back but a touch
- * drag's yaw, which settles on a heading when the finger lifts), and the eye's
+ * unbounded, pitch free short of the poles; a mouse drag stays where it
+ * points, while a stick or finger letting go settles the yaw on the nearest
+ * heading, its pitch kept), and the eye's
  * glide after a step along the path the feet took (`walkTo`); a jump snaps.
  */
 /** The yaw in radians; enough to put the camera back facing where it faced (the pitch is not kept). */
@@ -63,8 +64,6 @@ export class CameraController {
    */
   private _uprightYaw = 0
   private freeLook = false
-  /** the right stick tilting the view up and down only, the yaw left to its easing (`tilt`) */
-  private tilting = false
   private dragging = false
   private lookVel = 0
   private pitchVel = 0
@@ -247,7 +246,8 @@ export class CameraController {
   /**
    * Right stick input; dx, dy in [-1,1]. Zero releases the stick. Look is
    * free: yaw is unbounded, pitch is clamped to PITCH_MAX, and releasing the
-   * stick leaves the camera exactly where it points (no detent, no spring).
+   * stick eases the yaw onto the nearest heading, as a finger lifting does
+   * (`endDrag`); the pitch stays where the stick left it.
    */
   look(dx: number, dy: number, sensitivity = 1, invert = false) {
     if (dx === 0 && dy === 0) {
@@ -260,15 +260,6 @@ export class CameraController {
     this.freeLook = true
     this.lookVel = dx * LOOK_YAW_SPEED * sensitivity
     this.pitchVel = (invert ? dy : -dy) * LOOK_PITCH_SPEED * sensitivity
-  }
-
-  /**
-   * The right stick on Turn: dy in [-1,1] tilts the view as `look` does,
-   * while the yaw keeps easing onto the heading the turns chose. Zero lets go.
-   */
-  tilt(dy: number, sensitivity = 1, invert = false) {
-    this.tilting = dy !== 0
-    this.pitchVel = this.tilting ? (invert ? dy : -dy) * LOOK_PITCH_SPEED * sensitivity : 0
   }
 
   /**
@@ -296,11 +287,10 @@ export class CameraController {
     if (settle) this.setFacing(this.camera.facing)
   }
 
-  /** Stick released: keep the current view; facing is the nearest heading. */
+  /** Stick released: the yaw eases onto the nearest heading, the pitch stays. */
   private endFreeLook() {
     this.freeLook = false
-    this.camera.facing = yawToDir(this.camera.yaw)
-    this.goalYaw = this.camera.yaw
+    this.setFacing(yawToDir(this.camera.yaw))
   }
 
   /**
@@ -571,10 +561,6 @@ export class CameraController {
       const yaw = this.ease(c.yaw, this.goalYaw, dt, TURN_RATE)
       if (yaw !== c.yaw) {
         c.yaw = yaw
-        moved = true
-      }
-      if (this.tilting) {
-        c.pitch = this.clampPitch(c.pitch + this.pitchVel * dt)
         moved = true
       }
     }

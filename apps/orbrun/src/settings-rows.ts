@@ -217,7 +217,6 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   row('Camera', 'Hands', 'viewmodel', [true, false], 'The wielded weapon and off-hand item, drawn in view.', (v) => (v ? 'Weapon and shield shown' : 'Hidden')),
   // Controls
   ...leftRightRows,
-  row('Controls', 'Right stick', 'rightStick', ['look', 'turn'], 'Look around freely, or turn 45° each push left or right, as the left stick does. Up and down tilt the view either way.', (v) => (v === 'look' ? 'Free look' : 'Turn')),
   row('Controls', 'Look sensitivity', 'lookSensitivity', [1, 1.3, 1.6, 0.7], 'How far the right stick turns you.', (v) => Math.round(v * 100) + '%'),
   row('Controls', 'Invert look', 'invertLook', [false, true], 'Push the right stick up to look down.', (v) => (v ? 'On' : 'Off')),
   row('Controls', 'Hints', 'hints', ['adaptive', 'contextual', 'off'], 'Gamepad prompts in the corner of the view for what is in front of you. Adaptive also teaches the controls until used, across all runs. Contextual only skips the teaching. Off hides gameplay hints; menu and targeting controls remain.', (v) => ({ adaptive: 'Adaptive', contextual: 'Contextual only', off: 'Off' })[v]),

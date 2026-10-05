@@ -201,47 +201,11 @@ describe('the left stick on four ways', () => {
   })
 })
 
-describe('the right stick on Turn', () => {
-  function record(gp: GamepadInput) {
+describe('the right stick', () => {
+  it('sends no directions, only a look', () => {
+    const gp = new GamepadInput()
     const out: PadEvent[] = []
     gp.on((e) => { if (e.type !== 'look' || e.dx !== 0 || e.dy !== 0) out.push(e) })
-    return out
-  }
-
-  it('reads left and right as the left stick does: the same reach, four-way sectors and repeat', () => {
-    const gp = new GamepadInput()
-    gp.rightStickTurns = true
-    const out = record(gp)
-    // short of the left stick's 0.55: nothing
-    withPad([0, 0, 0.5, 0])
-    gp.poll(0)
-    // 0.6 and 30° above level: a turn right, as on the left stick
-    withPad([0, 0, 0.6 * Math.cos(0.52), -0.6 * Math.sin(0.52)])
-    gp.poll(16)
-    gp.poll(400)
-    withPad([0, 0, 0, 0])
-    gp.poll(416)
-    expect(out).toEqual([
-      { type: 'dir', source: 'rstick', dir: 2 },
-      { type: 'dirRepeat', source: 'rstick', dir: 2, n: 1 },
-      { type: 'dir', source: 'rstick', dir: null },
-    ])
-  })
-
-  it('a push up or down only tilts, and sends no direction', () => {
-    const gp = new GamepadInput()
-    gp.rightStickTurns = true
-    const out = record(gp)
-    withPad([0, 0, 0.2, -0.9])
-    gp.poll(0)
-    expect(out).toHaveLength(1)
-    expect(out[0]).toMatchObject({ type: 'look', dx: 0, start: true })
-    expect((out[0] as { dy: number }).dy).toBeLessThan(0)
-  })
-
-  it('sends no directions as free look', () => {
-    const gp = new GamepadInput()
-    const out = record(gp)
     withPad([0, 0, 0.9, 0])
     gp.poll(0)
     expect(out).toEqual([{ type: 'look', dx: expect.any(Number), dy: 0, start: true }])

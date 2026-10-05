@@ -289,7 +289,7 @@ describe('the right stick', () => {
     return h.camera.yaw
   }
 
-  it('free look stays exactly where it was let go, facing the nearest heading', () => {
+  it('letting go eases the view onto the nearest heading, keeping its tilt', () => {
     const c = cam()
     c.reducedMotion = false
     c.look(1, 0.5)
@@ -297,24 +297,10 @@ describe('the right stick', () => {
     const { yaw, pitch } = c.camera
     c.look(0, 0)
     expect(Math.abs(headingYaw(c) - yaw)).toBeGreaterThan(0.05)
-    c.update(1)
-    expect(c.camera.yaw).toBeCloseTo(yaw)
-    expect(c.camera.pitch).toBeCloseTo(pitch)
-  })
-
-  it('on Turn, tilting up or down leaves a turn easing on its way', () => {
-    const c = cam()
-    c.reducedMotion = false
-    const pitch = c.camera.pitch
-    c.turn(1)
-    c.tilt(-1)
-    c.update(0.05)
-    expect(c.camera.pitch).toBeGreaterThan(pitch)
-    c.tilt(0)
-    c.update(3)
-    c.update(1)
-    expect(c.camera.yaw).toBeCloseTo(headingYaw(c))
+    c.update(2)
     expect(c.facing).toBe(1)
+    expect(c.camera.yaw).toBeCloseTo(headingYaw(c))
+    expect(c.camera.pitch).toBeCloseTo(pitch)
   })
 })
 
@@ -969,6 +955,8 @@ describe('autofight facing without continuous tracking', () => {
       c.look(1, 0.5)
       c.update(0.1, 1.1)
       c.look(0, 0)
+      // a let-go stick settles onto its heading first
+      c.update(2, 1.2)
     } else {
       c.turn(1)
       c.update(1, 2)

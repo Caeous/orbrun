@@ -460,39 +460,12 @@ describe('mouse and the aim cursor', () => {
   })
 })
 
-describe('the right stick on Turn', () => {
-  function turning(rightStickTurns = true) {
+describe('the right stick', () => {
+  it('is free look', () => {
     const h = harness()
-    const cam = { look: vi.fn(), tilt: vi.fn() }
-    const hooks = (h.screen as unknown as { hooks: { gamepad: object } }).hooks
-    Object.assign(h.screen, { cam, mapPan: { x: 0, y: 0 }, hooks: { ...hooks, gamepad: { ...hooks.gamepad, rightStickTurns }, settings: () => ({ leftRightPad: 'strafe', lookSensitivity: 1, invertLook: false }) } })
-    return { ...h, cam }
-  }
-
-  it('its directions are the left stick’s turn, held ones repeating, whatever the left stick is set to', () => {
-    const h = turning()
-    h.event({ type: 'dir', source: 'rstick', dir: 2 })
-    h.event({ type: 'dirRepeat', source: 'rstick', dir: 2, n: 1 })
-    h.event({ type: 'dir', source: 'rstick', dir: null })
-    h.event({ type: 'dir', source: 'rstick', dir: 6 })
-    expect(h.execute.mock.calls.map((c) => c[0])).toEqual([
-      { kind: 'step', dir: 2, turns: true },
-      { kind: 'step', dir: 2, turns: true, held: true },
-      { kind: 'step', dir: 6, turns: true },
-    ])
-  })
-
-  it('a look only tilts, leaving the yaw to the turns', () => {
-    const h = turning()
-    h.event({ type: 'look', dx: 0, dy: -0.7 })
-    expect(h.cam.look).toHaveBeenLastCalledWith(0, 0)
-    expect(h.cam.tilt).toHaveBeenLastCalledWith(-0.7, 1, false)
-  })
-
-  it('is free look otherwise', () => {
-    const h = turning(false)
+    const cam = { look: vi.fn() }
+    Object.assign(h.screen, { cam, mapPan: { x: 0, y: 0 }, hooks: { ...(h.screen as unknown as { hooks: object }).hooks, settings: () => ({ lookSensitivity: 1, invertLook: false }) } })
     h.event({ type: 'look', dx: 0.8, dy: 0.1 })
-    expect(h.cam.look).toHaveBeenLastCalledWith(0.8, 0.1, 1, false)
-    expect(h.cam.tilt).toHaveBeenLastCalledWith(0)
+    expect(cam.look).toHaveBeenLastCalledWith(0.8, 0.1, 1, false)
   })
 })

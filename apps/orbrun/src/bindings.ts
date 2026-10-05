@@ -1523,8 +1523,7 @@ export function resolve(ev: PadEvent, ctx: Context, turns: (source: 'dpad' | 'ls
         // the left stick is a d-pad, and each says for itself whether left and
         // right turn the camera or strafe.
         // held: one more single step per tick, paced by the runner; never a run
-        // the right stick's directions are only ever its turn (gamepad.ts `rightStickTurns`)
-        const t = ev.source === 'rstick' || turns(ev.source)
+        const t = turns(ev.source)
         if (ev.type === 'dirRepeat') return { kind: 'step', dir: ev.dir as RelDir, turns: t, held: true }
         return { kind: 'step', dir: ev.dir as RelDir, turns: t }
       }

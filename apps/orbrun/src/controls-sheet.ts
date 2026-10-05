@@ -13,8 +13,7 @@ export function controlsSheet(padKind: PadKind = 'generic'): HTMLElement {
   // what left and right do is the player's, one answer for the whole pad (settings-rows.ts)
   const st = getSettings()
   const lr = leftRightTurns('dpad', st) ? 'Move one step; left / right turn' : 'Move one step; left / right strafe'
-  const rs = st.rightStick === 'turn' ? 'Left / right turn; up / down tilt' : 'Turn and glance'
-  const sticks: Partial<Record<GlyphName, [string, string]>> = { LSTICK: ['Left stick', lr], DPAD: ['D-pad', lr], RSTICK: ['Right stick', rs] }
+  const sticks: Partial<Record<GlyphName, [string, string]>> = { LSTICK: ['Left stick', lr], DPAD: ['D-pad', lr], RSTICK: ['Right stick', 'Turn and glance'] }
   const buttons = new Map<GlyphName, SheetCell>(controlSheet().map((r) => [r.button, r.action]))
   const side = (order: readonly GlyphName[]) => {
     const table = h('table')
