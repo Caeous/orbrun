@@ -2369,7 +2369,8 @@ canvas.minimap.hidden {
  * word, along the view's foot for a player with only a finger. Big enough to
  * hit without looking (44px, the platforms' least touch target), five
  * across, the arrows nearest the thumb; the dungeon shows between the
- * buttons, each on a dark backing of its own.
+ * buttons, each on a backing of its own dark enough that the hands and the
+ * level behind never show through a word.
  */
 .touchbar {
   left: 0;
@@ -2421,8 +2422,10 @@ canvas.minimap.hidden {
   font-size: max(10px, min(var(--fs, 12px), calc((var(--tb-w) - 4px) / 5.6)));
   line-height: 1.15;
   color: var(--color-7);
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  /* the keypad's own: as dark as a popup, its edge quieter than a popup's, so a menu's buttons (.tb.switch) stand out
+     from it by their frame alone */
+  background: rgba(10, 10, 14, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   text-align: center;
   overflow: hidden;
@@ -2507,36 +2510,29 @@ canvas.minimap.hidden {
   border-color: #555;
   border-radius: 6px;
 }
+/* the popup's lit verb, the one Select does too, framed as Select is */
+.touchbar .tb.switch.lit {
+  border-color: rgba(255, 212, 92, 0.55);
+}
 /* a cell this screen has nothing for: held open, so nothing slides into it (hud.ts renderTouchBar) */
 .touchbar .tb.empty {
   visibility: hidden;
-}
-/* the arrows move: you, or a cursor */
-.touchbar .tb.at-up,
-.touchbar .tb.at-left,
-.touchbar .tb.at-down,
-.touchbar .tb.at-right {
-  border-color: color-mix(in srgb, var(--color-10) 50%, transparent);
 }
 /* Select: what the screen is for here (Descend, Continue), and the aim's Fire across it */
 .touchbar .tb.at-select {
   border-color: rgba(255, 212, 92, 0.55);
 }
-/* what goes on by itself, turn after turn, until something happens: explore, fight, travel (bindings.ts runsOn),
-   Select's travel too */
-.touchbar .tb.auto {
-  border-color: color-mix(in srgb, var(--color-9) 75%, transparent);
-}
 /* an anchor this screen gives nothing to do (bindings.ts TOUCH_ANCHORS): there, so the keypad keeps its shape, but out of
    the way of what lights up */
 .touchbar .tb.idle {
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(10, 10, 14, 0.5);
   border-color: rgba(255, 255, 255, 0.06);
   color: var(--ink-dim);
   opacity: 0.45;
 }
+/* the press tints the button's own backing, so it stays as solid as it was */
 .touchbar .tb.down {
-  background: rgba(255, 212, 92, 0.25);
+  background: linear-gradient(rgba(255, 212, 92, 0.25), rgba(255, 212, 92, 0.25)), rgba(10, 10, 14, 0.92);
   border-color: var(--accent);
 }
 .touchbar .tb.down .label {

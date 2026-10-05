@@ -1,4 +1,4 @@
-import { Keys, MenuFlag, colouredText, type InvItem } from '@orbrun/webtiles'
+import { Keys, MenuFlag, colouredText, formattedStringToText, type InvItem } from '@orbrun/webtiles'
 import type { Dir8 } from '@orbrun/scene'
 import type { Button, PadEvent } from './gamepad'
 import { DEFAULT_YESNO, LOG_DEFAULT_COLOUR, isFocusMode, type Context, type MenuContext, type ParsedPrompt, type ShopContext, type Switch } from './context'
@@ -642,7 +642,6 @@ export const TOUCH_ANCHORS: Partial<Record<TouchCell, TouchIcon & { label: strin
  * A touch bar button: the binding it presses (`button`), standing in `cell`
  * and the `span` - 1 cells right of it, with its picture (`TouchIcon`) or an
  * item's own tile (`item`) over the word, and how many of it (`count`).
- * `auto`: it goes on by itself, turn after turn (`runsOn`).
  */
 export type TouchLabel = Omit<BindingLabel, 'button'> &
   TouchIcon & {
@@ -651,7 +650,8 @@ export type TouchLabel = Omit<BindingLabel, 'button'> &
     span?: number
     item?: InvItem['tile']
     count?: number
-    auto?: boolean
+    /** a popup's verb that is the one its line has lit, as Select's is (styles.css .tb.switch.lit) */
+    lit?: boolean
     keycap?: string
     /** a switch's bracketed key and its words in the screen's colours (Switch `keyHtml`, `wordHtml`) */
     keycapHtml?: string
@@ -783,12 +783,14 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
     taken.add(cell)
     const code = moreSwitchKeycode(sw.key)
     // a key the screen prints in brackets beside its words ("[!] read|quaff|evoke") is the button's picture, the words
-    // its caption; a verb with its key inside ("(q)uaff") keeps it there, under a picture of what it does. A trailing
-    // full stop is the sentence's, not the button's
+    // its caption; a verb with its key inside ("(q)uaff") is the word alone (`touchCaption`), under a picture of what
+    // it does. A trailing full stop is the sentence's, not the button's
     const bracketed = sw.label === `[${sw.key}] ${sw.word}`
-    const label = (bracketed ? sw.word : sw.label).replace(/\.$/, '')
+    const words = (bracketed ? sw.word : sw.label).replace(/\.$/, '')
     const picture = bracketed ? { keycap: sw.key, ...(sw.keyHtml ? { keycapHtml: sw.keyHtml } : {}), ...(sw.wordHtml ? { labelHtml: sw.wordHtml } : {}) } : switchPicture(sw.word, sw.key, sw.item)
-    out.push({ button: `key:${sw.key}`, label, action: { kind: 'keys', label, seq: [code ? { key: code } : { text: sw.key }] }, contextual: true, ...picture, cell })
+    // the verb the popup has lit, which Select does too, lit here as the popup's line lights it
+    const lit = !bracketed && !!ctx.focus?.label && formattedStringToText(ctx.focus.label) === sw.label
+    out.push({ button: `key:${sw.key}`, label: bracketed ? words : touchCaption(words), action: { kind: 'keys', label: words, seq: [code ? { key: code } : { text: sw.key }] }, contextual: true, ...picture, ...(lit ? { lit } : {}), cell })
   }
   // a menu's describe of the lit row keeps Examine's cell
   const examines = [...has].some(([b, l]) => b === 'X' && l.action.kind === 'menu' && l.action.op === 'examine')
@@ -866,38 +868,25 @@ function touchWidest(ctx: Context): Context {
 
 /**
  * A button's face on the touch bar (touchLabels): its word, short where
- * crawl's is long (`TOUCH_WORDS`), its picture (`touchIcon`), and the
+ * crawl's is long (`TOUCH_WORDS`) and without the key crawl prints in it
+ * (`touchCaption`), its picture (`touchIcon`), and the
  * quivered shot drawn on the button that shoots it, on the map and in the
  * aim it opens (`touchShot`), where the aim's own word ("Fire at goblin")
  * stays under the picture. B is Esc on every screen, whatever it is called
  * there (Cancel, Back, Close, Skip, No): one key, one name.
  */
 function touchFace(l: BindingLabel, ctx: Context, panel: boolean): Omit<TouchLabel, 'cell'> {
-  const auto = !panel && runsOn(l.action, ctx)
-  const face = { ...l, ...(auto ? { auto } : {}) }
+  const face = { ...l }
   // the d-pad's cells are their arrows, which the bar draws itself
   if (TOUCH_ARROWS.some(([b]) => b === l.button)) return face
   if (l.button === 'B') return { ...face, label: TOUCH_ANCHORS.esc!.label, ...ESC_ICON }
-  const word = TOUCH_WORDS[l.label] ?? (l.action.kind === 'keys' ? TOUCH_WORDS[l.action.label] : undefined) ?? l.label
+  const word = TOUCH_WORDS[l.label] ?? (l.action.kind === 'keys' ? TOUCH_WORDS[l.action.label] : undefined) ?? touchCaption(l.label)
   const out = { ...face, label: word, ...touchIcon(l.action, ctx, panel) }
   if (!panel && l.action.kind === 'fire' && ctx.readiedAction && (ctx.mode === 'command' || (ctx.mode === 'targeting' && ctx.aimQuiver))) {
     const shot = touchShot(ctx.readiedAction, ctx.readiedTile)
     return { ...out, ...shot, label: ctx.mode === 'command' ? shot.label : l.label }
   }
   return out
-}
-
-/**
- * Whether a button goes on by itself, turn after turn, until something
- * happens: explore, fight, and travel from the level map or look mode
- * (styles.css `.tb.auto`).
- */
-function runsOn(a: Action, ctx: Context): boolean {
-  if (a.kind === 'fight') return true
-  const key = lastKey(a)
-  if (ctx.mode === 'command') return key === 'o'
-  if (ctx.mode === 'levelmap') return key === '.' || key === 'G'
-  return ctx.mode === 'targeting' && !!ctx.examining && key === '.'
 }
 
 /** the last key a keys action sends, as text or a keycode */
@@ -941,6 +930,23 @@ function actionArt(table: Record<string, string[]>, name: string): string[] | un
   for (const k of Object.keys(table)) if (name.startsWith(k + ' ') && (!best || k.length > best.length)) best = k
   best ??= Object.keys(table).find((k) => k.endsWith(' ' + name))
   return best ? table[best] : undefined
+}
+
+/**
+ * Crawl's words as a button's caption (touchFace, touchLabels): a finger
+ * taps the word, so the key crawl prints in it goes, whether leading ("a -
+ * Gnoll") or inside ("(u)nwield", "(=)adjust"), and the word starts upper
+ * case ("select", "page down"), as the bar's own words do. A label in
+ * crawl's colour tags keeps them.
+ */
+export function touchCaption(label: string): string {
+  const m = /^((?:<[a-z:]+>)*)(.*)$/is.exec(label)!
+  const [, tags, rest] = m
+  const text = rest
+    .replace(/^[a-zA-Z] - /, '')
+    .replace(/^\(([a-zA-Z])\)(?=[a-zA-Z])/, '$1')
+    .replace(/^\([^)]\)\s*/, '')
+  return tags + sentenceCase(text)
 }
 
 /** the touch bar's own words for crawl's (touchLabels) */

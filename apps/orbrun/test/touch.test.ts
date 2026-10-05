@@ -130,14 +130,6 @@ describe('the screens drawn cell by cell', () => {
     expect(drawn(home)[2][4]).toBe('·')
     expect(words(home)[1][4]).toBe('Travel to…')
   })
-  it('what goes on by itself, turn after turn, is marked: explore, fight and travel', () => {
-    const auto = (c: Context) => touchLabels(barLabels(c), c).filter((l) => l.auto).map((l) => l.button).sort()
-    expect(auto(stairs)).toEqual(['LT', 'RT'])
-    expect(auto(ctx({ mode: 'levelmap' }))).toEqual(['A'])
-    expect(auto(ctx({ mode: 'levelmap', mapCursorHome: true }))).toEqual(['Y'])
-    expect(auto(ctx({ mode: 'targeting', examining: { label: 'goblin' } as Context['examining'] }))).toEqual(['X'])
-    expect(auto(ctx({ mode: 'targeting', hostilesInView: 2 }))).toEqual([])
-  })
 })
 
 describe('a screen with no layout of its own keeps its few buttons together', () => {
@@ -215,8 +207,10 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     expect(cells[0]).toEqual(['key:u', 'key:d', 'key:=', 'key:s', 'key:i'])
     expect(cells[2][4]).toBe('A')
     expect(cells.flat()).not.toContain('X')
-    // the captions keep the key as printed, so each reads as one of the popup's options
-    expect(drawn(c, (l) => l.label)[0]).toEqual(['(u)nwield', '(d)rop', '(=)adjust', '(s)kill target', '(i)nscribe'])
+    // the captions are the words alone (the popup's frame says whose they are), and the lit one, Select's too, is lit
+    expect(drawn(c, (l) => l.label)[0]).toEqual(['Unwield', 'Drop', 'Adjust', 'Skill target', 'Inscribe'])
+    expect(touchLabels(barLabels(c), c).filter((l) => l.lit).map((l) => l.button)).toEqual(['key:u'])
+    expect(touchLabels(barLabels(c), c).find((l) => l.button === 'A')?.label).toBe('Unwield')
     // crawl's art where it has the verb, ours where not, the item for what uses it (and the pack's art without one)
     expect(drawn(c, (l) => l.glyph ?? l.icon ?? '·')[0]).toEqual(['CMD_DISPLAY_INVENTORY', 'CMD_DROP', 'cycle', 'target', 'inscribe'])
     const rapier = [{ t: 7, tex: 1 }]
