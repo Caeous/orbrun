@@ -2462,6 +2462,34 @@ canvas.minimap.hidden {
   flex: none;
   pointer-events: none;
 }
+/* a switch the screen prints as `[!] words`: its key in its brackets, where the others have a picture (bindings.ts
+   touchLabels), as the screen prints it, so its words have two lines under it */
+.touchbar .tb .keycap {
+  flex: none;
+  display: flex;
+  align-items: center;
+  /* the menus' text, at their size where the screen gives it (hud.ts fillTouchButton) */
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--color-15);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.touchbar .tb .keycap .bracket {
+  color: var(--ink-dim);
+}
+.touchbar .tb.has-keycap .label {
+  font-size: max(7px, min(0.85em, calc(100cqi / 9 / 0.61)));
+  line-height: 1.1;
+  /* lines break between words and after a `|` (bindings.ts switchColours), a word alone too long for a line anywhere */
+  white-space: normal;
+  overflow-wrap: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
 /* how many of the quivered item there are, in the button's corner as on crawl's item tiles */
 .touchbar .tb .count {
   position: absolute;
@@ -2472,6 +2500,13 @@ canvas.minimap.hidden {
   color: #fff;
   text-shadow: 1px 1px 0 #000;
   pointer-events: none;
+}
+/* a button for one of the menu's or popup's own options (bindings.ts SwitchButton): there only while it is, so it wears
+   the popup's border and backing (.popup), part of the menu over it rather than of the bar */
+.touchbar .tb.switch {
+  background: rgba(10, 10, 14, 0.96);
+  border-color: #555;
+  border-radius: 6px;
 }
 /* a cell this screen has nothing for: held open, so nothing slides into it (hud.ts renderTouchBar) */
 .touchbar .tb.empty {

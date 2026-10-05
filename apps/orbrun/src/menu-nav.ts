@@ -1,4 +1,5 @@
 import { MenuFlag, type MenuState } from '@orbrun/webtiles'
+import type { Switch } from './context'
 
 /**
  * Keyboard navigation of a server menu, ported from the official client's
@@ -205,12 +206,13 @@ export function parseMoreSwitches(text: string): MoreSwitch[] {
   return out
 }
 
-/** The keycode a named switch sends (`[Esc]`, `[Enter]`), or 0 when the switch is a plain character. */
+/** The keycode a named switch sends (`[Esc]`, `[Enter]`, the wear menu's `[tab]`), or 0 when the switch is a plain character. */
 export function moreSwitchKeycode(key: string): number {
-  if (key === 'Esc') return 27
-  if (key === 'Enter') return 13
-  if (key === 'Space') return 32
-  if (key === 'Tab') return 9
+  const name = key.toLowerCase()
+  if (name === 'esc') return 27
+  if (name === 'enter') return 13
+  if (name === 'space') return 32
+  if (name === 'tab') return 9
   return 0
 }
 
@@ -354,4 +356,22 @@ export function scrollKeyIntent(popupType: string, ev: NavKeyLike): ScrollKey | 
       return 'pageUp'
   }
   return null
+}
+
+/** a switch as the screen prints it: a verb with its key inside ("(q)uaff") as it is, a word beside its key in a more line as "[!] read|quaff|evoke" */
+export function printedSwitch(key: string, label: string): Switch {
+  const word = unbracket(label, key)
+  return { key, label: word === label ? '[' + key + '] ' + label : label, word }
+}
+
+/** an actions-line word without its key, wherever in the word it stands: "(s)kill target" is "skill target", "qui(v)er" "quiver", "(=)adjust" "adjust" */
+export function unbracket(label: string, key: string): string {
+  const k = '(' + key + ')'
+  const at = label.indexOf(k)
+  if (at < 0) return label
+  const before = label.slice(0, at)
+  const after = label.slice(at + k.length)
+  // a letter is part of the word it stands in; a sign beside it ("(=)adjust", "(G) Travel") is only the key
+  const inWord = /^[a-z]$/i.test(key) && (/[a-z]$/i.test(before) || /^[a-z]/i.test(after))
+  return (inWord ? before + key + after : before + after).trim() || label
 }

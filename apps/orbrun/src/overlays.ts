@@ -8,6 +8,7 @@ import {
   Keys,
   type ClientMessage,
   type GameState,
+  type InvItem,
   type MenuState,
   type Popup,
 } from '@orbrun/webtiles'
@@ -28,7 +29,7 @@ import { packRows, packStrip, turnKeys, type PackStrip } from './pack-tabs'
 import { fits, menuColumns } from './menu-columns'
 import { ACTION_TABS, SHOUT, SWAP_WEAPONS, actionNeighbour, actionTabOf, type ActionTabId } from './action-tabs'
 import type { Button, PadKind } from './gamepad'
-import { DEFAULT_YESNO, isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt } from './context'
+import { DEFAULT_YESNO, isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt, type Switch } from './context'
 import type { InputDevice } from './game'
 import {
   cycleHeadersTarget,
@@ -40,6 +41,7 @@ import {
   menuKeyIntent,
   moreSwitchKeycode,
   parseMoreSwitches,
+  printedSwitch,
   nextHoverableItem,
   relativeHover,
   relativeHoverTarget,
@@ -97,6 +99,10 @@ export interface PopupAction {
   key: string
   label: string
   send(): void
+  /** where a switch of a popup's more line is drawn, for its colours (`switchColours`) */
+  el?: HTMLElement
+  /** a row of the popup's list (a book's spell), which a finger taps where it stands: no touch button of its own (`popupSwitches`) */
+  row?: boolean
 }
 
 /**
@@ -352,6 +358,79 @@ function parseActions(text: string): { key: string; label: string }[] {
   return out
 }
 
+/**
+ * A switch drawn as text (`[!] words`, between two offsets of `root`'s
+ * text): its bracketed key and its words, each as html in the colours it is
+ * drawn in, so the touch button reads as the footer does (the key in its
+ * colour, the lit half of `auto|manual` bright). A `|` may end a caption's
+ * line.
+ */
+export function switchColours(root: HTMLElement, start: number, end: number, key: string): { keyHtml: string; wordHtml: string } {
+  const text = root.textContent ?? ''
+  const keyEnd = Math.min(end, start + key.length + 2)
+  let word = keyEnd
+  while (word < end && text[word] === ' ') word++
+  return { keyHtml: colouredSlice(root, start, keyEnd), wordHtml: colouredSlice(root, word, end).replace(/\.((?:<\/span>)?)$/, '$1').replace(/\|/g, '|<wbr>') }
+}
+
+/** what `switchLook` has read off a switch drawn as text, by its element and range */
+const switchLooks = new WeakMap<HTMLElement, Map<string, { keyHtml: string; wordHtml: string; keyPx?: number }>>()
+
+/**
+ * A switch drawn as text, for its touch button: its colours (`switchColours`)
+ * and the size its text is drawn at (`keyPx`), so the bracketed key on the
+ * button is the footer's own text at the footer's size. Read once an element
+ * (the touch bar asks every frame); the size once it is on the page.
+ */
+function switchLook(root: HTMLElement, start: number, end: number, key: string): { keyHtml: string; wordHtml: string; keyPx?: number } {
+  let byRange = switchLooks.get(root)
+  if (!byRange) switchLooks.set(root, (byRange = new Map()))
+  const id = start + ':' + end + ':' + key
+  let look = byRange.get(id)
+  if (!look) byRange.set(id, (look = switchColours(root, start, end, key)))
+  if (look.keyPx === undefined && root.isConnected) {
+    const px = parseFloat(getComputedStyle(root).fontSize)
+    if (px > 0) look.keyPx = px
+  }
+  return look
+}
+
+/** `root`'s text between two offsets as html, a span a run of one colour (the `fgN` class of the element it stands in) */
+function colouredSlice(root: HTMLElement, start: number, end: number): string {
+  let out = ''
+  let run = ''
+  let cur: string | null = null
+  const flush = () => {
+    if (run) out += cur ? `<span class="${cur}">${escapeHtml(run)}</span>` : escapeHtml(run)
+    run = ''
+  }
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let pos = 0
+  for (let n = walker.nextNode(); n && pos < end; n = walker.nextNode()) {
+    const t = n.nodeValue ?? ''
+    const a = Math.max(start, pos)
+    const b = Math.min(end, pos + t.length)
+    if (a < b) {
+      let fg: string | null = null
+      for (let el = n.parentElement; el; el = el === root ? null : el.parentElement) {
+        const m = typeof el.className === 'string' ? /\bfg\d+\b/.exec(el.className) : null
+        if (m) {
+          fg = m[0]
+          break
+        }
+      }
+      if (fg !== cur) {
+        flush()
+        cur = fg
+      }
+      run += t.slice(a - pos, b - pos)
+    }
+    pos += t.length
+  }
+  flush()
+  return out
+}
+
 function clickifyActions(text: string): string {
   return text
     .split(', ')
@@ -540,6 +619,8 @@ export class Overlays {
    * the rows. Down past the last row walks into them, up walks back.
    */
   private menuFooter: MoreSwitchEl[] = []
+  /** the top CRT screen's footer switches (the skills screen's `[=] set a skill target`), as scraped (crt-scrape.ts) */
+  private crtFooter: { sw: Switch; root: HTMLElement; start: number; end: number }[] = []
   private menuFooterIndex = -1
   /** the menu the footer cursor belongs to, so a rebuild of the same menu keeps it and a menu opened after (even one with the same tag) starts on its rows */
   private menuFooterOf: MenuState | null = null
@@ -731,6 +812,7 @@ export class Overlays {
     this.crtFitted = null
     this.menuEl = null
     this.menuTop = null
+    this.crtFooter = []
     this.menuMore = null
     this.menuFooter = []
     this.menuExtra = null
@@ -1229,7 +1311,7 @@ export class Overlays {
       const span = h('span', { class: 'more-hot', title: sw.label })
       span.append(range.extractContents())
       range.insertNode(span)
-      span.addEventListener('click', () => this.sendMoreSwitch(sw.key))
+      span.addEventListener('click', () => this.sendMenuSwitch(sw.key))
       // where it stands in the line, which is laid out in columns (menu.cc `pad_more_with`): the cursor
       // moves over them as they are drawn, up and down between the lines and sideways along one
       const lineStart = text.lastIndexOf('\n', sw.start - 1) + 1
@@ -1255,8 +1337,50 @@ export class Overlays {
     this.paintFooter()
   }
 
+  /** The switches the top menu's more line prints now, in the order it prints them: the touch bar's top row (bindings.ts `touchLabels`). */
+  menuSwitches(): Switch[] {
+    if (this.crtFooter.length) return this.crtFooter.map((f) => ({ ...f.sw, ...switchLook(f.root, f.start, f.end, f.sw.key) }))
+    if (!this.menuEl) return []
+    const out: Switch[] = []
+    // two keys for one switch (the spell list's `[!]/[I] toggle spell headers`) are one button, on the first key:
+    // the first one's label is just the slash between them
+    for (let i = 0; i < this.menuFooter.length; i++) {
+      const f = this.menuFooter[i]
+      const next = this.menuFooter[i + 1]
+      const all = (el: HTMLElement, key: string) => switchLook(el, 0, el.textContent?.length ?? 0, key)
+      if (f.label === '/' && next) out.push({ ...printedSwitch(f.key, next.label), ...all(f.el, f.key), wordHtml: all(next.el, next.key).wordHtml }), i++
+      else out.push({ ...printedSwitch(f.key, f.label), ...all(f.el, f.key) })
+    }
+    return out
+  }
+
+  /**
+   * The top popup's verbs and switches for the touch bar, less its list's
+   * rows: a verb as the actions line prints it, its key in brackets on the
+   * button, so the word goes without it ("(s)kill target" is `s` over "skill
+   * target", "(=)adjust" `=` over "adjust").
+   */
+  popupSwitches(): Switch[] {
+    const item = this.popupItem()
+    return this.actions.filter((a) => !a.row).map((a) => ({ ...printedSwitch(a.key, a.label), ...(item ? { item } : {}), ...(a.el ? switchLook(a.el, 0, a.el.textContent?.length ?? 0, a.key) : {}) }))
+  }
+
+  /** the item a describe popup is of, as its header draws it, in the inventory's form (tileweb.cc `_send_item`) */
+  private popupItem(): InvItem['tile'] | undefined {
+    const d = this.popupTop?.type === 'describe-item' ? (this.popupTop.data as Record<string, unknown>) : null
+    const refs = d && ((d.tiles as TileRef[] | undefined) ?? (d.tile ? [d.tile as TileRef] : undefined))
+    return refs?.length ? refs.map((r) => (r.tex !== undefined ? { t: r.t, tex: r.tex, ...(r.ymax !== undefined ? { ymax: r.ymax } : {}) } : r.t)) : undefined
+  }
+
+  /** A touch button's switch: the top popup's own way of sending it where it has one, else as a menu's more line sends it. */
+  sendSwitch(key: string) {
+    const a = this.popupEl ? this.actions.find((x) => x.key === key && !x.row) : undefined
+    if (a) a.send()
+    else this.sendMenuSwitch(key)
+  }
+
   /** A more-line switch: the key it prints, as the official client would send it. */
-  private sendMoreSwitch(key: string) {
+  sendMenuSwitch(key: string) {
     const code = moreSwitchKeycode(key)
     if (code) this.hooks.send(cm.key(code))
     else if (key.length === 1) this.hooks.send(cm.input(key))
@@ -1647,7 +1771,7 @@ export class Overlays {
           break
         }
         if (this.menuFooterIndex >= 0) {
-          this.sendMoreSwitch(this.menuFooter[this.menuFooterIndex].key)
+          this.sendMenuSwitch(this.menuFooter[this.menuFooterIndex].key)
           break
         }
         const hk = menu.items[this.hovered]?.hotkeys?.[0]
@@ -1762,7 +1886,7 @@ export class Overlays {
       body.append(h('div', { html: fmtBody(parts[0]) }))
       if (books.length) {
         body.append(this.spellset(books, items, () => row++, colour))
-        for (const b of books) for (const s of b.spells) acts.push({ key: s.letter, label: formattedStringToText(s.title), send: () => this.hooks.send(cm.textInput(s.letter)) })
+        for (const b of books) for (const s of b.spells) acts.push({ key: s.letter, label: formattedStringToText(s.title), send: () => this.hooks.send(cm.textInput(s.letter)), row: true })
       }
       if (parts.length > 1) body.append(h('div', { html: fmtBody(parts.slice(1).join('')) }))
       el.append(body)
@@ -1929,9 +2053,9 @@ export class Overlays {
       const r = row
       const sws = this.hotSwitches(moreEl)
       for (const sw of sws) {
-        const send = () => this.sendMoreSwitch(sw.key)
+        const send = () => this.sendMenuSwitch(sw.key)
         items.push({ label: sw.label, el: sw.el, activate: send, row: r + sw.line, col: sw.col, id: 'more:' + sw.key })
-        acts.push({ key: sw.key, label: sw.label, send })
+        acts.push({ key: sw.key, label: sw.label, send, el: sw.el })
       }
       row += Math.max(0, ...sws.map((sw) => sw.line)) + 1
     }
@@ -2187,6 +2311,7 @@ export class Overlays {
     const els = lines.map((l, i) => h('div', { class: 'crt-line' + (layout?.prose?.has(i) ? ' wrap' : ''), html: l || ' ' }))
     pre.append(...els)
     if (!top) return pre
+    this.crtFooter = hotkeys.filter((hk) => hk.kind === 'footer' && els[hk.line]).map((hk) => ({ sw: printedSwitch(hk.key, hk.label), root: els[hk.line], start: hk.col, end: hk.col + hk.len }))
     const items: Focusable[] = []
     // skill-menu.cc: `=` puts the screen in set-target mode (set_flag, so a second `=` is harmless)
     // and a skill's letter then prompts for its target (read_skill_target, text input `skill_target`).

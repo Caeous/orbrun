@@ -47,7 +47,7 @@ export function screen(g: E2e): Screen {
   // an overlay of Orbrun's own (an empty tab of X's actions) puts the bar away: its footer says what the buttons do
   const ours = !!g.root.querySelector('.overlay-stack > [data-client]')
   if (!ours) for (const l of barLabels(ctx)) bar[l.button] = formattedStringToText(l.label)
-  const touch = ours ? [] : touchLabels(barLabels(ctx), ctx).map((l) => ({ cell: l.cell, button: l.button, label: formattedStringToText(l.label), picture: l.item !== undefined ? 'item' : (l.icon ?? l.glyph) }))
+  const touch = ours ? [] : touchLabels(barLabels(ctx), ctx).map((l) => ({ cell: l.cell, button: l.button, label: formattedStringToText(l.label), picture: l.item !== undefined ? 'item' : l.keycap !== undefined ? `key ${l.keycap}` : (l.icon ?? l.glyph) }))
   return {
     mode: ctx.mode,
     surface,

@@ -5,7 +5,7 @@ import { monsterGroups } from '@orbrun/scene-webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
 import { h, clear, escapeHtml, replace, snapToPixels } from './dom'
 import { commandTileId, tileCanvas } from './overlays'
-import { CONTINUE, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, buttonGroup, promptLabels, type Action, type BindingLabel, type TouchCell, type TouchIcon, type TouchLabel } from './bindings'
+import { CONTINUE, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, isSwitchButton, buttonGroup, promptLabels, type Action, type BindingLabel, type TouchCell, type TouchIcon, type TouchLabel } from './bindings'
 import { glyphPath, type TouchGlyph } from './touch-glyphs'
 
 /** A tap-or-hold button down: which, and the press's length as a fraction of the hold (bindings.ts HOLD_MS). */
@@ -46,6 +46,8 @@ export interface HudHooks {
   onPanelSettings(): void
   /** a finger went down (`down`) or came up on one of the touch bar's buttons: the pad's own button, pressed */
   onTouchButton(button: Button, down: boolean): void
+  /** a touch button for a menu's more-line switch or a popup's verb was tapped: send its key (Overlays.sendSwitch) */
+  onTouchSwitch(key: string): void
 }
 
 /**
@@ -1802,14 +1804,14 @@ export class Hud {
    */
   private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null) {
     // the icons come in with the gamedata, and are drawn for the screen's density (`touchArtScale`)
-    const art = (l: TouchLabel) => '#' + (l.icon ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '')
+    const art = (l: TouchLabel) => '#' + (l.icon ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '') + (l.keycapPx ?? '')
     const key = labels ? labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.auto ? '!' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
     this.touchbar.hidden = !labels?.length
     if (!labels?.length) {
       // the bar going away under a finger lets go of what it holds: its pointerup will land on nothing
-      for (const el of this.touchbar.querySelectorAll<HTMLElement>('.tb.down')) this.hooks.onTouchButton(el.dataset.b as Button, false)
+      for (const el of this.touchbar.querySelectorAll<HTMLElement>('.tb.down')) this.pressTouch(el.dataset.b!, false)
       clear(this.touchbar)
       return
     }
@@ -1819,7 +1821,7 @@ export class Hud {
     const was = new Map<string, HTMLElement>()
     for (const el of Array.from(this.touchbar.children) as HTMLElement[]) if (el.dataset.cell) was.set(el.dataset.cell, el)
     const letGo = (el: HTMLElement | undefined) => {
-      if (el?.classList.contains('down')) this.hooks.onTouchButton(el.dataset.b as Button, false)
+      if (el?.classList.contains('down')) this.pressTouch(el.dataset.b!, false)
     }
     let last: HTMLElement | null = null
     for (let r = 0; r < TOUCH_CELLS.length; r++) {
@@ -1856,9 +1858,15 @@ export class Hud {
     }
   }
 
+  /** A touch button's press or release: a pad button's goes to the game as the pad's would, a menu switch sends its key as it goes down. */
+  private pressTouch(b: string, down: boolean) {
+    if (!isSwitchButton(b)) this.hooks.onTouchButton(b as Button, down)
+    else if (down) this.hooks.onTouchSwitch(b.slice('key:'.length))
+  }
+
   /** A touch bar button pressing `l.button` for as long as the finger stays on it, over the cells `covers`. */
   private touchButton(covers: readonly TouchCell[], l: TouchLabel, gd: Gamedata | null): HTMLElement {
-    const b = l.button as Button
+    const b = l.button
     const btn = h('button', { type: 'button', 'data-b': b, 'data-cell': covers[0] })
     btn.addEventListener('pointerdown', (ev) => {
       ev.preventDefault()
@@ -1867,13 +1875,13 @@ export class Hud {
         btn.setPointerCapture(ev.pointerId)
       } catch {}
       btn.classList.add('down')
-      this.hooks.onTouchButton(b, true)
+      this.pressTouch(b, true)
     })
     const up = (ev: PointerEvent) => {
       if (!btn.classList.contains('down')) return
       btn.classList.remove('down')
       if (btn.hasPointerCapture(ev.pointerId)) btn.releasePointerCapture(ev.pointerId)
-      this.hooks.onTouchButton(b, false)
+      this.pressTouch(b, false)
     }
     btn.addEventListener('pointerup', up)
     btn.addEventListener('pointercancel', up)
@@ -1891,12 +1899,19 @@ export class Hud {
   private fillTouchButton(btn: HTMLElement, covers: readonly TouchCell[], l: TouchLabel, gd: Gamedata | null) {
     // the d-pad's cells are their arrows alone; the others are their picture over the word, the word being what is read last
     const arrow = TOUCH_ARROW_ROT[covers[0]]
-    const icon = arrow !== undefined ? touchArrow(arrow) : touchPicture(gd, l, l.item)
+    // a switch the screen prints in brackets wears them, the key bright between them
+    // the key as the screen prints it, at the size it prints it
+    const keycap = () => {
+      const el = l.keycapHtml ? h('span', { class: 'keycap', html: l.keycapHtml }) : h('span', { class: 'keycap' }, h('span', { class: 'bracket' }, '['), l.keycap!, h('span', { class: 'bracket' }, ']'))
+      if (l.keycapPx) el.style.fontSize = l.keycapPx + 'px'
+      return el
+    }
+    const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : touchPicture(gd, l, l.item)
     // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
     const words = l.hold ? l.label + ' [' + l.hold + ']' : l.label
-    btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.auto ? ' auto' : '') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (btn.classList.contains('down') ? ' down' : '')
+    btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.auto ? ' auto' : '') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (btn.classList.contains('down') ? ' down' : '')
     btn.setAttribute('aria-label', formattedStringToText(l.label))
-    const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, arrow !== undefined ? null : label(words)]
+    const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, arrow !== undefined ? null : l.labelHtml ? h('span', { class: 'label', html: l.labelHtml }) : label(words)]
     btn.replaceChildren(...parts.filter((n): n is Element => n !== null))
     // sized by its length to keep to its one line (styles.css .tb.has-icon .label)
     btn.style.setProperty('--chars', String(formattedStringToText(words).length))

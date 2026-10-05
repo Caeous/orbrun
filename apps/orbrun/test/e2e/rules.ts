@@ -12,7 +12,7 @@
  *  6. The touch bar keeps its anchors: one button a cell (TOUCH_CELLS), Esc
  *     and the arrows in theirs on every screen, and every one it shows but
  *     the arrows does something and has a picture over its word, Esc by
- *     that name.
+ *     that name (a menu's more-line switch is its key in brackets).
  *
  * What a press "did" is what it sent crawl plus what changed on the client's
  * own screen (the cursor moved, an overlay of Orbrun's opened), since a
@@ -21,7 +21,7 @@
 import type { ClientMessage } from '@orbrun/webtiles'
 import { startReplay, type E2e, type Input, type Recording } from './client'
 import { screen, type Screen } from './screen'
-import { isTouchCell } from '../../src/bindings'
+import { isSwitchButton, isTouchCell } from '../../src/bindings'
 
 type Probe = { id: string; inputs: Input[] }
 
@@ -209,7 +209,8 @@ export async function check(scenario: string, r: Awaited<ReturnType<typeof tryAl
     cells.add(t.cell)
     if (!t.button.startsWith('D') && !t.picture) add('touch has pictures', `${t.button} (${JSON.stringify(t.label)}) has none`)
     if (t.button === 'B' && t.label !== 'Esc') add('touch has pictures', `B is ${JSON.stringify(t.label)}, not Esc`)
-    if (t.button.startsWith('D') || idle[t.button] || (await does(t.button))) continue
+    // a menu's more-line switch sends the key crawl printed beside it, which no pad button was pressed for
+    if (t.button.startsWith('D') || isSwitchButton(t.button) || idle[t.button] || (await does(t.button))) continue
     if (pair[t.button] && shown.has(pair[t.button]) && (await does(pair[t.button]))) continue
     add('touch tells the truth', `${t.button} (${JSON.stringify(t.label)}) does nothing`)
   }

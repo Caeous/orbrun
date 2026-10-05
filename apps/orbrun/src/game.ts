@@ -8,7 +8,7 @@ import { RendererPark } from './park'
 import { escapeHtml, h, onDprChange } from './dom'
 import type { Session } from './session'
 import { CameraController } from './camera'
-import { deriveContext, deriveMode, type Context } from './context'
+import { deriveContext, deriveMode, type Context, type Mode } from './context'
 import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchLabels, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
 import type { CommandMenu } from './command-menu'
 import { ORBIT_WINDOW_MS, Runner, type LastStep } from './runner'
@@ -50,6 +50,8 @@ const MAP_SCALE_MIN = 20
 const MAP_SCALE_MAX = 300
 /** game.js `show_diameter`: the cells across a full field of view, which the view is fitted to */
 const SHOW_DIAMETER = 17
+/** the screens a tap on the minimap closes (with Escape) instead of opening the level map over them */
+const MINIMAP_CLOSES: ReadonlySet<Mode> = new Set(['more', 'menu', 'popup', 'newgame', 'text', 'yesno', 'prompt', 'crt', 'dialog'])
 
 /**
  * A panel of ours leaves B unnamed (its footer says Esc, a pad player knows
@@ -208,6 +210,8 @@ export class GameScreen {
    * opened by mouse or keyboard, which have Esc.
    */
   private overlayOpener: Button | null = null
+  /** The pointer now down closed a menu as it came down (`onDocPointer`); its click is spent on that. */
+  private pointerClosed = false
   private lastCursor: SceneCursor | null = null
   private lastOptKey = ''
   private drag: Drag | null = null
@@ -307,7 +311,7 @@ export class GameScreen {
     this.hud = new Hud(this.root, {
       onSelectMonster: (b) => this.faceBillboard(b),
       onBarAction: (a) => this.runner.execute(a),
-      onMinimapClick: () => this.runner.execute(LEVEL_MAP),
+      onMinimapClick: () => this.minimapTap(),
       // on the map with nothing of ours up, as the pad's Start opens it there
       onStatsClick: () => {
         if (this.ctx.mode === 'command' && !this.session.watching && !this.overlays.hasClientOverlay) this.runner.execute({ kind: 'ui', op: 'system' })
@@ -330,6 +334,10 @@ export class GameScreen {
         this.inputFrom('touch')
         if (down) this.hooks.gamepad.virtualDown(button, performance.now(), true)
         else this.hooks.gamepad.virtualUp(button, performance.now(), true)
+      },
+      onTouchSwitch: (key) => {
+        this.inputFrom('touch')
+        this.overlays.sendSwitch(key)
       },
     })
     this.chat = new Chat(this.root, { send: (m) => this.runner.send(m), padKind: () => this.hooks.gamepad.kind })
@@ -823,6 +831,8 @@ export class GameScreen {
     if (this.runner.examining(this.ctx.mode)) this.ctx.examining = true
     this.viewHeld = this.runner.holdingView(this.ctx.mode)
     if (this.ctx.mode === 'popup') this.ctx.popupActions = this.overlays.popupActions()
+    if (this.ctx.mode === 'menu') this.ctx.switches = this.overlays.menuSwitches()
+    if (this.ctx.mode === 'popup') this.ctx.switches = this.overlays.popupSwitches()
     this.overlays.updatePrompt(this.ctx.mode, this.ctx.prompt, this.lastInput)
     this.overlays.syncFocus(this.ctx)
     const fi = this.overlays.focusInfo(this.ctx)
@@ -1870,6 +1880,7 @@ export class GameScreen {
    */
   private onDocPointer(ev: PointerEvent) {
     this.wake()
+    this.pointerClosed = false
     // a finger anywhere (a menu's row, a prompt's chip) is the finger speaking: the touch bar comes up for it
     const touch = ev.pointerType === 'touch'
     if (touch) this.inputFrom('touch')
@@ -1883,6 +1894,7 @@ export class GameScreen {
       this.overlays.clientOverlayInput('cancel')
       if (!this.overlays.hasClientOverlay) this.overlayOpener = null
       this.needsRender = true
+      this.pointerClosed = true
       return
     }
     if (!this.popupUp(touch)) return
@@ -1896,6 +1908,27 @@ export class GameScreen {
     clearTimeout(this.tooltipTimer)
     this.hud.hideTooltip()
     this.runner.send(cm.key(27))
+    this.pointerClosed = true
+  }
+
+  /**
+   * A tap or click on the minimap opens the level map only from the game
+   * itself. Over a menu it is a tap outside the menu, which closes it and
+   * nothing more: under a finger the press already did (`onDocPointer`), and
+   * a mouse's click closes it here.
+   */
+  private minimapTap() {
+    if (this.pointerClosed) return
+    if (!this.session.watching) {
+      if (this.overlays.hasClientOverlay) {
+        this.overlays.clientOverlayInput('cancel')
+        if (!this.overlays.hasClientOverlay) this.overlayOpener = null
+        this.needsRender = true
+        return
+      }
+      if (MINIMAP_CLOSES.has(this.ctx.mode)) return this.runner.send(cm.key(27))
+    }
+    this.runner.execute(LEVEL_MAP)
   }
 
   /** ui.js context_disable: no browser context menu while a popup is up, except on a text input. */

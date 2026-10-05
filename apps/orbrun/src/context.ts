@@ -69,6 +69,25 @@ export interface ParsedPrompt {
   cancel: boolean
 }
 
+/**
+ * A key the screen prints beside its words (Context.switches): the button's
+ * caption as printed (`label`: "(q)uaff", "[!] read|quaff|evoke"), so it reads
+ * as one of the screen's options, the words alone (`word`) for its picture,
+ * the item a describe popup is of, for the verbs that use it, and the key and
+ * words in the screen's colours (`keyHtml`, `wordHtml`) where it has them.
+ */
+export interface Switch {
+  key: string
+  label: string
+  word: string
+  item?: InvItem['tile']
+  /** the bracketed key and the words as the screen draws them, in its colours (html, `fgN` spans), where it is drawn as text */
+  keyHtml?: string
+  wordHtml?: string
+  /** the size the screen draws that text at, in css px */
+  keyPx?: number
+}
+
 export interface MenuContext {
   menu: MenuState
   hoverable: number[]
@@ -126,6 +145,12 @@ export interface Context {
   popupType?: string
   /** Actions the top popup offers (describe-item verbs, pane switches), in pad order. Filled by the app from the overlays. */
   popupActions?: { key: string; label: string }[]
+  /**
+   * The keys the top menu or popup prints beside their words, a touch button
+   * each (bindings.ts `touchLabels`): a menu's more line (`[!] read|quaff|evoke`),
+   * a describe popup's verbs (`(d)rop`) and its pane switch. Filled by the app from the overlays.
+   */
+  switches?: Switch[]
   /**
    * The focus layer's cursor over the top overlay (popup, prompt, CRT screen,
    * dialog): what A and B would do. Filled by the app from the overlays; absent

@@ -69,10 +69,10 @@ describe('the touch bar keeps one keypad\'s shape', () => {
   it('an anchor with nothing to do stands dim under its word and presses nothing; any other cell left over is empty', () => {
     const b = bar()
     b.render([lab('A', 'select', 'Continue'), lab('B', 'esc', 'Skip')])
-    for (const c of ['examine', 'up', 'left', 'down', 'right']) expect(b.cell(c).classList.contains('idle')).toBe(true)
-    expect(b.cell('examine').textContent).toBe('Examine')
+    for (const c of ['up', 'left', 'down', 'right']) expect(b.cell(c).classList.contains('idle')).toBe(true)
     expect(b.cell('up').querySelector('svg.arrow')).not.toBeNull()
-    for (const c of ['corner', 'wait', 'actions', 'gear']) expect(b.cell(c).classList.contains('empty')).toBe(true)
+    // Examine's cell is only there when something examines: empty, it is free for a screen's verbs
+    for (const c of ['corner', 'wait', 'examine', 'actions', 'gear']) expect(b.cell(c).classList.contains('empty')).toBe(true)
     b.finger(b.cell('up'), 'pointerdown')
     expect(b.onTouchButton).not.toHaveBeenCalled()
     // Esc with nothing to do (the stat gain) is still where Esc is
@@ -80,22 +80,22 @@ describe('the touch bar keeps one keypad\'s shape', () => {
     expect(b.cell('esc').classList.contains('idle')).toBe(true)
     expect(b.cell('esc').textContent).toBe('Esc')
   })
-  it('a button two cells wide covers both, and is the verb where it covers Select\'s: the aim\'s Fire', () => {
+  it('a button two cells wide covers both, and the cell it covered comes back when it goes', () => {
     const b = bar()
     const fire = (word: string) => ({ ...lab('RB', 'quiver', word), span: 2 })
     b.render([fire('Fire'), lab('B', 'esc', 'Cancel')])
     const wide = b.cell('quiver')
-    expect(b.cell('select')).toBeNull()
-    expect(wide.classList.contains('at-quiver') && wide.classList.contains('at-select')).toBe(true)
+    expect(b.cell('actions')).toBeNull()
+    expect(wide.classList.contains('at-quiver') && wide.classList.contains('at-actions')).toBe(true)
     // held while the cursor walks to a target and the word follows it
     b.finger(wide, 'pointerdown')
     b.render([fire('Fire at goblin'), lab('B', 'esc', 'Cancel')])
     expect(b.cell('quiver')).toBe(wide)
     expect(b.onTouchButton).toHaveBeenCalledTimes(1)
-    // the aim over, Select's cell is back, in its place
+    // narrow again, the cell it covered is back, in its place
     b.render([lab('RB', 'quiver', 'Fire'), lab('B', 'esc', 'Cancel')])
-    expect(b.cell('select').classList.contains('idle')).toBe(true)
-    expect(Array.from(b.cell('quiver').parentElement!.children).map((el) => (el as HTMLElement).dataset.cell).slice(0, 5)).toEqual(['corner', 'wait', 'examine', 'quiver', 'select'])
+    expect(b.cell('actions').classList.contains('empty')).toBe(true)
+    expect(Array.from(b.cell('quiver').parentElement!.children).map((el) => (el as HTMLElement).dataset.cell).slice(0, 5)).toEqual(['corner', 'wait', 'examine', 'quiver', 'actions'])
   })
 })
 
