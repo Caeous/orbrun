@@ -580,6 +580,22 @@ export class GameScreen {
       this.canvas.style.top = px.top + 'px'
       this.canvas.style.width = px.width.toFixed(2) + 'px'
       this.canvas.style.height = px.height.toFixed(2) + 'px'
+    } else if (!map) {
+      // the grid keeps clear of a phone's cutouts (host.ts `insets`); the view the cells stand over runs on under them
+      const ins = this.grid.insets
+      const dl = view.x === 0 ? ins.left : 0
+      const dt = view.y === 0 ? ins.top : 0
+      const dr = view.x + view.w >= g.cols ? ins.right : 0
+      if (dl || dt || dr) {
+        px.left -= dl
+        px.top -= dt
+        px.width += dl + dr
+        px.height += dt
+        this.canvas.style.left = px.left + 'px'
+        this.canvas.style.top = px.top + 'px'
+        this.canvas.style.width = px.width.toFixed(2) + 'px'
+        this.canvas.style.height = px.height.toFixed(2) + 'px'
+      }
     }
     this.viewPx = px
     // the map is centred, and its cells fitted, on its part above the touch bar (render-2d `foot`)

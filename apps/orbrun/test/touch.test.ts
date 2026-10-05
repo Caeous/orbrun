@@ -198,6 +198,13 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     // a trailing full stop is the sentence's, not the button's
     expect(words({ ...menu({}, 'ability'), switches: [sw('?', 'toggle between ability selection and description.')] })[0][0]).toBe('toggle between ability selection and description')
   })
+  it('a thing crawl names underfoot is Select’s caption without its article, its count kept', () => {
+    const a = (label: string) => touchLabels(barLabels(ctx({ under: { kind: 'item', label } })), ctx({ under: { kind: 'item', label } })).find((l) => l.button === 'A')?.label
+    expect(a('a +2 short sword')).toBe('+2 short sword')
+    expect(a('an arrow')).toBe('Arrow')
+    expect(a('<green>a potion of curing</green>')).toBe('<green>Potion of curing</green>')
+    expect(a('3 darts')).toBe('3 darts')
+  })
   it('a describe popup’s verbs: a button each, all five along the top row where nothing examines, in place of X’s first verb', () => {
     // as the overlays hand them over (Overlays.popupSwitches): the caption as the actions line prints it, and the words
     const verbs = [['u', '(u)nwield', 'unwield'], ['d', '(d)rop', 'drop'], ['=', '(=)adjust', 'adjust'], ['s', '(s)kill target', 'skill target'], ['i', '(i)nscribe', 'inscribe']].map(([key, label, word]) => ({ key, label, word }))

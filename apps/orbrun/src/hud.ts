@@ -1965,15 +1965,19 @@ export class Hud {
     // a switch the screen prints in brackets wears them, the key bright between them
     // the key as the screen prints it, in its colours
     const keycap = () => (l.keycapHtml ? h('span', { class: 'keycap', html: l.keycapHtml }) : h('span', { class: 'keycap' }, h('span', { class: 'bracket' }, '['), l.keycap!, h('span', { class: 'bracket' }, ']')))
-    const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : touchPicture(gd, l, l.item)
     // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
     const words = l.hold ? l.label + ' [' + l.hold + ']' : l.label
-    btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (btn.classList.contains('down') ? ' down' : '')
+    const text = formattedStringToText(words)
+    // words too long for a caption's one line (a thing crawl names, "+2 short sword") take two in place of the picture,
+    // which leaves no room for two under it
+    const long = arrow === undefined && l.keycap === undefined && text.length > TOUCH_CAPTION_CHARS && text.includes(' ')
+    const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : long ? null : touchPicture(gd, l, l.item)
+    btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (btn.classList.contains('down') ? ' down' : '')
     btn.setAttribute('aria-label', formattedStringToText(l.label))
     const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, arrow !== undefined ? null : l.labelHtml ? h('span', { class: 'label', html: l.labelHtml }) : label(words)]
     btn.replaceChildren(...parts.filter((n): n is Element => n !== null))
-    // sized by its length to keep to its one line (styles.css .tb.has-icon .label)
-    btn.style.setProperty('--chars', String(formattedStringToText(words).length))
+    // sized by its length to keep to its one line, or by its longer line of two (styles.css .tb.has-icon .label, .tb.long .label)
+    btn.style.setProperty('--chars', String(long ? longerHalf(text) : text.length))
   }
 
   /**
@@ -2121,6 +2125,19 @@ const TOUCH_MAP_GAP = 4
 const TOUCH_CAPTION_PX = 18
 /** where that inside starts in the art's 32px cell: the art's offset 2 and the frame's 1 */
 const TOUCH_ART_INSET = 3
+/**
+ * the longest caption kept to one line under its picture, shrunk to fit (Leave dungeon, Wait [Rest]); a longer one
+ * with a space in it takes two lines (hud.ts fillTouchButton)
+ */
+const TOUCH_CAPTION_CHARS = 13
+
+/** the longer line of `text` broken at the space that splits it most evenly, as `text-wrap: balance` breaks it */
+function longerHalf(text: string): number {
+  let best = text.length
+  for (let i = text.indexOf(' '); i >= 0; i = text.indexOf(' ', i + 1)) best = Math.min(best, Math.max(i, text.length - i - 1))
+  return best
+}
+
 /** the most css px a touch icon stands: what a button leaves over its caption */
 const TOUCH_ART_MOST = TOUCH_BUTTON_H - TOUCH_CAPTION_PX
 

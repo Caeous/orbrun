@@ -935,9 +935,10 @@ function actionArt(table: Record<string, string[]>, name: string): string[] | un
 /**
  * Crawl's words as a button's caption (touchFace, touchLabels): a finger
  * taps the word, so the key crawl prints in it goes, whether leading ("a -
- * Gnoll") or inside ("(u)nwield", "(=)adjust"), and the word starts upper
- * case ("select", "page down"), as the bar's own words do. A label in
- * crawl's colour tags keeps them.
+ * Gnoll") or inside ("(u)nwield", "(=)adjust"), and so does the article of
+ * a thing crawl names ("a +2 short sword" underfoot), which a button has no
+ * room for; the word starts upper case ("select", "page down"), as the bar's
+ * own words do. A label in crawl's colour tags keeps them.
  */
 export function touchCaption(label: string): string {
   const m = /^((?:<[a-z:]+>)*)(.*)$/is.exec(label)!
@@ -946,6 +947,7 @@ export function touchCaption(label: string): string {
     .replace(/^[a-zA-Z] - /, '')
     .replace(/^\(([a-zA-Z])\)(?=[a-zA-Z])/, '$1')
     .replace(/^\([^)]\)\s*/, '')
+    .replace(/^(?:a|an|the) (?=\S)/, '')
   return tags + sentenceCase(text)
 }
 

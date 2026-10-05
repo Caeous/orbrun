@@ -14,6 +14,12 @@
  * On a phone (`setLeast`) it comes down further, to `PHONE_COLS` ×
  * `PHONE_ROWS`: the size a desktop reads at leaves a phone a cramped
  * console.
+ *
+ * The page runs under a phone's cutouts (index.html `viewport-fit=cover`),
+ * so the cells keep clear of them: the grid stands inside the safe area's
+ * left, right and top insets (`insets`), and only the view reaches past it
+ * to the screen's edges (game.ts relayout). The foot is the touch bar's,
+ * which pads itself clear of the home indicator (styles.css .touchbar).
  */
 import { MIN_COLS, MIN_ROWS, fitGrid, type CellRect, type Grid } from './console'
 
@@ -60,6 +66,8 @@ export class GridHost {
   private least = { cols: MIN_COLS, rows: MIN_ROWS }
   /** the width of one character of the grid font at 100px, measured once per font */
   private advance = 0
+  /** the safe area's insets the grid stands inside, in css px, as of the last fit (`safeInsets`) */
+  insets = { left: 0, right: 0, top: 0 }
 
   constructor(host: HTMLElement, px = 16) {
     this.host = host
@@ -142,8 +150,10 @@ export class GridHost {
   }
 
   fit() {
-    const w = this.host.clientWidth || window.innerWidth
-    const hgt = this.host.clientHeight || window.innerHeight
+    // a cutout's side of the screen changes with the turn of the phone, and the host's size with it: asked at every fit
+    const ins = (this.insets = safeInsets())
+    const w = (this.host.clientWidth || window.innerWidth) - ins.left - ins.right
+    const hgt = (this.host.clientHeight || window.innerHeight) - ins.top
     const adv = this.measure() / 100
     // a phone's least window or a desktop's, for the screen as it is now
     const leastChanged = this.takeLeast()
@@ -152,7 +162,8 @@ export class GridHost {
     const cw = px * adv
     const ch = Math.round(px * LINE_HEIGHT)
     this.fittedPx = px
-    const g: Grid = { ...fitGrid(w, hgt, cw, ch), phone: this.phone }
+    const fitted = fitGrid(w, hgt, cw, ch)
+    const g: Grid = { ...fitted, ox: fitted.ox + ins.left, oy: fitted.oy + ins.top, phone: this.phone }
     const same = g.cols === this.grid.cols && g.rows === this.grid.rows && g.cw === this.grid.cw && g.ch === this.grid.ch && g.ox === this.grid.ox && g.oy === this.grid.oy && g.phone === !!this.grid.phone
     this.grid = g
     const st = this.host.style
@@ -178,4 +189,17 @@ export class GridHost {
     el.style.width = p.width.toFixed(2) + 'px'
     el.style.height = p.height.toFixed(2) + 'px'
   }
+}
+
+/** The safe area's left, right and top insets in css px (env(safe-area-inset-*)): zero off a phone. */
+function safeInsets(): { left: number; right: number; top: number } {
+  if (typeof document === 'undefined' || !document.body) return { left: 0, right: 0, top: 0 }
+  const probe = document.createElement('div')
+  probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) 0 env(safe-area-inset-left,0px)'
+  document.body.append(probe)
+  const cs = getComputedStyle(probe)
+  const px = (v: string) => Math.round(Number.parseFloat(v) || 0)
+  const out = { left: px(cs.paddingLeft), right: px(cs.paddingRight), top: px(cs.paddingTop) }
+  probe.remove()
+  return out
 }

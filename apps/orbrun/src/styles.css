@@ -2403,7 +2403,8 @@ canvas.minimap.hidden {
   right: auto;
   padding-top: 0;
   padding-left: 0;
-  padding-right: max(8px, env(safe-area-inset-right, 0px));
+  /* the column it stands in keeps clear of a cutout already (grid/host.ts insets) */
+  padding-right: 8px;
   padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
   /* the rows closer than along the foot, for the minimap over it (hud.ts layout) */
   row-gap: 4px;
@@ -2452,6 +2453,16 @@ canvas.minimap.hidden {
   white-space: nowrap;
   text-overflow: ellipsis;
   display: block;
+}
+/* words too long for a caption's one line, in place of the picture (hud.ts fillTouchButton): a caption still, on two
+   even lines, as small as keeps the longer one to the button's width (its --chars), down to 7px */
+.touchbar .tb.long {
+  container-type: inline-size;
+}
+.touchbar .tb.long .label {
+  font-size: max(7px, min(0.85em, calc(100cqi / var(--chars, 1) / 0.61)));
+  color: var(--ink-dim);
+  text-wrap: balance;
 }
 /* crawl's own command icon, the quivered item, or a glyph of ours, over the word (hud.ts touchPicture) */
 .touchbar .tb canvas.tile,
@@ -4195,20 +4206,20 @@ canvas.minimap.hidden {
  * cell, so the block is as tall as the longest one can wrap and the dialog
  * keeps its height as the cursor moves down the list.
  */
-.command-menu .menu-hint,
-.command-menu .menu-hint .reserve {
+.menu-hint,
+.menu-hint .reserve {
   display: grid;
 }
-.command-menu .menu-hint > .line,
-.command-menu .menu-hint .reserve > span {
+.menu-hint > .line,
+.menu-hint .reserve > span {
   grid-area: 1 / 1;
   min-width: 0;
 }
-.command-menu .menu-hint .reserve {
+.menu-hint .reserve {
   visibility: hidden;
   pointer-events: none;
 }
-.command-menu .menu-hint {
+.menu-hint {
   padding: 0.5rem 0.8rem 0.1rem;
   color: var(--ink-dim);
   font-size: 0.85em;
