@@ -9,7 +9,7 @@ import { escapeHtml, h, onDprChange } from './dom'
 import type { Session } from './session'
 import { CameraController } from './camera'
 import { deriveContext, deriveMode, type Context, type Mode } from './context'
-import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchLabels, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
+import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchLabels, type TouchLabel, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
 import type { CommandMenu } from './command-menu'
 import { ORBIT_WINDOW_MS, Runner, type LastStep } from './runner'
 import { Hud, rcFont } from './hud'
@@ -26,11 +26,16 @@ import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INS
 import { fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap, type SettingGroup } from './settings-rows'
 import { PerfOverlay, type LogContext } from './perf'
 import { MapHold } from './map-hold'
+import { SpellBar, SpellBook, type Spell } from './spell-bar'
 
 /** The most drawn pixels per CSS pixel the game view gets (Part IV of rendering-3d.md): the display's density, capped here. */
 const VIEW_MAX_DPR = 1
 /** at rest the frame loop sleeps, waking to run its body this often, so nothing that changed without waking it waits longer */
 const IDLE_TICK_MS = 250
+/** how long crawl and we must have said nothing before the spell bar looks its list up (spell-bar.ts) */
+const SPELL_LOOK_STILL_MS = 500
+/** what the spell bar takes from the log's last row down, in css px: a spell's art (hud.ts SPELL_SLOT) and a gap under it */
+const SPELL_ROW_PX = 32 + 6
 /** how long after the last thing that wanted a frame the loop keeps the display's rate before it parks (`awake`) */
 const ACTIVE_MS = 500
 
@@ -277,6 +282,15 @@ export class GameScreen {
    */
   private actionTurn: { target: ActionTabId; sent: ActionTabId | null; stage: 'closing' | 'sent' | 'listing'; last?: GameMessage; t: number } | null = null
   private padStep: LastStep | null = null
+  /** the spells the touch spell bar shows, looked up quietly (spell-bar.ts) */
+  private spellBook: SpellBook
+  /** the spell bar's taps: the first arms, the second spends */
+  private spellBar: SpellBar
+  /** when the last message went to the server, and the last came from it, for the spell list's look to wait for a still moment */
+  private lastSent = 0
+  private lastHeard = 0
+  /** the touch bar's last buttons, held through the spell bar's cast prompt */
+  private lastTouch: TouchLabel[] | null = null
   private padLooking = false
   /** right-stick travel accumulated toward the next level-map cursor step */
   private mapPan = { x: 0, y: 0 }
@@ -335,6 +349,8 @@ export class GameScreen {
         if (down) this.hooks.gamepad.virtualDown(button, performance.now(), true)
         else this.hooks.gamepad.virtualUp(button, performance.now(), true)
       },
+      onSpellTap: (spell) => this.spellTap(spell),
+      onSpellMore: () => this.spellMore(),
       onTouchSwitch: (key) => {
         this.inputFrom('touch')
         this.overlays.sendSwitch(key)
@@ -372,6 +388,29 @@ export class GameScreen {
       },
     })
     this.ctx = deriveContext(session.state, session.scene, this.cam.camera, 'micro')
+    this.spellBook = new SpellBook({
+      send: (m) => this.session.send(m, true),
+      changed: () => {
+        this.needsRender = true
+        this.wake()
+      },
+      now: () => performance.now(),
+    })
+    session.hold = (m) => this.spellBook.hold(m)
+    session.intercept = (m) => this.spellBook.intercept(m)
+    // they go with the screen: a session that outlives it (a reconnect's next screen) gets its own
+    this.unsub.push(() => {
+      session.hold = null
+      session.intercept = null
+    })
+    this.spellBar = new SpellBar({
+      mode: () => this.ctx,
+      turn: () => this.session.state.player.turn,
+      now: () => performance.now(),
+      cast: (spell) => this.runner.execute({ kind: 'keys', label: 'Cast ' + spell.name, seq: [{ text: 'z' }, { text: spell.letter, await: 'prompt' }] }),
+      fire: () => this.runner.execute({ kind: 'fire' }),
+      cancel: () => this.runner.execute({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] }),
+    })
     this.lastInput = hooks.initialInput ?? 'keyboard'
     this.padHints.cancel() // no pending server reply survives a screen/run change
     this.unsub.push(
@@ -380,6 +419,7 @@ export class GameScreen {
           this.wake()
           this.onScene()
         } else if (e.type === 'state') {
+          this.lastHeard = performance.now()
           this.wake()
           this.trackHop()
           this.trackActions(performance.now(), false)
@@ -390,6 +430,8 @@ export class GameScreen {
             if (this.session.gamedata && !this.session.loading) this.hideLoading()
             else this.showLoading('Loading game data…')
           }
+        } else if (e.type === 'sent') {
+          this.lastSent = performance.now()
         } else if (e.type === 'gamedata') {
           if (e.status === 'ready') {
             this.hideLoading()
@@ -509,10 +551,13 @@ export class GameScreen {
     // upright, the minimap and the stats pane share a band across the top (gameSplit); the level map takes the band too,
     // standing in for the minimap, the stats pane over its corner
     const band = isPortrait(g) ? this.hud.portraitBand(this.grid) : { rows: 0, cols: 0 }
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, band.rows, band.cols].join(',')
+    // the spell bar's row under the messages, while there is one (spell-bar.ts); the level map has none
+    // it stands in the log's last row, the --more-- line's, which is bare whenever the bar shows (spellsLive)
+    const spellRows = this.spellsShown() && !mapView ? Math.max(0, Math.ceil(SPELL_ROW_PX / g.ch) - 1) : 0
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, band.rows, band.cols, spellRows].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
-    const cells = gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, band.rows, band.cols)
+    const cells = gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, band.rows, band.cols, spellRows)
     this.hud.touchBeside = beside
     // the level map's canvas runs on under the touch bar; what rides the map's edges keeps to the part the bar leaves
     const map = mapView ? levelMapSplit(g, cells, { hideSidebar, hideMessages }) : null
@@ -552,6 +597,7 @@ export class GameScreen {
     }
     // what rides the view's edges keeps clear of the panes
     const free = map ?? cells.clear
+    this.hud.spellRow = spellRows > 0
     this.hud.layout(this.grid, cells, free, { stats: hideStats, sidebar: hideSidebar, messages: hideMessages })
     // the settings' minimap rows read Auto with what it came out as here (kept while the level map has the column)
     if (this.hud.minimapShown) setAutoMinimap(this.hud.minimapShown)
@@ -840,6 +886,7 @@ export class GameScreen {
     this.ctx.pageable = this.overlays.pageable(this.ctx)
     this.trackPack()
     this.trackActions(now, true)
+    this.spellFrame()
     if (this.padHints.waiting) this.padHints.observe(this.padHintEvidence(), now)
     const cursor = this.cursorFor()
     const lc = this.lastCursor
@@ -885,8 +932,13 @@ export class GameScreen {
     this.hud.minimapFov = !turns && this.renderer instanceof Render3d ? this.viewFov() : null
     // a finger gets every button the screen has, by its word (bindings.ts touchLabels); a panel of ours names its own.
     // A spectator's too: B and Start open the Orbrun menu, where Stop watching is, the one way out on a phone
-    const touch = this.lastInput === 'touch' && !this.chat.capturing ? touchLabels(ours ? withBack(ours) : barLabels(this.ctx), this.ctx, !!ours) : null
+    // the bar's cast passes through crawl's "Cast which spell?" on its way to the aim: the buttons hold still through it,
+    // rather than flash the prompt's own for a frame or two
+    const passing = this.castPrompt()
+    const touch = passing ? this.lastTouch : this.lastInput === 'touch' && !this.chat.capturing ? touchLabels(ours ? withBack(ours) : barLabels(this.ctx), this.ctx, !!ours) : null
+    this.lastTouch = touch
     this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours, touch)
+    this.hud.renderSpellBar(this.spellsShown() && this.spellsLive() ? { spells: this.spellBook.spells, lit: this.spellBar.lit() } : null, this.session.gamedata)
     this.chat.update(st, this.chatOn && (st.phase === 'playing' || st.phase === 'watching'), !!st.lobby.username)
     this.syncTarget()
     perf?.mark('ui')
@@ -1514,8 +1566,58 @@ export class GameScreen {
     this.needsRender = true
   }
 
+  /**
+   * The spell bar's part of a frame (spell-bar.ts): the lit spell goes out when its moment passes, and the list
+   * is looked up when it is wanted (a finger playing) and crawl stands still at its prompt with nothing up, a
+   * moment after the last key and the last word from crawl, so the look never lands in the middle of something:
+   * travel and explore keep the command mode while they run, and a key stops them.
+   */
+  private spellFrame() {
+    this.spellBook.tick()
+    this.spellBar.frame()
+    const st = this.session.state
+    const still = st.inputMode === MouseMode.COMMAND && !st.menus.length && !st.ui.length && !st.textInput && !st.dialog && !st.messages.more
+    if (this.lastInput === 'touch' && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()
+  }
+
+  /** The spell bar stands (and the messages over it): a finger playing a character with spells. */
+  private spellsShown(): boolean {
+    return this.lastInput === 'touch' && this.session.playing && !this.session.watching && this.spellBook.spells.length > 0
+  }
+
+  /** crawl's question which spell, asked of the bar's own cast on its way to the aim (spl-cast.cc `cast_a_spell`) */
+  private castPrompt(): boolean {
+    if (this.ctx.mode !== 'prompt' || !this.spellBar.casting()) return false
+    // a line on the prompt channel, not a prompt the context parses: "Cast which spell? (? or * to list)", or with the
+    // last spell offered first (trunk), "Confirm with . or Enter, or press ? or * to list all spells."
+    const last = this.session.state.messages.lines.at(-1)
+    return !!last && last.channel === MSGCH.PROMPT && /^Cast which spell\b|\bto list all spells\b/.test(formattedStringToText(last.text).trim())
+  }
+
+  /** Its buttons show: on the map, in an aim, and through the cast's own prompt, with nothing of ours up. Elsewhere its row is bare. */
+  private spellsLive(): boolean {
+    const m = this.ctx.mode
+    return (m === 'command' || (m === 'targeting' && !this.ctx.examining) || this.castPrompt()) && !this.overlays.hasClientOverlay && !this.chat.capturing && !this.mapShown
+  }
+
+  /** A spell on the bar tapped: armed, or spent (spell-bar.ts SpellBar). */
+  private spellTap(spell: Spell) {
+    this.inputFrom('touch')
+    this.inputActed()
+    this.spellBar.tap(spell)
+    this.needsRender = true
+  }
+
+  /** The bar's More: every spell, in crawl's cast list (X's Spells). */
+  private spellMore() {
+    this.inputFrom('touch')
+    this.inputActed()
+    if (this.ctx.mode === 'command') this.openActionTab('spells')
+  }
+
   private inputActed() {
     this.tapArmed.clear()
+    this.spellBar?.disarm()
     this.holding = null
     if (!this.pointerLive) return
     this.pointerLive = false

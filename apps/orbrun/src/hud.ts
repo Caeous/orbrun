@@ -20,6 +20,7 @@ import type { InputDevice } from './game'
 import { mapFacingOf } from './camera'
 import { TOUCH_BUTTON_H, TOUCH_BUTTON_W, isPortrait, type CellRect, type GameLayout, type Grid } from './grid/console'
 import type { GridHost } from './grid/host'
+import type { Spell } from './spell-bar'
 import { paneRows } from './grid/messages'
 import { panelCellAt, panelCellIndex, panelGrid, panelSpan, type PanelBox, type PanelGrid } from './grid/panel'
 import { paintRow } from './grid/paint'
@@ -48,6 +49,10 @@ export interface HudHooks {
   onTouchButton(button: Button, down: boolean): void
   /** a touch button for a menu's more-line switch or a popup's verb was tapped: send its key (Overlays.sendSwitch) */
   onTouchSwitch(key: string): void
+  /** a spell on the spell bar was tapped (spell-bar.ts SpellBar) */
+  onSpellTap(spell: Spell): void
+  /** the spell bar's More: every spell */
+  onSpellMore(): void
 }
 
 /**
@@ -480,6 +485,10 @@ export class Hud {
   private menubar = h('div', { class: 'menubar', hidden: true })
   /** every button one size (console.ts TOUCH_BUTTON_W, styles.css .touchbar) */
   private touchbar = h('div', { class: 'touchbar', hidden: true, style: { '--tb-w': TOUCH_BUTTON_W + 'px', '--tb-h': TOUCH_BUTTON_H + 'px' } })
+  /** the spell bar (renderSpellBar): the touch bar's buttons, one row of them, under the messages */
+  /** the layout keeps the spell bar's row under the messages (game.ts relayout) */
+  spellRow = false
+  private spellbar = h('div', { class: 'touchbar spellbar', hidden: true, style: { '--sb': SPELL_SLOT + 'px', '--sb-gap': SPELL_GAP + 'px' } })
   /** the touch bar stands at the right column's foot, under the minimap, not along the view's (console.ts touchBeside) */
   touchBeside = false
   private statusEl = h('div', { class: 'status-line', style: { display: 'none' } })
@@ -564,7 +573,7 @@ export class Hud {
     this.statusR2d.mount(this.statusCanvas)
     this.trapped.append(this.trappedCanvas)
     this.trappedR2d.mount(this.trappedCanvas)
-    this.root.append(this.pips, this.trapped, this.stats, this.sidebar, this.statuses, this.actionPanel, this.scrim, this.messages, this.menubar, this.actionbar, this.touchbar)
+    this.root.append(this.pips, this.trapped, this.stats, this.sidebar, this.statuses, this.actionPanel, this.scrim, this.messages, this.menubar, this.actionbar, this.touchbar, this.spellbar)
     host.append(this.root, this.statusEl, this.panelTooltip)
     this.minimap.mount(this.minimapCanvas)
     this.portrait.mount(this.portraitCanvas)
@@ -700,6 +709,21 @@ export class Hud {
     this.touchbar.style.width = this.touchBeside ? sidePx.width + 'px' : ''
     const barTop = Math.max(sidePx.top + size + TOUCH_MAP_GAP, bottom - this.touchbarSpan())
     this.touchbar.style.top = barBeside ? barTop + 'px' : ''
+    // the spell bar: from the log's last row, the --more-- line's (bare whenever the bar shows), across the screen upright
+    // and down to the touch bar, left of the column on its side and down to the screen's foot, the left thumb's
+    // (renderSpellBar)
+    // the icons stand a button's gap over the touch bar upright, or that gap over the screen's foot; the rows are whole
+    // cells and the art is not, so the log is let down onto the icons by what is left over, in px, rather than leaving
+    // it as a gap between them
+    this.spellbar.classList.toggle('beside', this.touchBeside)
+    // (the bar's own top padding is its row gap; on its side the bar's foot padding, the safe area's, is the row's too)
+    const barPad = Number.parseFloat(getComputedStyle(this.touchbar).paddingBottom) || 0
+    const foot = (this.touchbar.hidden ? bottom - SPELL_FOOT_GAP : this.touchBeside ? bottom - Math.max(SPELL_FOOT_GAP, barPad) : bottom - this.touchbar.offsetHeight) - SPELL_SLOT
+    this.spellbar.style.top = foot + 'px'
+    this.spellbar.style.width = (this.touchBeside ? sidePx.left : across) + 'px'
+    const lastLine = msgPx.top + msgPx.height - host.grid.ch
+    this.messages.style.transform = this.spellRow && foot - SPELL_LOG_GAP > lastLine ? `translateY(${Math.round(foot - SPELL_LOG_GAP - lastLine)}px)` : ''
+    this.spellKey = ''
     // the action panel stands in the strip along the top between the stats pane and the minimap (grid/panel.ts), each a
     // cell's gutter away; the minimap's left edge is where it hangs from the column's right edge, not the column's own
     const minimapLeft = this.sidebar.hidden || w === 0 ? null : sidePx.left + sidePx.width - w
@@ -1804,7 +1828,7 @@ export class Hud {
    */
   private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null) {
     // the icons come in with the gamedata, and are drawn for the screen's density (`touchArtScale`)
-    const art = (l: TouchLabel) => '#' + (l.icon ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '')
+    const art = (l: TouchLabel) => '#' + (l.icon ?? '') + (l.art?.join() ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '')
     const key = labels ? labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.auto ? '!' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
@@ -1856,6 +1880,45 @@ export class Hud {
         last = el
       }
     }
+  }
+
+  private spellKey = ''
+
+  /**
+   * The spell bar (spell-bar.ts): one row of small buttons under the
+   * messages, a spell each in crawl's letter order, its art alone, the lit
+   * one (armed, or being aimed) marked. Upright it runs from the right, by
+   * the touch bar; on its side from the left edge, under the left thumb. Too
+   * many for the row: the last button is More, every spell in crawl's cast
+   * list. Null leaves the row bare (its rows stay, so the messages hold still).
+   */
+  renderSpellBar(view: { spells: Spell[]; lit: string | null } | null, gd: Gamedata | null) {
+    const width = this.spellbar.clientWidth
+    const key = view ? view.spells.map((s) => s.letter + s.name + JSON.stringify(s.tile)).join(',') + '|' + view.lit + '|' + width + '|' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
+    if (key === this.spellKey) return
+    this.spellKey = key
+    this.spellbar.hidden = !view
+    if (!view) return clear(this.spellbar)
+    const pad = this.touchBeside ? 8 : 16
+    const fit = Math.max(1, Math.floor((width - pad + SPELL_GAP) / (SPELL_SLOT + SPELL_GAP)))
+    const more = view.spells.length > fit
+    const shown = more ? view.spells.slice(0, fit - 1) : view.spells
+    const buttons = shown.map((s) => this.spellButton(s, s.letter === view.lit, gd))
+    if (more) buttons.push(this.spellButton(null, false, gd))
+    this.spellbar.replaceChildren(...buttons)
+  }
+
+  /** One spell's button, or More's (`spell` null). It acts as the finger lifts, if the finger lifted on it. */
+  private spellButton(spell: Spell | null, lit: boolean, gd: Gamedata | null): HTMLElement {
+    // the spell's own art, whole (crawl's GUI tile, 32px); More is crawl's icon for casting with an ellipsis' dots
+    const more = gd ? commandTileId(gd, 'CMD_CAST_SPELL') : undefined
+    const icon = spell ? tileCanvas(gd, spell.tile) : more === undefined ? touchGlyph('action') : tileCanvas(gd, [{ t: more }])
+    const btn = h('button', { type: 'button', class: 'tb' + (lit ? ' lit' : '') + (spell ? '' : ' more'), title: spell ? spell.name : 'More spells', 'aria-label': spell ? spell.name + (spell.fail ? ', ' + spell.fail + ' fail' : '') : 'More spells' }, icon)
+    btn.addEventListener('pointerdown', () => btn.classList.add('down'))
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) btn.addEventListener(ev, () => btn.classList.remove('down'))
+    btn.addEventListener('click', () => (spell ? this.hooks.onSpellTap(spell) : this.hooks.onSpellMore()))
+    btn.addEventListener('contextmenu', (ev) => ev.preventDefault())
+    return btn
   }
 
   /** A touch button's press or release: a pad button's goes to the game as the pad's would, a menu switch sends its key as it goes down. */
@@ -2039,6 +2102,14 @@ function touchArt(gd: Gamedata | null, icon: string | undefined, item: TouchLabe
   return c
 }
 
+/** a spell bar button, in css px: a spell's 32px art alone, which wears crawl's own frame, small so a row holds many */
+const SPELL_SLOT = 32
+/** the gap between the spell bar's buttons, in css px */
+const SPELL_GAP = 4
+/** between the log's last line and the spell bar, and between the bar and the screen's foot on its side, in css px */
+const SPELL_LOG_GAP = 4
+const SPELL_FOOT_GAP = 6
+
 /** the inside of crawl's command art, in its pixels: 28 less the frame's 1 each side */
 const TOUCH_ART = 26
 /** the gap between the minimap and the touch bar under it, in css px */
@@ -2077,8 +2148,10 @@ function idleTouchButton(cell: TouchCell, idle: TouchIcon & { label: string }, g
  * come.
  */
 function touchPicture(gd: Gamedata | null, face: TouchIcon, item?: TouchLabel['item']): Element | null {
-  if (item !== undefined || face.icon) {
-    const art = touchArt(gd, face.icon, item)
+  if (item !== undefined || face.icon || face.art) {
+    // a spell's or an ability's own art, where this version has it, over crawl's icon for casting or using one
+    const own = item === undefined ? face.art?.find((n) => commandTileId(gd, n) !== undefined) : undefined
+    const art = touchArt(gd, own ?? face.icon, item)
     if (art || !gd) return art
   }
   return touchGlyph(face.glyph ?? 'action')

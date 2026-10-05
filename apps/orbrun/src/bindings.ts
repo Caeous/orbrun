@@ -6,6 +6,7 @@ import type { FocusOp } from './focus'
 import { menuHasSections, moreSwitchKeycode } from './menu-nav'
 import { SHOUT, SHOUT_KEY, SWAP_WEAPONS, SWAP_WEAPONS_KEY } from './action-tabs'
 import type { TouchGlyph } from './touch-glyphs'
+import ACTION_TILES from '../data/action-tiles.json'
 
 export type RelDir = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7
 
@@ -616,9 +617,10 @@ export function isTouchCell(s: string): s is TouchCell {
 /**
  * A touch button's picture: crawl's art by tile name (`icon`, overlays.ts
  * `commandTileId`), or a glyph of ours (`glyph`, touch-glyphs.ts) where
- * crawl draws none.
+ * crawl draws none. `art`: the names a spell's or an ability's own art has
+ * gone by, the first this version's gamedata has drawn over `icon`.
  */
-export type TouchIcon = { icon?: string; glyph?: TouchGlyph }
+export type TouchIcon = { icon?: string; glyph?: TouchGlyph; art?: string[] }
 
 /**
  * The cells that are for the same thing on every screen: Esc in the
@@ -908,10 +910,11 @@ function lastKey(a: Action): string | number | undefined {
  * The quivered shot on the touch bar (touchLabels): the server's whole line
  * ("Drink: 3 potions of curing") is cut off on a button a fifth of a phone
  * wide. An item is drawn instead, under its verb, with the count from the
- * line ("Throw", 23 darts); a spell or an ability has no tile of its own and
- * goes by its name under crawl's icon for casting or using one.
+ * line ("Throw", 23 darts); a spell or an ability, whose tile the server
+ * does not send, goes by its name under its own art (`actionArt`), or
+ * crawl's icon for casting or using one where the table has none.
  */
-export function touchShot(readied: string, tile: InvItem['tile'] | undefined): { label: string; icon?: string; item?: InvItem['tile']; count?: number } {
+export function touchShot(readied: string, tile: InvItem['tile'] | undefined): { label: string; icon?: string; art?: string[]; item?: InvItem['tile']; count?: number } {
   const m = /^([^:]+):\s*(.*)$/.exec(readied)
   if (!m) return { label: readied }
   const [, verb, what] = m
@@ -919,7 +922,25 @@ export function touchShot(readied: string, tile: InvItem['tile'] | undefined): {
     const n = /^(\d+)\s/.exec(what)
     return { label: verb, item: tile, ...(n ? { count: Number(n[1]) } : {}) }
   }
-  return { label: what || verb, icon: verb === 'Cast' ? 'CMD_CAST_SPELL' : 'CMD_USE_ABILITY' }
+  const spell = verb === 'Cast' || verb === 'Continue'
+  const art = actionArt(spell ? ACTION_TILES.spells : ACTION_TILES.abilities, what)
+  return { label: what || verb, icon: spell ? 'CMD_CAST_SPELL' : 'CMD_USE_ABILITY', ...(art ? { art } : {}) }
+}
+
+/**
+ * A spell's or an ability's art by the name the quiver line gives it
+ * (data/action-tiles.json, tools/build/action-tiles.mjs). The line adds to
+ * some names (quiver.cc: Grave Claw's charges, a Nemelex card's text) and
+ * shortens one (Maxwell's Coupling is "Capacitive Coupling"), so a name is
+ * looked up whole, then as the longest it starts with, then by its end.
+ */
+function actionArt(table: Record<string, string[]>, name: string): string[] | undefined {
+  if (!name) return undefined
+  if (table[name]) return table[name]
+  let best: string | undefined
+  for (const k of Object.keys(table)) if (name.startsWith(k + ' ') && (!best || k.length > best.length)) best = k
+  best ??= Object.keys(table).find((k) => k.endsWith(' ' + name))
+  return best ? table[best] : undefined
 }
 
 /** the touch bar's own words for crawl's (touchLabels) */

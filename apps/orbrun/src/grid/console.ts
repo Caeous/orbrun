@@ -163,11 +163,15 @@ export function touchBeside(grid: Grid): boolean {
  * its side the bar stands at the column's foot instead (`touchBeside`):
  * `sideFoot` rows there are the bar's, the column ends above them, and it
  * is `columnWidth` cells wide (`touchColumn`), wider than the stats pane.
+ * `under` rows under the messages, left of the column, are the spell bar's
+ * (hud.ts renderSpellBar): the messages stand on it, in both orientations.
  */
-export function gameSplit(grid: Grid, msgRows: number, statWidth = STAT_WIDTH, foot = 0, sideFoot = 0, columnWidth = statWidth, band = 0, mapCols = PORTRAIT_MAP_COLS): GameLayout {
+export function gameSplit(grid: Grid, msgRows: number, statWidth = STAT_WIDTH, foot = 0, sideFoot = 0, columnWidth = statWidth, band = 0, mapCols = PORTRAIT_MAP_COLS, under = 0): GameLayout {
   const rows = Math.max(MIN_ROWS - 4, grid.rows - foot)
-  const msgs = Math.max(2, Math.min(msgRows + 1, rows - 4))
-  const clearH = rows - msgs
+  // the messages stand on what is under them (the spell bar), the view and the column running on beside it
+  const lower = Math.max(MIN_ROWS - 4, rows - under)
+  const msgs = Math.max(2, Math.min(msgRows + 1, lower - 4))
+  const clearH = lower - msgs
   const view = { x: 0, y: 0, w: grid.cols, h: Math.max(rows, grid.rows) }
   if (isPortrait(grid)) {
     const top = Math.max(0, Math.min(band, clearH))

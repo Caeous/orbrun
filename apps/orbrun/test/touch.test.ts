@@ -327,11 +327,16 @@ describe('every touch button has a picture: crawl’s art where it has one, a gl
   it('on the map: explore, fight, wait, examine, the tab X and Y open on, and the verb crawl’s tick', () => {
     expect(icons(stairs)).toMatchObject({ A: 'PROMPT_YES', LT: 'CMD_EXPLORE', RT: 'CMD_AUTOFIGHT', LB: 'CMD_WAIT', L3: 'CMD_LOOKUP_HELP', X: 'CMD_CAST_SPELL', Y: 'CMD_DISPLAY_INVENTORY' })
   })
-  it('the shot on RB wears what is quivered: an item by its verb and count, a spell by its name, the quiver’s own picture when nothing is', () => {
+  it('the shot on RB wears what is quivered: an item by its verb and count, a spell or an ability by its name under its own art, the quiver’s own picture when nothing is', () => {
     const c = ctx({ readiedAction: 'Drink: 3 potions of curing', readiedTile: [1234] })
     expect(touchLabels(barLabels(c), c).find((l) => l.button === 'RB')).toMatchObject({ label: 'Drink', item: [1234], count: 3 })
     expect(touchShot('Throw: a boomerang', 7)).toEqual({ label: 'Throw', item: 7 })
-    expect(touchShot('Cast: Magic Dart', undefined)).toEqual({ label: 'Magic Dart', icon: 'CMD_CAST_SPELL' })
+    expect(touchShot('Cast: Magic Dart', undefined)).toEqual({ label: 'Magic Dart', icon: 'CMD_CAST_SPELL', art: ['MAGIC_DART'] })
+    // an ability's art goes by crawl's enum, not its name; the line's additions and shortenings are looked past
+    expect(touchShot('Abil: Combustion Breath', undefined)).toMatchObject({ label: 'Combustion Breath', icon: 'CMD_USE_ABILITY', art: ['ABILITY_BREATHE_FIRE'] })
+    expect(touchShot('Cast: Grave Claw (2/3)', undefined).art).toEqual(touchShot('Cast: Grave Claw', undefined).art)
+    expect(touchShot('Cast: Capacitive Coupling', undefined).art).toBeDefined()
+    expect(touchShot('Abil: Something New', undefined)).toEqual({ label: 'Something New', icon: 'CMD_USE_ABILITY' })
     expect(touchShot('Fire', undefined)).toEqual({ label: 'Fire' })
     expect(icons(ctx({})).RB).toBe('MI_BOOMERANG')
     // an aim that is no quiver's fires at the cursor's target
