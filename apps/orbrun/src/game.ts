@@ -1841,7 +1841,7 @@ export class GameScreen {
       if (c.hasPointerCapture(ev.pointerId)) c.releasePointerCapture(ev.pointerId)
       if (d.held || d.pan) return
       if (d.moved) {
-        this.cam.endDrag()
+        this.cam.endDrag(d.touch)
         this.needsRender = true
       } else if (ev.type === 'pointerup') {
         // the message pane lets the press through to here (hud.ts dismissesMoreAt): on a pending --more-- it is space
@@ -1870,7 +1870,7 @@ export class GameScreen {
       clearTimeout(d.hold)
       if (c.hasPointerCapture(d.id)) c.releasePointerCapture(d.id)
       if (!d.moved || d.pan) return
-      this.cam.endDrag()
+      this.cam.endDrag(d.touch)
       this.needsRender = true
     }
     c.addEventListener('pointerup', end)

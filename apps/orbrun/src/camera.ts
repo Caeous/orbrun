@@ -29,7 +29,8 @@ import {
 /**
  * Camera controller: yaw easing toward the facing goal,
  * free look with the right stick or a mouse or touch drag (yaw
- * unbounded, pitch free short of the poles, nothing snaps back), and the eye's
+ * unbounded, pitch free short of the poles, nothing snaps back but a touch
+ * drag's yaw, which settles on a heading when the finger lifts), and the eye's
  * glide after a step along the path the feet took (`walkTo`); a jump snaps.
  */
 /** The yaw in radians; enough to put the camera back facing where it faced (the pitch is not kept). */
@@ -284,8 +285,15 @@ export class CameraController {
     this.dragging = true
   }
 
-  endDrag() {
+  /**
+   * The drag let go. A mouse leaves the view where it points; a finger
+   * (`settle`) lets the yaw ease onto the nearest of the eight headings, as a
+   * turn key does after a look, so a touch look ends square to the grid. The
+   * pitch stays where the drag left it.
+   */
+  endDrag(settle = false) {
     this.dragging = false
+    if (settle) this.setFacing(this.camera.facing)
   }
 
   /** Stick released: keep the current view; facing is the nearest heading. */

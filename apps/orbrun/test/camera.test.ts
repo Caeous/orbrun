@@ -360,6 +360,26 @@ describe('steering with a drag', () => {
     c.endDrag()
     expect(c.steering).toBe(false)
   })
+
+  it('a mouse drag leaves the view where it points', () => {
+    const c = cam()
+    c.lookBy(0.3, 0)
+    c.endDrag()
+    for (let i = 0; i < 60; i++) c.update(1 / 60)
+    expect(c.camera.yaw).toBeCloseTo(0.3)
+  })
+
+  it('a finger lifting eases the view onto the nearest heading, keeping its tilt', () => {
+    const c = cam()
+    const pitch = c.camera.pitch
+    c.lookBy(0.6, 0.1)
+    c.endDrag(true)
+    expect(c.steering).toBe(false)
+    for (let i = 0; i < 120; i++) c.update(1 / 60)
+    expect(c.facing).toBe(1)
+    expect(c.camera.yaw).toBeCloseTo(Math.PI / 4)
+    expect(c.camera.pitch).toBeCloseTo(pitch + 0.1)
+  })
 })
 
 describe('camera facing after a jump', () => {
