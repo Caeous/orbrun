@@ -25,6 +25,7 @@ import { VIEW_OPTIONS } from './servers'
 import { settingGroups, type SettingGroup } from './settings-rows'
 import { glyph, glyphName } from './glyphs'
 import { packRows, packStrip, turnKeys, type PackStrip } from './pack-tabs'
+import { fits, menuColumns } from './menu-columns'
 import { ACTION_TABS, SHOUT, SWAP_WEAPONS, actionNeighbour, actionTabOf, type ActionTabId } from './action-tabs'
 import type { Button, PadKind } from './gamepad'
 import { DEFAULT_YESNO, isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt } from './context'
@@ -411,6 +412,33 @@ function textRange(root: HTMLElement, start: number, end: number): Range | null 
   range.setStart(from.node, from.offset)
   range.setEnd(to.node, to.offset)
   return range
+}
+
+/**
+ * Wrap each column of `el`'s text (menu-columns.ts) in a span of its own, the
+ * text and its colours as they were, so styles.css can lay the row out anew
+ * where crawl's padded line would wrap.
+ */
+function splitColumns(el: HTMLElement, starts: number[]) {
+  const len = el.textContent?.length ?? 0
+  const bounds = [0, ...starts.map((s) => Math.min(s, len)), len]
+  const cells = bounds.slice(0, -1).map((start, i) => {
+    const cell = h('span', { class: 'col' })
+    const range = start < bounds[i + 1] ? textRange(el, start, bounds[i + 1]) : null
+    if (!range) return cell
+    // a cell inside one colour's span comes out bare; the spans it sits in go back round it
+    let content: Node = range.cloneContents()
+    for (let up = range.commonAncestorContainer; up !== el; up = up.parentNode!) {
+      if (up.nodeType !== Node.ELEMENT_NODE) continue
+      const wrap = up.cloneNode(false)
+      wrap.appendChild(content)
+      content = wrap
+    }
+    cell.append(content)
+    return cell
+  })
+  el.replaceChildren(...cells)
+  el.classList.add('cols')
 }
 
 /** Official textinput.js keeps the last ten entries per historyId (up/down recall). */
@@ -896,6 +924,15 @@ export class Overlays {
       if (!this.hooks.watching()) setTimeout(() => input.focus(), 30)
       this.textTarget = target
     }
+    // a console table (the spells, the abilities): its columns in spans of their own, laid out anew on an upright phone (styles.css .cols)
+    const cols = tp ? null : menuColumns(formattedStringToText(menu.title?.text || ''), menu.items.map((it) => (it && (it.level ?? 2) === 2 ? formattedStringToText(it.text || '') : '')))
+    if (cols) {
+      el.style.setProperty('--menu-cols', cols.widths.map((w) => w + 'ch').join(' '))
+      const head = h('span')
+      head.append(...title.childNodes)
+      title.append(head)
+      splitColumns(head, cols.starts)
+    }
     const strip = top ? packStrip(menu, state) : null
     // one of X's actions: the tabs over crawl's title, which keeps its column heads (failure, cost)
     const action = top ? actionTabOf(menu) : null
@@ -930,7 +967,9 @@ export class Overlays {
         continue
       }
       if (it.tiles && it.tiles.length) li.append(tileCanvas(gd, it.tiles))
-      li.append(h('span', { html: formattedStringToHtml(it.text || '') }))
+      const text = h('span', { html: formattedStringToHtml(it.text || '') })
+      if (cols && (it.level ?? 2) === 2 && fits(text.textContent || '', cols.starts)) splitColumns(text, cols.starts)
+      li.append(text)
       const selectable = (it.level ?? 2) === 2 && (menu.tag === 'use_item' || (it.hotkeys && it.hotkeys.length) || arrows)
       if (selectable) {
         li.classList.add('selectable')

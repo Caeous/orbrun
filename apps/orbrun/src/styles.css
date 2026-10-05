@@ -3322,6 +3322,35 @@ canvas.minimap.hidden {
   }
 }
 
+/* a console table on a phone held upright (overlays.ts splitColumns): crawl's eighty-column rows would wrap
+   mid-column, so the first column (the letter and the name) takes a line of its own and the rest stand under it,
+   each as wide as its widest cell (--menu-cols), against the right edge so the heads sit over their values */
+@media (max-width: 600px) {
+  .popup .cols {
+    display: grid;
+    /* an empty track first takes up the slack, so the name has the whole width and the values hug the right */
+    grid-template-columns: minmax(0, 1fr) var(--menu-cols);
+    column-gap: 1.5ch;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .popup .cols > .col {
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .popup .cols > .col:first-child {
+    grid-column: 1 / -1;
+    white-space: pre-wrap;
+  }
+  .popup .cols > .col:nth-child(2) {
+    grid-column-start: 2;
+  }
+  /* the title's right edge in line with the rows' (.popup li's own padding inside the body's) */
+  .popup .title .cols {
+    padding-right: 0.4em;
+  }
+}
+
 .newgame .label {
   color: #fff;
   font-weight: bold;
