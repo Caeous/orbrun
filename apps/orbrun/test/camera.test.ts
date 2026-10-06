@@ -80,6 +80,14 @@ describe('camera facing while travelling', () => {
     expect(c.facing).toBe(2)
   })
 
+  it('one cell short of a corner keeps facing on rather than back down the corridor', () => {
+    // walking east; the corridor turns north one cell on, the way back runs open behind
+    const s = sceneFrom(['###.#', '###.#', '..@.#', '#####'])
+    const c = cam(2)
+    c.faceAfterMove(s, 1, 0)
+    expect(c.facing).toBe(2)
+  })
+
   it('a diagonal between two wall corners is facing a wall', () => {
     // north-east is floor but north and east are walls; north-west is the nearest open heading
     const s = sceneFrom(['...#.', '...#.', '...@#', '..###', '.....'])

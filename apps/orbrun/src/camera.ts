@@ -511,12 +511,17 @@ export class CameraController {
    * turns before large. "Room" is measured as open depth along the heading
    * (see `openDepth`): two cells of it means we are not looking at a wall,
    * one cell is better than none, and only when every heading is blocked do
-   * we keep `d`.
+   * we keep `d`. The way ahead, up to a quarter turn either side, is tried
+   * before anything behind: one cell short of a corner the road ahead has
+   * room for one cell only, and the corridor behind has more, but looking
+   * back the way we came is no view of where we are going.
    */
   private openHeading(scene: Scene, d: Dir8): Dir8 {
     const candidates = [d, ...HEADING_OFFSETS.map((off) => rotateDir(d, off))]
-    for (const need of [OPEN_DEPTH, 1]) {
-      for (const c of candidates) if (this.openDepth(scene, c) >= need) return c
+    for (const heads of [candidates.slice(0, AHEAD_HEADINGS), candidates]) {
+      for (const need of [OPEN_DEPTH, 1]) {
+        for (const c of heads) if (this.openDepth(scene, c) >= need) return c
+      }
     }
     return d
   }
@@ -704,6 +709,8 @@ const MAP_TURN_RATE = 21
 const OPEN_DEPTH = 2
 /** rotations from a preferred heading, nearest first, ending with a full about-turn */
 const HEADING_OFFSETS = [1, -1, 2, -2, 3, -3, 4]
+/** the preferred heading and its turns up to a quarter either side, the first of the candidates */
+const AHEAD_HEADINGS = 5
 
 /** pitch limit: nearly straight up or down, stopping short of the pole so yaw stays meaningful */
 const PITCH_MAX = (Math.PI / 180) * 85
