@@ -83,10 +83,18 @@ body {
   font-family: var(--mono);
   /* --phone-shrink: on a phone, in a game, the menus come down as far as the grid's text did (game.ts shrinkText);
      --front-shrink: the front end's words come down until the title screen holds them, on every screen of it
-     (menu.ts fitHome) */
-  font-size: calc(15px * var(--ui-scale) * var(--phone-shrink, 1) * var(--front-shrink, 1));
+     (menu.ts fitHome); --phone-text: a phone's words outside a game, smaller than a desktop's (in a game,
+     --phone-shrink sizes them) */
+  font-size: calc(15px * var(--ui-scale) * var(--phone-shrink, var(--phone-text, 1)) * var(--front-shrink, 1));
   font-weight: var(--text-weight);
   overflow: hidden;
+}
+
+/* a phone (grid/host.ts isPhone): a finger for a pointer on a screen under 600px across its short side */
+@media (pointer: coarse) and (max-width: 599px), (pointer: coarse) and (max-height: 599px) {
+  :root {
+    --phone-text: 0.867;
+  }
 }
 
 #app {
@@ -1402,6 +1410,13 @@ a.item.beside {
   }
   .home-footer {
     padding-top: 0.5rem;
+  }
+}
+/* a phone held upright: the title keeps its place near the top rather than floating between it and the menu, so
+   a row, a hint or a build number landing under it never moves it */
+@media (pointer: coarse) and (max-width: 600px) and (orientation: portrait) {
+  .frame.home-list .brand .head {
+    margin: max(1rem, 18vh) 0 auto;
   }
 }
 @media (max-width: 600px) {

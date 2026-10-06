@@ -1194,7 +1194,8 @@ export class FrontEnd {
               : server.offline
               ? (save?.hint ?? `A new character in ${g.label}, on this device.`) + engineHint(engines.note(g.id))
               : (save?.hint ?? `A new game of ${g.label} on ${server.host}.`),
-            fine: server.offline ? engineBuild(engines.build(g.id), engines.note(g.id)) : undefined,
+            // the line stands empty until the build is known, so the help under the menu never grows a line when it lands
+            fine: server.offline ? (engineBuild(engines.build(g.id), engines.note(g.id)) ?? '\u00a0') : undefined,
             fn: () => this.connectTo(account, { kind: 'play', gameId: g.id }),
           })
         }
