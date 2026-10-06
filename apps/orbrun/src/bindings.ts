@@ -78,6 +78,14 @@ export interface BindingLabel {
    * prompt's own options) rather than from the table.
    */
   contextual: boolean
+  /**
+   * There because of what the player chose here (a menu's accept once
+   * something is marked, the shop's buy), not before (`choiceBrought`):
+   * crawl's light green round it (styles.css .tb.fresh, .chip.fresh).
+   */
+  fresh?: boolean
+  /** the place of a button that comes and goes, held while it is away so the rest keep theirs (`everyChoice`, hud.ts renderBar): never drawn */
+  slot?: boolean
 }
 
 const k = (text: string, label: string): Action => ({ kind: 'keys', seq: [{ text }], label })
@@ -654,8 +662,6 @@ export type TouchLabel = Omit<BindingLabel, 'button'> &
     lit?: boolean
     /** there, so the keypad keeps its shape, but nothing to press: the map's Fire with nothing quivered (hud.ts idleTouchButton) */
     idle?: boolean
-    /** there because of what the player chose here (a menu's accept once something is marked, the shop's buy): not before (`touchNarrowest`, styles.css .tb.fresh) */
-    fresh?: boolean
     keycap?: string
     /** a switch's bracketed key and its words in the screen's colours (Switch `keyHtml`, `wordHtml`) */
     keycapHtml?: string
@@ -800,9 +806,8 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
   // the map's Fire with nothing quivered: crawl's `f` would only say "Nothing quivered!" (quiver.cc `action_cycler::target`)
   const idle = (l: BindingLabel) => !panel && ctx.mode === 'command' && l.action.kind === 'fire' && !ctx.readiedAction
   // the screen as it was before the player marked or listed anything: a button it lacks, or has doing something else, is the choice's
-  const narrowest = panel ? null : touchNarrowest(ctx)
-  const before = narrowest && narrowest !== ctx ? barLabels(narrowest) : null
-  const fresh = (l: BindingLabel) => !!before && !TOUCH_ARROWS.some(([b]) => b === l.button) && !before.some((n) => n.button === l.button && !n.teaching && n.label !== NO_ACTION && JSON.stringify(n.action) === JSON.stringify(l.action))
+  const brought = panel ? () => false : choiceBrought(ctx)
+  const fresh = (l: BindingLabel) => !TOUCH_ARROWS.some(([b]) => b === l.button) && brought(l)
   const put = (l: BindingLabel, cell: TouchCell, span = 1) => out.push({ ...touchFace(l, ctx, panel), cell, ...(span > 1 ? { span } : {}), ...(idle(l) ? { idle: true } : {}), ...(fresh(l) ? { fresh: true } : {}) })
   const layout = touchLayout(ctx, panel)
   if (layout) {
@@ -851,7 +856,7 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
   // a button the screen shows only now and then (the shop's buy, a menu's accept) keeps its cell while away, so
   // the rest never shift along to fill it and back as it comes and goes
   const away = new Map<Button, BindingLabel>()
-  if (!panel) for (const l of barLabels(touchWidest(ctx))) if (!l.teaching && l.label !== NO_ACTION && !has.has(l.button as Button) && fits(l)) away.set(l.button as Button, l)
+  if (!panel) for (const l of barLabels(everyChoice(ctx))) if (!l.teaching && l.label !== NO_ACTION && !has.has(l.button as Button) && fits(l)) away.set(l.button as Button, l)
   const place = (b: Button, l: BindingLabel, cell: TouchCell) => {
     taken.add(cell)
     if (away.has(b)) return
@@ -904,24 +909,37 @@ function switchKey(a: Action, ctx: Context): string | number | undefined {
 }
 
 /**
- * The screen with every situation its buttons come and go with switched on:
- * rows marked in a menu or a shop, a row with a second action under the
- * cursor. `touchLabels` keeps a cell for each button this shows that the
- * screen does not show now.
+ * The screen before the player chose anything on it: nothing marked or
+ * listed in a menu or the shop, no answer lit on a prompt with no way back
+ * (the stat gain, whose Confirm comes with the answer).
  */
-/**
- * The screen before the player chose anything on it (TouchLabel `fresh`):
- * nothing marked or listed in a menu or the shop, no answer lit on a prompt
- * with no way back (the stat gain, whose Confirm comes with the answer).
- */
-function touchNarrowest(ctx: Context): Context {
+function beforeChoice(ctx: Context): Context {
   if (ctx.mode === 'prompt' && ctx.prompt && !ctx.prompt.cancel && ctx.focus?.label) return { ...ctx, focus: undefined }
   const m = ctx.menu
   if (ctx.mode !== 'menu' || !m || (!m.anyMarked && !m.shop?.anyMarked && !m.shop?.anyListed)) return ctx
   return { ...ctx, menu: { ...m, anyMarked: false, ...(m.shop ? { shop: { ...m.shop, anyMarked: false, anyListed: false } } : {}) } }
 }
 
-function touchWidest(ctx: Context): Context {
+/**
+ * Whether a button is there because of what the player chose on this
+ * screen (BindingLabel `fresh`): one `beforeChoice` lacks, or has doing
+ * something else. Crawl's own screens only; one of our panels is never asked.
+ */
+export function choiceBrought(ctx: Context): (l: BindingLabel) => boolean {
+  const narrowest = beforeChoice(ctx)
+  if (narrowest === ctx) return () => false
+  const before = barLabels(narrowest)
+  return (l) => !before.some((n) => n.button === l.button && !n.teaching && n.label !== NO_ACTION && JSON.stringify(n.action) === JSON.stringify(l.action))
+}
+
+/**
+ * The screen with every situation its buttons come and go with switched on:
+ * rows marked in a menu or a shop, a row with a second action under the
+ * cursor. The touch bar keeps a cell for each button this shows that the
+ * screen does not show now (`touchLabels`), and the pad's bar under a panel
+ * a place (game.ts, hud.ts renderBar).
+ */
+export function everyChoice(ctx: Context): Context {
   const m = ctx.menu
   if (ctx.mode === 'menu' && m) return { ...ctx, menu: { ...m, anyMarked: true, ...(m.shop ? { shop: { ...m.shop, anyMarked: true } } : {}) } }
   if (ctx.focus && !ctx.focus.altLabel) return { ...ctx, focus: { ...ctx.focus, altLabel: ctx.focus.label } }

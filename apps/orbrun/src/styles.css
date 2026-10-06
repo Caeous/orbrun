@@ -2808,7 +2808,12 @@ canvas.minimap.hidden {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* the place of a button this screen lacks: held, never drawn */
+/* a prompt the player's own choice brought (bindings.ts BindingLabel `fresh`), in the touch bar's light green
+   (.touchbar .tb.fresh): with no box round it, its words wear the colour */
+.actionbar.contextual .chip.fresh .label {
+  color: var(--color-10);
+}
+/* the place of a button this screen lacks, or of one that comes and goes (BindingLabel `slot`): held, never drawn */
 .actionbar.contextual .chip.slot {
   visibility: hidden;
   pointer-events: none;

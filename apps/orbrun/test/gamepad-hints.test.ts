@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { GamepadHints, gamepadHints, padLesson, type PadHintEvidence } from '../src/gamepad-hints'
 import { bindingTable, type Action } from '../src/bindings'
-import type { Context } from '../src/context'
+import type { Context, MenuContext } from '../src/context'
 import { defaultSettings, getSettings, saveSettings } from '../src/servers'
 import { settingsPanel } from '../src/settings-panel'
 import { isPadActivity } from '../src/gamepad'
@@ -169,6 +169,36 @@ describe('nothing standing: only the context and the lessons', () => {
     const h = new GamepadHints()
     expect(h.prompts(ctx(), 'contextual')).toEqual([])
     expect(h.prompts(ctx(), 'off')).toEqual([])
+  })
+})
+
+describe('as on the touch bar: what a choice brought, and places held', () => {
+  const menu = (over: Partial<MenuContext>, tag = 'pickup'): Context =>
+    ctx({ mode: 'menu', menu: { menu: { tag, items: [], flags: 0 }, hoverable: [], multiselect: true, ...over } as unknown as MenuContext })
+  const shop = (over: object) => menu({ multiselect: false, shop: { canBuy: true, anyMarked: false, anyListed: false, mode: 'buy', sortOrder: 'type', ...over } } as unknown as Partial<MenuContext>, 'shop')
+  const lines = (c: Context, mode: 'adaptive' | 'contextual' | 'off' = 'contextual') =>
+    new GamepadHints().prompts(c, mode).filter((l) => !l.teaching).map((l) => l.button + (l.slot ? '_' : '') + (l.fresh ? '!' : '')).sort()
+
+  it('a menu’s accept is fresh once something is marked, and holds its place before', () => {
+    expect(lines(menu({ anyMarked: true }))).toEqual(['A', 'START!'])
+    expect(lines(menu({ anyMarked: false }))).toEqual(['A', 'START_'])
+    // the same with the hints off: the menu's own navigation still stands under it
+    expect(lines(menu({ anyMarked: false }), 'off')).toEqual(['A', 'START_'])
+  })
+
+  it('the shop’s buy and list come fresh with a mark, their places held without one', () => {
+    const marked = lines(shop({ anyMarked: true }))
+    const bare = lines(shop({}))
+    expect(marked.filter((b) => b.endsWith('!')).sort()).toEqual(['LT!', 'START!'])
+    // the same buttons in the same places, marked or not
+    expect(bare.map((b) => b.replace(/[_!]$/, ''))).toEqual(marked.map((b) => b.replace(/[_!]$/, '')))
+    expect(bare.filter((b) => b.endsWith('_')).sort()).toEqual(['LT_', 'START_'])
+  })
+
+  it('a screen no choice changes holds nothing and marks nothing', () => {
+    const door = ctx({ ahead: { kind: 'door-closed', label: 'door' } })
+    expect(new GamepadHints().prompts(door, 'contextual').some((l) => l.slot || l.fresh)).toBe(false)
+    expect(lines(menu({ multiselect: false }))).toEqual(['A'])
   })
 })
 

@@ -115,9 +115,6 @@ const FOOT_PAIRS: readonly (readonly BindingLabel['button'][])[] = [
  */
 const UNDER_ORDER: readonly BindingLabel['button'][] = ['LSTICK', 'LSTICK_UP', 'DPAD', 'RSTICK', 'LB', 'RB', 'LT', 'RT', 'L3', 'R3', 'SELECT', 'START', 'Y', 'X', 'B', 'A']
 
-/** A prompt on the pad's bar, or the place held for one this screen lacks (`slot`, renderBar): drawn empty, so its neighbours keep theirs. */
-type BarItem = BindingLabel & { slot?: boolean }
-
 /** css px between a panel's foot and the prompts under it (placeBar) */
 const BAR_GAP = 16
 
@@ -1766,16 +1763,18 @@ export class Hud {
    * every button stands named, in a line of pairs along the map's foot instead.
    */
   private renderBar(ctx: Context, padKind: PadKind, spectating: boolean, device: InputDevice, hints: boolean, padLabels?: BindingLabel[], under = POPUP_MODES.has(ctx.mode)) {
-    const shown = device === 'pad' && !spectating ? (padLabels ?? (hints ? promptLabels(ctx) : [])) : []
     // the level map names every button it has, too many to stack: a line of pairs along its foot, each
     // pair one over the other (FOOT_PAIRS, styles.css .actionbar.contextual.foot)
     const foot = ctx.mode === 'levelmap'
+    // the place of a button that comes and goes (BindingLabel `slot`) is held in the line under a panel only: in the
+    // corner's column it would be a gap
+    const shown = (device === 'pad' && !spectating ? (padLabels ?? (hints ? promptLabels(ctx) : [])) : []).filter((l) => !l.slot || (under && !foot))
     // A and B hold their places whether or not this screen has them (`slots`): under a panel, one order whatever the
     // panel, A always at the right end and B always beside it (UNDER_ORDER); in the corner, A always the lowest line
     const slots: BindingLabel['button'][] = !shown.length || foot ? [] : under ? ['B', 'A'] : ['A']
-    const held = slots.filter((b) => !shown.some((l) => l.button === b)).map((b): BarItem => ({ button: b, label: '', action: { kind: 'keys', label: '', seq: [] }, contextual: true, slot: true }))
-    const labels: BarItem[] = under ? [...shown, ...held].sort((a, b) => UNDER_ORDER.indexOf(a.button) - UNDER_ORDER.indexOf(b.button)) : [...held, ...shown]
-    const key = device + '|' + ctx.mode + '|' + ctx.layer + '|' + labels.map((l) => l.button + ':' + l.label + '/' + (l.hold || '') + !!l.teaching).join(',') + padKind + under
+    const held = slots.filter((b) => !shown.some((l) => l.button === b)).map((b): BindingLabel => ({ button: b, label: '', action: { kind: 'keys', label: '', seq: [] }, contextual: true, slot: true }))
+    const labels: BindingLabel[] = under ? [...shown, ...held].sort((a, b) => UNDER_ORDER.indexOf(a.button) - UNDER_ORDER.indexOf(b.button)) : [...held, ...shown]
+    const key = device + '|' + ctx.mode + '|' + ctx.layer + '|' + labels.map((l) => l.button + ':' + l.label + '/' + (l.hold || '') + !!l.teaching + (l.slot ? '_' : '') + (l.fresh ? '!' : '')).join(',') + padKind + under
     if (this.actionbar.dataset.v === key) return
     this.actionbar.dataset.v = key
     this.actionbar.hidden = labels.length === 0
@@ -1787,9 +1786,10 @@ export class Hud {
     const keep = new Map(this.barChips)
     this.barChips.clear()
     clear(this.actionbar)
-    const chipFor = (l: BarItem) => {
-      if (l.slot) return h('span', { class: 'chip slot ' + l.button }, h('span', { class: 'text' }, label('\u00a0')))
-      const k = l.button + ':' + l.label + '/' + (l.hold || '') + !!l.teaching + padKind
+    const chipFor = (l: BindingLabel) => {
+      // a held place is the button as it will be, unseen, so it takes the room it will take
+      if (l.slot) return h('span', { class: 'chip slot ' + l.button }, h('span', { class: 'key' }, glyph(l.button, padKind)), h('span', { class: 'text' }, label(l.label || '\u00a0')))
+      const k = l.button + ':' + l.label + '/' + (l.hold || '') + !!l.teaching + !!l.fresh + padKind
       const kept = keep.get(l.button)
       const chip = kept && kept.dataset.k === k ? kept : this.chip(l, k, padKind)
       this.barChips.set(l.button, chip)
@@ -2043,7 +2043,7 @@ export class Hud {
   private chip(l: BindingLabel, key: string, padKind: PadKind): HTMLElement {
     const chip = h(
       'span',
-      { class: 'chip ' + l.button + (l.hold ? ' has-hold' : '') + (l.teaching ? ' teaching' : ''), title: glyphName(l.button, padKind) + (l.hold ? ': ' + formattedStringToText(l.label) + ', hold for ' + formattedStringToText(l.hold) : ''), onclick: l.teaching ? undefined : () => this.hooks.onBarAction(l.action) },
+      { class: 'chip ' + l.button + (l.hold ? ' has-hold' : '') + (l.teaching ? ' teaching' : '') + (l.fresh ? ' fresh' : ''), title: glyphName(l.button, padKind) + (l.hold ? ': ' + formattedStringToText(l.label) + ', hold for ' + formattedStringToText(l.hold) : ''), onclick: l.teaching ? undefined : () => this.hooks.onBarAction(l.action) },
       h('span', { class: 'key' }, glyph(l.button, padKind)),
       h('span', { class: 'text' }, label(l.label), l.hold ? h('span', { class: 'hold' }, glyph('HOLD', padKind), h('span', { html: formattedStringToHtml(l.hold) })) : null),
     )

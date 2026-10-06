@@ -1,4 +1,4 @@
-import { barLabels, bindingTable, promptLabels, threatened, type Action, type BindingLabel } from './bindings'
+import { barLabels, bindingTable, choiceBrought, everyChoice, promptLabels, threatened, type Action, type BindingLabel } from './bindings'
 import type { Context } from './context'
 
 /**
@@ -123,8 +123,22 @@ export class GamepadHints {
     if (worked) { this.learn(p.lesson); this.cancel() }
   }
 
-  /** Context first, then the lessons: at most two basic ones, then one discovery. Nothing stands once learned. */
+  /**
+   * Context first, then the lessons: at most two basic ones, then one discovery. Nothing stands once learned.
+   * As on the touch bar, a prompt the player's choice brought (a menu's accept once something is marked) is
+   * `fresh`, and one that comes and goes is held as a `slot` while away, so the line under a panel holds still
+   * (hud.ts renderBar).
+   */
   prompts(ctx: Context, mode: HintMode): BindingLabel[] {
+    const out = this.shown(ctx, mode)
+    if (!out.length) return out
+    const brought = choiceBrought(ctx)
+    const marked = out.map((l) => (!l.teaching && brought(l) ? { ...l, fresh: true } : l))
+    for (const l of this.shown(everyChoice(ctx), mode)) if (!l.teaching && !marked.some((p) => p.button === l.button)) marked.push({ ...l, slot: true })
+    return marked
+  }
+
+  private shown(ctx: Context, mode: HintMode): BindingLabel[] {
     if (['spectating', 'lobby', 'ended', 'macro', 'text'].includes(ctx.mode)) return []
     const all = barLabels(ctx)
     // Confirmation is navigation, not a tutorial reminder. B is always implicit.

@@ -954,12 +954,13 @@ export class GameScreen {
     const nearby = this.is3d ? settings.nearby : 'list'
     // one of our own panels has its prompts from the panel (Overlays.padPrompts), set under it as crawl's menus' are
     const ours = this.overlays.padPrompts
-    const padLabels = this.chat.capturing ? [] : ours ?? this.padHints.prompts(this.ctx, settings.hints)
+    let padLabels = this.chat.capturing ? [] : ours ?? this.padHints.prompts(this.ctx, settings.hints)
     // A held tap-or-hold button (B: Wait, hold for Rest) shows its prompt while it is down, even when the
     // situation did not put it in the corner, so the hold's progress has a place to show. It joins the
     // contextual ones, under the lessons.
     const held = this.holding
-    if (held && !padLabels.some((l) => l.button === held.button)) {
+    if (held && !padLabels.some((l) => l.button === held.button && !l.slot)) {
+      padLabels = padLabels.filter((l) => l.button !== held.button)
       const l = barLabels(this.ctx).find((l) => l.button === held.button)
       if (l) {
         const at = padLabels.findIndex((l) => l.teaching)

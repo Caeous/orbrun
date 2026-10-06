@@ -153,6 +153,26 @@ describe('the prompt stack in the corner of the view', () => {
     inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('A', 'select'), l('X', 'Examine')], true)
     expect(order()).toEqual(['XExamine', '(B)', 'Aselect'])
   })
+  it('holds the place of a prompt that comes and goes under a panel, the size it will be, and wears a fresh one green', () => {
+    const { hud, bar } = setup()
+    const inner = hud as unknown as {
+      renderBar(ctx: Context, kind: string, spectating: boolean, device: string, hints: boolean, padLabels: BindingLabel[], under: boolean): void
+    }
+    const l = (button: BindingLabel['button'], label: string, over: Partial<BindingLabel> = {}) => ({ button, label, action: { kind: 'menu', op: 'select' }, contextual: true, ...over }) as BindingLabel
+    const order = () =>
+      [...bar.querySelectorAll('.chip')].map((c) => {
+        const b = ['A', 'B', 'START', 'RB'].find((b) => c.classList.contains(b))!
+        const words = c.querySelector('.label')?.textContent?.trim() ?? ''
+        return (c.classList.contains('slot') ? '(' + b + ' ' + words + ')' : b + ' ' + words) + (c.classList.contains('fresh') ? '!' : '')
+      })
+    inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('A', 'select'), l('START', 'accept', { slot: true })], true)
+    expect(order()).toEqual(['(START accept)', '(B )', 'A select'])
+    inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('A', 'select'), l('START', 'accept', { fresh: true })], true)
+    expect(order()).toEqual(['START accept!', '(B )', 'A select'])
+    // in the corner's column a held place would be a gap: it is left out there
+    inner.renderBar(context, 'xbox', false, 'pad', true, [l('A', 'Open door'), l('RB', 'Fire dart', { slot: true })], false)
+    expect(order()).toEqual(['A Open door'])
+  })
   it('keeps the corner\'s lowest line for A when there is none', () => {
     const { hud, bar } = setup()
     const inner = hud as unknown as {
