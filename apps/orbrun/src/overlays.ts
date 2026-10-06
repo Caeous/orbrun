@@ -27,6 +27,7 @@ import { settingGroups, type SettingGroup } from './settings-rows'
 import { glyph, glyphName } from './glyphs'
 import { packRows, packStrip, turnKeys, type PackStrip } from './pack-tabs'
 import { fits, menuColumns } from './menu-columns'
+import { attachSwipe } from './swipe'
 import { ACTION_TABS, SHOUT, SWAP_WEAPONS, actionNeighbour, actionTabOf, type ActionTabId } from './action-tabs'
 import type { Button, PadKind } from './gamepad'
 import { DEFAULT_YESNO, isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt, type Switch } from './context'
@@ -78,6 +79,8 @@ export interface OverlayHooks {
   settingsPanel(group: SettingGroup, back: () => void, controls: () => void): { el: HTMLElement; rows: HTMLElement[] }
   /** one of X's actions as tabs picked, by a click or the bumpers (action-tabs.ts, game.ts `openActionTab`) */
   actionTab?(to: ActionTabId): void
+  /** a finger swiped sideways over a screen: the d-pad's Right (1) or Left (-1), swipe.ts */
+  swipe?(step: 1 | -1): void
 }
 
 export interface TileRef {
@@ -712,6 +715,7 @@ export class Overlays {
     this.root.addEventListener('pointermove', (ev) => this.pointerWakes(ev), { passive: true })
     // a click is the mouse speaking: the hover under it counts again, so a click straight after a key lands where the mouse is
     this.root.addEventListener('pointerdown', (ev) => this.pointerWakes(ev, true), { passive: true })
+    attachSwipe(this.root, (step) => this.hooks.swipe?.(step))
     if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.refitCrt()).observe(this.root)
   }
 

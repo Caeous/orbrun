@@ -370,6 +370,7 @@ export class GameScreen {
       onSystemAction: (op) => this.systemAction(op),
       settingsPanel: (group, back, controls) => this.hooks.settingsPanel(group, back, controls),
       actionTab: (to) => this.openActionTab(to),
+      swipe: (step) => this.touchPress(step > 0 ? 'DR' : 'DL'),
     })
     this.runner = new Runner(session, this.cam, {
       context: () => this.ctx,
