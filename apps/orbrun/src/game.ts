@@ -1826,9 +1826,15 @@ export class GameScreen {
     return (Math.PI / Math.max(300, this.canvas.clientWidth)) * this.hooks.settings().lookSensitivity
   }
 
-  /** How a finger lifts off a look drag at `now`: its speeds turned into the view's (a mouse leaves the view where it points). */
-  private release(d: Drag, now: number): DragRelease | undefined {
+  /**
+   * How a finger lifts off a look drag at `now`: its speeds turned into the
+   * view's (a mouse leaves the view where it points). A touch the system took
+   * away (`cancelled`: pointercancel, the page losing focus) was no swipe, so
+   * it settles on the nearest heading, as Android drops a fling on cancel.
+   */
+  private release(d: Drag, now: number, cancelled = false): DragRelease | undefined {
     if (!d.touch) return undefined
+    if (cancelled) return { yawSpeed: 0, pitchSpeed: 0, commit: Infinity }
     const k = d.k ?? this.lookPerPx(true)
     return {
       yawSpeed: d.axis === 'y' ? 0 : -d.vx.speed(now) * k * 1000,
@@ -1919,7 +1925,7 @@ export class GameScreen {
       if (c.hasPointerCapture(ev.pointerId)) c.releasePointerCapture(ev.pointerId)
       if (d.held || d.pan) return
       if (d.moved) {
-        this.cam.endDrag(this.release(d, ev.timeStamp))
+        this.cam.endDrag(this.release(d, ev.timeStamp, ev.type === 'pointercancel'))
         this.needsRender = true
       } else if (ev.type === 'pointerup') {
         // the message pane lets the press through to here (hud.ts dismissesMoreAt): on a pending --more-- it is space
@@ -1948,7 +1954,7 @@ export class GameScreen {
       clearTimeout(d.hold)
       if (c.hasPointerCapture(d.id)) c.releasePointerCapture(d.id)
       if (!d.moved || d.pan) return
-      this.cam.endDrag(this.release(d, performance.now()))
+      this.cam.endDrag(this.release(d, performance.now(), true))
       this.needsRender = true
     }
     c.addEventListener('pointerup', end)

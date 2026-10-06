@@ -302,7 +302,8 @@ export class CameraController {
    * (`release`) springs the yaw on to the heading its swipe meant
    * (`releaseSteps`: the next one the way it went), from the speed it lifted
    * at, so the turn carries on from the finger without a hitch, though never
-   * so fast it swings past that heading and back, and the pitch back to rest, so a touch look always ends square to
+   * so fast it swings past that heading and back, and the pitch back to rest
+   * the same way, so a touch look always ends square to
    * the grid and level.
    */
   endDrag(release?: DragRelease) {
@@ -317,11 +318,8 @@ export class CameraController {
       this.camera.pitch = this.restPitch
       return
     }
-    // a critically damped spring overshoots when it sets off toward its goal faster than SPRING_RATE × the way left
-    const left = yawDelta(this.camera.yaw, this.goalYaw)
-    const most = SPRING_RATE * Math.abs(left)
-    this.yawSpring = release.yawSpeed * Math.sign(left) > most ? Math.sign(left) * most : release.yawSpeed
-    this.pitchSpring = release.pitchSpeed
+    this.yawSpring = noOvershoot(yawDelta(this.goalYaw, this.camera.yaw), release.yawSpeed)
+    this.pitchSpring = noOvershoot(this.camera.pitch - this.restPitch, release.pitchSpeed)
   }
 
   /** Stick released: the yaw eases onto the nearest heading, the pitch stays. */
@@ -762,6 +760,16 @@ function spring(x: number, v: number, dt: number): [number, number] {
   const e = Math.exp(-w * dt)
   const b = v + w * x
   return [(x + b * dt) * e, (v - w * b * dt) * e]
+}
+
+/**
+ * The most of `v` a spring `x` off its rest can set off with and not swing
+ * past it and back: a critically damped one does when it heads home faster
+ * than SPRING_RATE × the way left.
+ */
+function noOvershoot(x: number, v: number): number {
+  const most = SPRING_RATE * Math.abs(x)
+  return -v * Math.sign(x) > most ? -Math.sign(x) * most : v
 }
 
 /** a lifted finger's spring, in radians a second of stiffness: settled in about a quarter second */

@@ -421,6 +421,25 @@ describe('steering with a drag', () => {
     expect(c.facing).toBe(1)
   })
 
+  it('a tilt flicked back toward rest never swings past it', () => {
+    const c = moving()
+    const rest = c.camera.pitch
+    c.lookBy(0, 0.3)
+    c.endDrag(lift(0, -30))
+    for (let i = 0; i < 120; i++) {
+      c.update(1 / 60)
+      expect(c.camera.pitch).toBeGreaterThanOrEqual(rest - 1e-9)
+    }
+  })
+
+  it('a touch the system took away settles on the nearest heading', () => {
+    const c = cam()
+    c.lookBy(0.3, 0)
+    c.endDrag({ yawSpeed: 0, pitchSpeed: 0, commit: Infinity })
+    settle(c)
+    expect(c.facing).toBe(0)
+  })
+
   it('a second swipe on the heels of the first goes a heading further', () => {
     const c = moving()
     c.lookBy(0.2, 0)
