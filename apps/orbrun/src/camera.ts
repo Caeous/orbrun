@@ -358,7 +358,7 @@ export class CameraController {
   faceAfterMove(scene: Scene, dx: number, dy: number) {
     if (this.autofightOverridden) return
     if (this.faceHostile(scene)) return
-    this.setFacing(this.openHeading(scene, yawToDir(Math.atan2(dx, -dy))))
+    this.setFacing(this.openHeading(scene, yawToDir(Math.atan2(dx, -dy)), true))
   }
 
   /**
@@ -511,14 +511,16 @@ export class CameraController {
    * turns before large. "Room" is measured as open depth along the heading
    * (see `openDepth`): two cells of it means we are not looking at a wall,
    * one cell is better than none, and only when every heading is blocked do
-   * we keep `d`. The way ahead, up to a quarter turn either side, is tried
-   * before anything behind: one cell short of a corner the road ahead has
-   * room for one cell only, and the corridor behind has more, but looking
-   * back the way we came is no view of where we are going.
+   * we keep `d`. After a step (`onward`), the way ahead, up to a quarter
+   * turn either side, is tried before anything behind: one cell short of a
+   * corner the road ahead has room for one cell only, and the corridor
+   * behind has more, but looking back the way we came is no view of where
+   * we are going. An arrival has no way ahead, only the heading it was left
+   * with, so there every heading competes on room alone.
    */
-  private openHeading(scene: Scene, d: Dir8): Dir8 {
+  private openHeading(scene: Scene, d: Dir8, onward = false): Dir8 {
     const candidates = [d, ...HEADING_OFFSETS.map((off) => rotateDir(d, off))]
-    for (const heads of [candidates.slice(0, AHEAD_HEADINGS), candidates]) {
+    for (const heads of onward ? [candidates.slice(0, AHEAD_HEADINGS), candidates] : [candidates]) {
       for (const need of [OPEN_DEPTH, 1]) {
         for (const c of heads) if (this.openDepth(scene, c) >= need) return c
       }

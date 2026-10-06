@@ -103,6 +103,14 @@ describe('camera facing while travelling', () => {
     expect(c.facing).toBe(4)
   })
 
+  it('arriving with a wall ahead faces the longer view, behind or not', () => {
+    // the heading left over from the last level is north; east has one cell, south a corridor
+    const s = sceneFrom(['#####', '##@.#', '##.##', '##.##'])
+    const c = cam(0)
+    expect(c.faceAfterArrival(s)).toBe(true)
+    expect(c.facing).toBe(4)
+  })
+
   it('arriving faces the threat before the road', () => {
     const s = sceneFrom(['#####', '##@##', '##.##', '##.##'])
     hostile(s, 2, 2, 1)
