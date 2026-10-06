@@ -88,6 +88,8 @@ interface Drag {
   pan?: { x: number; y: number }
   /** a finger's look keeps to the way it set off: across turns, up and down tilts */
   axis?: 'x' | 'y'
+  /** radians a css pixel of this drag turns the view, read as it starts (`lookPerPx`) */
+  k?: number
   /** where the finger has been lately, for its speed as it lifts */
   vx: VelocityTracker
   vy: VelocityTracker
@@ -1803,19 +1805,29 @@ export class GameScreen {
    * rests on, and while targeting it moves the server's cursor. The gamepad's
    * right stick turns the camera whenever it is pushed, drag or no drag.
    */
-  /** Radians a css pixel of drag turns the view: a full drag across it is about a half turn. */
-  private lookPerPx(): number {
+  /**
+   * Radians a css pixel of drag turns the view. A finger on the 3D view holds
+   * the dungeon under it: a pixel is the lens's own angle at the view's
+   * middle, whatever the field of view or the way the phone is held, and the
+   * Look sensitivity (the stick's) leaves it be. A mouse, or the 2D view,
+   * turns about a half turn a drag across the view.
+   */
+  private lookPerPx(touch: boolean): number {
+    if (touch && this.renderer instanceof Render3d) {
+      const lens = this.renderer.projector()
+      return (2 * lens.tanHalfY) / lens.height
+    }
     return (Math.PI / Math.max(300, this.canvas.clientWidth)) * this.hooks.settings().lookSensitivity
   }
 
   /** How a finger lifts off a look drag at `now`: its speeds turned into the view's (a mouse leaves the view where it points). */
   private release(d: Drag, now: number): DragRelease | undefined {
     if (!d.touch) return undefined
-    const k = this.lookPerPx() * 1000
+    const k = d.k ?? this.lookPerPx(true)
     return {
-      yawSpeed: d.axis === 'y' ? 0 : -d.vx.speed(now) * k,
-      pitchSpeed: d.axis === 'x' ? 0 : (this.hooks.settings().invertLook ? -1 : 1) * d.vy.speed(now) * k,
-      commit: TURN_COMMIT * this.lookPerPx(),
+      yawSpeed: d.axis === 'y' ? 0 : -d.vx.speed(now) * k * 1000,
+      pitchSpeed: d.axis === 'x' ? 0 : (this.hooks.settings().invertLook ? -1 : 1) * d.vy.speed(now) * k * 1000,
+      commit: TURN_COMMIT * k,
     }
   }
 
@@ -1880,7 +1892,7 @@ export class GameScreen {
       if (d.touch) d.axis ??= Math.abs(ev.clientX - d.x0) >= Math.abs(ev.clientY - d.y0) ? 'x' : 'y'
       if (d.axis === 'x') dy = 0
       if (d.axis === 'y') dx = 0
-      const k = this.lookPerPx()
+      const k = (d.k ??= this.lookPerPx(d.touch))
       // the drag grabs the world, the way a Mac scrolls: the dungeon follows the
       // pointer, so dragging right swings the view left and dragging down looks up
       this.cam.lookBy(-dx * k, (this.hooks.settings().invertLook ? -dy : dy) * k)
