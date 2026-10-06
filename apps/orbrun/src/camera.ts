@@ -25,7 +25,7 @@ import {
   type Dir8,
   type Scene,
 } from '@orbrun/scene'
-import { releaseSteps } from './fling'
+import { HEADING, detent, detentSlope, releaseSteps, undetent } from './fling'
 
 /** A finger lifting off a look drag: its speeds in radians a second, and the radians past which it meant the next heading (fling.ts). */
 export interface DragRelease {
@@ -74,8 +74,12 @@ export class CameraController {
   private _uprightYaw = 0
   private freeLook = false
   private dragging = false
-  /** the heading a drag set off from, how far off it the view stood then, and how far the drag has turned it since */
-  private dragFrom: { dir: Dir8; at: number; turned: number } | null = null
+  /**
+   * the heading a drag set off from, how far off it the view stood then, how
+   * far the drag has turned it since, and under `detents` the finger's turn
+   * in headings from that heading (`fling.ts detent`)
+   */
+  private dragFrom: { dir: Dir8; at: number; turned: number; detents?: number } | null = null
   /** the yaw's speed while a lifted finger's spring carries it onto its heading, radians a second; null under the plain ease */
   private yawSpring: number | null = null
   /** the same for the pitch, springing back to rest after a finger lifts */
@@ -282,15 +286,24 @@ export class CameraController {
 
   /**
    * Relative look from a mouse or touch drag: `dyaw`/`dpitch` in radians,
-   * applied at once. Call `endDrag` when the drag ends.
+   * applied at once. Call `endDrag` when the drag ends. A finger's turn goes
+   * through `detents`: the view lingers on each heading it passes.
    */
-  lookBy(dyaw: number, dpitch: number) {
+  lookBy(dyaw: number, dpitch: number, detents = false) {
     if (dyaw !== 0 || dpitch !== 0) this._steeringRevision++
     const c = this.camera
-    if (!this.dragging) this.dragFrom = { dir: c.facing, at: yawDelta(dirToYaw(c.facing), c.yaw), turned: 0 }
-    this.dragFrom!.turned += dyaw
+    if (!this.dragging) {
+      const at = yawDelta(dirToYaw(c.facing), c.yaw)
+      this.dragFrom = { dir: c.facing, at, turned: 0, detents: detents ? undetent(at / HEADING) : undefined }
+    }
+    const from = this.dragFrom!
+    from.turned += dyaw
     this.yawSpring = this.pitchSpring = null
-    c.yaw = normalizeYaw(c.yaw + dyaw)
+    if (from.detents === undefined) c.yaw = normalizeYaw(c.yaw + dyaw)
+    else {
+      from.detents += dyaw / HEADING
+      c.yaw = normalizeYaw(dirToYaw(from.dir) + detent(from.detents) * HEADING)
+    }
     c.pitch = this.clampPitch(c.pitch + dpitch)
     c.facing = yawToDir(c.yaw)
     this.goalYaw = c.yaw
@@ -310,14 +323,14 @@ export class CameraController {
     const from = this.dragFrom
     this.dragFrom = null
     if (!release || !from) return
-    const n = releaseSteps(from.at + from.turned, from.turned, release.yawSpeed, release.commit)
+    const n = releaseSteps(yawDelta(dirToYaw(from.dir), this.camera.yaw), from.turned, release.yawSpeed, release.commit)
     this.setFacing(rotateDir(from.dir, n))
     if (this.reducedMotion) {
       this.camera.yaw = this.goalYaw
       this.camera.pitch = this.restPitch
       return
     }
-    this.yawSpring = release.yawSpeed
+    this.yawSpring = from.detents === undefined ? release.yawSpeed : release.yawSpeed * detentSlope(from.detents)
     this.pitchSpring = release.pitchSpeed
   }
 

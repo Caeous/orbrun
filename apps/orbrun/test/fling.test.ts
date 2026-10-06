@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HEADING, VelocityTracker, releaseSteps } from '../src/fling'
+import { HEADING, VelocityTracker, detent, detentSlope, releaseSteps, undetent } from '../src/fling'
 
 const C = HEADING / 6
 
@@ -18,14 +18,34 @@ describe('releaseSteps', () => {
     expect(releaseSteps(1.3 * HEADING, 1.3 * HEADING, 0, C)).toBe(1)
     expect(releaseSteps(1.6 * HEADING, 1.6 * HEADING, 0, C)).toBe(2)
   })
-  it('a flick goes no further than the heading past where the finger left the view', () => {
+  it('a flick turns one heading: only the distance dragged makes it two', () => {
     expect(releaseSteps(HEADING / 2, HEADING / 2, 12, C)).toBe(1)
     expect(releaseSteps(-HEADING / 2, -HEADING / 2, -200, C)).toBe(-1)
-    expect(releaseSteps(1.2 * HEADING, 1.2 * HEADING, 200, C)).toBe(2)
+    expect(releaseSteps(1.2 * HEADING, 1.2 * HEADING, 200, C)).toBe(1)
+    expect(releaseSteps(-1.2 * HEADING, -1.2 * HEADING, -200, C)).toBe(-1)
+  })
+  it('a finger pulling back off a long drag lets go of the second heading, not the first', () => {
+    expect(releaseSteps(1.6 * HEADING, 1.6 * HEADING, -20, C)).toBe(1)
+    expect(releaseSteps(-1.6 * HEADING, -1.6 * HEADING, 20, C)).toBe(-1)
   })
   it('a swipe that catches a turn still easing in goes on from where that turn was headed', () => {
     expect(releaseSteps(-0.6 * HEADING, C, 0, C)).toBe(1)
     expect(releaseSteps(-0.9 * HEADING, -C, 0, C)).toBe(-1)
+  })
+})
+
+describe('detent', () => {
+  it('keeps whole headings where they are and always goes the finger’s way', () => {
+    for (const n of [-2, -1, 0, 1, 2]) expect(detent(n)).toBeCloseTo(n)
+    for (let u = -2; u < 2; u += 0.01) expect(detent(u + 0.01)).toBeGreaterThan(detent(u))
+  })
+  it('lingers on a heading and hurries between', () => {
+    expect(detentSlope(1)).toBeLessThan(1)
+    expect(detentSlope(0.5)).toBeGreaterThan(1)
+    expect(detent(0.9)).toBeGreaterThan(0.94)
+  })
+  it('undetent finds the finger’s turn back', () => {
+    for (const v of [-1.7, -0.3, 0, 0.25, 0.8, 1.5]) expect(detent(undetent(v))).toBeCloseTo(v, 9)
   })
 })
 

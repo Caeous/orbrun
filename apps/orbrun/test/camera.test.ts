@@ -473,6 +473,31 @@ describe('steering with a drag', () => {
     }
   })
 
+  it('a finger’s turn lingers on the heading it reaches, and a long one rests two headings on', () => {
+    const c = moving()
+    c.lookBy(0.9 * (Math.PI / 4), 0, true)
+    expect(c.camera.yaw).toBeGreaterThan(0.94 * (Math.PI / 4))
+    c.lookBy(0.8 * (Math.PI / 4), 0, true)
+    c.endDrag(lift(3))
+    settle(c)
+    expect(c.facing).toBe(2)
+    expect(c.camera.yaw).toBeCloseTo(Math.PI / 2)
+  })
+
+  it('a finger catching a turn still easing in takes it from where it stands', () => {
+    const c = moving()
+    c.lookBy(0.2, 0, true)
+    c.endDrag(lift(3))
+    c.update(1 / 60)
+    const yaw = c.camera.yaw
+    c.lookBy(0, 0, true)
+    expect(c.camera.yaw).toBeCloseTo(yaw, 9)
+    c.lookBy(0.15, 0, true)
+    c.endDrag(lift(3))
+    settle(c)
+    expect(c.facing).toBe(2)
+  })
+
   it('a keyed turn mid-spring takes over', () => {
     const c = moving()
     c.lookBy(0.2, 0)

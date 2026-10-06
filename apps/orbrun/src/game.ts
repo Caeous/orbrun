@@ -51,8 +51,10 @@ const ACTIVE_MS = 500
 const WARM_DELAY_MS = 2000
 /** css pixels a finger turning the view has to go one way before letting go means the next heading that way (fling.ts) */
 const TURN_COMMIT = 14
-/** a finger's turn of the view, against holding the dungeon under it (`lookPerPx`) */
+/** a finger's tilt of the view, against holding the dungeon under it (`lookPerPx`) */
 const TOUCH_LOOK = 0.5
+/** css pixels a finger drags the view across to turn it one heading, 45°: a short swipe; two take a long one (`lookPerPx`) */
+const TOUCH_HEADING_PX = 140
 /** level-map cells per unit of right-stick look while the map is open */
 const MAP_PAN_RATE = 0.12
 /** tileweb.cc `zoom_dungeon`: `tile_map_scale` in percent, a step a zoom key, clamped to 20..300 */
@@ -84,8 +86,8 @@ interface Drag {
   held?: boolean
   /** a finger dragging the level map: css px moved and not yet a whole cell (`panMapBy`) */
   pan?: { x: number; y: number }
-  /** radians a css pixel of this drag turns the view, read as it starts (`lookPerPx`) */
-  k?: number
+  /** radians a css pixel of this drag turns and tilts the view, read as it starts (`lookPerPx`) */
+  k?: { yaw: number; pitch: number }
 }
 
 /** The device the player touched last; the prompt strip is drawn for it. A finger is `touch`, a mouse or a pen `pointer`. */
@@ -1802,19 +1804,21 @@ export class GameScreen {
    * right stick turns the camera whenever it is pushed, drag or no drag.
    */
   /**
-   * Radians a css pixel of drag turns the view. A finger on the 3D view turns
-   * it by a fraction (`TOUCH_LOOK`) of the lens's own angle at the view's
-   * middle, whatever the field of view, and the Look sensitivity (the
-   * stick's) leaves it be: holding the dungeon under the finger swung the
-   * view a lot for a short swipe, and a quick one flung it round too far. A
-   * mouse, or the 2D view, turns about a half turn a drag across the view.
+   * Radians a css pixel of drag turns and tilts the view. A finger on the 3D
+   * view turns it a heading every TOUCH_HEADING_PX, so the finger takes the
+   * view all the way to the heading it means, 45° or 90°, and the release
+   * has little left to do; it tilts it by a fraction (`TOUCH_LOOK`) of the
+   * lens's own angle at the view's middle, whatever the field of view. The
+   * Look sensitivity (the stick's) leaves a finger be. A mouse, or the 2D
+   * view, turns about a half turn a drag across the view.
    */
-  private lookPerPx(touch: boolean): number {
+  private lookPerPx(touch: boolean): { yaw: number; pitch: number } {
     if (touch && this.renderer instanceof Render3d) {
       const lens = this.renderer.projector()
-      return ((2 * lens.tanHalfY) / lens.height) * TOUCH_LOOK
+      return { yaw: Math.PI / 4 / TOUCH_HEADING_PX, pitch: ((2 * lens.tanHalfY) / lens.height) * TOUCH_LOOK }
     }
-    return (Math.PI / Math.max(300, this.canvas.clientWidth)) * this.hooks.settings().lookSensitivity
+    const k = (Math.PI / Math.max(300, this.canvas.clientWidth)) * this.hooks.settings().lookSensitivity
+    return { yaw: k, pitch: k }
   }
 
   /**
@@ -1829,9 +1833,9 @@ export class GameScreen {
     const k = d.k ?? this.lookPerPx(true)
     const { vx, vy } = d.g.speed(now)
     return {
-      yawSpeed: -vx * k * 1000,
-      pitchSpeed: (this.hooks.settings().invertLook ? -1 : 1) * vy * k * 1000,
-      commit: TURN_COMMIT * k,
+      yawSpeed: -vx * k.yaw * 1000,
+      pitchSpeed: (this.hooks.settings().invertLook ? -1 : 1) * vy * k.pitch * 1000,
+      commit: TURN_COMMIT * k.yaw,
     }
   }
 
@@ -1889,7 +1893,7 @@ export class GameScreen {
       const k = (d.k ??= this.lookPerPx(d.touch))
       // the drag grabs the world, the way a Mac scrolls: the dungeon follows the
       // pointer, so dragging right swings the view left and dragging down looks up
-      this.cam.lookBy(-dx * k, (this.hooks.settings().invertLook ? -dy : dy) * k)
+      this.cam.lookBy(-dx * k.yaw, (this.hooks.settings().invertLook ? -dy : dy) * k.pitch, d.touch)
       this.needsRender = true
     })
     const end = (ev: PointerEvent) => {
