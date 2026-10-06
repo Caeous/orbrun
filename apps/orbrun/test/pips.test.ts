@@ -158,6 +158,7 @@ function scene(): Scene {
   cell(9, 5, 'visible')
   cell(4, 5, 'visible')
   cell(3, 5, 'visible')
+  cell(2, 5, 'visible')
   const mon = (x: number, y: number, extra: Partial<Billboard> = {}): Billboard => ({ x, y, tile: 1, kind: 'monster', height: 0.8, attitude: 'hostile', ref: { name: 'jackal', att: 0, typedata: {} }, ...extra })
   const item = (x: number, y: number, extra: Partial<Billboard> = {}): Billboard => ({ x, y, tile: 2, kind: 'item', height: 0.4, name: 'dagger', ...extra })
   return {
@@ -165,7 +166,7 @@ function scene(): Scene {
     cells,
     player: { x: 5, y: 5 },
     playerOnLevel: true,
-    billboards: [mon(6, 5), mon(7, 5, { scenery: true }), mon(4, 5, { attitude: 'friendly', ref: { name: 'foxfire', att: 4, typedata: { no_exp: true } } }), mon(8, 5, { attitude: 'friendly', ref: { name: 'foxfire', att: 4, typedata: { no_exp: true } } }), item(7, 5), item(8, 5), item(9, 5), item(5, 5), item(9, 5, { scenery: true }), item(4, 5, { name: 'jackal corpse' }), item(3, 5, { name: 'rat skeleton' })],
+    billboards: [mon(6, 5), mon(7, 5, { scenery: true }), mon(4, 5, { attitude: 'friendly', ref: { name: 'foxfire', att: 4, typedata: { no_exp: true } } }), mon(8, 5, { attitude: 'friendly', ref: { name: 'foxfire', att: 4, typedata: { no_exp: true } } }), item(7, 5), item(8, 5), item(9, 5), item(5, 5), item(9, 5, { scenery: true }), item(3, 5, { name: 'jackal corpse', lying: true }), item(2, 5, { name: 'bone humanoid', lying: true })],
     level: { ceilingTile: null, sky: 'none', tint: { r: 1, g: 1, b: 1 } },
     revision: 1,
   }

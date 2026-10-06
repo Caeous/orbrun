@@ -9,7 +9,6 @@
  */
 import { cellKey, type Billboard, type CellKey, type Scene } from '@orbrun/scene'
 import { visibleMonsters } from '@orbrun/scene-webtiles'
-import { isStationaryItemName } from '@orbrun/webtiles'
 
 /** What gets a pip: nothing, the monster list's monsters, or those and items on cells in sight. */
 export type EdgePipMode = 'off' | 'monsters' | 'all'
@@ -51,10 +50,11 @@ export interface EdgePlace {
  * the list's monsters; under `all`, the items on cells in sight as well, never the cell
  * the player stands on (items underfoot are the pick-up prompt), never
  * a cell that already has a monster's pip (the stack mark rides the sprite),
- * and never a corpse or skeleton (`isStationaryItemName`: `g` refuses them,
- * so there is nothing there to go and take; and as a corpse links below the
- * movable items on its cell, a corpse tile on top means the pile holds
- * nothing else).
+ * and never a corpse or skeleton (the billboard's `lying`, read off the
+ * tile, since the tile's name for a skeleton is only "bone": `g` refuses
+ * them, so there is nothing there to go and take; and as a corpse links
+ * below the movable items on its cell, a corpse tile on top means the pile
+ * holds nothing else).
  */
 export function pipTargets(scene: Scene, mode: EdgePipMode): Billboard[] {
   if (mode === 'off') return []
@@ -74,7 +74,7 @@ export function pipTargets(scene: Scene, mode: EdgePipMode): Billboard[] {
   }
   if (mode === 'all') {
     for (const b of scene.billboards) {
-      if (b.kind !== 'item' || b.scenery || (b.name && isStationaryItemName(b.name))) continue
+      if (b.kind !== 'item' || b.scenery || b.lying) continue
       if (b.x === scene.player.x && b.y === scene.player.y) continue
       const k = cellKey(b.x, b.y)
       if (taken.has(k) || scene.cells.get(k)?.visibility !== 'visible') continue
