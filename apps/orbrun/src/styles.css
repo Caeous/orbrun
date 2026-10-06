@@ -2418,6 +2418,10 @@ canvas.minimap.hidden {
 .touchbar[hidden] {
   display: none;
 }
+/* a phone held upright: in the middle, under both thumbs (hud.ts layout) */
+.touchbar.upright {
+  justify-content: center;
+}
 /* on its side, at the right column's foot under the minimap (hud.ts layout) */
 .touchbar.beside {
   right: auto;
@@ -2571,9 +2575,10 @@ canvas.minimap.hidden {
 }
 
 /* the spell bar (hud.ts renderSpellBar): one row of crawl's spell art, nothing round it (the art wears its own frame),
-   from the log's last row; upright from the right, by the touch bar, on its side from the left edge, under the left thumb */
+   from the log's last row, from the left edge both ways, under the left thumb */
 .touchbar.spellbar {
   right: auto;
+  justify-content: start;
   grid-template-columns: none;
   grid-auto-flow: column;
   grid-auto-columns: var(--sb);
@@ -2581,10 +2586,9 @@ canvas.minimap.hidden {
   gap: var(--sb-gap);
   bottom: auto;
   height: var(--sb);
-  padding: 0 8px;
+  padding: 0 8px 0 max(8px, env(safe-area-inset-left, 0px));
 }
 .touchbar.spellbar.beside {
-  justify-content: start;
   padding: 0 0 0 max(8px, env(safe-area-inset-left, 0px));
 }
 .touchbar.spellbar .tb {

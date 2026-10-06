@@ -10,6 +10,14 @@ describe('edgePlace: which edge a camera-space point rides', () => {
     expect(edgePlace({ x: 0, y: 0, z: -3 }, LENS)).toBeNull()
     expect(edgePlace({ x: 2.9, y: -1, z: -3 }, LENS)).toBeNull()
   })
+  it('frames a sprite while any of it is in sight: the pip waits until the whole of it has left', () => {
+    // the centre is past the right edge (x/-z = 1.1), but the left half of a cell-wide sprite still shows
+    expect(edgePlace({ x: 3.3, y: 0, z: -3 }, LENS)).not.toBeNull()
+    expect(edgePlace({ x: 3.3, y: 0, z: -3 }, LENS, 0.5)).toBeNull()
+    // its near side past the edge too: a pip
+    expect(edgePlace({ x: 3.9, y: 0, z: -3 }, LENS, 0.5)!.u).toBe(1)
+    expect(edgePlace({ x: 3.3, y: 4, z: -3 }, LENS, 0.5)).not.toBeNull()
+  })
   it('puts a thing just outside the right of the lens on the right edge', () => {
     const p = edgePlace({ x: 6, y: 0, z: -3 }, LENS)!
     expect(p.u).toBe(1)

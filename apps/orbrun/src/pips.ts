@@ -87,7 +87,11 @@ export function pipTargets(scene: Scene, mode: EdgePipMode): Billboard[] {
 
 /**
  * Where a camera-space point lands on the view's edge, or null when the
- * lens frames it (then the sprite itself is on screen and needs no pip). A
+ * lens frames any of the sprite round it (then the sprite itself is on
+ * screen, if only in part, and needs no pip). `reach` is half the sprite's
+ * side in world units: it faces the eye (render-3d `stand`), so it is a
+ * square at the point's own depth, and the pip waits until the whole of it
+ * has left the frame rather than turning up while half of it still shows. A
  * point in front projects normally and is clamped to the edge along the
  * ray from the view's centre. A point behind the lens is placed by its
  * horizontal bearing alone (its height says nothing about where to turn):
@@ -106,14 +110,14 @@ export function pipTargets(scene: Scene, mode: EdgePipMode): Billboard[] {
  * clamp is the truth) to abeam (where the walk behind takes over): the pip
  * slides to the middle of the side edge instead of jumping to it.
  */
-export function edgePlace(p: CamPoint, proj: { tanHalfY: number; aspect: number; shiftY?: number }): EdgePlace | null {
+export function edgePlace(p: CamPoint, proj: { tanHalfY: number; aspect: number; shiftY?: number }, reach = 0): EdgePlace | null {
   const tx = proj.tanHalfY * proj.aspect
   const ty = proj.tanHalfY
   let u: number, v: number
   if (p.z < 0) {
     let dx = p.x / (-p.z * tx)
     let dy = p.y / (-p.z * ty) + (proj.shiftY ?? 0)
-    if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) return null
+    if (Math.abs(dx) - reach / (-p.z * tx) <= 1 && Math.abs(dy) - reach / (-p.z * ty) <= 1) return null
     // the fade: 0 while the lens still has the point between its side walls (|dx| <= 1, so the height is untouched for
     // anything that left over the top or the bottom), 1 abeam, where dy is nothing and the clamp lands on the middle of
     // the side edge — exactly where the walk behind starts

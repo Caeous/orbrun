@@ -658,6 +658,8 @@ export class Hud {
     const short = screenShort(host.grid)
     const barBeside = this.touchBeside && !this.touchbar.hidden
     this.touchbar.classList.toggle('beside', this.touchBeside)
+    // a phone held upright has both thumbs on it, so the bar stands in the middle; a tablet's stays at the right thumb
+    this.touchbar.classList.toggle('upright', portrait)
     const bottom = this.root.clientHeight || 2 * host.grid.oy + host.grid.rows * host.grid.ch
     const room = {
       w: Math.min(gridW * MINIMAP_WIDEST, statsRight === null ? Infinity : sidePx.left + sidePx.width - statsRight - host.grid.cw),
@@ -1417,7 +1419,7 @@ export class Hud {
     const shown: { b: Billboard; at: EdgePlace; size: number }[] = []
     for (const b of targets) {
       const cam = proj.toCamera(b.x, b.y, b.height / 2)
-      const at = edgePlace(cam, proj)
+      const at = edgePlace(cam, proj, b.height / 2)
       // the pip is the sprite at the size the frame would have drawn it, so the ring round the view reads as depth
       if (at) shown.push({ b, at, size: pipSizeInView(cam, proj, b.height, maxPx) })
     }
@@ -1899,8 +1901,8 @@ export class Hud {
   /**
    * The spell bar (spell-bar.ts): one row of small buttons under the
    * messages, a spell each in crawl's letter order, its art alone, the lit
-   * one (armed, or being aimed) marked. Upright it runs from the right, by
-   * the touch bar; on its side from the left edge, under the left thumb. Too
+   * one (armed, or being aimed) marked. It runs from the left edge, under
+   * the left thumb, upright and on its side alike. Too
    * many for the row: the last button is More, every spell in crawl's cast
    * list. Null leaves the row bare (its rows stay, so the messages hold still).
    */
@@ -1911,7 +1913,8 @@ export class Hud {
     this.spellKey = key
     this.spellbar.hidden = !view
     if (!view) return clear(this.spellbar)
-    const pad = this.touchBeside ? 8 : 16
+    const css = getComputedStyle(this.spellbar)
+    const pad = (Number.parseFloat(css.paddingLeft) || 0) + (Number.parseFloat(css.paddingRight) || 0)
     const fit = Math.max(1, Math.floor((width - pad + SPELL_GAP) / (SPELL_SLOT + SPELL_GAP)))
     const more = view.spells.length > fit
     const shown = more ? view.spells.slice(0, fit - 1) : view.spells
