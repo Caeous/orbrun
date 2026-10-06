@@ -54,7 +54,7 @@ const TURN_COMMIT = 14
 /** a finger's tilt of the view, against holding the dungeon under it (`lookPerPx`) */
 const TOUCH_LOOK = 0.5
 /** css pixels a finger drags the view across to turn it one heading, 45°: a short swipe; two take a long one (`lookPerPx`) */
-const TOUCH_HEADING_PX = 140
+const TOUCH_HEADING_PX = 100
 /** level-map cells per unit of right-stick look while the map is open */
 const MAP_PAN_RATE = 0.12
 /** tileweb.cc `zoom_dungeon`: `tile_map_scale` in percent, a step a zoom key, clamped to 20..300 */

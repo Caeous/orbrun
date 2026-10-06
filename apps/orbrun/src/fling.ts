@@ -43,18 +43,27 @@ const DETENT = 0.5
 
 /**
  * A finger's turn, in headings, as the view shows it: the view lingers on
- * each heading and hurries between them, so a swipe meant for 45° sits on it
- * and two take a deliberate drag on. Smooth, and always going the finger's
- * way (its slope is 1 − DETENT at a heading, 1 + DETENT halfway); a whole
- * number of headings is the same either side.
+ * each heading it reaches and hurries between them, so a swipe meant for 45°
+ * sits on it and two take a deliberate drag on. The heading it sets off from
+ * holds nothing back (the pull fades in over the first heading, `reach`), so
+ * a swipe starts at the finger's own pace. Smooth, and always going the
+ * finger's way; a whole number of headings is the same either side.
  */
 export function detent(u: number): number {
-  return u - (DETENT * Math.sin(2 * Math.PI * u)) / (2 * Math.PI)
+  return u - (DETENT * reach(u) * Math.sin(2 * Math.PI * u)) / (2 * Math.PI)
 }
 
 /** How fast `detent` goes at `u`, against the finger. */
 export function detentSlope(u: number): number {
-  return 1 - DETENT * Math.cos(2 * Math.PI * u)
+  const a = Math.min(1, Math.abs(u))
+  const dReach = Math.sign(u) * 6 * a * (1 - a)
+  return 1 - DETENT * (reach(u) * Math.cos(2 * Math.PI * u) + (dReach * Math.sin(2 * Math.PI * u)) / (2 * Math.PI))
+}
+
+/** How much of the detent's pull holds `u` headings from where the turn set off: none there, all from the next heading on (smoothstep). */
+function reach(u: number): number {
+  const a = Math.min(1, Math.abs(u))
+  return a * a * (3 - 2 * a)
 }
 
 /** The finger's turn the view shows as `v` headings (`detent`'s inverse). */

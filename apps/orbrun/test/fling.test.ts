@@ -40,9 +40,14 @@ describe('detent', () => {
     for (let u = -2; u < 2; u += 0.01) expect(detent(u + 0.01)).toBeGreaterThan(detent(u))
   })
   it('lingers on a heading and hurries between', () => {
+    expect(detentSlope(0)).toBeCloseTo(1)
     expect(detentSlope(1)).toBeLessThan(1)
+    expect(detentSlope(-1)).toBeLessThan(1)
     expect(detentSlope(0.5)).toBeGreaterThan(1)
     expect(detent(0.9)).toBeGreaterThan(0.94)
+  })
+  it('its slope is the curve’s', () => {
+    for (let u = -2; u < 2; u += 0.137) expect(detentSlope(u)).toBeCloseTo((detent(u + 1e-6) - detent(u - 1e-6)) / 2e-6, 5)
   })
   it('undetent finds the finger’s turn back', () => {
     for (const v of [-1.7, -0.3, 0, 0.25, 0.8, 1.5]) expect(detent(undetent(v))).toBeCloseTo(v, 9)
