@@ -375,3 +375,17 @@ export function unbracket(label: string, key: string): string {
   const inWord = /^[a-z]$/i.test(key) && (/[a-z]$/i.test(before) || /^[a-z]/i.test(after))
   return (inWord ? before + key + after : before + after).trim() || label
 }
+
+/**
+ * Whether taking a row spends a turn there and then: the use_item menus
+ * (quaff, read, wear, evoke...), the cast list (spl-cast.cc "Your spells
+ * (cast)"), the memorise list and the abilities, but not their describe
+ * modes ("(describe)", "Ability - describe what?"). A finger lights a row
+ * of these before it takes it (focus.ts `tapLights`); every other menu takes
+ * a tap at once, since what it does is free or can be undone.
+ */
+export function pickSpendsTurn(menu: Pick<MenuState, 'tag' | 'title'>): boolean {
+  if (menu.tag === 'use_item') return true
+  if (menu.tag !== 'spell' && menu.tag !== 'ability') return false
+  return !/describe/i.test(menu.title?.text ?? '')
+}

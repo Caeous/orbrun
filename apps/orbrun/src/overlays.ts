@@ -42,6 +42,7 @@ import {
   menuKeyIntent,
   moreSwitchKeycode,
   parseMoreSwitches,
+  pickSpendsTurn,
   printedSwitch,
   nextHoverableItem,
   relativeHover,
@@ -1050,8 +1051,9 @@ export class Overlays {
       const selectable = (it.level ?? 2) === 2 && (menu.tag === 'use_item' || (it.hotkeys && it.hotkeys.length) || arrows)
       if (selectable) {
         li.classList.add('selectable')
-        // a finger lights the row first, as the arrows would; a tap on the lit row takes it
-        tapLights(li, () => this.hovered === i, () => this.setHover(menu, i, true))
+        // where taking a row spends a turn, a finger lights it first, as the arrows would, and a
+        // tap on the lit row takes it; elsewhere a tap takes it at once
+        tapLights(li, () => !pickSpendsTurn(menu) || this.hovered === i, () => this.setHover(menu, i, true))
         li.addEventListener('click', () => {
           if (arrows) {
             this.setHover(menu, i, true)
@@ -2140,9 +2142,6 @@ export class Overlays {
         const send = () => this.hooks.send(cm.textInput(s.letter))
         li.addEventListener('click', send)
         const item: Focusable = { label: formattedStringToText(s.title), el: li, activate: send, row: pairRow, col: i % 2, id: 'spell:' + s.letter }
-        // a row the cursor cannot reach counts as lit, so its tap still casts
-        const at = () => (this.nav.count === this.focusables.length ? this.focusables.indexOf(item) : -1)
-        tapLights(li, () => at() < 0 || this.nav.current() === item, () => this.nav.focus(at()))
         items.push(item)
         ol.append(li)
       })
@@ -2319,7 +2318,6 @@ export class Overlays {
       if (!line) continue
       const marker = h('span', { class: 'crt-hot ' + hk.kind, style: { left: hk.col + 'ch', width: hk.len + 'ch' }, title: hk.label })
       const send = () => this.hooks.send(cm.input(hk.key))
-      marker.addEventListener('click', send)
       line.append(marker)
       // rows sit in the screen's columns; footer switches get columns of their own so a
       // column walk never jumps from the last row into the footer
@@ -2327,11 +2325,12 @@ export class Overlays {
       const col = hk.kind === 'row' ? n : 10 + n
       const item: Focusable = { label: hk.label, el: marker, activate: send, row: hk.line, col, group: hk.group, id: hk.kind + ':' + hk.key }
       if (targets && hk.kind === 'row') item.alt = { label: 'Set target', activate: () => this.hooks.send(cm.input('=' + hk.key)) }
-      // a finger lights a skill first, as the arrows would; the footer's switches go at once
-      if (hk.kind === 'row') {
-        const at = () => (this.nav.count === this.focusables.length ? this.focusables.indexOf(item) : -1)
-        tapLights(marker, () => at() < 0 || this.nav.current()?.el === marker, () => this.nav.focus(at()))
-      }
+      // a click toggles a skill at once and lights it, so its Set target is the touch bar's next press
+      marker.addEventListener('click', () => {
+        const at = hk.kind === 'row' && this.nav.count === this.focusables.length ? this.focusables.indexOf(item) : -1
+        if (at >= 0) this.nav.focus(at)
+        send()
+      })
       items.push(item)
     }
     // the skills screen is two columns of rows, and a row often has an entry in
@@ -2903,8 +2902,8 @@ export class Overlays {
     this.root.append(el)
     this.clientOverlay = { kind, el, focus: 0, items, back }
     this.itemsTakeMouse(items)
-    // a finger lights a row of the game's own lists first; Orbrun's menus (system, settings, the
-    // shortcuts sheet) take a tap at once, as the front end's do
+    // a finger lights a row of the command lists first, since a row can spend a turn; Orbrun's
+    // menus (system, settings, the shortcuts sheet) take a tap at once, as the front end's do
     if (kind === 'choices' || kind === 'palette') {
       items.forEach((it, i) => tapLights(it, () => this.clientOverlay?.items === items && this.clientOverlay.focus === i, () => this.setClientFocus(i, false)))
     }

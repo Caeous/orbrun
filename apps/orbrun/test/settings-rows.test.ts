@@ -346,9 +346,9 @@ describe('Field of view', () => {
     setAutoMessageLines(null)
   })
 
-  it('upright, the minimap\'s Auto reads the band\'s 13 tiles', () => {
+  it('upright, the minimap\'s Auto reads the band\'s 15 tiles, as on its side', () => {
     phone('upright')
-    expect(settingValue(row('Minimap size'))).toBe('Auto (13 tiles)')
+    expect(settingValue(row('Minimap size'))).toBe('Auto (15 tiles)')
   })
 })
 

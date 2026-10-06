@@ -221,15 +221,16 @@ export const TRAPPED_FRACTION = 0.8
 const MINIMAP_WIDEST = 0.5
 const MINIMAP_TALLEST = 0.7
 /**
- * Held upright, the tiles across the minimap on Auto: the stats pane stands
- * beside it there (console.ts gameSplit), and this many at a phone's least
- * cell leave the pane the cells it needs. It is under MINIMAP_TILES_LEAST,
- * but the map there is a square, not a disc: 13 tiles square show about as
- * much of the line of sight as the disc 15 across does (75% to 79%).
+ * Held upright, the stats pane keeps the cells left of a square this many
+ * tiles across at the map's cell (`bandFit`), the width it was laid out for
+ * (stats.ts cornerRows); the map's own square is larger, as many tiles as on
+ * its side, and reaches under the pane's long rows at the top.
  */
 export const MINIMAP_TILES_UPRIGHT = 13
 /** held upright, the cells the stats pane keeps beside the map, whatever the "Minimap size" setting asks (stats.ts cornerRows) */
 export const CORNER_STATS_LEAST = 24
+/** held upright, the cells the stats pane's short rows take (the defences and attributes, the weapon, the quiver), which the map's square never reaches under */
+const CORNER_STATS_SHORT = 16
 
 /**
  * The screen's short side in css px, from the grid: its cells and the margins they are centred in. Not the cells'
@@ -537,26 +538,29 @@ export class Hud {
    * Held upright (console.ts `isPortrait`), the minimap is a band across the
    * top of the screen, north up (game.ts), the stats pane laid over its left
    * part and the player on the middle of the square at its right, the part
-   * that is the map's own: MINIMAP_TILES_UPRIGHT tiles across on Auto, or
-   * the "Minimap size" setting's count, at the cell it is drawn at on its
-   * side (`minimapFit`), so turning the phone keeps the tiles' size. The
-   * square gives way to the stats pane's CORNER_STATS_LEAST cells, fewer
-   * tiles first, then smaller ones. `w` and `h` are the square's; `cols` is
-   * how many of the grid's columns it covers, from the screen's right edge:
-   * it reaches over the grid's margin there.
+   * that is the map's own: as many tiles as it shows on its side, at the
+   * same cell (`minimapFit`), so turning the phone keeps the map as it is.
+   * The square reaches under the stats pane's long rows at the top (title,
+   * bars), never its short ones (CORNER_STATS_SHORT): fewer tiles first, then
+   * smaller ones. `w` and `h` are the square's; `cols` is how many of the
+   * grid's columns, from the screen's right edge, the stats pane leaves the
+   * map: those left of MINIMAP_TILES_UPRIGHT tiles at the cell, down to
+   * CORNER_STATS_LEAST for the pane. The square reaches over the grid's
+   * margin at the right.
    */
   private bandFit(host: GridHost): { w: number; h: number; cell: number; cols: number } {
     const g = host.grid
-    const { cell: fitted } = minimapFit({ w: g.cols * g.cw, h: g.rows * g.ch }, screenShort(g), this.minimapAcross, this.minimapCell, host.phone)
+    const fit = minimapFit({ w: g.cols * g.cw, h: g.rows * g.ch }, screenShort(g), this.minimapAcross, this.minimapCell, host.phone)
     const across = this.root.clientWidth || g.cols * g.cw + 2 * g.ox
     const margin = Math.max(0, across - g.ox - g.cols * g.cw)
-    const room = Math.floor(margin + (g.cols - CORNER_STATS_LEAST - 1) * g.cw)
-    let tiles = this.minimapAcross ? oddUp(this.minimapAcross) : MINIMAP_TILES_UPRIGHT
-    let cell = fitted
+    const room = Math.floor(margin + (g.cols - CORNER_STATS_SHORT - 1) * g.cw)
+    let tiles = this.minimapAcross ? oddUp(this.minimapAcross) : fit.tiles
+    let cell = fit.cell
     if (tiles * cell > room) tiles = Math.max(Math.min(tiles, MINIMAP_TILES_UPRIGHT), oddDown(Math.floor(room / cell)))
     if (tiles * cell > room) cell = Math.max(1, Math.floor(room / tiles))
     const w = room > 0 ? tiles * cell : 0
-    return { w, h: w, cell, cols: Math.min(g.cols, Math.max(0, Math.ceil((w - margin) / g.cw - 1e-6))) }
+    const beside = Math.min(w, MINIMAP_TILES_UPRIGHT * cell, Math.floor(margin + (g.cols - CORNER_STATS_LEAST - 1) * g.cw))
+    return { w, h: w, cell, cols: Math.min(g.cols, Math.max(0, Math.ceil((beside - margin) / g.cw - 1e-6))) }
   }
 
   /** Held upright, the grid rows the minimap's band takes at the top of the screen and the columns at its right (`bandFit`; console.ts gameSplit). */

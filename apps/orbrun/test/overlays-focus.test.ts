@@ -269,7 +269,7 @@ describe('skills screen (crt menu)', () => {
     ov.focusOp(st, ctx, 'cancel')
     expect(sent).toEqual([{ msg: 'key', keycode: Keys.ESC }])
   })
-  it('a tap lights a skill first, as the arrows would; a tap on the lit skill toggles it', () => {
+  it('a tap toggles a skill at once and lights it, so Y sets its target next', () => {
     const { ov, st, sent, frame, host } = setup()
     load(st)
     let ctx = frame('touch')
@@ -281,8 +281,6 @@ describe('skills screen (crt menu)', () => {
     tap()
     ctx = frame('touch')
     expect(ov.focusInfo(ctx)?.label).toBe('Conjurations')
-    expect(sent).toEqual([])
-    tap()
     expect(sent).toEqual([{ msg: 'input', text: 'j' }])
   })
   it('Y on a skill row sets its target: `=` for set-target mode, then the letter, in one send', () => {
@@ -1021,20 +1019,34 @@ describe('server menus keep their own hover', () => {
     expect(sent[0]).toMatchObject({ msg: 'menu_hover' })
   })
 
-  it('a tap lights a row first, as the arrows would; a tap on the lit row takes it', () => {
-    const { st, sent, frame, host } = setup()
-    reduce(st, { msg: 'menu', tag: 'inventory', flags: 0, title: { text: 'Inventory' }, items: [{ text: 'a - a dagger', hotkeys: [97], level: 2 }, { text: 'b - a robe', hotkeys: [98], level: 2 }], total_items: 2, last_hovered: -1 })
-    frame('touch')
-    const robe = host.querySelectorAll<HTMLElement>('li.selectable')[1]
-    const tap = () => {
+  it('a tap takes a row at once where taking it is free: the pack describes, a cast list in describe mode', () => {
+    for (const [tag, title] of [['inventory', 'Inventory'], ['spell', 'Your spells (describe)'], ['ability', 'Ability - describe what?']]) {
+      const { st, sent, frame, host } = setup()
+      reduce(st, { msg: 'menu', tag, flags: 0, title: { text: title }, items: [{ text: 'a - a dagger', hotkeys: [97], level: 2 }, { text: 'b - a robe', hotkeys: [98], level: 2 }], total_items: 2, last_hovered: -1 })
+      frame('touch')
+      const robe = host.querySelectorAll<HTMLElement>('li.selectable')[1]
       robe.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true } as PointerEventInit))
       robe.click()
+      expect(sent, tag).toEqual([cm.key(98)])
     }
-    tap()
-    expect(sent).toEqual([cm.menuHover(1, true)])
-    expect(robe.classList.contains('hovered')).toBe(true)
-    tap()
-    expect(sent.slice(1)).toEqual([cm.key(98)])
+  })
+
+  it('where taking a row spends a turn, a tap lights it first, as the arrows would; a tap on the lit row takes it', () => {
+    for (const [tag, title] of [['use_item', 'Drink which item?'], ['spell', 'Your spells (cast)'], ['ability', 'Ability - do what?']]) {
+      const { st, sent, frame, host } = setup()
+      reduce(st, { msg: 'menu', tag, flags: 0, title: { text: title }, items: [{ text: 'a - a potion', hotkeys: [97], level: 2 }, { text: 'b - a scroll', hotkeys: [98], level: 2 }], total_items: 2, last_hovered: -1 })
+      frame('touch')
+      const row = host.querySelectorAll<HTMLElement>('li.selectable')[1]
+      const tap = () => {
+        row.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true } as PointerEventInit))
+        row.click()
+      }
+      tap()
+      expect(sent, tag).toEqual([cm.menuHover(1, true)])
+      expect(row.classList.contains('hovered')).toBe(true)
+      tap()
+      expect(sent.slice(1), tag).toEqual([cm.key(98)])
+    }
   })
 })
 

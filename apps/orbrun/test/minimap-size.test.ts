@@ -178,30 +178,34 @@ describe('a phone\'s map in the layout', () => {
     }
   }
 
-  it('is the same size on its side, the buttons showing or not; upright it is 13 of the same tiles', () => {
+  it('is the same size on its side and upright, the buttons showing or not', () => {
     expect(phoneMap(844, 390, true).map).toBe(225)
     expect(phoneMap(844, 390, false).map).toBe(225)
-    expect(phoneMap(390, 844, true).map).toBe(13 * 15)
-    expect(phoneMap(390, 844, false).map).toBe(13 * 15)
+    expect(phoneMap(390, 844, true).map).toBe(225)
+    expect(phoneMap(390, 844, false).map).toBe(225)
   })
 
-  it('upright, the map is a band across the top, the player on the middle of a 13-tile square at its right, the stats pane over the rest, on every phone at 15px tiles or more', () => {
+  it('upright, the map is a band across the top, the player on the middle of a square at its right as big as on its side, the stats pane over the rest, on every phone at 15px tiles or more', () => {
     for (const w of [360, 375, 390, 412, 430]) {
       const p = phoneMap(w, 844, true)
       expect(p.inBand).toBe(true)
-      expect(p.map / MINIMAP_TILES_UPRIGHT).toBeGreaterThanOrEqual(MINIMAP_CELL_LEAST_PHONE)
+      // 15px tiles, 15 of them or more
+      expect(p.map % MINIMAP_CELL_LEAST_PHONE).toBe(0)
+      expect(p.map / MINIMAP_CELL_LEAST_PHONE).toBeGreaterThanOrEqual(MINIMAP_TILES_LEAST)
+      expect(p.map).toBeGreaterThanOrEqual(phoneMap(844, w, true).map)
       // the whole screen across, its top on the stats pane's
       expect(p.left).toBe(0)
       expect(p.across).toBe(w)
       expect(p.top).toBe(p.statsTop)
       // the player stands on the middle of the square at the right edge, as tall as the map
       expect(p.anchor).toEqual({ x: w - p.map / 2, y: p.map / 2 })
-      // the stats pane keeps its cells left of the square, and the band's rows hold the map
-      expect(p.statsRight).toBeLessThan(w - p.map)
+      // the stats pane keeps its cells left of a 13-tile square; the map's own reaches under its long rows at the top
+      expect(p.statsRight).toBeLessThan(w - MINIMAP_TILES_UPRIGHT * MINIMAP_CELL_LEAST_PHONE)
+      expect(p.statsRight).toBeGreaterThanOrEqual(w - p.map)
       expect(p.top + p.map).toBeLessThanOrEqual(p.bandPx)
       expect(p.bandPx - p.top - p.map).toBeLessThan(20)
-      // the monster list's column under the square, starting within its left edge's cell
-      expect(w - p.map - p.sideLeft).toBeGreaterThanOrEqual(0)
+      // the monster list's column under the square, right of the stats pane
+      expect(p.sideLeft).toBeGreaterThan(p.statsRight)
     }
     // on its side the map is back in the column, centred on the player
     const side = phoneMap(844, 390, true)

@@ -1,6 +1,6 @@
 import { defaultSettings, getSettings, saveSettings, VIEW_OPTIONS, type LeftRight, type Settings } from './servers'
 import { isPhone } from './grid/host'
-import { MINIMAP_CELL_DEFAULT, MINIMAP_TILES_DEFAULT, MINIMAP_TILES_UPRIGHT } from './hud'
+import { MINIMAP_CELL_DEFAULT, MINIMAP_TILES_DEFAULT, MINIMAP_TILES_LEAST } from './hud'
 
 /**
  * Orbrun's own settings, one row each: what it is called, which key it sets,
@@ -231,7 +231,7 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
     (v) => (v === 'list' ? 'Monster list' : 'Edge pips'),
     (s) => s.renderer !== '3d',
   ),
-  row('Interface', 'Minimap size', 'minimapTiles', MINIMAP_TILES, 'How many tiles across the minimap shows: it grows out of its corner over the view, at the same cell size. Auto fits it to the screen.', autoOr((v) => v + ' tiles', () => autoMinimap?.tiles ?? (upright() ? MINIMAP_TILES_UPRIGHT : MINIMAP_TILES_DEFAULT))),
+  row('Interface', 'Minimap size', 'minimapTiles', MINIMAP_TILES, 'How many tiles across the minimap shows: it grows out of its corner over the view, at the same cell size. Auto fits it to the screen.', autoOr((v) => v + ' tiles', () => autoMinimap?.tiles ?? (upright() ? MINIMAP_TILES_LEAST : MINIMAP_TILES_DEFAULT))),
   row('Interface', 'Minimap tile size', 'minimapCell', MINIMAP_CELLS, 'How big each minimap tile is drawn on a 1080p screen, larger in step on a bigger one: the same tiles, larger, until the map runs out of room over the view. Auto fits it to the screen.', autoOr((v) => v + 'px', () => autoMinimap?.cell ?? MINIMAP_CELL_DEFAULT)),
   row('Interface', 'Minimap rotation', 'minimapTurns', [true, false], 'Whether the minimap turns with you, so ahead is always up, or stays still with north up.', (v) => (v ? 'Turns with you' : 'North up')),
   row('Interface', 'Message lines', 'messageLines', MESSAGE_LINES, 'How many lines of messages the log along the bottom shows: fewer leave more of the view, more keep more of the story in sight. Auto is 4 lines on a phone, elsewhere what the game asks for, msg_webtiles_height in your rc or 6 lines.', autoOr((v) => v + ' lines', () => messageLinesOf(defaultSettings, serverMessageLines))),
