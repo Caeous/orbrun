@@ -18,7 +18,7 @@ function harness() {
   const endDrag = vi.fn()
   const onPointer = vi.fn()
   const screen = Object.assign(Object.create(GameScreen.prototype), {
-    canvas, is3d: true, drag: null, hover: null, pointerLive: false, tooltipTimer: 0,
+    canvas, is3d: true, drag: null, hover: null, pointerLive: false, tooltipTimer: 0, ctx: { mode: 'command' },
     cam: { lookBy, endDrag }, hud: { hideTooltip: vi.fn() }, session: { state: initialState() },
     hooks: { settings: () => ({ lookSensitivity: 1, invertLook: false }) },
     inputFrom: vi.fn(), wake: vi.fn(), armCellTooltip: vi.fn(), onPointer,
@@ -27,8 +27,52 @@ function harness() {
   const at = (type: string, x: number, y: number, buttons: number) => {
     canvas.dispatchEvent(Object.assign(new Event(type), { pointerId: 1, pointerType: 'mouse', button: 0, buttons, clientX: x, clientY: y, pageX: x, pageY: y }))
   }
-  return { screen, at, lookBy, endDrag, onPointer }
+  /** a finger at `t` ms; `type` pointercancel when the system takes it away */
+  const touch = (type: string, x: number, y: number, t: number) => {
+    const ev = Object.assign(new Event(type), { pointerId: 2, pointerType: 'touch', button: 0, buttons: 1, clientX: x, clientY: y, pageX: x, pageY: y })
+    Object.defineProperty(ev, 'timeStamp', { value: t })
+    canvas.dispatchEvent(ev)
+  }
+  return { screen, at, touch, lookBy, endDrag, onPointer }
 }
+
+describe('a finger swiping the view', () => {
+  it('turns it the way the dungeon is dragged, keeps to the turn, and lifts with the swipe’s speed', () => {
+    const h = harness()
+    h.touch('pointerdown', 300, 300, 0)
+    // leftward and a little down, at 120 Hz
+    for (let t = 8; t <= 80; t += 8) h.touch('pointermove', 300 - 2 * t, 300 + 0.5 * t, t)
+    h.touch('pointerup', 140, 340, 84)
+    expect(h.lookBy).toHaveBeenCalled()
+    for (const [dyaw, dpitch] of h.lookBy.mock.calls) {
+      expect(dyaw).toBeGreaterThan(0)
+      expect(dpitch).toBe(0)
+    }
+    const release = h.endDrag.mock.calls[0][0]
+    expect(release.yawSpeed).toBeGreaterThan(0)
+    expect(release.pitchSpeed).toBe(0)
+    expect(release.commit).toBeLessThan(Infinity)
+  })
+
+  it('a wobble under the slop is still a tap', () => {
+    const h = harness()
+    Object.assign(h.screen, { tapSteps: () => false, tapMapCursor: () => false, hud: { hideTooltip: vi.fn(), dismissesMoreAt: () => false } })
+    h.touch('pointerdown', 300, 300, 0)
+    h.touch('pointermove', 307, 300, 8)
+    h.touch('pointerup', 307, 300, 16)
+    expect(h.lookBy).not.toHaveBeenCalled()
+    expect(h.endDrag).not.toHaveBeenCalled()
+    expect(h.onPointer).toHaveBeenCalledOnce()
+  })
+
+  it('a swipe the system takes away settles on the nearest heading, no fling', () => {
+    const h = harness()
+    h.touch('pointerdown', 300, 300, 0)
+    for (let t = 8; t <= 40; t += 8) h.touch('pointermove', 300 - 3 * t, 300, t)
+    h.touch('pointercancel', 180, 300, 44)
+    expect(h.endDrag).toHaveBeenCalledWith({ yawSpeed: 0, pitchSpeed: 0, commit: Infinity })
+  })
+})
 
 describe('a drag whose release the page never saw', () => {
   it('lets go on the first move with no button held, and orbits no further', () => {

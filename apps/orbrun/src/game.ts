@@ -27,7 +27,7 @@ import { fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap, type Settin
 import { PerfOverlay, type LogContext } from './perf'
 import { MapHold } from './map-hold'
 import { swipeLean, swipeStep } from './swipe'
-import { VelocityTracker } from './fling'
+import { LookDrag } from './look-drag'
 import type { DragRelease } from './camera'
 import { SpellBar, SpellBook, type Spell } from './spell-bar'
 
@@ -49,7 +49,6 @@ const ACTIVE_MS = 500
  * player is waiting for, short enough to be done before a level is drawn.
  */
 const WARM_DELAY_MS = 2000
-const DRAG_SLOP = 6
 /** css pixels a finger turning the view has to go one way before letting go means the next heading that way (fling.ts) */
 const TURN_COMMIT = 14
 /** a finger's turn of the view, against holding the dungeon under it (`lookPerPx`) */
@@ -77,24 +76,16 @@ function withBack(labels: BindingLabel[]): BindingLabel[] {
 /** A press on the view, from down to up: a tap, a look drag, or a finger held still (`hold` its timer, `held` once it fired). */
 interface Drag {
   id: number
-  x: number
-  y: number
-  x0: number
-  y0: number
-  moved: boolean
+  /** the press as a look drag: where it is, whether it has moved, its axis and speed (look-drag.ts) */
+  g: LookDrag
   button: number
   touch: boolean
   hold?: number
   held?: boolean
   /** a finger dragging the level map: css px moved and not yet a whole cell (`panMapBy`) */
   pan?: { x: number; y: number }
-  /** a finger's look keeps to the way it set off: across turns, up and down tilts */
-  axis?: 'x' | 'y'
   /** radians a css pixel of this drag turns the view, read as it starts (`lookPerPx`) */
   k?: number
-  /** where the finger has been lately, for its speed as it lifts */
-  vx: VelocityTracker
-  vy: VelocityTracker
 }
 
 /** The device the player touched last; the prompt strip is drawn for it. A finger is `touch`, a mouse or a pen `pointer`. */
@@ -1836,9 +1827,10 @@ export class GameScreen {
     if (!d.touch) return undefined
     if (cancelled) return { yawSpeed: 0, pitchSpeed: 0, commit: Infinity }
     const k = d.k ?? this.lookPerPx(true)
+    const { vx, vy } = d.g.speed(now)
     return {
-      yawSpeed: d.axis === 'y' ? 0 : -d.vx.speed(now) * k * 1000,
-      pitchSpeed: d.axis === 'x' ? 0 : (this.hooks.settings().invertLook ? -1 : 1) * d.vy.speed(now) * k * 1000,
+      yawSpeed: -vx * k * 1000,
+      pitchSpeed: (this.hooks.settings().invertLook ? -1 : 1) * vy * k * 1000,
       commit: TURN_COMMIT * k,
     }
   }
@@ -1856,12 +1848,13 @@ export class GameScreen {
         if (this.startPinch(this.drag, ev)) c.setPointerCapture(ev.pointerId)
         return
       }
-      const d: Drag = (this.drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, moved: false, button: ev.button, touch: ev.pointerType === 'touch', vx: new VelocityTracker(), vy: new VelocityTracker() })
+      const touch = ev.pointerType === 'touch'
+      const d: Drag = (this.drag = { id: ev.pointerId, g: new LookDrag(touch, { t: ev.timeStamp, x: ev.clientX, y: ev.clientY }), button: ev.button, touch })
       // a finger held still on the view is R3, the stick click the touch bar has no cell for (bindings.ts TOUCH_CELLS):
       // what is ahead examined on the map, the overview on the level map; the lift then does nothing more
       if (d.touch) {
         d.hold = window.setTimeout(() => {
-          if (this.drag !== d || d.moved) return
+          if (this.drag !== d || d.g.moved) return
           d.held = true
           this.touchPress('R3')
         }, HOLD_MS)
@@ -1887,23 +1880,12 @@ export class GameScreen {
       // held, is that release. Drop the drag instead of orbiting a held button
       // that is not held.
       if (ev.pointerType === 'mouse' && ev.buttons === 0) return this.cancelDrag()
-      let dx = ev.clientX - d.x
-      let dy = ev.clientY - d.y
-      d.x = ev.clientX
-      d.y = ev.clientY
-      for (const e of ev.getCoalescedEvents?.() ?? [ev]) {
-        d.vx.add(e.timeStamp, e.clientX)
-        d.vy.add(e.timeStamp, e.clientY)
-      }
-      if (!d.moved && Math.hypot(ev.clientX - d.x0, ev.clientY - d.y0) < DRAG_SLOP) return
-      if (d.held) return
-      d.moved = true
+      const coalesced = ev.getCoalescedEvents?.() ?? []
+      const step = d.g.move((coalesced.length ? coalesced : [ev]).map((e) => ({ t: e.timeStamp, x: e.clientX, y: e.clientY })))
+      if (!step || d.held) return
       clearTimeout(d.hold)
-      if (d.touch && this.panMapBy(d, dx, dy)) return
-      // a finger turns or tilts, not both, by the way it first went, so a swipe across never leaves the view tipped
-      if (d.touch) d.axis ??= Math.abs(ev.clientX - d.x0) >= Math.abs(ev.clientY - d.y0) ? 'x' : 'y'
-      if (d.axis === 'x') dy = 0
-      if (d.axis === 'y') dx = 0
+      if (d.touch && this.panMapBy(d, step.dx, step.dy)) return
+      const { dx, dy } = d.g.look(step.dx, step.dy)
       const k = (d.k ??= this.lookPerPx(d.touch))
       // the drag grabs the world, the way a Mac scrolls: the dungeon follows the
       // pointer, so dragging right swings the view left and dragging down looks up
@@ -1924,7 +1906,7 @@ export class GameScreen {
       clearTimeout(d.hold)
       if (c.hasPointerCapture(ev.pointerId)) c.releasePointerCapture(ev.pointerId)
       if (d.held || d.pan) return
-      if (d.moved) {
+      if (d.g.moved) {
         this.cam.endDrag(this.release(d, ev.timeStamp, ev.type === 'pointercancel'))
         this.needsRender = true
       } else if (ev.type === 'pointerup') {
@@ -1953,7 +1935,7 @@ export class GameScreen {
       this.drag = null
       clearTimeout(d.hold)
       if (c.hasPointerCapture(d.id)) c.releasePointerCapture(d.id)
-      if (!d.moved || d.pan) return
+      if (!d.g.moved || d.pan) return
       this.cam.endDrag(this.release(d, performance.now(), true))
       this.needsRender = true
     }
@@ -2212,7 +2194,7 @@ export class GameScreen {
     if (this.ctx.mode !== 'levelmap' || this.session.watching || !(this.renderer instanceof Render2d)) return false
     const cs = this.renderer.cellSize
     // the first move counts from where the finger came down: the slop it crossed is part of the drag
-    const p = (d.pan ??= { x: d.x - d.x0 - dx, y: d.y - d.y0 - dy })
+    const p = (d.pan ??= { x: d.g.x - d.g.x0 - dx, y: d.g.y - d.g.y0 - dy })
     p.x += dx
     p.y += dy
     const cx = Math.trunc(p.x / cs)
@@ -2236,10 +2218,10 @@ export class GameScreen {
     if (!d.touch || ev.pointerType !== 'touch' || d.held || this.ctx.mode !== 'levelmap' || this.session.watching) return false
     clearTimeout(d.hold)
     const pts = new Map([
-      [d.id, { x: d.x, y: d.y }],
+      [d.id, { x: d.g.x, y: d.g.y }],
       [ev.pointerId, { x: ev.clientX, y: ev.clientY }],
     ])
-    const d0 = Math.max(1, Math.hypot(ev.clientX - d.x, ev.clientY - d.y))
+    const d0 = Math.max(1, Math.hypot(ev.clientX - d.g.x, ev.clientY - d.g.y))
     const o = this.session.state.options.tile_map_scale
     this.pinch = { pts, d0, scale0: typeof o === 'number' && o > 0 ? o : 60, sent: 0 }
     this.inputActed()

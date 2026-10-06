@@ -421,6 +421,15 @@ describe('steering with a drag', () => {
     expect(c.facing).toBe(1)
   })
 
+  it('a flick carries its own speed off the finger, not a slower one', () => {
+    const c = moving()
+    c.lookBy(0.5, 0)
+    c.endDrag(lift(30))
+    c.update(1 / 120)
+    // the speed of the first frame is the finger's; a capped spring set off at a fifth of it
+    expect(c.camera.yaw - 0.5).toBeGreaterThan(0.12)
+  })
+
   it('a tilt flicked back toward rest never swings past it', () => {
     const c = moving()
     const rest = c.camera.pitch

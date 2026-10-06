@@ -301,10 +301,9 @@ export class CameraController {
    * The drag let go. A mouse leaves the view where it points. A finger
    * (`release`) springs the yaw on to the heading its swipe meant
    * (`releaseSteps`: the next one the way it went), from the speed it lifted
-   * at, so the turn carries on from the finger without a hitch, though never
-   * so fast it swings past that heading and back, and the pitch back to rest
-   * the same way, so a touch look always ends square to
-   * the grid and level.
+   * at, so the turn carries on from the finger without a hitch and never
+   * swings past that heading and back (`settle`), and the pitch back to rest
+   * the same way, so a touch look always ends square to the grid and level.
    */
   endDrag(release?: DragRelease) {
     this.dragging = false
@@ -318,8 +317,8 @@ export class CameraController {
       this.camera.pitch = this.restPitch
       return
     }
-    this.yawSpring = noOvershoot(yawDelta(this.goalYaw, this.camera.yaw), release.yawSpeed)
-    this.pitchSpring = noOvershoot(this.camera.pitch - this.restPitch, release.pitchSpeed)
+    this.yawSpring = release.yawSpeed
+    this.pitchSpring = release.pitchSpeed
   }
 
   /** Stick released: the yaw eases onto the nearest heading, the pitch stays. */
@@ -600,7 +599,7 @@ export class CameraController {
       c.facing = yawToDir(c.yaw)
       moved = true
     } else if (this.yawSpring !== null) {
-      const [x, v] = spring(yawDelta(this.goalYaw, c.yaw), this.yawSpring, dt)
+      const [x, v] = settle(yawDelta(this.goalYaw, c.yaw), this.yawSpring, dt)
       this.yawSpring = v
       if (Math.abs(x) < SPRING_REST && Math.abs(v) < SPRING_REST_SPEED) this.yawSpring = null
       c.yaw = this.yawSpring === null ? this.goalYaw : normalizeYaw(this.goalYaw + x)
@@ -613,7 +612,7 @@ export class CameraController {
       }
     }
     if (this.pitchSpring !== null && !this.freeLook) {
-      const [x, v] = spring(c.pitch - this.restPitch, this.pitchSpring, dt)
+      const [x, v] = settle(c.pitch - this.restPitch, this.pitchSpring, dt)
       this.pitchSpring = v
       if (Math.abs(x) < SPRING_REST && Math.abs(v) < SPRING_REST_SPEED) this.pitchSpring = null
       c.pitch = this.pitchSpring === null ? this.restPitch : this.clampPitch(this.restPitch + x)
@@ -750,26 +749,29 @@ export function trailStep(scene: Scene): { dx: number; dy: number } | null {
 }
 
 /**
- * One frame of a critically damped spring toward 0: `x` off it, `v` units a
- * second, after `dt` seconds. Solved exactly, so it holds at any frame rate,
- * and it starts from the finger's own speed, so a lifted turn carries on
- * from the finger without a hitch.
+ * One frame of a lifted finger's motion toward 0: `x` off it, `v` units a
+ * second, after `dt` seconds. It starts from the finger's own speed, so a
+ * lifted turn carries on without a hitch, and never passes 0 and comes back.
+ * Mostly a critically damped spring; but one heading home faster than
+ * SPRING_RATE × the way left would overshoot, so that motion slows instead
+ * at the rate it arrived with (x e^(−bt), b = −v/x): its speed is the
+ * finger's at the start and nil at 0, as a flicked scroll view decelerates.
+ * A spring never turns into such a motion, nor the other way, so both are
+ * solved exactly and hold at any frame rate.
  */
+function settle(x: number, v: number, dt: number): [number, number] {
+  const b = x !== 0 ? -v / x : 0
+  if (b <= SPRING_RATE) return spring(x, v, dt)
+  const nx = x * Math.exp(-b * dt)
+  return [nx, -b * nx]
+}
+
+/** One frame of a critically damped spring toward 0, solved exactly. */
 function spring(x: number, v: number, dt: number): [number, number] {
   const w = SPRING_RATE
   const e = Math.exp(-w * dt)
   const b = v + w * x
   return [(x + b * dt) * e, (v - w * b * dt) * e]
-}
-
-/**
- * The most of `v` a spring `x` off its rest can set off with and not swing
- * past it and back: a critically damped one does when it heads home faster
- * than SPRING_RATE × the way left.
- */
-function noOvershoot(x: number, v: number): number {
-  const most = SPRING_RATE * Math.abs(x)
-  return -v * Math.sign(x) > most ? -Math.sign(x) * most : v
 }
 
 /** a lifted finger's spring, in radians a second of stiffness: settled in about a quarter second */

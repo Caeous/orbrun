@@ -26,7 +26,7 @@ const ROOM_MAX_DPR = 1
 /** the glance up and down: never under the floor, never into the lid's edge */
 const PITCH_MIN = -(Math.PI / 180) * 30
 const PITCH_MAX = (Math.PI / 180) * 15
-/** a press on the scenery is a look once it has moved this far, in css px (game.ts DRAG_SLOP) */
+/** a press on the scenery is a look once it has moved this far, in css px (look-drag.ts MOUSE_SLOP) */
 const DRAG_SLOP = 6
 /** the console grid the menus stand on: the cell the level backdrop settled on for its usual floor, kept so nothing about the menus' scale changes */
 const GRID_COLS = 59
