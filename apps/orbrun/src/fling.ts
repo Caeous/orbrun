@@ -2,10 +2,11 @@
  * Where a finger's turn of the view comes to rest when it lifts. The drag
  * follows the finger as it goes; letting go goes on to the next heading the
  * way the finger was going, as a swipe turns a grid crawler on a phone,
- * rather than back to whichever heading happens to be nearest. A flick
- * carries the turn on by its speed (the resting point is projected from the
- * release velocity, as iOS pages a scroll view), and a finger pulling back
- * as it lifts is let go back.
+ * rather than back to whichever heading happens to be nearest. The speed it
+ * lifts at picks between the two headings either side of where it left the
+ * view (the resting point is projected from the release velocity, as iOS
+ * pages a scroll view) and never carries it further, so a quick swipe turns
+ * 45°, not 90°; a finger pulling back as it lifts is let go back.
  */
 
 /** one heading of the eight, in radians */
@@ -14,8 +15,6 @@ export const HEADING = Math.PI / 4
 const PROJECT_S = 0.099
 /** a finger moving back faster than this as it lifts (radians a second) is pulling the turn back */
 const PULL_BACK = 0.6
-/** the most headings one swipe turns: an about-turn */
-const MAX_STEPS = 4
 
 /**
  * The headings a lifted drag turns by, from the heading it set off from:
@@ -27,11 +26,13 @@ const MAX_STEPS = 4
  * the first goes on a heading further, not back to the nearest.
  */
 export function releaseSteps(at: number, turned: number, speed: number, commit: number): number {
-  let n = Math.round((at + speed * PROJECT_S) / HEADING)
+  // the speed picks a heading either side of where the finger left the view, never one further
+  const h = at / HEADING
+  let n = Math.max(Math.floor(h), Math.min(Math.ceil(h), Math.round(h + (speed * PROJECT_S) / HEADING)))
   const way = Math.sign(turned)
   // a finger that set off one way and is not coming back means the next heading that way
   if (way !== 0 && Math.abs(turned) >= commit && speed * way > -PULL_BACK && n * way < 1) n = way
-  return Math.max(-MAX_STEPS, Math.min(MAX_STEPS, n))
+  return n
 }
 
 /** how far back a release's speed is read, in ms (Android's VelocityTracker horizon) */

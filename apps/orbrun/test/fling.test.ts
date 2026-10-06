@@ -18,9 +18,10 @@ describe('releaseSteps', () => {
     expect(releaseSteps(1.3 * HEADING, 1.3 * HEADING, 0, C)).toBe(1)
     expect(releaseSteps(1.6 * HEADING, 1.6 * HEADING, 0, C)).toBe(2)
   })
-  it('a flick carries further, at most an about-turn', () => {
-    expect(releaseSteps(HEADING / 2, HEADING / 2, 12, C)).toBe(2)
-    expect(releaseSteps(HEADING, HEADING, 200, C)).toBe(4)
+  it('a flick goes no further than the heading past where the finger left the view', () => {
+    expect(releaseSteps(HEADING / 2, HEADING / 2, 12, C)).toBe(1)
+    expect(releaseSteps(-HEADING / 2, -HEADING / 2, -200, C)).toBe(-1)
+    expect(releaseSteps(1.2 * HEADING, 1.2 * HEADING, 200, C)).toBe(2)
   })
   it('a swipe that catches a turn still easing in goes on from where that turn was headed', () => {
     expect(releaseSteps(-0.6 * HEADING, C, 0, C)).toBe(1)

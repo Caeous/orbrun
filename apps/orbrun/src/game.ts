@@ -52,6 +52,8 @@ const WARM_DELAY_MS = 2000
 const DRAG_SLOP = 6
 /** css pixels a finger turning the view has to go one way before letting go means the next heading that way (fling.ts) */
 const TURN_COMMIT = 14
+/** a finger's turn of the view, against holding the dungeon under it (`lookPerPx`) */
+const TOUCH_LOOK = 0.5
 /** level-map cells per unit of right-stick look while the map is open */
 const MAP_PAN_RATE = 0.12
 /** tileweb.cc `zoom_dungeon`: `tile_map_scale` in percent, a step a zoom key, clamped to 20..300 */
@@ -1809,16 +1811,17 @@ export class GameScreen {
    * right stick turns the camera whenever it is pushed, drag or no drag.
    */
   /**
-   * Radians a css pixel of drag turns the view. A finger on the 3D view holds
-   * the dungeon under it: a pixel is the lens's own angle at the view's
-   * middle, whatever the field of view or the way the phone is held, and the
-   * Look sensitivity (the stick's) leaves it be. A mouse, or the 2D view,
-   * turns about a half turn a drag across the view.
+   * Radians a css pixel of drag turns the view. A finger on the 3D view turns
+   * it by a fraction (`TOUCH_LOOK`) of the lens's own angle at the view's
+   * middle, whatever the field of view, and the Look sensitivity (the
+   * stick's) leaves it be: holding the dungeon under the finger swung the
+   * view a lot for a short swipe, and a quick one flung it round too far. A
+   * mouse, or the 2D view, turns about a half turn a drag across the view.
    */
   private lookPerPx(touch: boolean): number {
     if (touch && this.renderer instanceof Render3d) {
       const lens = this.renderer.projector()
-      return (2 * lens.tanHalfY) / lens.height
+      return ((2 * lens.tanHalfY) / lens.height) * TOUCH_LOOK
     }
     return (Math.PI / Math.max(300, this.canvas.clientWidth)) * this.hooks.settings().lookSensitivity
   }

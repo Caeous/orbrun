@@ -410,12 +410,15 @@ describe('steering with a drag', () => {
     expect(c.facing).toBe(0)
   })
 
-  it('a flick carries on further than the finger went', () => {
-    const c = cam()
+  it('a flick turns one heading and never swings past it', () => {
+    const c = moving()
     c.lookBy(0.5, 0)
-    c.endDrag(lift(12))
-    settle(c)
-    expect(c.facing).toBe(2)
+    c.endDrag(lift(30))
+    for (let i = 0; i < 120; i++) {
+      c.update(1 / 60)
+      expect(c.camera.yaw).toBeLessThanOrEqual(Math.PI / 4 + 1e-9)
+    }
+    expect(c.facing).toBe(1)
   })
 
   it('a second swipe on the heels of the first goes a heading further', () => {

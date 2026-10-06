@@ -300,9 +300,9 @@ export class CameraController {
   /**
    * The drag let go. A mouse leaves the view where it points. A finger
    * (`release`) springs the yaw on to the heading its swipe meant
-   * (`releaseSteps`: the next one the way it went, further for a flick), from
-   * the speed it lifted at, so the turn carries on from the finger without a
-   * hitch, and the pitch back to rest, so a touch look always ends square to
+   * (`releaseSteps`: the next one the way it went), from the speed it lifted
+   * at, so the turn carries on from the finger without a hitch, though never
+   * so fast it swings past that heading and back, and the pitch back to rest, so a touch look always ends square to
    * the grid and level.
    */
   endDrag(release?: DragRelease) {
@@ -317,7 +317,10 @@ export class CameraController {
       this.camera.pitch = this.restPitch
       return
     }
-    this.yawSpring = release.yawSpeed
+    // a critically damped spring overshoots when it sets off toward its goal faster than SPRING_RATE × the way left
+    const left = yawDelta(this.camera.yaw, this.goalYaw)
+    const most = SPRING_RATE * Math.abs(left)
+    this.yawSpring = release.yawSpeed * Math.sign(left) > most ? Math.sign(left) * most : release.yawSpeed
     this.pitchSpring = release.pitchSpeed
   }
 
