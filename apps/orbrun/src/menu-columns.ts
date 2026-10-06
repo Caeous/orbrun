@@ -16,8 +16,12 @@ export interface MenuColumns {
   widths: number[]
 }
 
-/** a head starts after a run of two spaces or more; one space is a word gap within a head ("Your spells") */
-const HEAD = /\s{2,}(?=\S)/g
+/**
+ * a head starts after a run of two spaces or more; one space is a word gap
+ * within a head ("Your spells"). A bracketed one is a hint about keys, not a
+ * column: the pack's "Potions:     (Left/Right/Tab to switch category)".
+ */
+const HEAD = /\s{2,}(?=[^\s(])/g
 
 /**
  * The columns `title` heads, where `rows` keep to them: each row a cell's

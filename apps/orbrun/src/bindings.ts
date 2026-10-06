@@ -277,12 +277,12 @@ function examineTable(ctx: Context): Partial<Record<Button, Action>> {
  * Leave the level map, then send a main-map command: crawl reads the keys in
  * order, and nothing flushes between. The map stays on screen meanwhile (map-hold.ts).
  */
-const offMap = (label: string, key: KeyOrText): Action => ({ kind: 'keys', seq: [{ key: Keys.ESC }, key], label, contextual: true, keepsMap: true })
+const offMap = (label: string, ...keys: KeyOrText[]): Action => ({ kind: 'keys', seq: [{ key: Keys.ESC }, ...keys], label, contextual: true, keepsMap: true })
 
 /**
  * The level map (X), and Select's: the pad's way across the dungeon. Unlike
  * an aim, the server prints no key help here, so the corner names all of
- * it. The bumpers put the cursor on the next stairs up or down (`<`/`>`,
+ * it. The bumpers find the next stairs up or down (`<`/`>`,
  * CMD_MAP_FIND_UPSTAIR/DOWNSTAIR), A travels there; X describes the cell
  * (`v`), and the triggers zoom (`{`/`}`, cmd-keys.h CMD_MAP_ZOOM_OUT/IN, which
  * nudge `tile_map_scale` and send it back as a `set_option`). `{` goes as a
@@ -297,8 +297,8 @@ const offMap = (label: string, key: KeyOrText): Action => ({ kind: 'keys', seq: 
 function levelmapTable(ctx: Context): Partial<Record<Button, Action>> {
   const t: Partial<Record<Button, Action>> = {
     B: ESC,
-    LB: situational(k('<', 'Up stairs')),
-    RB: situational(k('>', 'Down stairs')),
+    LB: situational(k('<', 'Find up')),
+    RB: situational(k('>', 'Find down')),
     X: situational(k('v', 'Describe')),
     // held, the triggers keep zooming, a step (tileweb.cc ZOOM_INC) every repeat
     LT: { kind: 'keys', seq: [{ key: 123 }], label: 'Zoom out', contextual: true, repeats: true },
@@ -645,13 +645,15 @@ export const TOUCH_ANCHORS: Partial<Record<TouchCell, TouchIcon & { label: strin
  */
 export type TouchLabel = Omit<BindingLabel, 'button'> &
   TouchIcon & {
-    button: BindingLabel['button'] | SwitchButton
+    button: BindingLabel['button'] | SwitchButton | ExtraButton
     cell: TouchCell
     span?: number
     item?: InvItem['tile']
     count?: number
     /** a popup's verb that is the one its line has lit, as Select's is (styles.css .tb.switch.lit) */
     lit?: boolean
+    /** there, so the keypad keeps its shape, but nothing to press: the map's Fire with nothing quivered (hud.ts idleTouchButton) */
+    idle?: boolean
     keycap?: string
     /** a switch's bracketed key and its words in the screen's colours (Switch `keyHtml`, `wordHtml`) */
     keycapHtml?: string
@@ -670,16 +672,47 @@ export function isSwitchButton(b: string): b is SwitchButton {
   return b.startsWith('key:')
 }
 
-type TouchLayout = readonly (readonly (Button | null)[])[]
+/**
+ * A touch button that is no pad button and no switch the screen prints: a
+ * crawl command the pad reaches only through a screen, given a cell of its
+ * own where a finger wants it at once (`TOUCH_EXTRAS`). The bar runs its
+ * action as it goes down (hud.ts, game.ts `touchExtra`).
+ */
+export type TouchExtra = 'inview' | 'descend' | 'ascend'
+export type ExtraButton = `do:${TouchExtra}`
+
+export function isExtraButton(b: string): b is ExtraButton {
+  return b.startsWith('do:')
+}
+
+/** `G` then `<` or `>`: travel to the level above or below and arrive there (travel.cc `prompt_translevel_target`, ID_UP/ID_DOWN) */
+const travelLevel = (dir: '<' | '>'): KeyOrText[] => [{ text: 'G' }, { text: dir, await: 'prompt' }]
+
+/** each extra's word, picture and keys; the level map's leave the map first, as its other main-map commands do (`offMap`) */
+const TOUCH_EXTRAS: Record<TouchExtra, TouchIcon & { label: string; seq: KeyOrText[] }> = {
+  // Ctrl-X, crawl's list of the monsters, items and features in view (CMD_FULL_VIEW), under an eye of crawl's
+  inview: { label: 'In view', icon: 'MONS_GLASS_EYE', seq: [{ key: 24 }] },
+  descend: { label: 'Descend', icon: 'CMD_MAP_NEXT_LEVEL', seq: travelLevel('>') },
+  ascend: { label: 'Ascend', icon: 'CMD_MAP_PREV_LEVEL', seq: travelLevel('<') },
+}
+
+/** What an extra does here (`TouchExtra`). */
+export function touchExtraAction(id: TouchExtra, ctx: Context): Action {
+  const { label, seq } = TOUCH_EXTRAS[id]
+  return ctx.mode === 'levelmap' ? offMap(label, ...seq) : { kind: 'keys', seq, label }
+}
+
+type TouchLayout = readonly (readonly (Button | TouchExtra | null)[])[]
 
 /**
  * The map, cell by cell as the user drew it: the passing of time left of the
  * arrows (Wait over Explore), the attacks right of them (the shot over
- * Fight), and at the edge the two screens X and Y open over the verb.
+ * Fight), and at the edge the two screens X and Y open over the verb. Over
+ * Esc, the list of what is in view.
  */
 const MAP_LAYOUT: TouchLayout = [
   [null, 'LB', 'L3', 'RB', 'X'],
-  [null, 'LT', 'DU', 'RT', 'Y'],
+  ['inview', 'LT', 'DU', 'RT', 'Y'],
   ['B', 'DL', 'DD', 'DR', 'A'],
 ]
 
@@ -705,10 +738,14 @@ const LOOK_LAYOUT: TouchLayout = [
   ['B', 'DL', 'DD', 'DR', 'X'],
 ]
 
-/** The level map, as the user drew it: zoom down the left, the stairs down the right, the search and travel at the edge. */
+/**
+ * The level map, as the user drew it: zoom down the left, the stairs found
+ * down the right, the search and travel at the edge, and at the left edge
+ * the level above and below, gone to.
+ */
 const LEVELMAP_LAYOUT: TouchLayout = [
-  [null, 'RT', 'X', 'LB', 'L3'],
-  [null, 'LT', 'DU', 'RB', 'Y'],
+  ['ascend', 'RT', 'X', 'LB', 'L3'],
+  ['descend', 'LT', 'DU', 'RB', 'Y'],
   ['B', 'DL', 'DD', 'DR', 'A'],
 ]
 
@@ -758,12 +795,19 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
   for (const l of labels) if (!l.teaching && l.label !== NO_ACTION && !has.has(l.button as Button)) has.set(l.button as Button, l)
   if (panel || dpadMoves(ctx)) for (const [b, label] of TOUCH_ARROWS) has.set(b, { button: b, label, action: { kind: 'keys', label, seq: [] }, contextual: false })
   const out: TouchLabel[] = []
-  const put = (l: BindingLabel, cell: TouchCell, span = 1) => out.push({ ...touchFace(l, ctx, panel), cell, ...(span > 1 ? { span } : {}) })
+  // the map's Fire with nothing quivered: crawl's `f` would only say "Nothing quivered!" (quiver.cc `action_cycler::target`)
+  const idle = (l: BindingLabel) => !panel && ctx.mode === 'command' && l.action.kind === 'fire' && !ctx.readiedAction
+  const put = (l: BindingLabel, cell: TouchCell, span = 1) => out.push({ ...touchFace(l, ctx, panel), cell, ...(span > 1 ? { span } : {}), ...(idle(l) ? { idle: true } : {}) })
   const layout = touchLayout(ctx, panel)
   if (layout) {
     layout.forEach((row, r) =>
       row.forEach((b, c) => {
-        const l = b && has.get(b)
+        if (b && b in TOUCH_EXTRAS) {
+          const { label, icon } = TOUCH_EXTRAS[b as TouchExtra]
+          out.push({ button: `do:${b as TouchExtra}`, label, action: touchExtraAction(b as TouchExtra, ctx), contextual: false, icon, cell: TOUCH_CELLS[r][c] })
+          return
+        }
+        const l = b && has.get(b as Button)
         // a button in two cells side by side is one button across both
         if (!l || (c > 0 && row[c - 1] === b)) return
         let span = 1

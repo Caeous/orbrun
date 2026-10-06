@@ -9,7 +9,7 @@ import { escapeHtml, h, onDprChange } from './dom'
 import type { Session } from './session'
 import { CameraController } from './camera'
 import { deriveContext, deriveMode, type Context, type Mode } from './context'
-import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchLabels, type TouchLabel, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
+import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchExtraAction, touchLabels, type TouchLabel, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
 import type { CommandMenu } from './command-menu'
 import { ORBIT_WINDOW_MS, Runner, type LastStep } from './runner'
 import { Hud, rcFont } from './hud'
@@ -26,6 +26,7 @@ import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INS
 import { fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap, type SettingGroup } from './settings-rows'
 import { PerfOverlay, type LogContext } from './perf'
 import { MapHold } from './map-hold'
+import { swipeStep } from './swipe'
 import { SpellBar, SpellBook, type Spell } from './spell-bar'
 
 /** The most drawn pixels per CSS pixel the game view gets (Part IV of rendering-3d.md): the display's density, capped here. */
@@ -217,6 +218,8 @@ export class GameScreen {
   private overlayOpener: Button | null = null
   /** The pointer now down closed a menu as it came down (`onDocPointer`); its click is spent on that. */
   private pointerClosed = false
+  /** A finger down outside a menu: lifted where it came down it closes the menu, swiped sideways it turns its tabs (`outsideLift`). */
+  private outsideTouch: { id: number; x: number; y: number; close: () => void } | null = null
   private lastCursor: SceneCursor | null = null
   private lastOptKey = ''
   private drag: Drag | null = null
@@ -355,6 +358,10 @@ export class GameScreen {
         this.inputFrom('touch')
         this.overlays.sendSwitch(key)
       },
+      onTouchExtra: (id) => {
+        this.inputFrom('touch')
+        this.runner.execute(touchExtraAction(id, this.ctx))
+      },
     })
     this.chat = new Chat(this.root, { send: (m) => this.runner.send(m), padKind: () => this.hooks.gamepad.kind })
     this.overlays = new Overlays(this.root, {
@@ -462,6 +469,9 @@ export class GameScreen {
     }))
     this.onDocPointer = this.onDocPointer.bind(this)
     document.addEventListener('pointerdown', this.onDocPointer, true)
+    this.outsideLift = this.outsideLift.bind(this)
+    document.addEventListener('pointerup', this.outsideLift, true)
+    document.addEventListener('pointercancel', this.outsideLift, true)
     this.onDocContextMenu = this.onDocContextMenu.bind(this)
     document.addEventListener('contextmenu', this.onDocContextMenu, true)
     this.attachPointer(this.canvas)
@@ -485,6 +495,8 @@ export class GameScreen {
     window.removeEventListener('keydown', this.onKeyDown, true)
     window.removeEventListener('resize', this.onResize)
     document.removeEventListener('pointerdown', this.onDocPointer, true)
+    document.removeEventListener('pointerup', this.outsideLift, true)
+    document.removeEventListener('pointercancel', this.outsideLift, true)
     if (this.onWindowBlur) window.removeEventListener('blur', this.onWindowBlur)
     document.removeEventListener('contextmenu', this.onDocContextMenu, true)
     for (const u of this.unsub) u()
@@ -1995,7 +2007,9 @@ export class GameScreen {
    * Orbrun's own panels: a tap outside them is their Escape, a step back
    * (B). A mouse leaves those be, as before: it has the view to drag while
    * a setting is tuned. The touch bar is no outside: its buttons are the
-   * pad's, and its Back already says what it does.
+   * pad's, and its Back already says what it does. A finger outside closes
+   * as it lifts rather than as it lands, since a swipe there turns the menu's
+   * tabs as a swipe over it does (`outsideLift`).
    */
   private onDocPointer(ev: PointerEvent) {
     this.wake()
@@ -2010,10 +2024,16 @@ export class GameScreen {
       if (t?.closest('.popup, .osk') || (t && this.chat.root.contains(t))) return
       ev.preventDefault()
       ev.stopPropagation()
-      this.overlays.clientOverlayInput('cancel')
-      if (!this.overlays.hasClientOverlay) this.overlayOpener = null
-      this.needsRender = true
       this.pointerClosed = true
+      this.outsideTouch = {
+        id: ev.pointerId, x: ev.clientX, y: ev.clientY,
+        close: () => {
+          if (!this.overlays.hasClientOverlay) return
+          this.overlays.clientOverlayInput('cancel')
+          if (!this.overlays.hasClientOverlay) this.overlayOpener = null
+          this.needsRender = true
+        },
+      }
       return
     }
     if (!this.popupUp(touch)) return
@@ -2026,8 +2046,24 @@ export class GameScreen {
     ev.stopPropagation()
     clearTimeout(this.tooltipTimer)
     this.hud.hideTooltip()
-    this.runner.send(cm.key(27))
     this.pointerClosed = true
+    if (touch) this.outsideTouch = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, close: () => this.runner.send(cm.key(27)) }
+    else this.runner.send(cm.key(27))
+  }
+
+  /**
+   * The finger that came down outside a menu lifts: a sideways swipe is the
+   * d-pad's Left or Right, as over the menu itself (swipe.ts), anything else
+   * the tap that closes it. A gesture the browser took for itself does neither.
+   */
+  private outsideLift(ev: PointerEvent) {
+    const o = this.outsideTouch
+    if (!o || ev.pointerId !== o.id) return
+    this.outsideTouch = null
+    if (ev.type === 'pointercancel') return
+    const step = swipeStep(ev.clientX - o.x, ev.clientY - o.y)
+    if (step) this.touchPress(step > 0 ? 'DR' : 'DL')
+    else o.close()
   }
 
   /**

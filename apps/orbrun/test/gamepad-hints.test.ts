@@ -92,7 +92,7 @@ describe('adaptive gamepad teaching', () => {
     const h = new GamepadHints()
     const map = ctx({ mode: 'levelmap' })
     expect(h.prompts(map, 'contextual').map((l) => [l.button, l.label])).toEqual([
-      ['X', 'Describe'], ['Y', 'Find you'], ['LB', 'Up stairs'], ['RB', 'Down stairs'], ['LT', 'Zoom out'], ['RT', 'Zoom in'], ['L3', 'Find…'], ['R3', 'Overview'], ['A', 'Travel here'],
+      ['X', 'Describe'], ['Y', 'Find you'], ['LB', 'Find up'], ['RB', 'Find down'], ['LT', 'Zoom out'], ['RT', 'Zoom in'], ['L3', 'Find…'], ['R3', 'Overview'], ['A', 'Travel here'],
     ])
     expect(h.prompts(map, 'off').map((l) => [l.button, l.label])).toEqual([['A', 'Travel here']])
     expect(teaching(h, map).map((l) => l.label)).toEqual(['Move cursor'])

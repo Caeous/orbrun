@@ -4,6 +4,8 @@
  * actions, the Orbrun menu) turns its tabs under a swipe as the d-pad turns
  * them, and any other screen does what its Left and Right do. Swiping left
  * pulls the next one in, as a phone turns pages: it is Right.
+ * A swipe beside the menu, over the world it would close on a tap, does the
+ * same (game.ts outsideLift).
  *
  * Touch events, not pointer events: a menu's list scrolls under the same
  * finger, and once the browser takes a gesture for a scroll it cancels the

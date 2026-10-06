@@ -5,7 +5,7 @@ import { monsterGroups } from '@orbrun/scene-webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
 import { h, clear, escapeHtml, replace, snapToPixels } from './dom'
 import { commandTileId, tileCanvas } from './overlays'
-import { CONTINUE, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, isSwitchButton, buttonGroup, promptLabels, type Action, type BindingLabel, type TouchCell, type TouchIcon, type TouchLabel } from './bindings'
+import { CONTINUE, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, isExtraButton, isSwitchButton, buttonGroup, promptLabels, type Action, type BindingLabel, type TouchCell, type TouchExtra, type TouchIcon, type TouchLabel } from './bindings'
 import { glyphPath, type TouchGlyph } from './touch-glyphs'
 
 /** A tap-or-hold button down: which, and the press's length as a fraction of the hold (bindings.ts HOLD_MS). */
@@ -49,6 +49,8 @@ export interface HudHooks {
   onTouchButton(button: Button, down: boolean): void
   /** a touch button for a menu's more-line switch or a popup's verb was tapped: send its key (Overlays.sendSwitch) */
   onTouchSwitch(key: string): void
+  /** a touch button of the bar's own, which no pad button stands for, was tapped: run it (bindings.ts `TouchExtra`) */
+  onTouchExtra(id: TouchExtra): void
   /** a spell on the spell bar was tapped (spell-bar.ts SpellBar) */
   onSpellTap(spell: Spell): void
   /** the spell bar's More: every spell */
@@ -1869,7 +1871,13 @@ export class Hud {
         const covers = row.slice(c, c + (l?.span ?? 1))
         under = covers.length - 1
         let el: HTMLElement
-        if (l && old?.dataset.b === l.button) {
+        if (l?.idle) {
+          letGo(old)
+          el = idleTouchButton(cell, l, gd)
+          if (old) old.replaceWith(el)
+          else if (last) last.after(el)
+          else this.touchbar.prepend(el)
+        } else if (l && old?.dataset.b === l.button) {
           el = old
           this.fillTouchButton(el, covers, l, gd)
         } else {
@@ -1925,10 +1933,13 @@ export class Hud {
     return btn
   }
 
-  /** A touch button's press or release: a pad button's goes to the game as the pad's would, a menu switch sends its key as it goes down. */
+  /** A touch button's press or release: a pad button's goes to the game as the pad's would, a menu switch sends its key and the bar's own runs as it goes down. */
   private pressTouch(b: string, down: boolean) {
-    if (!isSwitchButton(b)) this.hooks.onTouchButton(b as Button, down)
-    else if (down) this.hooks.onTouchSwitch(b.slice('key:'.length))
+    if (isSwitchButton(b)) {
+      if (down) this.hooks.onTouchSwitch(b.slice('key:'.length))
+    } else if (isExtraButton(b)) {
+      if (down) this.hooks.onTouchExtra(b.slice('do:'.length) as TouchExtra)
+    } else this.hooks.onTouchButton(b as Button, down)
   }
 
   /** A touch bar button pressing `l.button` for as long as the finger stays on it, over the cells `covers`. */

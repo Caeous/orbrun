@@ -175,14 +175,15 @@ function drawTiles(c: HTMLCanvasElement, gd: Gamedata | null, tiles: TileRef[], 
 /**
  * A command row's icon, by tile name (command-menu.ts `tile`). Crawl's own
  * command icons live in the GUI atlas (`CMD_*`, the ones its touch command bar
- * draws, tilereg-cmd.cc); the item tiles the other rows borrow live in main.
+ * draws, tilereg-cmd.cc); the item tiles the other rows borrow live in main,
+ * and a monster's (the touch bar's In view eye) in the player atlas.
  * The id carries its own atlas -- `Gamedata.tile` finds the module by id range
  * -- so the caller needs no texture index. Undefined until gamedata has
  * loaded, and for a name this version of crawl does not have.
  */
 export function commandTileId(gd: Gamedata | null, name: string | undefined): number | undefined {
   if (!gd || !name) return undefined
-  return gd.gui.id(name) ?? gd.main.id(name)
+  return gd.gui.id(name) ?? gd.main.id(name) ?? gd.player.id(name)
 }
 
 function fmtBody(txt: string): string {

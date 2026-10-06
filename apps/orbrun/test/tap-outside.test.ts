@@ -12,6 +12,7 @@ function harness(over: { mode: string; ours?: boolean }) {
   const chat = document.createElement('div')
   const sent: unknown[] = []
   const overlayInput = vi.fn()
+  const touchPress = vi.fn()
   const screen = Object.assign(Object.create(GameScreen.prototype), {
     ctx: { mode: over.mode },
     session: { state: initialState(), watching: false },
@@ -20,16 +21,21 @@ function harness(over: { mode: string; ours?: boolean }) {
     overlays: { hasClientOverlay: !!over.ours, clientOverlayInput: overlayInput },
     runner: { send: (m: unknown) => sent.push(m) },
     tooltipTimer: 0,
-    wake: vi.fn(), inputFrom: vi.fn(),
-  }) as { onDocPointer(ev: PointerEvent): void }
-  const press = (el: Element, pointerType = 'touch', button = 0) => {
-    if (!el.isConnected) document.body.append(el)
-    const ev = Object.assign(new Event('pointerdown', { cancelable: true }), { pointerType, button })
+    wake: vi.fn(), inputFrom: vi.fn(), touchPress,
+  }) as { onDocPointer(ev: PointerEvent): void; outsideLift(ev: PointerEvent): void }
+  const event = (type: string, el: Element, init: object) => {
+    const ev = Object.assign(new Event(type, { cancelable: true }), { pointerId: 1, clientX: 100, clientY: 100, ...init })
     Object.defineProperty(ev, 'target', { value: el })
-    screen.onDocPointer(ev as unknown as PointerEvent)
+    return ev as unknown as PointerEvent
+  }
+  /** a press and its lift, `dx` across from where it came down */
+  const press = (el: Element, pointerType = 'touch', button = 0, dx = 0, type = 'pointerup') => {
+    if (!el.isConnected) document.body.append(el)
+    screen.onDocPointer(event('pointerdown', el, { pointerType, button }))
+    screen.outsideLift(event(type, el, { pointerType, button, clientX: 100 + dx }))
   }
   const el = (cls: string) => Object.assign(document.createElement('div'), { className: cls })
-  return { press, el, sent, overlayInput }
+  return { press, el, sent, overlayInput, touchPress }
 }
 
 describe('a tap outside what is up closes it, as Escape does', () => {
@@ -56,6 +62,22 @@ describe('a tap outside what is up closes it, as Escape does', () => {
       expect(h.sent).toEqual([])
       expect(h.overlayInput).not.toHaveBeenCalled()
     }
+  })
+  it('a swipe outside is no tap: it turns the tabs, as a swipe over the menu does', () => {
+    for (const ours of [true, false]) {
+      const h = harness({ mode: ours ? 'command' : 'menu', ours })
+      h.press(h.el('view'), 'touch', 0, -80)
+      h.press(h.el('view'), 'touch', 0, 80)
+      expect(h.touchPress.mock.calls).toEqual([['DR'], ['DL']])
+      expect(h.sent).toEqual([])
+      expect(h.overlayInput).not.toHaveBeenCalled()
+    }
+  })
+  it('a gesture the browser takes for itself neither closes nor turns', () => {
+    const h = harness({ mode: 'menu' })
+    h.press(h.el('view'), 'touch', 0, 0, 'pointercancel')
+    expect(h.sent).toEqual([])
+    expect(h.touchPress).not.toHaveBeenCalled()
   })
   it('the map itself has nothing to close', () => {
     const h = harness({ mode: 'command' })

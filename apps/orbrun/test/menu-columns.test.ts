@@ -28,6 +28,8 @@ describe('a console table menu', () => {
   it('finds none in a menu whose title heads none', () => {
     expect(menuColumns('Quiver which action? ([-] to clear)', [' a - Cast: Kinetic Grapnel'])).toBeNull()
     expect(menuColumns('Wear or take off which item?', [' b - a +0 robe (worn)'])).toBeNull()
+    // recorded from CDI: a pack page, whose key hint is no column even where a row has a space under it
+    expect(menuColumns('Potions:     (Left/Right/Tab to switch category)', [' j - a smoky clear potion'])).toBeNull()
   })
 
   it('puts each column in a span of its own, the text and colours as crawl sent them; a section header stays whole', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { TOUCH_ANCHORS, TOUCH_CELLS, barLabels, NO_ACTION, touchLabels, touchShot, type BindingLabel, type TouchCell, type TouchLabel } from '../src/bindings'
+import { TOUCH_ANCHORS, TOUCH_CELLS, barLabels, isExtraButton, NO_ACTION, touchExtraAction, touchLabels, touchShot, type BindingLabel, type TouchCell, type TouchLabel } from '../src/bindings'
 import { TOUCH_GLYPHS } from '../src/touch-glyphs'
 import { PHONE_COLS, PHONE_ROWS, fitPx } from '../src/grid/host'
 import type { Context, MenuContext } from '../src/context'
@@ -72,15 +72,15 @@ describe('the touch bar: every screen one keypad', () => {
 })
 
 describe('the screens drawn cell by cell', () => {
-  it('the map, as the user drew it: Wait over Explore, the shot over Fight, Spells and Gear over the verb', () => {
+  it('the map, as the user drew it: Wait over Explore, the shot over Fight, Spells and Gear over the verb, In view over Esc', () => {
     expect(drawn(stairs)).toEqual([
       ['·', 'LB', 'L3', 'RB', 'X'],
-      ['·', 'LT', 'DU', 'RT', 'Y'],
+      ['do:inview', 'LT', 'DU', 'RT', 'Y'],
       ['B', 'DL', 'DD', 'DR', 'A'],
     ])
     expect(words(stairs)).toEqual([
       ['·', 'Wait', 'Examine', 'Fire', 'Spells'],
-      ['·', 'Explore', '↑', 'Fight', 'Gear'],
+      ['In view', 'Explore', '↑', 'Fight', 'Gear'],
       ['Esc', '←', '↓', '→', 'Descend'],
     ])
     // a finger holds as a thumb does: Wait, hold for Rest
@@ -115,20 +115,38 @@ describe('the screens drawn cell by cell', () => {
     ])
     expect(cellOf(look, 'A')).toBe(cellOf(ctx({}), 'L3'))
   })
-  it('the level map, as the user drew it: zoom down the left, the stairs down the right, the search and travel at the edge', () => {
+  it('the level map, as the user drew it: zoom down the left, the stairs found down the right, the search and travel at the edge, the levels above and below at the left edge', () => {
     const map = ctx({ mode: 'levelmap' })
     expect(drawn(map)).toEqual([
-      ['·', 'RT', 'X', 'LB', 'L3'],
-      ['·', 'LT', 'DU', 'RB', 'Y'],
+      ['do:ascend', 'RT', 'X', 'LB', 'L3'],
+      ['do:descend', 'LT', 'DU', 'RB', 'Y'],
       ['B', 'DL', 'DD', 'DR', 'A'],
     ])
-    expect(words(map)[0].slice(0, 4)).toEqual(['·', 'Zoom in', 'Describe', 'Up stairs'])
+    expect(words(map)[0].slice(0, 4)).toEqual(['Ascend', 'Zoom in', 'Describe', 'Find up'])
     expect(words(map)[2][4]).toBe('Travel here')
-    expect(words(map)[1]).toEqual(['·', 'Zoom out', '↑', 'Down stairs', 'Find you'])
+    expect(words(map)[1]).toEqual(['Descend', 'Zoom out', '↑', 'Find down', 'Find you'])
     // on you there is nowhere to travel to here, and Y travels further
     const home = ctx({ mode: 'levelmap', mapCursorHome: true })
     expect(drawn(home)[2][4]).toBe('·')
     expect(words(home)[1][4]).toBe('Travel to…')
+  })
+})
+
+describe("the bar's own buttons, which no pad button stands for", () => {
+  const extra = (c: Context, id: string) => touchLabels(barLabels(c), c).find((l) => l.button === 'do:' + id)!
+  it('In view lists what is in view (Ctrl-X), under an eye', () => {
+    expect(extra(ctx({}), 'inview')).toMatchObject({ label: 'In view', icon: 'MONS_GLASS_EYE', action: { kind: 'keys', seq: [{ key: 24 }] } })
+  })
+  it('Descend and Ascend travel to the level below and above (G > and G <), the second key held for the travel prompt; on the level map they leave it first', () => {
+    const map = ctx({ mode: 'levelmap' })
+    expect(extra(map, 'descend')).toMatchObject({ label: 'Descend', icon: 'CMD_MAP_NEXT_LEVEL' })
+    expect(extra(map, 'ascend')).toMatchObject({ label: 'Ascend', icon: 'CMD_MAP_PREV_LEVEL' })
+    expect(extra(map, 'descend').action).toMatchObject({ kind: 'keys', keepsMap: true, seq: [{ key: 27 }, { text: 'G' }, { text: '>', await: 'prompt' }] })
+    expect(extra(map, 'ascend').action).toMatchObject({ kind: 'keys', keepsMap: true, seq: [{ key: 27 }, { text: 'G' }, { text: '<', await: 'prompt' }] })
+    expect(touchExtraAction('descend', ctx({}))).toEqual({ kind: 'keys', label: 'Descend', seq: [{ text: 'G' }, { text: '>', await: 'prompt' }] })
+  })
+  it('only the map and the level map have them', () => {
+    for (const c of [ctx({ mode: 'more', moreText: '--more--' }), ctx({ mode: 'targeting', hostilesInView: 1 }), menu({})]) expect(touchLabels(barLabels(c), c).some((l) => isExtraButton(l.button))).toBe(false)
   })
 })
 
@@ -274,7 +292,8 @@ describe('every touch button has a picture: crawl’s art where it has one, a gl
   const icons = (c: Context, panel = false) => Object.fromEntries(touchLabels(barLabels(c), c, panel).map((l) => [l.button, l.icon ?? l.glyph]))
   // the atlases' names, as the server's tileinfo files list them
   const tileinfo = (atlas: string) => readFileSync(new URL(`../../../packages/scene-webtiles/test/fixtures/gamedata/acd3d60e20f899c1c8a546953d6ffa0f6c7fe0c8/tileinfo-${atlas}.js`, import.meta.url), 'utf8')
-  const atlases = [tileinfo('gui'), tileinfo('main')]
+  // as commandTileId looks: crawl's command art, then the items' and the monsters'
+  const atlases = [tileinfo('gui'), tileinfo('main'), tileinfo('player')]
   const inAtlas = (name: string) => atlases.some((src) => src.includes('exports.' + name + ' = '))
   const lab = (button: BindingLabel['button'], label: string, action: BindingLabel['action'] = { kind: 'keys', label, seq: [] }): BindingLabel => ({ button, label, action, contextual: false })
   const screens: [string, Context, boolean?][] = [
@@ -340,6 +359,9 @@ describe('every touch button has a picture: crawl’s art where it has one, a gl
     expect(touchShot('Abil: Something New', undefined)).toEqual({ label: 'Something New', icon: 'CMD_USE_ABILITY' })
     expect(touchShot('Fire', undefined)).toEqual({ label: 'Fire' })
     expect(icons(ctx({})).RB).toBe('MI_BOOMERANG')
+    // with nothing quivered the shot is idle, as Select is with no verb: there, but nothing to press
+    expect(touchLabels(barLabels(ctx({})), ctx({})).find((l) => l.button === 'RB')?.idle).toBe(true)
+    expect(touchLabels(barLabels(c), c).find((l) => l.button === 'RB')?.idle).toBeUndefined()
     // an aim that is no quiver's fires at the cursor's target
     expect(icons(ctx({ mode: 'targeting', hostilesInView: 2 }))).toMatchObject({ RB: 'target', LB: 'cycle', X: 'CMD_LOOKUP_HELP' })
   })

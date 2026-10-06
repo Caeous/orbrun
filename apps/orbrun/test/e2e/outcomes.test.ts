@@ -7,10 +7,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { formattedStringToText } from '@orbrun/webtiles'
 import { builtChannels } from './engine'
+import { startLive } from './client'
 import { atSurface } from './matrix'
 import { screen } from './screen'
 import { keysOf } from './rules'
-import { SCENARIOS } from './scenarios'
+import { FIGHTER, SCENARIOS } from './scenarios'
 import type { E2e } from './client'
 
 const open: E2e[] = []
@@ -326,6 +327,39 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     g = await at('level-map')
     await g.press('R3')
     expect(screen(g).surface).toBe('popup:formatted-scroller')
+  })
+
+  it('a finger on the level map: Descend goes down a level and Ascend back up (G > and G <), In view on the map lists what is in view', async () => {
+    const g = await startLive({ args: FIGHTER, device: 'touch' })
+    open.push(g)
+    for (let i = 0; i < 5 && g.ctx().mode !== 'command'; i++) await g.raw('a')
+    // the level mapped, so its way down is known: wizard mode's magic mapping
+    await g.raw('&')
+    await g.raw('wiz\r')
+    await g.raw('\x1b')
+    await g.raw('&{')
+    for (let i = 0; i < 5 && g.ctx().mode === 'more'; i++) await g.raw(' ')
+    const tap = async (id: string) => {
+      const el = g.root.querySelector(`[data-b="do:${id}"]`)
+      expect(el, id).not.toBeNull()
+      el!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }))
+      el!.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }))
+      await g.settle()
+      for (let i = 0; i < 40 && g.ctx().mode !== 'command'; i++) await g.settle()
+    }
+    expect(g.state().player.depth).toBe(1)
+    await g.raw('X')
+    expect(screen(g).surface).toBe('levelmap')
+    await tap('descend')
+    expect(g.state().player.depth).toBe(2)
+    // crawl travels with nothing hostile in view: D:2's welcome is a ball python, sent away
+    await g.raw('&G')
+    await g.raw('\r')
+    await g.raw('X')
+    await tap('ascend')
+    expect(g.state().player.depth).toBe(1)
+    await tap('inview')
+    expect(screen(g).surface).toMatch(/^menu:/)
   })
 
   it("Android's back is B on a screen, and over the map asks to save and exit, which a second back declines", async () => {
