@@ -26,7 +26,7 @@ import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INS
 import { fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap, type SettingGroup } from './settings-rows'
 import { PerfOverlay, type LogContext } from './perf'
 import { MapHold } from './map-hold'
-import { swipeStep } from './swipe'
+import { swipeLean, swipeStep } from './swipe'
 import { VelocityTracker } from './fling'
 import type { DragRelease } from './camera'
 import { SpellBar, SpellBook, type Spell } from './spell-bar'
@@ -483,6 +483,8 @@ export class GameScreen {
     this.outsideLift = this.outsideLift.bind(this)
     document.addEventListener('pointerup', this.outsideLift, true)
     document.addEventListener('pointercancel', this.outsideLift, true)
+    this.outsideMove = this.outsideMove.bind(this)
+    document.addEventListener('pointermove', this.outsideMove, true)
     this.onDocContextMenu = this.onDocContextMenu.bind(this)
     document.addEventListener('contextmenu', this.onDocContextMenu, true)
     this.attachPointer(this.canvas)
@@ -508,6 +510,7 @@ export class GameScreen {
     document.removeEventListener('pointerdown', this.onDocPointer, true)
     document.removeEventListener('pointerup', this.outsideLift, true)
     document.removeEventListener('pointercancel', this.outsideLift, true)
+    document.removeEventListener('pointermove', this.outsideMove, true)
     if (this.onWindowBlur) window.removeEventListener('blur', this.onWindowBlur)
     document.removeEventListener('contextmenu', this.onDocContextMenu, true)
     for (const u of this.unsub) u()
@@ -2094,6 +2097,12 @@ export class GameScreen {
     else this.runner.send(cm.key(27))
   }
 
+  /** The finger that came down outside a menu moves: the menu's tabs lean toward the turn it would make (tab-lean.ts). */
+  private outsideMove(ev: PointerEvent) {
+    const o = this.outsideTouch
+    if (o && ev.pointerId === o.id) this.overlays.tabLean.lean(swipeLean(ev.clientX - o.x, ev.clientY - o.y))
+  }
+
   /**
    * The finger that came down outside a menu lifts: a sideways swipe is the
    * d-pad's Left or Right, as over the menu itself (swipe.ts), anything else
@@ -2103,8 +2112,9 @@ export class GameScreen {
     const o = this.outsideTouch
     if (!o || ev.pointerId !== o.id) return
     this.outsideTouch = null
-    if (ev.type === 'pointercancel') return
+    if (ev.type === 'pointercancel') return this.overlays.tabLean.end(0)
     const step = swipeStep(ev.clientX - o.x, ev.clientY - o.y, ev.timeStamp - o.t)
+    this.overlays.tabLean.end(step)
     if (step) this.touchPress(step > 0 ? 'DR' : 'DL')
     else o.close()
   }

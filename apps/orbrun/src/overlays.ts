@@ -28,6 +28,7 @@ import { glyph, glyphName } from './glyphs'
 import { packRows, packStrip, turnKeys, type PackStrip } from './pack-tabs'
 import { fits, menuColumns } from './menu-columns'
 import { attachSwipe } from './swipe'
+import { TabLean } from './tab-lean'
 import { ACTION_TABS, SHOUT, SWAP_WEAPONS, actionNeighbour, actionTabOf, type ActionTabId } from './action-tabs'
 import type { Button, PadKind } from './gamepad'
 import { DEFAULT_YESNO, isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt, type Switch } from './context'
@@ -710,6 +711,9 @@ export class Overlays {
   private pointerLive = true
   private pointerAt = { x: -1, y: -1 }
 
+  /** the tab strip leaning under a swipe that has not lifted yet (tab-lean.ts); game.ts leans it for a swipe beside the menu too */
+  readonly tabLean: TabLean
+
   constructor(host: HTMLElement, hooks: OverlayHooks) {
     this.hooks = hooks
     this.root = h('div', { class: 'overlay-stack' })
@@ -717,7 +721,8 @@ export class Overlays {
     this.root.addEventListener('pointermove', (ev) => this.pointerWakes(ev), { passive: true })
     // a click is the mouse speaking: the hover under it counts again, so a click straight after a key lands where the mouse is
     this.root.addEventListener('pointerdown', (ev) => this.pointerWakes(ev, true), { passive: true })
-    attachSwipe(this.root, (step) => this.hooks.swipe?.(step))
+    this.tabLean = new TabLean(this.root)
+    attachSwipe(this.root, (step) => this.hooks.swipe?.(step), (lean) => this.tabLean.lean(lean), (step) => this.tabLean.end(step))
     if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.refitCrt()).observe(this.root)
   }
 

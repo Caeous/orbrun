@@ -18,7 +18,7 @@ function harness(over: { mode: string; ours?: boolean }) {
     session: { state: initialState(), watching: false },
     chat: { root: chat },
     hud: { hideTooltip: vi.fn() },
-    overlays: { hasClientOverlay: !!over.ours, clientOverlayInput: overlayInput },
+    overlays: { hasClientOverlay: !!over.ours, clientOverlayInput: overlayInput, tabLean: { lean() {}, end() {} } },
     runner: { send: (m: unknown) => sent.push(m) },
     tooltipTimer: 0,
     wake: vi.fn(), inputFrom: vi.fn(), touchPress,

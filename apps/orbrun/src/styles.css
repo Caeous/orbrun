@@ -4105,6 +4105,7 @@ canvas.minimap.hidden {
 }
 /* the pack's pages (overlays.ts packTabs): a quiet row of names under crawl's title, the page up in the title's own white, underlined */
 .menu .pack-tabs {
+  position: relative;
   display: flex;
   gap: 1.4em;
   padding: 0 0.8rem;
@@ -4144,6 +4145,25 @@ canvas.minimap.hidden {
 .menu .pack-tabs button.current {
   color: var(--color-15);
   border-bottom-color: currentColor;
+}
+/* a finger swiping over the menu (tab-lean.ts): the page's underline stretches a little toward the tab a lift would turn to */
+.menu .pack-tabs.leaning button.current {
+  border-bottom-color: transparent;
+}
+.menu .pack-tabs .tab-lean {
+  position: absolute;
+  height: 2px;
+  background: var(--color-15);
+  pointer-events: none;
+}
+.menu .pack-tabs .tab-lean.settle {
+  /* a touch past and back, as a pulled thing let go does */
+  transition: left 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu .pack-tabs .tab-lean.settle {
+    transition: none;
+  }
 }
 /* X's actions as tabs (overlays.ts actionStrip): one width whichever of crawl's menus is up, so a turn never resizes the frame */
 .popup.menu.action-tabs {
