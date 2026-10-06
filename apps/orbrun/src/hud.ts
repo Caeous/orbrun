@@ -1837,7 +1837,7 @@ export class Hud {
   private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null) {
     // the icons come in with the gamedata, and are drawn for the screen's density (`touchArtScale`)
     const art = (l: TouchLabel) => '#' + (l.icon ?? '') + (l.art?.join() ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '')
-    const key = labels ? labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
+    const key = labels ? labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
     this.touchbar.hidden = !labels?.length
@@ -1990,7 +1990,7 @@ export class Hud {
     // which leaves no room for two under it
     const long = arrow === undefined && l.keycap === undefined && text.length > TOUCH_CAPTION_CHARS && text.includes(' ')
     const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : long ? null : touchPicture(gd, l, l.item)
-    btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (btn.classList.contains('down') ? ' down' : '')
+    btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (l.fresh ? ' fresh' : '') + (btn.classList.contains('down') ? ' down' : '')
     btn.setAttribute('aria-label', formattedStringToText(l.label))
     const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, arrow !== undefined ? null : l.labelHtml ? h('span', { class: 'label', html: l.labelHtml }) : label(words)]
     btn.replaceChildren(...parts.filter((n): n is Element => n !== null))

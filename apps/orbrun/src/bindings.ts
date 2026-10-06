@@ -654,6 +654,8 @@ export type TouchLabel = Omit<BindingLabel, 'button'> &
     lit?: boolean
     /** there, so the keypad keeps its shape, but nothing to press: the map's Fire with nothing quivered (hud.ts idleTouchButton) */
     idle?: boolean
+    /** there because of what the player chose here (a menu's accept once something is marked, the shop's buy): not before (`touchNarrowest`, styles.css .tb.fresh) */
+    fresh?: boolean
     keycap?: string
     /** a switch's bracketed key and its words in the screen's colours (Switch `keyHtml`, `wordHtml`) */
     keycapHtml?: string
@@ -797,7 +799,11 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
   const out: TouchLabel[] = []
   // the map's Fire with nothing quivered: crawl's `f` would only say "Nothing quivered!" (quiver.cc `action_cycler::target`)
   const idle = (l: BindingLabel) => !panel && ctx.mode === 'command' && l.action.kind === 'fire' && !ctx.readiedAction
-  const put = (l: BindingLabel, cell: TouchCell, span = 1) => out.push({ ...touchFace(l, ctx, panel), cell, ...(span > 1 ? { span } : {}), ...(idle(l) ? { idle: true } : {}) })
+  // the screen as it was before the player marked or listed anything: a button it lacks, or has doing something else, is the choice's
+  const narrowest = panel ? null : touchNarrowest(ctx)
+  const before = narrowest && narrowest !== ctx ? barLabels(narrowest) : null
+  const fresh = (l: BindingLabel) => !!before && !TOUCH_ARROWS.some(([b]) => b === l.button) && !before.some((n) => n.button === l.button && !n.teaching && n.label !== NO_ACTION && JSON.stringify(n.action) === JSON.stringify(l.action))
+  const put = (l: BindingLabel, cell: TouchCell, span = 1) => out.push({ ...touchFace(l, ctx, panel), cell, ...(span > 1 ? { span } : {}), ...(idle(l) ? { idle: true } : {}), ...(fresh(l) ? { fresh: true } : {}) })
   const layout = touchLayout(ctx, panel)
   if (layout) {
     layout.forEach((row, r) =>
@@ -903,6 +909,18 @@ function switchKey(a: Action, ctx: Context): string | number | undefined {
  * cursor. `touchLabels` keeps a cell for each button this shows that the
  * screen does not show now.
  */
+/**
+ * The screen before the player chose anything on it (TouchLabel `fresh`):
+ * nothing marked or listed in a menu or the shop, no answer lit on a prompt
+ * with no way back (the stat gain, whose Confirm comes with the answer).
+ */
+function touchNarrowest(ctx: Context): Context {
+  if (ctx.mode === 'prompt' && ctx.prompt && !ctx.prompt.cancel && ctx.focus?.label) return { ...ctx, focus: undefined }
+  const m = ctx.menu
+  if (ctx.mode !== 'menu' || !m || (!m.anyMarked && !m.shop?.anyMarked && !m.shop?.anyListed)) return ctx
+  return { ...ctx, menu: { ...m, anyMarked: false, ...(m.shop ? { shop: { ...m.shop, anyMarked: false, anyListed: false } } : {}) } }
+}
+
 function touchWidest(ctx: Context): Context {
   const m = ctx.menu
   if (ctx.mode === 'menu' && m) return { ...ctx, menu: { ...m, anyMarked: true, ...(m.shop ? { shop: { ...m.shop, anyMarked: true } } : {}) } }

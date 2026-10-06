@@ -192,6 +192,23 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
       ['B', 'DL', 'DD', 'DR', 'A'],
     ])
   })
+  it('a button the player’s choice brought is fresh: the menu’s accept once something is marked, the shop’s buy and list', () => {
+    const fresh = (c: Context) => drawn(c, (l) => (l.fresh ? l.button : '·')).flat().filter((b) => b !== '·')
+    expect(fresh(menu({ multiselect: true, anyMarked: true }))).toEqual(['START'])
+    expect(fresh(menu({ multiselect: true, anyMarked: false }))).toEqual([])
+    const shop = (s: object) => menu({ shop: { canBuy: true, anyMarked: false, anyListed: false, mode: 'buy', sortOrder: 'type', ...s } } as unknown as Partial<MenuContext>, 'shop')
+    expect(fresh(shop({ anyMarked: true })).sort()).toEqual(['LT', 'START'])
+    expect(fresh(shop({ anyListed: true })).sort()).toEqual(['LT', 'START'])
+    expect(fresh(shop({}))).toEqual([])
+    // the stat gain's Confirm, once the cursor lights an answer; a prompt with a way back has its Confirm all along
+    const stat = (over: object, cancel = false) => ctx({ mode: 'prompt', prompt: { text: 'Increase (S)trength, (I)ntelligence, or (D)exterity?', options: [], yesno: false, cancel }, ...over })
+    expect(fresh(stat({ focus: { label: 'Strength' } }))).toEqual(['A'])
+    expect(fresh(stat({}))).toEqual([])
+    expect(fresh(stat({ focus: { label: 'Strength' } }, true))).toEqual([])
+    // a screen that never changes with a choice has nothing fresh
+    expect(fresh(ctx({}))).toEqual([])
+    expect(fresh(stairs)).toEqual([])
+  })
   it('a menu’s more-line switches: a button each along the top row, in place of the buttons that sent it', () => {
     // as the overlays hand them over (Overlays.menuSwitches): the caption as the footer prints it, and the words
     const sw = (key: string, word: string) => ({ key, label: `[${key}] ${word}`, word })

@@ -2565,6 +2565,11 @@ canvas.minimap.hidden {
   color: var(--ink-dim);
   opacity: 0.45;
 }
+/* a button the player's own choice brought (bindings.ts TouchLabel `fresh`: the menu's accept once something is marked,
+   the shop's buy, the stat gain's Confirm once an answer is lit): crawl's light green round it, not the lit gold */
+.touchbar .tb.fresh {
+  border-color: var(--color-10);
+}
 /* the press tints the button's own backing, so it stays as solid as it was */
 .touchbar .tb.down {
   background: linear-gradient(rgba(255, 212, 92, 0.25), rgba(255, 212, 92, 0.25)), rgba(10, 10, 14, 0.92);
