@@ -724,6 +724,11 @@ a.item.beside {
 }
 /* A title screen: unboxed game actions, with identity and information below.
    Keep visual and focus order identical. */
+/* a finger dragged over the title screen looks around the room even where the words cover it (an upright phone's
+   whole screen); the browser would take the drag as a pan and cancel it, and the screen never scrolls (fitHome) */
+.frame.home-list {
+  touch-action: none;
+}
 .frame.home-list .brand {
   width: 38rem;
   min-width: 0;
