@@ -25,13 +25,22 @@ import {
   type Dir8,
   type Scene,
 } from '@orbrun/scene'
+import { releaseSteps } from './fling'
+
+/** A finger lifting off a look drag: its speeds in radians a second, and the radians past which it meant the next heading (fling.ts). */
+export interface DragRelease {
+  yawSpeed: number
+  pitchSpeed: number
+  commit: number
+}
 
 /**
  * Camera controller: yaw easing toward the facing goal,
  * free look with the right stick or a mouse or touch drag (yaw
  * unbounded, pitch free short of the poles; a mouse drag stays where it
- * points, while a stick or finger letting go settles the yaw on the nearest
- * heading, its pitch kept), and the eye's
+ * points, a stick letting go settles the yaw on the nearest heading, its
+ * pitch kept, and a finger lifting springs on to the next heading the way it
+ * swiped and the pitch back to rest, fling.ts), and the eye's
  * glide after a step along the path the feet took (`walkTo`); a jump snaps.
  */
 /** The yaw in radians; enough to put the camera back facing where it faced (the pitch is not kept). */
@@ -65,6 +74,12 @@ export class CameraController {
   private _uprightYaw = 0
   private freeLook = false
   private dragging = false
+  /** the heading a drag set off from, how far off it the view stood then, and how far the drag has turned it since */
+  private dragFrom: { dir: Dir8; at: number; turned: number } | null = null
+  /** the yaw's speed while a lifted finger's spring carries it onto its heading, radians a second; null under the plain ease */
+  private yawSpring: number | null = null
+  /** the same for the pitch, springing back to rest after a finger lifts */
+  private pitchSpring: number | null = null
   private lookVel = 0
   private pitchVel = 0
   private _steeringRevision = 0
@@ -76,8 +91,8 @@ export class CameraController {
   /**
    * Where the camera points at rest: the Camera angle setting, in radians,
    * negative below the horizon. It is the pitch a fresh camera starts on;
-   * free look is measured from wherever the camera happens to point, so
-   * nothing ever springs back to it.
+   * free look is measured from wherever the camera happens to point, and
+   * only a finger lifting springs back to it.
    */
   restPitch = REST_PITCH
   private lastMoveTs = 0
@@ -97,6 +112,7 @@ export class CameraController {
   }
 
   setFacing(d: Dir8, immediate = false) {
+    this.yawSpring = null
     this.camera.facing = d
     this.goalYaw = dirToYaw(d)
     if (immediate || this.reducedMotion) {
@@ -225,6 +241,7 @@ export class CameraController {
     c.yaw = normalizeYaw(view.yaw)
     c.facing = yawToDir(c.yaw)
     this.goalYaw = c.yaw
+    this.yawSpring = this.pitchSpring = null
     this._mapYaw = this.mapGoal
     this._uprightYaw = this.uprightGoal
   }
@@ -250,6 +267,7 @@ export class CameraController {
    * (`endDrag`); the pitch stays where the stick left it.
    */
   look(dx: number, dy: number, sensitivity = 1, invert = false) {
+    if (dx !== 0 || dy !== 0) this.yawSpring = this.pitchSpring = null
     if (dx === 0 && dy === 0) {
       if (this.freeLook) this.endFreeLook()
       this.lookVel = 0
@@ -269,6 +287,9 @@ export class CameraController {
   lookBy(dyaw: number, dpitch: number) {
     if (dyaw !== 0 || dpitch !== 0) this._steeringRevision++
     const c = this.camera
+    if (!this.dragging) this.dragFrom = { dir: c.facing, at: yawDelta(dirToYaw(c.facing), c.yaw), turned: 0 }
+    this.dragFrom!.turned += dyaw
+    this.yawSpring = this.pitchSpring = null
     c.yaw = normalizeYaw(c.yaw + dyaw)
     c.pitch = this.clampPitch(c.pitch + dpitch)
     c.facing = yawToDir(c.yaw)
@@ -277,14 +298,27 @@ export class CameraController {
   }
 
   /**
-   * The drag let go. A mouse leaves the view where it points; a finger
-   * (`settle`) lets the yaw ease onto the nearest of the eight headings, as a
-   * turn key does after a look, so a touch look ends square to the grid. The
-   * pitch stays where the drag left it.
+   * The drag let go. A mouse leaves the view where it points. A finger
+   * (`release`) springs the yaw on to the heading its swipe meant
+   * (`releaseSteps`: the next one the way it went, further for a flick), from
+   * the speed it lifted at, so the turn carries on from the finger without a
+   * hitch, and the pitch back to rest, so a touch look always ends square to
+   * the grid and level.
    */
-  endDrag(settle = false) {
+  endDrag(release?: DragRelease) {
     this.dragging = false
-    if (settle) this.setFacing(this.camera.facing)
+    const from = this.dragFrom
+    this.dragFrom = null
+    if (!release || !from) return
+    const n = releaseSteps(from.at + from.turned, from.turned, release.yawSpeed, release.commit)
+    this.setFacing(rotateDir(from.dir, n))
+    if (this.reducedMotion) {
+      this.camera.yaw = this.goalYaw
+      this.camera.pitch = this.restPitch
+      return
+    }
+    this.yawSpring = release.yawSpeed
+    this.pitchSpring = release.pitchSpeed
   }
 
   /** Stick released: the yaw eases onto the nearest heading, the pitch stays. */
@@ -564,12 +598,25 @@ export class CameraController {
       c.pitch = this.clampPitch(c.pitch + this.pitchVel * dt)
       c.facing = yawToDir(c.yaw)
       moved = true
+    } else if (this.yawSpring !== null) {
+      const [x, v] = spring(yawDelta(this.goalYaw, c.yaw), this.yawSpring, dt)
+      this.yawSpring = v
+      if (Math.abs(x) < SPRING_REST && Math.abs(v) < SPRING_REST_SPEED) this.yawSpring = null
+      c.yaw = this.yawSpring === null ? this.goalYaw : normalizeYaw(this.goalYaw + x)
+      moved = true
     } else {
       const yaw = this.ease(c.yaw, this.goalYaw, dt, TURN_RATE)
       if (yaw !== c.yaw) {
         c.yaw = yaw
         moved = true
       }
+    }
+    if (this.pitchSpring !== null && !this.freeLook) {
+      const [x, v] = spring(c.pitch - this.restPitch, this.pitchSpring, dt)
+      this.pitchSpring = v
+      if (Math.abs(x) < SPRING_REST && Math.abs(v) < SPRING_REST_SPEED) this.pitchSpring = null
+      c.pitch = this.pitchSpring === null ? this.restPitch : this.clampPitch(this.restPitch + x)
+      moved = true
     }
     // The minimap's ground: where it turns with the view it *is* the view's
     // yaw (`mapYaw`), so there is nothing to ease — the same turn, the same
@@ -701,6 +748,24 @@ export function trailStep(scene: Scene): { dx: number; dy: number } | null {
   return null
 }
 
+/**
+ * One frame of a critically damped spring toward 0: `x` off it, `v` units a
+ * second, after `dt` seconds. Solved exactly, so it holds at any frame rate,
+ * and it starts from the finger's own speed, so a lifted turn carries on
+ * from the finger without a hitch.
+ */
+function spring(x: number, v: number, dt: number): [number, number] {
+  const w = SPRING_RATE
+  const e = Math.exp(-w * dt)
+  const b = v + w * x
+  return [(x + b * dt) * e, (v - w * b * dt) * e]
+}
+
+/** a lifted finger's spring, in radians a second of stiffness: settled in about a quarter second */
+const SPRING_RATE = 22
+/** close enough to land on the heading: radians off and radians a second */
+const SPRING_REST = 0.002
+const SPRING_REST_SPEED = 0.05
 /** Exponential turn rates, calibrated to the old 60 Hz feel but independent of frame rate. */
 const TURN_RATE = 16
 /** The right stick at full push, in radians a second: its yaw about as quick as a 45° turn. */

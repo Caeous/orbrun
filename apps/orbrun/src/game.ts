@@ -27,6 +27,8 @@ import { fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap, type Settin
 import { PerfOverlay, type LogContext } from './perf'
 import { MapHold } from './map-hold'
 import { swipeStep } from './swipe'
+import { VelocityTracker } from './fling'
+import type { DragRelease } from './camera'
 import { SpellBar, SpellBook, type Spell } from './spell-bar'
 
 /** The most drawn pixels per CSS pixel the game view gets (Part IV of rendering-3d.md): the display's density, capped here. */
@@ -48,6 +50,8 @@ const ACTIVE_MS = 500
  */
 const WARM_DELAY_MS = 2000
 const DRAG_SLOP = 6
+/** css pixels a finger turning the view has to go one way before letting go means the next heading that way (fling.ts) */
+const TURN_COMMIT = 14
 /** level-map cells per unit of right-stick look while the map is open */
 const MAP_PAN_RATE = 0.12
 /** tileweb.cc `zoom_dungeon`: `tile_map_scale` in percent, a step a zoom key, clamped to 20..300 */
@@ -82,6 +86,11 @@ interface Drag {
   held?: boolean
   /** a finger dragging the level map: css px moved and not yet a whole cell (`panMapBy`) */
   pan?: { x: number; y: number }
+  /** a finger's look keeps to the way it set off: across turns, up and down tilts */
+  axis?: 'x' | 'y'
+  /** where the finger has been lately, for its speed as it lifts */
+  vx: VelocityTracker
+  vy: VelocityTracker
 }
 
 /** The device the player touched last; the prompt strip is drawn for it. A finger is `touch`, a mouse or a pen `pointer`. */
@@ -219,7 +228,7 @@ export class GameScreen {
   /** The pointer now down closed a menu as it came down (`onDocPointer`); its click is spent on that. */
   private pointerClosed = false
   /** A finger down outside a menu: lifted where it came down it closes the menu, swiped sideways it turns its tabs (`outsideLift`). */
-  private outsideTouch: { id: number; x: number; y: number; close: () => void } | null = null
+  private outsideTouch: { id: number; x: number; y: number; t: number; close: () => void } | null = null
   private lastCursor: SceneCursor | null = null
   private lastOptKey = ''
   private drag: Drag | null = null
@@ -1794,6 +1803,22 @@ export class GameScreen {
    * rests on, and while targeting it moves the server's cursor. The gamepad's
    * right stick turns the camera whenever it is pushed, drag or no drag.
    */
+  /** Radians a css pixel of drag turns the view: a full drag across it is about a half turn. */
+  private lookPerPx(): number {
+    return (Math.PI / Math.max(300, this.canvas.clientWidth)) * this.hooks.settings().lookSensitivity
+  }
+
+  /** How a finger lifts off a look drag at `now`: its speeds turned into the view's (a mouse leaves the view where it points). */
+  private release(d: Drag, now: number): DragRelease | undefined {
+    if (!d.touch) return undefined
+    const k = this.lookPerPx() * 1000
+    return {
+      yawSpeed: d.axis === 'y' ? 0 : -d.vx.speed(now) * k,
+      pitchSpeed: d.axis === 'x' ? 0 : (this.hooks.settings().invertLook ? -1 : 1) * d.vy.speed(now) * k,
+      commit: TURN_COMMIT * this.lookPerPx(),
+    }
+  }
+
   private attachPointer(c: HTMLCanvasElement) {
     c.addEventListener('contextmenu', (ev) => ev.preventDefault())
     c.addEventListener('pointerdown', (ev) => {
@@ -1807,7 +1832,7 @@ export class GameScreen {
         if (this.startPinch(this.drag, ev)) c.setPointerCapture(ev.pointerId)
         return
       }
-      const d: Drag = (this.drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, moved: false, button: ev.button, touch: ev.pointerType === 'touch' })
+      const d: Drag = (this.drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, moved: false, button: ev.button, touch: ev.pointerType === 'touch', vx: new VelocityTracker(), vy: new VelocityTracker() })
       // a finger held still on the view is R3, the stick click the touch bar has no cell for (bindings.ts TOUCH_CELLS):
       // what is ahead examined on the map, the overview on the level map; the lift then does nothing more
       if (d.touch) {
@@ -1838,21 +1863,27 @@ export class GameScreen {
       // held, is that release. Drop the drag instead of orbiting a held button
       // that is not held.
       if (ev.pointerType === 'mouse' && ev.buttons === 0) return this.cancelDrag()
-      const dx = ev.clientX - d.x
-      const dy = ev.clientY - d.y
+      let dx = ev.clientX - d.x
+      let dy = ev.clientY - d.y
       d.x = ev.clientX
       d.y = ev.clientY
+      for (const e of ev.getCoalescedEvents?.() ?? [ev]) {
+        d.vx.add(e.timeStamp, e.clientX)
+        d.vy.add(e.timeStamp, e.clientY)
+      }
       if (!d.moved && Math.hypot(ev.clientX - d.x0, ev.clientY - d.y0) < DRAG_SLOP) return
       if (d.held) return
       d.moved = true
       clearTimeout(d.hold)
       if (d.touch && this.panMapBy(d, dx, dy)) return
-      const st = this.hooks.settings()
-      // radians per css pixel; a full drag across the view is about a half turn
-      const k = (Math.PI / Math.max(300, this.canvas.clientWidth)) * st.lookSensitivity
+      // a finger turns or tilts, not both, by the way it first went, so a swipe across never leaves the view tipped
+      if (d.touch) d.axis ??= Math.abs(ev.clientX - d.x0) >= Math.abs(ev.clientY - d.y0) ? 'x' : 'y'
+      if (d.axis === 'x') dy = 0
+      if (d.axis === 'y') dx = 0
+      const k = this.lookPerPx()
       // the drag grabs the world, the way a Mac scrolls: the dungeon follows the
       // pointer, so dragging right swings the view left and dragging down looks up
-      this.cam.lookBy(-dx * k, (st.invertLook ? -dy : dy) * k)
+      this.cam.lookBy(-dx * k, (this.hooks.settings().invertLook ? -dy : dy) * k)
       this.needsRender = true
     })
     const end = (ev: PointerEvent) => {
@@ -1870,7 +1901,7 @@ export class GameScreen {
       if (c.hasPointerCapture(ev.pointerId)) c.releasePointerCapture(ev.pointerId)
       if (d.held || d.pan) return
       if (d.moved) {
-        this.cam.endDrag(d.touch)
+        this.cam.endDrag(this.release(d, ev.timeStamp))
         this.needsRender = true
       } else if (ev.type === 'pointerup') {
         // the message pane lets the press through to here (hud.ts dismissesMoreAt): on a pending --more-- it is space
@@ -1899,7 +1930,7 @@ export class GameScreen {
       clearTimeout(d.hold)
       if (c.hasPointerCapture(d.id)) c.releasePointerCapture(d.id)
       if (!d.moved || d.pan) return
-      this.cam.endDrag(d.touch)
+      this.cam.endDrag(this.release(d, performance.now()))
       this.needsRender = true
     }
     c.addEventListener('pointerup', end)
@@ -2026,7 +2057,7 @@ export class GameScreen {
       ev.stopPropagation()
       this.pointerClosed = true
       this.outsideTouch = {
-        id: ev.pointerId, x: ev.clientX, y: ev.clientY,
+        id: ev.pointerId, x: ev.clientX, y: ev.clientY, t: ev.timeStamp,
         close: () => {
           if (!this.overlays.hasClientOverlay) return
           this.overlays.clientOverlayInput('cancel')
@@ -2047,7 +2078,7 @@ export class GameScreen {
     clearTimeout(this.tooltipTimer)
     this.hud.hideTooltip()
     this.pointerClosed = true
-    if (touch) this.outsideTouch = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, close: () => this.runner.send(cm.key(27)) }
+    if (touch) this.outsideTouch = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, t: ev.timeStamp, close: () => this.runner.send(cm.key(27)) }
     else this.runner.send(cm.key(27))
   }
 
@@ -2061,7 +2092,7 @@ export class GameScreen {
     if (!o || ev.pointerId !== o.id) return
     this.outsideTouch = null
     if (ev.type === 'pointercancel') return
-    const step = swipeStep(ev.clientX - o.x, ev.clientY - o.y)
+    const step = swipeStep(ev.clientX - o.x, ev.clientY - o.y, ev.timeStamp - o.t)
     if (step) this.touchPress(step > 0 ? 'DR' : 'DL')
     else o.close()
   }

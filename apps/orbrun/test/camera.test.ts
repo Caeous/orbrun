@@ -371,16 +371,85 @@ describe('steering with a drag', () => {
     expect(c.camera.yaw).toBeCloseTo(0.3)
   })
 
-  it('a finger lifting eases the view onto the nearest heading, keeping its tilt', () => {
-    const c = cam()
-    const pitch = c.camera.pitch
-    c.lookBy(0.6, 0.1)
-    c.endDrag(true)
-    expect(c.steering).toBe(false)
+  const lift = (yawSpeed = 0, pitchSpeed = 0) => ({ yawSpeed, pitchSpeed, commit: 0.1 })
+  const settle = (c: CameraController) => {
     for (let i = 0; i < 120; i++) c.update(1 / 60)
+  }
+  const moving = () => {
+    const c = cam()
+    c.reducedMotion = false
+    return c
+  }
+
+  it('a finger lifting short of halfway still turns on to the next heading, and the tilt springs back', () => {
+    const c = moving()
+    const pitch = c.camera.pitch
+    c.lookBy(0.2, 0.1)
+    c.endDrag(lift())
+    expect(c.steering).toBe(false)
+    settle(c)
     expect(c.facing).toBe(1)
     expect(c.camera.yaw).toBeCloseTo(Math.PI / 4)
-    expect(c.camera.pitch).toBeCloseTo(pitch + 0.1)
+    expect(c.camera.pitch).toBeCloseTo(pitch)
+  })
+
+  it('a nudge under the commit distance goes back', () => {
+    const c = cam()
+    c.lookBy(-0.05, 0)
+    c.endDrag(lift())
+    settle(c)
+    expect(c.facing).toBe(0)
+    expect(c.camera.yaw).toBeCloseTo(0)
+  })
+
+  it('a finger pulling back as it lifts lets the turn go back', () => {
+    const c = cam()
+    c.lookBy(0.3, 0)
+    c.endDrag(lift(-4))
+    settle(c)
+    expect(c.facing).toBe(0)
+  })
+
+  it('a flick carries on further than the finger went', () => {
+    const c = cam()
+    c.lookBy(0.5, 0)
+    c.endDrag(lift(12))
+    settle(c)
+    expect(c.facing).toBe(2)
+  })
+
+  it('a second swipe on the heels of the first goes a heading further', () => {
+    const c = moving()
+    c.lookBy(0.2, 0)
+    c.endDrag(lift(3))
+    c.update(1 / 60)
+    expect(c.camera.yaw).toBeLessThan(Math.PI / 8)
+    c.lookBy(0.15, 0)
+    c.endDrag(lift(3))
+    settle(c)
+    expect(c.facing).toBe(2)
+  })
+
+  it('the spring carries on from the finger, never turning back first', () => {
+    const c = moving()
+    c.lookBy(0.2, 0)
+    c.endDrag(lift(3))
+    let last = c.camera.yaw
+    for (let i = 0; i < 60; i++) {
+      c.update(1 / 60)
+      expect(c.camera.yaw).toBeGreaterThanOrEqual(last - 1e-9)
+      last = c.camera.yaw
+    }
+  })
+
+  it('a keyed turn mid-spring takes over', () => {
+    const c = moving()
+    c.lookBy(0.2, 0)
+    c.endDrag(lift(3))
+    c.update(1 / 60)
+    c.turn(1)
+    settle(c)
+    expect(c.facing).toBe(2)
   })
 })
 

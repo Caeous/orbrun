@@ -14,12 +14,18 @@
 
 /** how far across the finger has to go, in css px */
 export const SWIPE_MIN = 40
+/** or, flicked, how far it has to go at least (a swipe is the speed as much as the distance, as a phone's own pages are) */
+export const FLICK_MIN = 16
+/** and how fast, in css px a millisecond */
+export const FLICK_SPEED = 0.3
 /** and how many times further across than up or down, so a scroll that drifts is still a scroll */
 const SWIPE_SLANT = 2
 
-/** The d-pad step a finger's travel makes: 1 is Right, -1 Left, 0 no swipe. */
-export function swipeStep(dx: number, dy: number): -1 | 0 | 1 {
-  if (Math.abs(dx) < SWIPE_MIN || Math.abs(dx) < SWIPE_SLANT * Math.abs(dy)) return 0
+/** The d-pad step a finger's travel makes in `ms` milliseconds: 1 is Right, -1 Left, 0 no swipe. */
+export function swipeStep(dx: number, dy: number, ms = Infinity): -1 | 0 | 1 {
+  const across = Math.abs(dx)
+  const flick = across >= FLICK_MIN && across / Math.max(1, ms) >= FLICK_SPEED
+  if ((across < SWIPE_MIN && !flick) || across < SWIPE_SLANT * Math.abs(dy)) return 0
   return dx < 0 ? 1 : -1
 }
 
@@ -34,16 +40,16 @@ function ownsSideways(target: EventTarget | null, root: HTMLElement): boolean {
 
 /** Calls `onSwipe` with the step of each one-finger sideways swipe over `root`. */
 export function attachSwipe(root: HTMLElement, onSwipe: (step: 1 | -1) => void) {
-  let start: { id: number; x: number; y: number } | null = null
+  let start: { id: number; x: number; y: number; t: number } | null = null
   root.addEventListener('touchstart', (ev) => {
     const t = ev.touches[0]
     // a second finger makes it something else
-    start = ev.touches.length === 1 && !ownsSideways(ev.target, root) ? { id: t.identifier, x: t.clientX, y: t.clientY } : null
+    start = ev.touches.length === 1 && !ownsSideways(ev.target, root) ? { id: t.identifier, x: t.clientX, y: t.clientY, t: ev.timeStamp } : null
   }, { passive: true })
   root.addEventListener('touchend', (ev) => {
     const t = start && Array.from(ev.changedTouches).find((c) => c.identifier === start!.id)
     if (!start || !t) return
-    const step = swipeStep(t.clientX - start.x, t.clientY - start.y)
+    const step = swipeStep(t.clientX - start.x, t.clientY - start.y, ev.timeStamp - start.t)
     start = null
     if (step) onSwipe(step)
   }, { passive: true })

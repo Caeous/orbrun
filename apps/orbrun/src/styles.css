@@ -3981,6 +3981,14 @@ canvas.minimap.hidden {
 .overlay-stack:has(> .popup.type-formatted-scroller[data-tag='resists'])::before {
   background-color: rgba(3, 2, 6, 0.55);
 }
+/* a popup with another stacked over it (an item described over the pack) darkens, so the eye goes to the one on top;
+   WebTiles leaves the one under at full strength */
+.overlay-stack > .popup {
+  transition: filter 160ms ease;
+}
+.overlay-stack > .popup:not([data-client]):has(~ .popup:not(.hidden)) {
+  filter: brightness(0.4) saturate(0.6);
+}
 
 /*
  * The pause menu and the settings are drawn as the game draws its own
@@ -4491,6 +4499,9 @@ canvas.minimap.hidden {
     animation: none;
   }
   .overlay-stack::before {
+    transition: none;
+  }
+  .overlay-stack > .popup {
     transition: none;
   }
 }
