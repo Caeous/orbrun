@@ -205,6 +205,10 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     expect(fresh(stat({ focus: { label: 'Strength' } }))).toEqual(['A'])
     expect(fresh(stat({}))).toEqual([])
     expect(fresh(stat({ focus: { label: 'Strength' } }, true))).toEqual([])
+    // the skill target's Done, which a skill row's Set target brought; another prompt's Done is plain
+    const fresher = (c: Context) => touchLabels(barLabels(c), c).filter((l) => l.fresh).map((l) => l.label)
+    expect(fresher(ctx({ mode: 'text', textTag: 'skill_target' }))).toEqual(['Done'])
+    expect(fresher(ctx({ mode: 'text', textTag: 'travel_depth' }))).toEqual([])
     // a screen that never changes with a choice has nothing fresh
     expect(fresh(ctx({}))).toEqual([])
     expect(fresh(stairs)).toEqual([])

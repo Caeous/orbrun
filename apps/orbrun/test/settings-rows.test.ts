@@ -302,19 +302,19 @@ describe('Field of view', () => {
     vi.stubGlobal('innerHeight', held === 'upright' ? 844 : 390)
   }
 
-  it('is Auto by default: 85° on a computer, 75° on a phone on its side, 110° upright, and the row says which', () => {
+  it('is Auto by default: 85° on a computer and a phone on its side, 100° upright, and the row says which', () => {
     const fov = row('Field of view')
     expect(defaultSettings.fov).toBe(FOV_AUTO)
     expect(FOVS[0]).toBe(FOV_AUTO)
     expect(fovOf(defaultSettings, false, false)).toBe(85)
     expect(fovOf(defaultSettings, false, true)).toBe(85)
-    expect(fovOf(defaultSettings, true, false)).toBe(75)
-    expect(fovOf(defaultSettings, true, true)).toBe(110)
+    expect(fovOf(defaultSettings, true, false)).toBe(85)
+    expect(fovOf(defaultSettings, true, true)).toBe(100)
     expect(settingValue(fov)).toBe('Auto (85°)')
     phone('sideways')
-    expect(settingValue(fov)).toBe('Auto (75°)')
+    expect(settingValue(fov)).toBe('Auto (85°)')
     phone('upright')
-    expect(settingValue(fov)).toBe('Auto (110°)')
+    expect(settingValue(fov)).toBe('Auto (100°)')
   })
 
   it('takes a chosen angle on any device', () => {

@@ -926,6 +926,8 @@ function beforeChoice(ctx: Context): Context {
  * something else. Crawl's own screens only; one of our panels is never asked.
  */
 export function choiceBrought(ctx: Context): (l: BindingLabel) => boolean {
+  // the skill target opened off a skill row's Set target: its Done is that choice's to finish
+  if (ctx.mode === 'text' && submitOnStartOnly(ctx.textTag)) return (l) => l.action.kind === 'osk' && l.action.op === 'submit'
   const narrowest = beforeChoice(ctx)
   if (narrowest === ctx) return () => false
   const before = barLabels(narrowest)

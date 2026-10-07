@@ -421,13 +421,28 @@ describe('steering with a drag', () => {
     expect(c.facing).toBe(1)
   })
 
-  it('a flick carries its own speed off the finger, not a slower one', () => {
+  it('a quick swipe finishes its turn as an arrow key turns', () => {
+    const swiped = moving()
+    swiped.lookBy(0.2, 0)
+    swiped.endDrag(lift(3))
+    const keyed = moving()
+    keyed.setFacing(0, true)
+    keyed.camera.yaw = 0.2
+    keyed.turn(1)
+    for (let i = 0; i < 30; i++) {
+      swiped.update(1 / 60)
+      keyed.update(1 / 60)
+      expect(swiped.camera.yaw).toBeCloseTo(keyed.camera.yaw, 9)
+    }
+  })
+
+  it('a slow lift springs on from the finger’s own speed', () => {
     const c = moving()
     c.lookBy(0.5, 0)
-    c.endDrag(lift(30))
+    c.endDrag(lift(1))
     c.update(1 / 120)
-    // the speed of the first frame is the finger's; a capped spring set off at a fifth of it
-    expect(c.camera.yaw - 0.5).toBeGreaterThan(0.12)
+    // the ease would leap off at four times the finger's speed
+    expect(c.camera.yaw - 0.5).toBeLessThan(0.02)
   })
 
   it('a tilt flicked back toward rest never swings past it', () => {

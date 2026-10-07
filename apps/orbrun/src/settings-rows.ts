@@ -105,21 +105,18 @@ export function setAutoMinimap(shown: { tiles: number; cell: number } | null): v
 }
 
 /**
- * The field of view row's first stop and default: FOV_DESKTOP, or FOV_PHONE
- * on a phone (grid/host.ts `isPhone`), whose view held on its side is wider
- * than a computer's screen and would see further across at the same angle
- * (the setting is the up-and-down angle, render-3d `fov`), or FOV_UPRIGHT on
- * a phone held upright, whose tall narrow view would see little across at
- * either. Saved as 0.
+ * The field of view row's first stop and default: FOV_DESKTOP, on a phone on
+ * its side too, or FOV_UPRIGHT on a phone held upright (grid/host.ts
+ * `isPhone`), whose tall narrow view would see little across at the same
+ * angle (the setting is the up-and-down angle, render-3d `fov`). Saved as 0.
  */
 export const FOV_AUTO = 0
 const FOV_DESKTOP = 85
-const FOV_PHONE = 75
-const FOV_UPRIGHT = 110
+const FOV_UPRIGHT = 100
 export const FOVS: readonly number[] = [FOV_AUTO, ...Array.from({ length: 15 }, (_, i) => 50 + 5 * i)]
 /** The field of view `s` asks for, in degrees: its own, or Auto's for this device held this way. */
 export function fovOf(s: Settings, phone = isPhone(), tall = upright()): number {
-  return s.fov || (!phone ? FOV_DESKTOP : tall ? FOV_UPRIGHT : FOV_PHONE)
+  return s.fov || (phone && tall ? FOV_UPRIGHT : FOV_DESKTOP)
 }
 
 /**
@@ -213,7 +210,7 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   row('Camera', 'View', 'renderer', ['3d', '2d'], 'In the dungeon in 3D, or from above as the console shows it.', (v) => (v === '3d' ? '3D' : 'Top down (2D)')),
   row('Camera', 'Camera height', 'eyeHeight', EYE_HEIGHTS, 'How high your eyes stand, from the floor to the ceiling.', (v) => (v as number).toFixed(2) + ' cells'),
   row('Camera', 'Camera angle', 'restPitch', CAM_ANGLES, 'Where the view points at rest: level with the horizon, or tipped down toward the floor ahead.', (v) => ((v as number) === 0 ? 'Level' : Math.abs(v as number) + '° ' + ((v as number) < 0 ? 'down' : 'up'))),
-  row('Camera', 'Field of view', 'fov', FOVS, `How wide the first-person view opens. Auto is ${FOV_DESKTOP}°, or on a phone ${FOV_PHONE}° on its side and ${FOV_UPRIGHT}° upright.`, autoOr((v) => v + '°', () => fovOf(defaultSettings))),
+  row('Camera', 'Field of view', 'fov', FOVS, `How wide the first-person view opens. Auto is ${FOV_DESKTOP}°, or ${FOV_UPRIGHT}° on a phone held upright.`, autoOr((v) => v + '°', () => fovOf(defaultSettings))),
   row('Camera', 'Hands', 'viewmodel', [true, false], 'The wielded weapon and off-hand item, drawn in view.', (v) => (v ? 'Weapon and shield shown' : 'Hidden')),
   // Controls
   ...leftRightRows,

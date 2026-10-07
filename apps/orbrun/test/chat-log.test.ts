@@ -34,6 +34,52 @@ describe('chat log', () => {
   })
 })
 
+describe('chat on a phone', () => {
+  const log = { left: 0, top: 500, width: 400, height: 80 }
+  const shown = (el: Element | null) => !!el && (el as HTMLElement).style.display !== 'none'
+
+  it('has no standing box, and a badge only while there is something to say', () => {
+    const host = document.createElement('div')
+    const chat = new Chat(host, { send: () => {} })
+    chat.place(log, 800, 400, true, log)
+    const state = initialState()
+    chat.update(state, true, true)
+    expect(shown(host.querySelector('.chat'))).toBe(false)
+    expect(shown(host.querySelector('.chat_badge'))).toBe(false)
+    reduce(state, { msg: 'update_spectators', count: 2, names: 'a, b' })
+    chat.update(state, true, true)
+    expect(shown(host.querySelector('.chat'))).toBe(false)
+    expect(shown(host.querySelector('.chat_badge'))).toBe(true)
+    expect(host.querySelector('.chat_badge')!.textContent).toBe('2')
+    reduce(state, say(1))
+    chat.update(state, true, true)
+    expect(host.querySelector('.chat_badge')!.textContent).toBe('2 · 1 new')
+    // just over the log's right end
+    const badge = host.querySelector('.chat_badge') as HTMLElement
+    expect(badge.style.bottom).toBe('300px')
+    expect(badge.style.right).toBe('0px')
+  })
+
+  it('opens over the log from the badge, and shuts from its caption', () => {
+    const host = document.createElement('div')
+    const chat = new Chat(host, { send: () => {} })
+    chat.place(log, 800, 400, true, log)
+    const state = initialState()
+    reduce(state, say(1))
+    chat.update(state, true, true)
+    ;(host.querySelector('.chat_badge') as HTMLElement).click()
+    chat.update(state, true, true)
+    expect(shown(host.querySelector('.chat'))).toBe(true)
+    expect(shown(host.querySelector('.chat_badge'))).toBe(false)
+    expect((host.querySelector('.chat') as HTMLElement).style.bottom).toBe('220px')
+    ;(host.querySelector('.chat_caption') as HTMLElement).click()
+    chat.update(state, true, true)
+    expect(shown(host.querySelector('.chat'))).toBe(false)
+    // read: nothing left to say, no one watching
+    expect(shown(host.querySelector('.chat_badge'))).toBe(false)
+  })
+})
+
 describe('serverHtml', () => {
   it('keeps text and span classes, and nothing that runs', () => {
     expect(serverHtml('<span class="chat_sender">a</span>: <span class="chat_msg">hi &lt;b&gt;</span>')).toBe(

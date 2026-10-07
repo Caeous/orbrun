@@ -116,6 +116,6 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
     ol.append(back)
   }
   panel.append(body)
-  panel.append(h('div', { class: 'more' }, '[<] [>] or a letter change a setting  [Esc] back'))
+  panel.append(h('div', { class: 'more' }, '[<] [>] change a setting  [Esc] back'))
   return { el: panel, rows }
 }

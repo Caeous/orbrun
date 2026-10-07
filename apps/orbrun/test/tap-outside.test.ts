@@ -6,7 +6,8 @@ import { GameScreen } from '../src/game'
 /**
  * ui.js popup_clickoutside_handler: a press outside a popup is Escape. A
  * crawl menu is a popup too, and Orbrun's own panels step back the same way;
- * the touch bar is never outside: its Back is the pad's B.
+ * the touch bar's buttons are never outside: its Back is the pad's B. The
+ * bar around them is.
  */
 function harness(over: { mode: string; ours?: boolean }) {
   const chat = document.createElement('div')
@@ -16,7 +17,7 @@ function harness(over: { mode: string; ours?: boolean }) {
   const screen = Object.assign(Object.create(GameScreen.prototype), {
     ctx: { mode: over.mode },
     session: { state: initialState(), watching: false },
-    chat: { root: chat },
+    chat: { root: chat, owns: (el: Element) => chat.contains(el) },
     hud: { hideTooltip: vi.fn() },
     overlays: { hasClientOverlay: !!over.ours, clientOverlayInput: overlayInput, tabLean: { lean() {}, end() {} } },
     runner: { send: (m: unknown) => sent.push(m) },
@@ -49,19 +50,31 @@ describe('a tap outside what is up closes it, as Escape does', () => {
     h.press(h.el('view'))
     expect(h.overlayInput).toHaveBeenCalledWith('cancel')
   })
-  it('inside the panel, or on the touch bar, the press is theirs', () => {
+  it('inside the panel, or on a touch bar button, the press is theirs', () => {
     for (const ours of [true, false]) {
       const h = harness({ mode: ours ? 'command' : 'popup', ours })
       h.press(h.el('popup'))
-      h.press(h.el('touchbar'))
       const bar = h.el('touchbar')
-      const tb = h.el('tb')
+      const tb = Object.assign(document.createElement('button'), { className: 'tb' })
       bar.append(tb)
       document.body.append(bar)
       h.press(tb)
       expect(h.sent).toEqual([])
       expect(h.overlayInput).not.toHaveBeenCalled()
     }
+  })
+  it('the touch bar where no button stands is outside: between the buttons, or on a dim placeholder', () => {
+    const h = harness({ mode: 'menu' })
+    const bar = h.el('touchbar')
+    const idle = Object.assign(document.createElement('span'), { className: 'tb idle' })
+    bar.append(idle)
+    document.body.append(bar)
+    h.press(bar)
+    h.press(idle)
+    expect(h.sent).toEqual([{ msg: 'key', keycode: 27 }, { msg: 'key', keycode: 27 }])
+    const ours = harness({ mode: 'command', ours: true })
+    ours.press(ours.el('touchbar'))
+    expect(ours.overlayInput).toHaveBeenCalledWith('cancel')
   })
   it('a swipe outside is no tap: it turns the tabs, as a swipe over the menu does', () => {
     for (const ours of [true, false]) {

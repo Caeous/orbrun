@@ -68,6 +68,9 @@ const GAME_MENU_TAG = 'game_menu'
 const GAME_MENU_ROW_KEY = 'o'
 const GAME_MENU_ROW_TEXT = ` ${GAME_MENU_ROW_KEY} - Orbrun settings`
 
+/** crawl's tile for each settings group's row, as the Start menu's rows carry theirs */
+const SETTING_GROUP_TILES: Record<SettingGroup, string> = { Camera: 'CMD_DISPLAY_MAP', Controls: 'CMD_KEYBOARD', Interface: 'CMD_DISPLAY_CHARACTER_STATUS' }
+
 export interface OverlayHooks {
   /** the connected controller's family, for the glyphs on the controls sheet */
   padKind?(): PadKind
@@ -2757,9 +2760,17 @@ export class Overlays {
 
   private renderTextInput(state: GameState): HTMLElement {
     const ti = state.textInput!
-    const el = h('div', { class: 'popup text-input' })
+    const number = numberPrompt(ti.tag)
+    const el = h('div', { class: 'popup text-input' + (number ? ' number' : '') + (ti.tag ? ' tag-' + ti.tag : '') })
     const input = h('input', { class: 'text', type: 'text', maxlength: ti.maxlen, size: ti.size })
-    el.append(h('div', { class: 'header', html: formattedStringToHtml(ti.prompt || 'Input here (ESC to cancel): ') }), h('div', { class: 'body' }, input))
+    // skill-menu.cc read_skill_target asks "Enter a skill target for Fighting: ": the skill stands out, the colon goes
+    const skill = ti.tag === 'skill_target' ? /^Enter a skill target for (.+?):?\s*$/.exec(ti.prompt || '') : null
+    const header = skill
+      ? h('div', { class: 'header' }, h('span', { class: 'what' }, 'Skill target'), h('span', { class: 'skill' }, skill[1]))
+      : h('div', { class: 'header', html: formattedStringToHtml(ti.prompt || 'Input here (ESC to cancel): ') })
+    el.append(header, h('div', { class: 'body' }, input))
+    // the keys, for a keyboard: the pad's keyboard brings its own line, and stands this one down (styles.css)
+    if (skill) el.append(h('div', { class: 'keys-hint' }, h('span', null, h('b', null, 'Enter'), ' set'), h('span', null, h('b', null, '-'), ' clear'), h('span', null, h('b', null, 'Esc'), ' cancel')))
     this.wireInput(input, ti, true)
     return el
   }
@@ -3340,43 +3351,34 @@ export class Overlays {
     const again = () => this.showSystem(opts)
     const el = h('div', { class: 'popup menu game sysmenu' })
     el.append(h('div', { class: 'title' }, 'Orbrun'))
-    const ol = h('ol', { class: 'sysrows' })
-    const body = h('div', { class: 'body' }, ol)
+    const body = h('div', { class: 'body' })
     el.append(body)
-    const items: HTMLElement[] = []
-    // what the row does, for the line under the list (`clientHint`), as the command rows of the
-    // Character tab carry theirs (command-menu.ts `sub`): both tabs speak, so the line never goes
-    // quiet on one of them
-    const add = (label: string, hint: string, fn: () => void, sep = false) => {
-      const k = String.fromCharCode(97 + items.length)
-      const it = h('li', { class: 'row level2 selectable fg7' + (sep ? ' sep' : ''), dataset: { hotkey: k, hint } },
-        h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, label))
-      it.addEventListener('click', () => {
-        this.closeClientOverlay()
-        fn()
-      })
-      items.push(it)
-      ol.append(it)
-    }
+    // drawn as the Character tab's commands are (`choiceRows`): crawl's tile, the label, the game's key on the right,
+    // and what the row does on the line under the list (`clientHint`), so the two tabs read as one menu
+    const choices: { label: string; key?: string; sub: string; tile?: string; sep?: boolean; run(): void }[] = []
+    const add = (label: string, key: string | undefined, sub: string, tile: string | undefined, run: () => void, sep = false) => choices.push({ label, key, sub, tile, sep, run })
     const playing = opts.inGame && !opts.spectating
     // three runs under rules: the game (back to it, its own commands and screens), Orbrun (the pad, the settings),
     // and last the way out
-    add('Resume', 'back to the dungeon, where you left it', () => {})
+    add('Resume', 'Esc', 'back to the dungeon, where you left it', 'CMD_MAP_EXIT_MAP', () => {})
     if (playing) {
-      add(`${REPEAT_COMMAND.label} (${REPEAT_COMMAND.key})`, 'do the last thing again', () => this.hooks.send(cm.input(REPEAT_COMMAND.key)))
+      add(REPEAT_COMMAND.label, REPEAT_COMMAND.key, 'do the last thing again', 'CMD_REST', () => this.hooks.send(cm.input(REPEAT_COMMAND.key)))
       // crawl binds CMD_GAME_MENU to `~` and F1 (cmd-keys.h); Escape does nothing in the main view
-      add('Game menu (F1)', "crawl's own menu: saving, options, the lot", () => this.hooks.send(cm.input('~')))
-      add(`${HELP_COMMAND.label} (${HELP_COMMAND.key})`, 'the manual, and what every key does', () => this.hooks.send(cm.input(HELP_COMMAND.key)))
+      add('Game menu', 'F1', "crawl's own menu: saving, options, the lot", 'CMD_GAME_MENU', () => this.hooks.send(cm.input('~')))
+      add(HELP_COMMAND.label, HELP_COMMAND.key, 'the manual, and what every key does', 'CMD_DISPLAY_COMMANDS', () => this.hooks.send(cm.input(HELP_COMMAND.key)))
     }
-    if (opts.inGame && opts.chat !== false) add('Chat (F12)', 'talk to whoever is watching', () => this.hooks.onSystemAction('chat'))
+    if (opts.inGame && opts.chat !== false) add('Chat', 'F12', 'talk to whoever is watching', 'CMD_REPLAY_MESSAGES', () => this.hooks.onSystemAction('chat'))
     // 2D is out for now (VIEW_OPTIONS in servers.ts)
-    if (playing && VIEW_OPTIONS) add('Toggle 2D / 3D view', 'the floor laid flat, or stood up around you', () => this.hooks.onSystemAction('toggleRenderer'))
-    add('Gamepad controls', 'what each button does, and how to change it', () => this.showBindings(this.hooks.padKind?.() ?? 'generic', again), true)
-    add('Settings', "Orbrun's own options: the camera, the controls, the HUD", () => this.showSettings(again))
+    if (playing && VIEW_OPTIONS) add('Toggle 2D / 3D view', undefined, 'the floor laid flat, or stood up around you', 'CMD_DISPLAY_MAP', () => this.hooks.onSystemAction('toggleRenderer'))
+    add('Gamepad controls', undefined, 'what each button does, and how to change it', 'CMD_KEYBOARD', () => this.showBindings(this.hooks.padKind?.() ?? 'generic', again), true)
+    add('Settings', undefined, "Orbrun's own options: the camera, the controls, the HUD", 'CMD_EDIT_PLAYER_TILE', () => this.showSettings(again))
     // a player saves (crawl's S, which asks first, then go_lobby brings the front end back); a spectator has nothing to
     // save and goes back to the Watch screen (`/watch/<server>`) the game was picked from
-    if (playing) add('Save and exit (S)', 'the game keeps; come back to it whenever', () => this.hooks.send(cm.input('S')), true)
-    else add(opts.spectating ? 'Stop watching' : 'Leave game', opts.spectating ? 'back to the list of games being played' : 'back to the front door', () => this.hooks.onSystemAction('disconnect'), true)
+    if (playing) add('Save and exit', 'S', 'the game keeps; come back to it whenever', 'CMD_SAVE_GAME_NOW', () => this.hooks.send(cm.input('S')), true)
+    else add(opts.spectating ? 'Stop watching' : 'Leave game', undefined, opts.spectating ? 'back to the list of games being played' : 'back to the front door', 'CMD_MAP_EXIT_MAP', () => this.hooks.onSystemAction('disconnect'), true)
+    const items = this.choiceRows(choices)
+    const ol = h('ol', { class: 'sysrows' }, ...items)
+    body.append(ol)
     // a spectator sends no keys, so the character commands are the player's alone
     const run = playing ? opts.run : undefined
     const character = run ? this.choiceRows(this.commandChoices(CHARACTER_COMMANDS, run)) : []
@@ -3384,6 +3386,7 @@ export class Overlays {
     const hint = this.clientHint([...items, ...character])
     if (hint) el.append(hint)
     el.append(h('div', { class: 'more' }, '[Esc] resume'))
+    el.classList.add('command-menu')
     if (!run) {
       this.openClientOverlay('system', el, items)
       // where it was left: the same row again, by its name, since which rows are drawn depends on the game
@@ -3391,7 +3394,6 @@ export class Overlays {
       if (at > 0) this.setClientFocus(at)
       return
     }
-    el.classList.add('command-menu')
     const characterPanel = h('ol', null, ...character)
     body.prepend(characterPanel)
     this.openClientOverlay('system', el, items)
@@ -3409,24 +3411,17 @@ export class Overlays {
    */
   showSettings(back?: () => void) {
     const again = () => this.showSettings(back)
-    const el = h('div', { class: 'popup menu game settings-groups' })
+    const el = h('div', { class: 'popup menu game command-menu settings-groups' })
     el.append(h('div', { class: 'title' }, 'Orbrun settings'))
-    const ol = h('ol')
-    el.append(h('div', { class: 'body' }, ol))
-    const items: HTMLElement[] = []
-    const add = (label: string, fn: () => void, sep = false) => {
-      const k = String.fromCharCode(97 + items.length)
-      const it = h('li', { class: 'row level2 selectable fg7' + (sep ? ' sep' : ''), dataset: { hotkey: k } }, h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, label))
-      it.addEventListener('click', () => {
-        this.closeClientOverlay()
-        fn()
-      })
-      items.push(it)
-      ol.append(it)
-    }
-    for (const g of settingGroups()) add(g.group, () => this.showSettingsGroup(g.group, again))
-    add('Back', () => back?.(), true)
-    el.append(h('div', { class: 'more' }, '[Esc] back'))
+    // the Start menu's rows (`choiceRows`), each group's own words on the line under the list
+    const items = this.choiceRows([
+      ...settingGroups().map((g) => ({ label: g.group, sub: g.hint, tile: SETTING_GROUP_TILES[g.group], run: () => this.showSettingsGroup(g.group, again) })),
+      { label: 'Back', key: 'Esc', sub: 'back to the Start menu', tile: 'CMD_MAP_EXIT_MAP', sep: true, run: () => back?.() },
+    ])
+    el.append(h('div', { class: 'body' }, h('ol', null, ...items)))
+    const hint = this.clientHint(items)
+    if (hint) el.append(hint)
+    el.append(this.clientFooter(false))
     this.openClientOverlay('settings', el, items, back)
     // where it was left: the group opened last is under the cursor again
     const at = items.findIndex((it) => rowLabel(it) === this.settingsAt)
@@ -3450,7 +3445,10 @@ export class Overlays {
         this.showBindings(this.hooks.padKind?.() ?? 'generic', () => this.showSettingsGroup(group, back))
       },
     )
-    panel.el.classList.add('popup', 'settings')
+    // the Start menu's look: what the lit row does goes on the line under the list, not in a letter before it
+    panel.el.classList.add('popup', 'settings', 'command-menu')
+    const hint = this.clientHint(panel.rows)
+    if (hint) panel.el.querySelector('.body')!.after(hint)
     this.openClientOverlay('settings', panel.el, panel.rows, back)
   }
 

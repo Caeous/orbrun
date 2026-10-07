@@ -2185,8 +2185,9 @@ canvas.minimap {
      blocks, not thin strokes, so they need less to sit off the view */
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
 }
-/* the level map is open: the minimap has become it. Keeps its slot so the monster list holds still. */
-canvas.minimap.hidden {
+/* the level map is open: the minimap has become it, and the monster list, which would lie over it, is put away */
+canvas.minimap.hidden,
+.monsters.hidden {
   visibility: hidden;
 }
 
@@ -3047,6 +3048,74 @@ canvas.minimap.hidden {
   bottom: 9rem;
   min-width: 20rem;
 }
+.popup.text-input > .body {
+  display: flex;
+  padding: 0.6rem 0.8rem 0.7rem;
+}
+.popup.text-input input.text {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.035);
+  border: 0;
+  border-bottom: 1px solid var(--gold);
+  border-radius: 0;
+  color: #fff;
+  font: inherit;
+  padding: 0.3rem 0.5rem;
+  outline: none;
+  caret-color: var(--accent);
+}
+.popup.text-input input.text:focus {
+  background: rgba(216, 180, 95, 0.08);
+}
+/* a number (a skill target, a depth) is read at a glance: big, in the middle of its line */
+.popup.text-input.number input.text {
+  flex: 0 0 auto;
+  width: 6ch;
+  margin: 0 auto;
+  font-size: 1.6em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* the skill target names its skill in gold under a small caption (overlays.ts renderTextInput) */
+.popup.tag-skill_target {
+  min-width: 16rem;
+}
+.popup.tag-skill_target > .header {
+  flex-direction: column;
+  gap: 0.1rem;
+  border-bottom: 0;
+  padding-top: 0.7rem;
+}
+.popup.tag-skill_target > .header .what {
+  color: var(--ink-dim);
+  font-size: 0.75em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.popup.tag-skill_target > .header .skill {
+  color: var(--gold-bright);
+  font-size: 1.15em;
+  font-weight: bold;
+}
+.popup.text-input .keys-hint {
+  display: flex;
+  justify-content: center;
+  gap: 1.2em;
+  padding: 0.4rem 0.8rem;
+  border-top: 1px solid #333;
+  color: #aaa;
+  font-size: 0.85rem;
+}
+.popup.text-input .keys-hint b {
+  color: var(--accent);
+  font-weight: normal;
+}
+/* the pad's keyboard and a finger's touch bar name their own buttons */
+.popup.text-input:has(.osk) .keys-hint,
+.overlay-stack.device-touch .popup.text-input .keys-hint {
+  display: none;
+}
 
 .popup .title,
 .popup .header {
@@ -3716,6 +3785,10 @@ canvas.minimap.hidden {
   font-size: 0.8em;
   padding: 0.3rem 0.5rem;
   border-radius: 4px;
+  /* shut, under the popups (.overlay-stack), so it never stands over one; opened, over them */
+  z-index: 19;
+}
+.chat.open {
   z-index: 30;
 }
 .chat a {
@@ -3793,6 +3866,55 @@ canvas.minimap.hidden {
 .chat_hidden a {
   color: #9cf;
   text-decoration: none;
+}
+/* a phone's chat (chat.ts compact), over the log: the log is not read through it; no (-), the caption row shuts it */
+.chat.compact {
+  box-sizing: border-box;
+  background: #050505;
+}
+.chat.compact .chat_hide_button {
+  display: none;
+}
+.chat.compact .chat_head {
+  align-items: center;
+  min-height: 32px;
+}
+.chat.compact .chat_history_container {
+  min-height: 6em;
+}
+/* iOS zooms the page into a field under 16px */
+.chat.compact input.chat_input {
+  font-size: 16px;
+  min-height: 36px;
+}
+/* the caption's stand-in on a phone: just over the log's right end (game.ts relayout), who is watching and what is
+   unread; with no log, the grid's bottom-right corner, where the folded + goes */
+.chat_badge {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 0 0.6rem;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: #9cf;
+  font-size: 0.8em;
+  text-decoration: none;
+  z-index: 19;
+}
+.chat_badge svg {
+  width: 1.3em;
+  height: 1.3em;
+}
+.chat_badge.has_new {
+  color: #ff5;
+}
+.chat_badge.corner {
+  right: var(--gx, 0px);
+  bottom: var(--gy, 0px);
 }
 
 @media (max-width: 900px) {
@@ -4095,7 +4217,6 @@ canvas.minimap.hidden {
 .popup.settings-groups {
   min-width: 22rem;
 }
-
 /* Command tabs keep the same shell and share a grid cell so their size stays steady. */
 /* wider than a plain game menu (`.popup.menu.game`, 26rem): the rows carry a subline under the label,
    and it should read as a line, not as a column -- so the selector carries that rule's weight too */
@@ -4288,16 +4409,53 @@ canvas.minimap.hidden {
   line-height: 1.4;
   text-wrap: pretty;
 }
-/* the Start menu's own rows keep the game menu's shape (a letter, a dash, the label) next to the command rows of its Character tab */
-.command-menu .sysrows li.row .label {
-  flex: 0 1 auto;
+/*
+ * The settings over the game (overlays.ts showSettingsGroup) in the Start menu's look: a row as tall as one
+ * with a tile, the label, and the value on the right between its arrows; what the row does is on the line
+ * under the list, so the letters go, as they do on the front end's settings.
+ */
+.popup.settings.command-menu li.row {
+  gap: 0.7em;
+  min-height: calc(32px + 0.36em);
 }
-/* the letter leads those rows, so it takes no auto margin and no space before it */
-.menu.game.command-menu .sysrows li.row .hotkey {
-  width: 1.2em;
-  min-width: 0;
-  margin-left: 0;
-  padding-left: 0;
+.popup.settings.command-menu li.row :is(.hotkey, .dash) {
+  display: none;
+}
+.popup.settings.command-menu li.row .value {
+  gap: 0;
+  padding-left: 1.5em;
+}
+.popup.settings.command-menu li.row .arrow {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+/* a finger: every row, and each arrow of a value, is a 44px target. The value gives up its width before the label */
+@media (pointer: coarse) {
+  .command-menu li.row {
+    min-height: 44px;
+  }
+  .popup.settings.command-menu li.row {
+    padding-right: 0;
+  }
+  .popup.settings.command-menu li.row .label {
+    min-width: min-content;
+  }
+  .popup.settings.command-menu li.row .value {
+    flex: 0 20 auto;
+    min-width: 0;
+    padding-left: 0.5em;
+  }
+  .popup.settings.command-menu li.row .value .val {
+    min-width: 0;
+  }
+  .popup.settings.command-menu li.row .arrow {
+    width: 44px;
+    height: 44px;
+  }
 }
 /* the palette and More rows stand apart from the commands, under a rule; the Orbrun menu's runs the same way */
 .command-menu li.row.sep,
@@ -4523,6 +4681,10 @@ canvas.minimap.hidden {
   width: 1.2em;
   height: 1.2em;
   vertical-align: middle;
+}
+/* the skill target's Done (osk.ts hintLine), in the light green of a button a choice brought (.touchbar .tb.fresh) */
+.osk .osk-prompt.fresh {
+  color: var(--color-10);
 }
 
 @media (prefers-reduced-motion: reduce) {

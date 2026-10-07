@@ -103,8 +103,10 @@ export class Osk {
     const line = h('div', { class: 'more' })
     for (const p of this.prompts) {
       if (this.target?.numpad && (p.button === 'LB' || p.button === 'RB')) continue
-      const button = p.submit && this.target?.submitButton ? this.target.submitButton : p.button
-      line.append(h('span', { class: 'osk-prompt', 'aria-label': `${glyphName(button, kind)} ${p.label}` }, glyph(button, kind), ' ' + p.label), ' · ')
+      const moved = p.submit && this.target?.submitButton
+      const button = moved ? this.target!.submitButton! : p.button
+      // a submit moved off Y is the skill target's, which a skill row's Set target brought: green, as the touch bar's Done (bindings.ts choiceBrought)
+      line.append(h('span', { class: 'osk-prompt' + (moved ? ' fresh' : ''), 'aria-label': `${glyphName(button, kind)} ${p.label}` }, glyph(button, kind), ' ' + p.label), ' · ')
     }
     line.append('Enter / Esc')
     return line

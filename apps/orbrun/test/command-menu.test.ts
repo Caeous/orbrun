@@ -86,7 +86,7 @@ describe('the command menus', () => {
     h.ov.clientOverlayInput('right')
     expect(h.focused()).toBe('Character status')
     h.ov.clientOverlayInput('left')
-    expect(h.focused()).toBe('Repeat previous command (`)')
+    expect(h.focused()).toBe('Repeat previous command')
     h.host.querySelectorAll<HTMLButtonElement>('.command-tabs button')[0].click()
     expect(h.focused()).toBe('Character status')
     expect(h.host.querySelector('.command-tabs .current')?.textContent).toBe('Character')
@@ -210,8 +210,10 @@ describe('the command menus', () => {
     const options = () => [...h.host.querySelectorAll('.sysrows .label')].map((r) => r.textContent)
     h.system()
     expect([...h.host.querySelectorAll('#command-panel-character .label')].map((r) => r.textContent)).toEqual(CHARACTER_COMMANDS.map((c) => c.label))
-    expect(options()).toEqual(['Resume', 'Repeat previous command (`)', 'Game menu (F1)', 'Help (?)', 'Chat (F12)', 'Gamepad controls', 'Settings', 'Save and exit (S)'])
-    expect([...h.host.querySelectorAll('.sysrows li.sep .label')].map((r) => r.textContent)).toEqual(['Gamepad controls', 'Save and exit (S)'])
+    expect(options()).toEqual(['Resume', 'Repeat previous command', 'Game menu', 'Help', 'Chat', 'Gamepad controls', 'Settings', 'Save and exit'])
+    // the game's key on the right, as the Character tab's commands carry theirs
+    expect([...h.host.querySelectorAll('.sysrows li')].map((r) => r.querySelector('.hotkey')?.textContent ?? '')).toEqual(['Esc', '`', 'F1', '?', 'F12', '', '', 'S'])
+    expect([...h.host.querySelectorAll('.sysrows li.sep .label')].map((r) => r.textContent)).toEqual(['Gamepad controls', 'Save and exit'])
     // the System tab, from its third row: the game's own menu
     h.ov.clientOverlayInput('right')
     h.ov.clientOverlayInput('next')
@@ -227,7 +229,7 @@ describe('the command menus', () => {
     // a spectator sends no keys, so there is no character to read and no tabs
     h.system(true)
     expect(h.host.querySelector('.command-tabs')).toBeNull()
-    expect(options()).toEqual(['Resume', 'Chat (F12)', 'Gamepad controls', 'Settings', 'Stop watching'])
+    expect(options()).toEqual(['Resume', 'Chat', 'Gamepad controls', 'Settings', 'Stop watching'])
     expect([...h.host.querySelectorAll('.sysrows li.sep .label')].map((r) => r.textContent)).toEqual(['Gamepad controls', 'Stop watching'])
     expect(h.run).not.toHaveBeenCalled()
     expect(h.sent).toEqual([])

@@ -651,12 +651,9 @@ export class GameScreen {
     const inset = this.hud.touchbarInset
     this.overlays.root.style.setProperty('--touch-right', inset.right + 'px')
     this.overlays.root.style.setProperty('--touch-bottom', inset.bottom + 'px')
-    // the chat box (client.html #chat) sits at the foot of the right column, as wide as the sidebar
-    const side = this.grid.px(cells.sidebar)
-    const chat = this.chat.root.style
-    chat.left = side.left + 'px'
-    chat.width = side.width + 'px'
-    chat.bottom = Math.max(0, this.root.clientHeight - side.top - side.height) + 'px'
+    // the chat box (client.html #chat) sits at the foot of the right column, as wide as the sidebar; on a phone over the log
+    const log = hideMessages || !msgPx.width ? null : msgPx
+    this.chat.place(this.grid.px(cells.sidebar), this.root.clientHeight, this.root.clientWidth, !!this.grid.phone, log)
     this.needsRender = true
   }
 
@@ -2048,8 +2045,9 @@ export class GameScreen {
    * Under a finger, a crawl menu goes the same way (`popupUp`), and so do
    * Orbrun's own panels: a tap outside them is their Escape, a step back
    * (B). A mouse leaves those be, as before: it has the view to drag while
-   * a setting is tuned. The touch bar is no outside: its buttons are the
-   * pad's, and its Back already says what it does. A finger outside closes
+   * a setting is tuned. The touch bar's buttons are no outside: they are the
+   * pad's, and its Back already says what it does; the bar between and
+   * around them, and a cell's dim placeholder, are. A finger outside closes
    * as it lifts rather than as it lands, since a swipe there turns the menu's
    * tabs as a swipe over it does (`outsideLift`).
    */
@@ -2060,10 +2058,10 @@ export class GameScreen {
     const touch = ev.pointerType === 'touch'
     if (touch) this.inputFrom('touch')
     const t = ev.target instanceof Element ? ev.target : null
-    if (t?.closest('.touchbar')) return
+    if (t?.closest('.touchbar button')) return
     if (touch && this.overlays.hasClientOverlay && !this.session.watching) {
       // inside a panel, on the on-screen keyboard or in the chat, the press is theirs
-      if (t?.closest('.popup, .osk') || (t && this.chat.root.contains(t))) return
+      if (t?.closest('.popup, .osk') || (t && this.chat.owns(t))) return
       ev.preventDefault()
       ev.stopPropagation()
       this.pointerClosed = true
@@ -2079,7 +2077,7 @@ export class GameScreen {
       return
     }
     if (!this.popupUp(touch)) return
-    if (t && this.chat.root.contains(t)) return
+    if (t && this.chat.owns(t)) return
     // the perf pane takes its own taps (it saves the log); a tap on it is not a tap outside the popup
     if (t?.closest('.perf')) return
     const inside = !!t?.closest('.popup')

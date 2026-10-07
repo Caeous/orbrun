@@ -315,7 +315,8 @@ export class CameraController {
    * (`release`) springs the yaw on to the heading its swipe meant
    * (`releaseSteps`: the next one the way it went), from the speed it lifted
    * at, so the turn carries on from the finger without a hitch and never
-   * swings past that heading and back (`settle`), and the pitch back to rest
+   * swings past that heading and back (`settle`); a quick swipe (QUICK_TURN)
+   * eases there instead, as an arrow key's turn does; and the pitch back to rest
    * the same way, so a touch look always ends square to the grid and level.
    */
   endDrag(release?: DragRelease) {
@@ -330,7 +331,9 @@ export class CameraController {
       this.camera.pitch = this.restPitch
       return
     }
-    this.yawSpring = from.detents === undefined ? release.yawSpeed : release.yawSpeed * detentSlope(from.detents)
+    // a quick swipe still turning toward its heading finishes as a keyed turn does (`turn`), the view's own ease
+    const quick = Math.abs(release.yawSpeed) >= QUICK_TURN && release.yawSpeed * yawDelta(this.camera.yaw, this.goalYaw) > 0
+    this.yawSpring = quick ? null : from.detents === undefined ? release.yawSpeed : release.yawSpeed * detentSlope(from.detents)
     this.pitchSpring = release.pitchSpeed
   }
 
@@ -792,6 +795,8 @@ const SPRING_RATE = 22
 /** close enough to land on the heading: radians off and radians a second */
 const SPRING_REST = 0.002
 const SPRING_REST_SPEED = 0.05
+/** a finger lifting faster than this, in radians a second, toward the heading it turns to is a quick swipe: it finishes as a keyed turn (about 300 css px a second) */
+const QUICK_TURN = 2
 /** Exponential turn rates, calibrated to the old 60 Hz feel but independent of frame rate. */
 const TURN_RATE = 16
 /** The right stick at full push, in radians a second: its yaw about as quick as a 45° turn. */

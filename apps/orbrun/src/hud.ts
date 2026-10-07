@@ -1620,15 +1620,17 @@ export class Hud {
     ctx.restore()
   }
 
-  /** The level map is open: the fullscreen map stands in for the minimap, which keeps its slot so the monster list holds still. */
+  /** The level map is open: the fullscreen map stands in for the minimap, and the monster list, which would lie over it, goes with it. */
   hideMinimap() {
     this.minimapHidden = true
     this.minimapCanvas.classList.add('hidden')
+    this.monsters.classList.add('hidden')
   }
 
-  /** The level map closed: the live minimap is back in its corner. */
+  /** The level map closed: the live minimap and the monster list are back in their corner. */
   showMinimap() {
     this.minimapCanvas.classList.remove('hidden')
+    this.monsters.classList.remove('hidden')
     this.minimapHidden = false
     this.minimapKey = ''
   }
