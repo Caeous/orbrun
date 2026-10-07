@@ -1567,8 +1567,9 @@ export class GameScreen {
     // reached from inside one (A on a settings row) keeps the opener it came with
     if (ev.type === 'press') {
       if (!this.overlays.hasClientOverlay) this.overlayOpener = null
-      // (the frame a turn of X's tabs stands in is no screen of the bumper's: the bumper turns it again)
-      else if (!overlayWasUp && this.overlays.openMenu !== 'battle') this.overlayOpener = ev.button
+      // (the frame a turn of X's tabs stands in is no screen of the bumper's: the bumper turns it again;
+      // nor is A's chooser of what to do underfoot A's: A picks a row there, as in every list)
+      else if (!overlayWasUp && this.overlays.openMenu !== 'battle' && ev.button !== 'A') this.overlayOpener = ev.button
     }
     this.needsRender = true
   }

@@ -362,6 +362,44 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     expect(screen(g).surface).toMatch(/^menu:/)
   })
 
+  it('stairs with a pile on them: A asks which, and A again takes the stairs, or picks up from the row below', async () => {
+    const onPile = async () => {
+      const g = await startLive({ args: FIGHTER })
+      open.push(g)
+      for (let i = 0; i < 5 && g.ctx().mode !== 'command'; i++) await g.raw('a')
+      await g.raw('&')
+      await g.raw('wiz\r')
+      await g.raw('\x1b')
+      // off D:1's way out, onto a staircase down of wizard mode's making, with a dagger on it
+      for (let n = 0; n < 12 && g.ctx().under.kind !== 'none'; n++) {
+        for (const k of ['l', 'j', 'h', 'k', 'u', 'n', 'b', 'y']) {
+          const before = g.state().player.pos
+          await g.raw(k)
+          const after = g.state().player.pos
+          if (after && before && (after.x !== before.x || after.y !== before.y)) break
+        }
+      }
+      await g.raw('&(')
+      await g.raw('stone_stairs_down_i\r')
+      await g.raw('&%')
+      await g.raw('dagger\r')
+      // off and back on, so crawl tells of the pile underfoot as a player arriving there would hear it
+      await g.raw('l')
+      await g.raw('h')
+      await g.press('A')
+      expect(g.root.querySelector('[data-client] .title')?.textContent).toBe('Interact')
+      g.clearSent()
+      return g
+    }
+    let g = await onPile()
+    await g.press('A')
+    expect(g.sent).toContainEqual({ msg: 'input', text: '>' })
+    g = await onPile()
+    await g.dpad(4)
+    await g.press('A')
+    expect(g.sent).toContainEqual({ msg: 'input', text: ',' })
+  })
+
   it("Android's back is B on a screen, and over the map asks to save and exit, which a second back declines", async () => {
     const g = await at('inventory')
     await g.back()
