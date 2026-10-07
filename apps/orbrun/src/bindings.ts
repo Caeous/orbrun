@@ -660,12 +660,14 @@ export type TouchLabel = Omit<BindingLabel, 'button'> &
     count?: number
     /** a popup's verb that is the one its line has lit, as Select's is (styles.css .tb.switch.lit) */
     lit?: boolean
-    /** there, so the keypad keeps its shape, but nothing to press: the map's Fire with nothing quivered (hud.ts idleTouchButton) */
+    /** there, so the keypad keeps its shape, but nothing to press: the map's Fire with nothing quivered, the skills screen's `[-]` outside its targets (hud.ts idleTouchButton) */
     idle?: boolean
     keycap?: string
     /** a switch's bracketed key and its words in the screen's colours (Switch `keyHtml`, `wordHtml`) */
     keycapHtml?: string
     labelHtml?: string
+    /** the bracketed key alone, its words only for a screen reader: the skills screen's switches, too long to read on a button */
+    bare?: boolean
   }
 
 /**
@@ -832,9 +834,10 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
   const placed: string[] = []
   // a menu's more-line switches and a popup's verbs, a button each, along the top row in the order the screen prints
   // them; a button of the tables that sends one's key gives way to it, so the switch is in one place, under its words
-  const switches = !panel && (ctx.mode === 'menu' || ctx.mode === 'popup') ? (ctx.switches ?? []).filter((sw) => !ANCHOR_SWITCHES.has(moreSwitchKeycode(sw.key))) : []
+  const printed = !panel && (ctx.mode === 'menu' || ctx.mode === 'popup') ? (ctx.switches ?? []).filter((sw) => !ANCHOR_SWITCHES.has(moreSwitchKeycode(sw.key))) : []
+  const switches = ctx.menu?.menu.tag === 'skills' ? skillsSwitches(printed) : printed
   const switched = new Set(switches.map((sw) => String(moreSwitchKeycode(sw.key) || sw.key)))
-  const putSwitch = (sw: Switch, cell: TouchCell) => {
+  const putSwitch = (sw: Switch & { idle?: boolean }, cell: TouchCell) => {
     taken.add(cell)
     const code = moreSwitchKeycode(sw.key)
     // a key the screen prints in brackets beside its words ("[!] read|quaff|evoke") is the button's picture, the words
@@ -845,7 +848,9 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
     const picture = bracketed ? { keycap: sw.key, ...(sw.keyHtml ? { keycapHtml: sw.keyHtml } : {}), ...(sw.wordHtml ? { labelHtml: sw.wordHtml } : {}) } : switchPicture(sw.word, sw.key, sw.item)
     // the verb the popup has lit, which Select does too, lit here as the popup's line lights it
     const lit = !bracketed && !!ctx.focus?.label && formattedStringToText(ctx.focus.label) === sw.label
-    out.push({ button: `key:${sw.key}`, label: bracketed ? words : touchCaption(words), action: { kind: 'keys', label: words, seq: [code ? { key: code } : { text: sw.key }] }, contextual: true, ...picture, ...(lit ? { lit } : {}), cell })
+    const bare = bracketed && ctx.menu?.menu.tag === 'skills'
+    const idle = !!sw.idle
+    out.push({ button: `key:${sw.key}`, label: bracketed ? words : touchCaption(words), action: { kind: 'keys', label: words, seq: [code ? { key: code } : { text: sw.key }] }, contextual: true, ...picture, ...(lit ? { lit } : {}), ...(bare ? { bare } : {}), ...(idle ? { idle } : {}), cell })
   }
   // a menu's describe of the lit row keeps Examine's cell
   const examines = [...has].some(([b, l]) => b === 'X' && l.action.kind === 'menu' && l.action.op === 'examine')
@@ -883,6 +888,23 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
     if (cell) putSwitch(sw, cell)
   }
   return out
+}
+
+/** the skills screen's own buttons (skill-menu.cc `init_button_row`), always there, their text blanked where they do nothing now */
+const SKILLS_BUTTONS: readonly Switch[] = [
+  { key: '?', label: '[?] Help', word: 'Help' },
+  { key: '=', label: '[=] set a skill target', word: 'set a skill target' },
+  { key: '-', label: '[-] clear all targets', word: 'clear all targets' },
+]
+
+/**
+ * The skills screen's switches: its buttons first, each in its cell even
+ * while crawl blanks it (help, targets, a target being set), idle, so
+ * switching views never shifts the rest along; then its switches as printed.
+ */
+function skillsSwitches(printed: Switch[]): (Switch & { idle?: boolean })[] {
+  const buttons = SKILLS_BUTTONS.map((b) => printed.find((sw) => sw.key === b.key) ?? { ...b, idle: true })
+  return [...buttons, ...printed.filter((sw) => !SKILLS_BUTTONS.some((b) => b.key === sw.key))]
 }
 
 /**

@@ -269,8 +269,22 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     // the skills screen's six
     const skills = { ...ctx({ mode: 'menu', menu: { menu: { tag: 'skills', type: 'crt', items: [], flags: 0 }, hoverable: [] } as unknown as MenuContext }), switches: [sw('?', 'Help'), sw('=', 'set a skill target'), sw('/', 'auto|manual mode'), sw('*', 'useful|all skills'), sw('_', 'enhanced|base level'), sw('!', 'training|cost|targets')] }
     const cells = drawn(skills)
-    expect(cells[0]).toEqual(['key:?', 'key:=', 'key:/', 'key:*', 'key:_'])
-    expect(cells[1][0]).toBe('key:!')
+    expect(cells[0]).toEqual(['key:?', 'key:=', 'key:-', 'key:/', 'key:*'])
+    expect(cells[1][0]).toBe('key:_')
+    // their words too long to read on a button: the bracketed key alone, the words left to a screen reader
+    const labels = touchLabels(barLabels(skills), skills).filter((l) => l.button.startsWith('key:'))
+    expect(labels.every((l) => l.bare)).toBe(true)
+    expect(labels.find((l) => l.button === 'key:=')?.label).toBe('set a skill target')
+    // `[-]` only shows with targets, `[=]` not in help: each keeps its cell while away, idle, so the rest hold still
+    const targets = { ...skills, switches: [sw('?', 'Help'), sw('=', 'set a skill target'), sw('-', 'clear all targets'), sw('/', 'auto|manual mode'), sw('*', 'useful|all skills'), sw('_', 'enhanced|base level'), sw('!', 'training|cost|targets')] }
+    const help = { ...skills, switches: [sw('?', 'Help'), sw('/', 'auto|manual mode'), sw('*', 'useful|all skills'), sw('_', 'enhanced|base level'), sw('!', 'training|cost|targets')] }
+    expect(drawn(targets)).toEqual(cells)
+    expect(drawn(help)).toEqual(cells)
+    const idle = (c: Context) => touchLabels(barLabels(c), c).filter((l) => l.idle).map((l) => l.button)
+    expect(idle(skills)).toEqual(['key:-'])
+    expect(idle(targets)).toEqual([])
+    expect(idle(help)).toEqual(['key:=', 'key:-'])
+    expect(touchLabels(barLabels({ ...menu({}, 'use_item'), switches: [sw('!', 'read|quaff|evoke')] }), { ...menu({}, 'use_item'), switches: [sw('!', 'read|quaff|evoke')] }).find((l) => l.button === 'key:!')?.bare).toBeUndefined()
   })
   it('the pack: describing the lit row is Examine; the bumpers that turn its pages are off, a finger taps the tabs', () => {
     const pack = ctx({ ...menu({ sections: true }, 'inventory'), pageable: true })

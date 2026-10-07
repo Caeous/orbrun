@@ -2518,6 +2518,10 @@ canvas.minimap.hidden,
   /* the key and its words, one size: as small as fits nine characters a line, at most a caption's */
   --switch-fs: max(7px, min(0.85em, calc(100cqi / 9 / 0.61)));
 }
+/* the key alone (bindings.ts TouchLabel `bare`): as tall as the other buttons’ pictures, its brackets kept inside */
+.touchbar .tb.has-keycap.bare {
+  --switch-fs: min(12px, calc(100cqi / 4 / 0.61));
+}
 .touchbar .tb.has-keycap .label {
   font-size: var(--switch-fs);
   line-height: 1.1;

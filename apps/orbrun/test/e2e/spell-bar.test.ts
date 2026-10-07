@@ -44,6 +44,20 @@ describe('the spell bar', () => {
     }
   })
 
+  it('goes away when the keyboard speaks', { timeout: 60000 }, async () => {
+    const g = await start(CONJURER)
+    try {
+      await still(g)
+      const bar = g.root.querySelector<HTMLElement>('.spellbar')!
+      expect(bar.hidden).toBe(false)
+      await g.key('Escape')
+      await g.settle()
+      expect(bar.hidden).toBe(true)
+    } finally {
+      g.close()
+    }
+  })
+
   it('a character with no spells: crawl says so, the line never shows, and there is no bar', { timeout: 60000 }, async () => {
     const g = await start(FIGHTER)
     try {

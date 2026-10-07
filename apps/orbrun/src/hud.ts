@@ -728,7 +728,7 @@ export class Hud {
     this.spellbar.style.width = (this.touchBeside ? sidePx.left : across) + 'px'
     const lastLine = msgPx.top + msgPx.height - host.grid.ch
     this.messages.style.transform = this.spellRow && foot - SPELL_LOG_GAP > lastLine ? `translateY(${Math.round(foot - SPELL_LOG_GAP - lastLine)}px)` : ''
-    this.spellKey = ''
+    this.spellKey = null
     // the action panel stands in the strip along the top between the stats pane and the minimap (grid/panel.ts), each a
     // cell's gutter away; the minimap's left edge is where it hangs from the column's right edge, not the column's own
     const minimapLeft = this.sidebar.hidden || w === 0 ? null : sidePx.left + sidePx.width - w
@@ -1838,7 +1838,7 @@ export class Hud {
    */
   private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null) {
     // the icons come in with the gamedata, and are drawn for the screen's density (`touchArtScale`)
-    const art = (l: TouchLabel) => '#' + (l.icon ?? '') + (l.art?.join() ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '')
+    const art = (l: TouchLabel) => '#' + (l.icon ?? '') + (l.art?.join() ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '') + (l.bare ? '!' : '')
     const key = labels ? labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
@@ -1898,7 +1898,8 @@ export class Hud {
     }
   }
 
-  private spellKey = ''
+  /** what the spell bar last drew, '' for nothing; null draws it again, shown or not (`layout`) */
+  private spellKey: string | null = ''
 
   /**
    * The spell bar (spell-bar.ts): one row of small buttons under the
@@ -1984,7 +1985,12 @@ export class Hud {
     const arrow = TOUCH_ARROW_ROT[covers[0]]
     // a switch the screen prints in brackets wears them, the key bright between them
     // the key as the screen prints it, in its colours
-    const keycap = () => (l.keycapHtml ? h('span', { class: 'keycap', html: l.keycapHtml }) : h('span', { class: 'keycap' }, h('span', { class: 'bracket' }, '['), l.keycap!, h('span', { class: 'bracket' }, ']')))
+    const keycap = () =>
+      l.bare
+        ? h('span', { class: 'keycap', html: l.keycapHtml ? unbracketed(l.keycapHtml) : escapeHtml(l.keycap!) })
+        : l.keycapHtml
+          ? h('span', { class: 'keycap', html: l.keycapHtml })
+          : h('span', { class: 'keycap' }, h('span', { class: 'bracket' }, '['), l.keycap!, h('span', { class: 'bracket' }, ']'))
     // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
     const words = l.hold ? l.label + ' [' + l.hold + ']' : l.label
     const text = formattedStringToText(words)
@@ -1992,9 +1998,9 @@ export class Hud {
     // which leaves no room for two under it
     const long = arrow === undefined && l.keycap === undefined && text.length > TOUCH_CAPTION_CHARS && text.includes(' ')
     const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : long ? null : touchPicture(gd, l, l.item)
-    btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (l.fresh ? ' fresh' : '') + (btn.classList.contains('down') ? ' down' : '')
+    btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (l.bare ? ' bare' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (l.fresh ? ' fresh' : '') + (btn.classList.contains('down') ? ' down' : '')
     btn.setAttribute('aria-label', formattedStringToText(l.label))
-    const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, arrow !== undefined ? null : l.labelHtml ? h('span', { class: 'label', html: l.labelHtml }) : label(words)]
+    const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, arrow !== undefined || l.bare ? null : l.labelHtml ? h('span', { class: 'label', html: l.labelHtml }) : label(words)]
     btn.replaceChildren(...parts.filter((n): n is Element => n !== null))
     // sized by its length to keep to its one line, or by its longer line of two (styles.css .tb.has-icon .label, .tb.long .label)
     btn.style.setProperty('--chars', String(long ? longerHalf(text) : text.length))
@@ -2170,10 +2176,12 @@ function touchArtScale(): number {
 const TOUCH_ARROW_ROT: Partial<Record<TouchCell, number>> = { up: 0, right: 90, down: 180, left: 270 }
 
 /** An anchor with nothing to do on this screen (bindings.ts `TOUCH_ANCHORS`): its arrow, or its picture over its word, dim, pressing nothing. */
-function idleTouchButton(cell: TouchCell, idle: TouchIcon & { label: string }, gd: Gamedata | null): HTMLElement {
+function idleTouchButton(cell: TouchCell, idle: TouchIcon & { label: string; keycap?: string; bare?: boolean }, gd: Gamedata | null): HTMLElement {
   const arrow = TOUCH_ARROW_ROT[cell]
-  const icon = arrow !== undefined ? touchArrow(arrow) : touchPicture(gd, idle)
-  const el = h('span', { class: 'tb idle at-' + cell + (icon ? ' has-icon' : ''), 'data-cell': cell, 'aria-hidden': 'true' }, icon, arrow !== undefined ? null : label(idle.label))
+  const keyed = idle.keycap !== undefined
+  // a switch away: its key alone, without the screen's colours (the skills screen's `[-]` outside its targets)
+  const icon = arrow !== undefined ? touchArrow(arrow) : keyed ? h('span', { class: 'keycap' }, idle.keycap!) : touchPicture(gd, idle)
+  const el = h('span', { class: 'tb idle at-' + cell + (icon ? ' has-icon' : '') + (keyed ? ' has-keycap' : '') + (idle.bare ? ' bare' : ''), 'data-cell': cell, 'aria-hidden': 'true' }, icon, arrow !== undefined || idle.bare ? null : label(idle.label))
   el.style.setProperty('--chars', String(idle.label.length))
   return el
 }
@@ -2274,4 +2282,12 @@ function changed(prev: readonly unknown[] | undefined, next: readonly unknown[])
   if (!prev || prev.length !== next.length) return true
   for (let i = 0; i < next.length; i++) if (prev[i] !== next[i]) return true
   return false
+}
+
+/** a key the screen prints in brackets (`switchColours` `keyHtml`) without them, in its colour: a button with nothing else on it (TouchLabel `bare`) */
+function unbracketed(keyHtml: string): string {
+  return keyHtml
+    .replace(/\[/, '')
+    .replace(/\](?=[^\]]*$)/, '')
+    .replace(/<span class="[^"]*"><\/span>/g, '')
 }
