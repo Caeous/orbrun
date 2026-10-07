@@ -1032,10 +1032,12 @@ export class Overlays {
     if (!strip || (tp && !tp.raw)) el.append(title)
     if (strip) el.append(this.packTabs(strip))
     const body = h('div', { class: 'body' })
+    const ol = h('ol')
     if (strip) {
-      // one size whatever the page: as wide as styles.css says, as tall as the fullest page's rows
+      // one size whatever the page: as wide as styles.css says, as tall as the fullest page's rows. The rows hold
+      // that height, not the body, so where the popup's height runs out the body still gives way and scrolls
       el.classList.add('paged-pack')
-      body.style.minHeight = `min(${packRows(state)} * var(--pack-row, ${this.packRowPx ? this.packRowPx + 'px' : '2.2em'}), 64vh)`
+      ol.style.minHeight = `min(${packRows(state)} * var(--pack-row, ${this.packRowPx ? this.packRowPx + 'px' : '2.2em'}), 64vh)`
       requestAnimationFrame(() => {
         const row = body.querySelector('li.level2')?.getBoundingClientRect().height
         if (!row || row === this.packRowPx) return
@@ -1043,7 +1045,6 @@ export class Overlays {
         body.style.setProperty('--pack-row', row + 'px')
       })
     }
-    const ol = h('ol')
     const arrows = !!(menu.flags & MenuFlag.ARROWS_SELECT)
     for (let i = 0; i < menu.items.length; i++) {
       const it = menu.items[i]
