@@ -2123,6 +2123,46 @@ a.item.beside {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
+/* the finger's lessons (hud.ts showTouchHints, touch-hints.ts): a frame round the pane a tap opens something from, in the
+   accent a lit spell's outline wears on the spell bar (.touchbar.spellbar .tb.lit), breathing a little, and under it crawl's
+   help icon and the word, bare and shadowed as the pad's prompts are (.actionbar.contextual .chip). Neither takes the tap:
+   it goes through to the pane under the frame */
+.hud > .touch-ring,
+.hud > .touch-caption {
+  pointer-events: none;
+}
+.touch-ring {
+  box-sizing: border-box;
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  animation: touch-ring 2s ease-in-out infinite;
+}
+.touch-ring.disc {
+  border-radius: 50%;
+}
+.touch-caption {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  white-space: nowrap;
+  color: var(--accent);
+  text-shadow:
+    0 0 3px #000,
+    0 1px 2px rgba(0, 0, 0, 0.85);
+}
+.touch-caption canvas.tile {
+  flex: none;
+  image-rendering: pixelated;
+}
+@keyframes touch-ring {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .touch-ring {
+    animation: none;
+  }
+}
 /* the portrait (hud.md): the player's cell on the pane's first rows, the title and god lines beside it */
 .stats canvas.portrait {
   position: absolute;

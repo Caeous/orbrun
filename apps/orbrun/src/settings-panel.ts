@@ -1,5 +1,6 @@
 import { h } from './dom'
 import { gamepadHints } from './gamepad-hints'
+import { touchHints } from './touch-hints'
 import { getSettings, saveSettings } from './servers'
 import { adjustSetting, groupAtDefaults, resetGroup, rowHint, rowOff, settingGroups, settingValue, type SettingGroup } from './settings-rows'
 
@@ -69,17 +70,18 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
     rows.push(r)
     ol.append(r)
   }
-  // the tips are the pad's, so they are a row of the page the pad's settings are on
+  // the tips are the pad's and the finger's, so they are a row of the page the Hints setting is on
   if (group === 'Controls') {
     const k = hotkey()
-    const replay = h('li', { class: 'row level2 selectable fg7 action', dataset: { hotkey: k, focus: 'replay-gamepad-tips', hint: 'Forget which gamepad controls you have used and teach them again: switches Hints to Adaptive.' } },
-      h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, 'Replay gamepad tips'))
+    const replay = h('li', { class: 'row level2 selectable fg7 action', dataset: { hotkey: k, focus: 'replay-gamepad-tips', hint: 'Forget which gamepad and touch controls you have used and teach them again: switches Hints to Adaptive.' } },
+      h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, 'Replay tips'))
     replay.addEventListener('click', () => {
       gamepadHints().reset()
+      touchHints().reset()
       saveSettings({ ...getSettings(), hints: 'adaptive' })
       opts.onchange?.()
       redraw()
-      replay.querySelector('.label')!.textContent = 'Gamepad tips reset'
+      replay.querySelector('.label')!.textContent = 'Tips reset'
     })
     rows.push(replay)
     ol.append(replay)

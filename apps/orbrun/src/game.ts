@@ -19,7 +19,8 @@ import { Chat } from './chat'
 import { Overlays } from './overlays'
 import { directionKey, isTextEntry, keydownMessage } from './keys'
 import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
-import { gamepadHints, type PadHintEvidence } from './gamepad-hints'
+import { gamepadHints, type HintMode, type PadHintEvidence } from './gamepad-hints'
+import { touchHints, type TouchHintEvidence, type TouchLesson } from './touch-hints'
 import { isPack, openPackKeys } from './pack-tabs'
 import { OKAY_THEN, SHOUT_KEY, SWAP_WEAPONS_KEY, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
 import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INSET, type Settings } from './servers'
@@ -272,6 +273,7 @@ export class GameScreen {
    */
   private lastInput: InputDevice = 'keyboard'
   private padHints = gamepadHints()
+  private touchHints = touchHints()
   /** the pack's page last up (pack-tabs.ts), which Y opens it on again */
   private packPage: string | null = null
   /** the item the cursor was last on in each of the pack's pages, by its letter: Y puts the cursor back on it */
@@ -337,7 +339,9 @@ export class GameScreen {
       onMinimapClick: () => this.minimapTap(),
       // on the map with nothing of ours up, as the pad's Start opens it there
       onStatsClick: () => {
-        if (this.ctx.mode === 'command' && !this.session.watching && !this.overlays.hasClientOverlay) this.runner.execute({ kind: 'ui', op: 'system' })
+        if (this.ctx.mode !== 'command' || this.session.watching || this.overlays.hasClientOverlay) return
+        this.touchAttempt('menu')
+        this.runner.execute({ kind: 'ui', op: 'system' })
       },
       // action_panel.js: items act only in command mode
       onPanelItem: (slot, describe) => {
@@ -930,6 +934,7 @@ export class GameScreen {
     this.trackActions(now, true)
     this.spellFrame()
     if (this.padHints.waiting) this.padHints.observe(this.padHintEvidence(), now)
+    if (this.touchHints.waiting) this.touchHints.observe(this.touchHintEvidence(), now)
     const cursor = this.cursorFor()
     const lc = this.lastCursor
     if ((cursor?.x !== lc?.x || cursor?.y !== lc?.y || cursor?.mode !== lc?.mode || cursor?.tile !== lc?.tile) && !(cursor === null && lc === null)) {
@@ -981,6 +986,7 @@ export class GameScreen {
     const touch = passing ? this.lastTouch : this.lastInput === 'touch' && !this.chat.capturing ? touchLabels(ours ? withBack(ours) : barLabels(this.ctx), this.ctx, !!ours) : null
     this.lastTouch = touch
     this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours, touch)
+    this.hud.showTouchHints(this.touchLessons(settings.hints), this.session.gamedata)
     this.hud.renderSpellBar(this.spellsShown() && this.spellsLive() ? { spells: this.spellBook.spells, lit: this.spellBar.lit() } : null, this.session.gamedata)
     this.chat.update(st, this.chatOn && (st.phase === 'playing' || st.phase === 'watching'), !!st.lobby.username)
     this.syncTarget()
@@ -1095,7 +1101,7 @@ export class GameScreen {
     if (this.dirty || this._needsRender || this.pickDirty || this.hoverMoved) return true
     if (this.cam.steering || this.padLooking) return true
     if (this.is3d && (this.renderer as Render3d).animating) return true
-    return this.pressTimes.size > 0 || this.padHints.waiting
+    return this.pressTimes.size > 0 || this.padHints.waiting || this.touchHints.waiting
   }
 
   /**
@@ -1574,6 +1580,21 @@ export class GameScreen {
       focus: this.overlays.focusInfo(this.ctx)?.index ?? st.menus.at(-1)?.last_hovered ?? -1,
       clientOverlay: this.overlays.hasClientOverlay,
     }
+  }
+
+  private touchHintEvidence(): TouchHintEvidence {
+    return { mode: deriveMode(this.session.state), clientOverlay: this.overlays.hasClientOverlay }
+  }
+
+  /** A finger made one of the gestures the touch bar has no cell for: what it opens next frame teaches it (touch-hints.ts). */
+  private touchAttempt(lesson: TouchLesson) {
+    if (this.lastInput === 'touch') this.touchHints.attempt(lesson, this.touchHintEvidence(), performance.now())
+  }
+
+  /** The finger's lessons to stand this frame, when a finger is playing (touch-hints.ts `shown`). */
+  private touchLessons(mode: HintMode): TouchLesson[] {
+    if (this.lastInput !== 'touch' || this.session.watching || this.chat.capturing) return []
+    return this.touchHints.shown(this.ctx, mode, this.overlays.hasClientOverlay)
   }
 
   private executePadAction(a: Action) {
@@ -2129,6 +2150,7 @@ export class GameScreen {
         return
       }
       if (MINIMAP_CLOSES.has(this.ctx.mode)) return this.runner.send(cm.key(27))
+      this.touchAttempt('map')
     }
     this.runner.execute(LEVEL_MAP)
   }

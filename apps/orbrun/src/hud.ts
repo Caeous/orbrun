@@ -21,6 +21,7 @@ import { mapFacingOf } from './camera'
 import { TOUCH_BUTTON_H, TOUCH_BUTTON_W, isPortrait, type CellRect, type GameLayout, type Grid } from './grid/console'
 import type { GridHost } from './grid/host'
 import type { Spell } from './spell-bar'
+import type { TouchLesson } from './touch-hints'
 import { paneRows } from './grid/messages'
 import { panelCellAt, panelCellIndex, panelGrid, panelSpan, type PanelBox, type PanelGrid } from './grid/panel'
 import { paintRow } from './grid/paint'
@@ -452,6 +453,10 @@ export class Hud {
   private minimapTiles: Gamedata | null = null
   /** The level map is open: the minimap has become it and stays out of sight. */
   private minimapHidden = false
+  /** Held upright, the side of the square at the band's right the player stands in the middle of (`bandFit`); 0 otherwise. */
+  private minimapSquare = 0
+  /** the finger's lessons standing (touch-hints.ts): a ring on the pane a tap opens something from, and its word under it */
+  private touchHints = new Map<TouchLesson, { ring: HTMLElement; caption: HTMLElement; key: string }>()
   /** the WebTiles `#monster_list` */
   private monsters = h('div', { class: 'monsters' })
   private monsterRows: MonsterRow[] = []
@@ -675,6 +680,7 @@ export class Hud {
     // the hud itself, its top on the stats pane's first row: the whole screen across, the stats pane over its left part,
     // the player on the middle of the square at its right (bandFit)
     this.minimapBand = portrait
+    this.minimapSquare = portrait ? w : 0
     const across = this.root.clientWidth || gridW + 2 * host.grid.ox
     const canvasW = portrait ? across : w
     if (this.minimapSize.w !== canvasW || this.minimapSize.h !== size || dpr !== this.minimapDpr) {
@@ -2017,6 +2023,57 @@ export class Hud {
     if (this.messages.hidden || !this.messages.classList.contains('dismissable')) return false
     const r = this.messages.getBoundingClientRect()
     return clientX >= r.left && clientX < r.right && clientY >= r.top && clientY < r.bottom
+  }
+
+  /**
+   * Stand the finger's lessons (touch-hints.ts): a ring round the stats
+   * pane, which a tap opens the menu from, and round the minimap, which a
+   * tap opens the level map from (held upright, round the square at the
+   * band's right where the player is, the stats pane having the left), each
+   * with crawl's help icon and its word under it. Measured each frame they
+   * stand: the pane grows and shrinks with its rows.
+   */
+  showTouchHints(ids: TouchLesson[], gd: Gamedata | null) {
+    for (const [id, el] of this.touchHints) {
+      if (ids.includes(id)) continue
+      el.ring.remove()
+      el.caption.remove()
+      this.touchHints.delete(id)
+    }
+    if (!ids.length) return
+    const root = this.root.getBoundingClientRect()
+    for (const id of ids) {
+      const target = id === 'menu' ? this.stats : !this.minimapHidden && this.minimapShown ? this.minimapCanvas : null
+      const shown = target !== null && !target.hidden && (id !== 'map' || this.minimapBand || !this.sidebar.hidden)
+      const r = shown ? target.getBoundingClientRect() : null
+      let el = this.touchHints.get(id)
+      if (!r || r.width === 0 || r.height === 0) {
+        if (el) el.ring.hidden = el.caption.hidden = true
+        if (el) el.key = ''
+        continue
+      }
+      if (!el) {
+        // crawl's own icon for its help (`?`, CMD_DISPLAY_COMMANDS), drawn as the touch bar draws its pictures
+        const icon = touchArt(gd, 'CMD_DISPLAY_COMMANDS', undefined)
+        el = { ring: h('div', { class: 'touch-ring' }), caption: h('div', { class: 'touch-caption' }, icon, h('span', {}, id === 'menu' ? 'Tap for the menu' : 'Tap for the level map')), key: '' }
+        this.root.append(el.ring, el.caption)
+        this.touchHints.set(id, el)
+      }
+      const square = id === 'map' && this.minimapBand ? Math.min(this.minimapSquare, r.width) : 0
+      const box = { left: (square ? r.right - square : r.left) - root.left, top: r.top - root.top, width: square || r.width, height: r.height }
+      const key = `${box.left},${box.top},${box.width},${box.height},${root.width}`
+      if (key === el.key) continue
+      el.key = key
+      el.ring.hidden = el.caption.hidden = false
+      // the minimap is a disc on its side of the screen (cutMinimapDisc), a band's square upright
+      el.ring.classList.toggle('disc', id === 'map' && !this.minimapBand)
+      Object.assign(el.ring.style, { left: box.left + 'px', top: box.top + 'px', width: box.width + 'px', height: box.height + 'px' })
+      // under the ring, centred on it, kept on the screen
+      const cw = el.caption.offsetWidth
+      const left = Math.max(4, Math.min(root.width - cw - 4, box.left + box.width / 2 - cw / 2))
+      // on whole pixels, or the icon in it smears (snapToPixels)
+      Object.assign(el.caption.style, { left: Math.round(left) + 'px', top: Math.round(box.top + box.height + 4) + 'px' })
+    }
   }
 
   /** The touch bar's height in css px, for what stands on the view's foot to stand on it instead. */
