@@ -1192,7 +1192,7 @@ export class FrontEnd {
             hint: stuck
               ? NEWER_BROWSER
               : server.offline
-              ? (save?.hint ?? `A new character in ${g.label}, on this device.`) + engineHint(engines.note(g.id))
+              ? (save?.hint ?? `A new character in ${g.label}, on this device.`)
               : (save?.hint ?? `A new game of ${g.label} on ${server.host}.`),
             // the line stands empty until the build is known, so the help under the menu never grows a line when it lands
             fine: server.offline ? (engineBuild(engines.build(g.id), engines.note(g.id)) ?? '\u00a0') : undefined,
@@ -2482,18 +2482,11 @@ function serverWhere(sv: ServerInfo): string {
 
 /**
  * What an offline game's row says about its build, under the label: once, until the next game, that it is a new
- * release. Its downloads are said beside its version (`engineBuild`).
+ * release. Trunk's nightly build is not news, and its downloads, like every build's, are said only beside its
+ * version (`engineBuild`): a line that came and went under a row, or in the help, moved the whole menu.
  */
 function engineSub(note: EngineNote | null): string | null {
-  if (note?.kind !== 'new') return null
-  return note.version ? `new · ${note.version}` : 'new'
-}
-
-/** The message line's word on the same, after the row's own hint. */
-function engineHint(note: EngineNote | null): string {
-  if (note?.kind === 'updating') return ' An update is on its way; until it is whole, Play starts the version you have.'
-  if (note?.kind === 'downloading') return ' It is being kept on this device, to play with no connection.'
-  return ''
+  return note?.kind === 'new' && note.version ? `new · ${note.version}` : null
 }
 
 /**
