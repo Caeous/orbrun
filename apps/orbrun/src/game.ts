@@ -274,6 +274,8 @@ export class GameScreen {
   private lastInput: InputDevice = 'keyboard'
   private padHints = gamepadHints()
   private touchHints = touchHints()
+  /** the game (its player, which a new game replaces) in which crawl has asked for a command: before that, as the species are coming, there is no map to teach */
+  private commandedIn: object | null = null
   /** the pack's page last up (pack-tabs.ts), which Y opens it on again */
   private packPage: string | null = null
   /** the item the cursor was last on in each of the pack's pages, by its letter: Y puts the cursor back on it */
@@ -1593,7 +1595,9 @@ export class GameScreen {
 
   /** The finger's lessons to stand this frame, when a finger is playing (touch-hints.ts `shown`). */
   private touchLessons(mode: HintMode): TouchLesson[] {
-    if (this.lastInput !== 'touch' || this.session.watching || this.chat.capturing) return []
+    const st = this.session.state
+    if (st.inputMode === MouseMode.COMMAND) this.commandedIn = st.player
+    if (this.lastInput !== 'touch' || this.session.watching || this.chat.capturing || this.commandedIn !== st.player) return []
     return this.touchHints.shown(this.ctx, mode, this.overlays.hasClientOverlay)
   }
 
