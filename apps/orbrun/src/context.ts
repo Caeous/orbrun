@@ -100,6 +100,12 @@ export interface MenuContext {
   anyMarked: boolean
   /** the key the menu's own help is on, when it names one ("_ for help"); absent, it has none */
   helpKey?: string
+  /**
+   * The travel menu's other list, as its title names it (travel.cc
+   * `TravelPromptMenu::refresh_prompt`: "_ - list branches" from the altars,
+   * "* - list waypoints" and back); absent where it names none
+   */
+  listSwitch?: { key: string; label: string }
   /** a row picked takes effect at once (the known-items menu's autopickup): nothing is marked, nothing accepted */
   togglesAtOnce?: boolean
   /** the pack's pages as tabs (pack-tabs.ts): the page up (its id), and the labels of the ones the bumpers turn to, when there is another page to turn to */
@@ -601,6 +607,9 @@ const KNOWN_ITEMS_RE = /^Recognised items\./
 /** The help a menu offers, as its title or footer names the key: "(_ for help)", "[?] help"; none named, none sent. */
 const MENU_HELP_RE = /\(([_?]) for help\)|\[<?\w*>?\s*([_?])\s*<?\/?\w*>?\]\s*help/
 
+/** The travel menu's switch to another list, as its title prints it: "(_ - list branches, ? - help)". */
+const TRAVEL_LIST_RE = /([_*]) - (list \w+)/
+
 function menuContext(state: GameState): MenuContext | undefined {
   const menu = topMenu(state)
   if (!menu) return undefined
@@ -620,6 +629,8 @@ function menuContext(state: GameState): MenuContext | undefined {
   const help = MENU_HELP_RE.exec(formattedStringToText((menu.title?.text ?? '') + '\n' + (menu.more ?? '') + '\n' + (menu.alt_more ?? '')))
   const ctx: MenuContext = { menu, hoverable, arrowsSelect, multiselect: !!(menu.flags & 0x0004), wrap: !!(menu.flags & 0x0080), filter: !!(menu.flags & 0x0100), sections: blocks >= 2, anyMarked }
   if (help) ctx.helpKey = help[1] ?? help[2]
+  const list = menu.tag === 'travel' ? TRAVEL_LIST_RE.exec(formattedStringToText(menu.title?.text ?? '')) : null
+  if (list) ctx.listSwitch = { key: list[1], label: list[2] }
   if (known) ctx.togglesAtOnce = true
   if (menu.tag === 'shop') ctx.shop = shopContext(menu)
   const strip = packStrip(menu, state)

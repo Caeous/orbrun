@@ -647,6 +647,19 @@ describe('the action bar shows only what the situation created', () => {
     expect(bindingTable(ctx({ mode: 'popup', popupActions: [] })).X).toBeUndefined()
     expect(bindingTable(ctx({ mode: 'dialog' })).X).toBeUndefined()
   })
+  it("a popup whose verbs nothing lights puts the rest on Y and the triggers: the overview's altars and shops", () => {
+    const actions = [{ key: 'G', label: '(G) Travel' }, { key: '_', label: '(_) Altar' }, { key: '$', label: '($) Shops' }, { key: '!', label: '(!) Annotate' }]
+    const overview = ctx({ mode: 'popup', popupActions: actions, focus: { label: null, cancelLabel: null, index: -1, count: 4 } })
+    expect(show(overview)).toEqual(['X (G) Travel', 'Y (_) Altar', 'LT ($) Shops', 'RT (!) Annotate'])
+    // a describe popup lights its verbs for the d-pad: A takes the lit one, and only the first has a button
+    const item = ctx({ mode: 'popup', popupActions: actions, focus: { label: '(G) Travel', cancelLabel: null, index: 0, count: 4 } })
+    expect(bindingTable(item).Y).toBeUndefined()
+  })
+  it("the travel menu's other list is on Y, in its title's words", () => {
+    const menu = { menu: { tag: 'travel', items: [], flags: 0 } as never, hoverable: [], arrowsSelect: true, multiselect: false, wrap: false, filter: false, sections: false, anyMarked: false }
+    expect(bindingTable(ctx({ mode: 'menu', menu: { ...menu, listSwitch: { key: '_', label: 'list branches' } } })).Y).toMatchObject({ kind: 'keys', seq: [{ text: '_' }], label: 'list branches' })
+    expect(bindingTable(ctx({ mode: 'menu', menu })).Y).toBeUndefined()
+  })
   it('a --more-- names itself on A, with the other prompts', () => {
     expect(show(ctx({ mode: 'more' }))).toEqual(['A --more--'])
   })

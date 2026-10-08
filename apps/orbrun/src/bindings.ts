@@ -162,6 +162,8 @@ function menuTable(m: MenuContext | undefined, ctx: Context): Partial<Record<But
   }
   // the pack swaps weapons on Y, over its help (pack-tabs.ts)
   if (m.pack) t.Y = SWAP_WEAPONS
+  // the travel menu's other list (the branches, the waypoints), in the title's words
+  if (m.listSwitch) t.Y = k(m.listSwitch.key, m.listSwitch.label)
   // the hovered row, described where it stands (the spell, ability and item menus' "[?] toggle ... description"
   // without the toggle, see Overlays.menuAction); Left/Right on a row cycles the mode, as `!` does
   if (EXAMINING_MENUS.has(m.menu.tag) && !m.togglesAtOnce) t.X = { kind: 'menu', op: 'examine' }
@@ -348,6 +350,20 @@ function focusTable(ctx: Context): Partial<Record<Button, Action>> {
 const POPUP_ACTION: Action = { kind: 'ui', op: 'popupAction', arg: 0 }
 
 /**
+ * A popup's buttons: the focus set, its first verb on X, and where nothing is
+ * lit for the d-pad to walk to its verbs (the dungeon overview's `_` Altar,
+ * `$` Shops, `!` Annotate, which it never prints), the rest on Y and the
+ * triggers.
+ */
+function popupTable(ctx: Context): Partial<Record<Button, Action>> {
+  const t = focusTable(ctx)
+  const n = ctx.popupActions?.length ?? 0
+  if (n) t.X = POPUP_ACTION
+  if (ctx.focus?.count && !ctx.focus.label) (['Y', 'LT', 'RT'] as const).slice(0, n - 1).forEach((b, i) => (t[b] = { kind: 'ui', op: 'popupAction', arg: i + 1 }))
+  return t
+}
+
+/**
  * The button a prompt's answer sits on, which is also the glyph its chip
  * wears: a yes/no puts Yes on A and No on B. A choice prompt's answers are
  * not on the face buttons at all: the card is a focus set like every other,
@@ -530,7 +546,7 @@ export function bindingTable(ctx: Context): Partial<Record<Button, Action>> {
       case 'dialog':
         return { A: FOCUS.A, B: FOCUS.B }
       case 'popup':
-        return ctx.popupActions?.length ? { ...focusTable(ctx), X: POPUP_ACTION } : focusTable(ctx)
+        return popupTable(ctx)
       default: {
         // the focused item's second action (a skill row's "Set target") sits on Y while the cursor rests on one
         const t = focusTable(ctx)
@@ -759,6 +775,16 @@ const LEVELMAP_LAYOUT: TouchLayout = [
   ['B', 'DL', 'DD', 'DR', 'A'],
 ]
 
+/**
+ * The button a layout's cell holds instead of the one it names. On the level
+ * map, with the cursor on the player, Y's Travel to… is the overview (R3)
+ * there: the bar has no cell of its own for it, and the overview travels too,
+ * by its (G) Travel, with every branch in sight.
+ */
+function touchStandIn(b: Button, ctx: Context): Button {
+  return ctx.mode === 'levelmap' && ctx.mapCursorHome && b === 'Y' ? 'R3' : b
+}
+
 /** The screen's own layout, or null for one that places its buttons by the generic rule. A panel of ours over the map is no map. */
 function touchLayout(ctx: Context, panel: boolean): TouchLayout | null {
   if (panel) return null
@@ -829,7 +855,7 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
           out.push({ button: `do:${b as TouchExtra}`, label, action: touchExtraAction(b as TouchExtra, ctx), contextual: false, icon, cell: TOUCH_CELLS[r][c] })
           return
         }
-        const l = b && has.get(b as Button)
+        const l = b && has.get(touchStandIn(b as Button, ctx))
         // a button in two cells side by side is one button across both
         if (!l || (c > 0 && row[c - 1] === b)) return
         let span = 1
@@ -1166,7 +1192,8 @@ const KEY_ICONS: Record<string, TouchIcon> = {
 const MODE_KEY_ICONS: Partial<Record<Context['mode'], Record<string, TouchIcon>>> = {
   levelmap: { '.': TRAVEL },
   targeting: { '.': TRAVEL },
-  menu: { 6: ours('filter'), '/': ours('sort') },
+  // the travel menu's other list
+  menu: { 6: ours('filter'), '/': ours('sort'), _: LIST, '*': LIST },
   // the new-game screens' Random is crawl's question mark, Recommended its hint
   newgame: { '*': { icon: 'ERROR' }, '+': { icon: 'STARTUP_HINTS' } },
   prompt: { '*': LIST },
@@ -1222,6 +1249,9 @@ const UI_ICONS: Partial<Record<Extract<Action, { kind: 'ui' }>['op'], TouchIcon>
 const POPUP_ICONS: Record<string, TouchIcon> = {
   '!': ours('panes'),
   G: { icon: 'CMD_INTERLEVEL_TRAVEL' },
+  // the overview's altars and shops, as crawl's command bar draws a travel there and a stash search
+  _: { icon: 'CMD_INTERLEVEL_TRAVEL' },
+  $: { icon: 'CMD_SEARCH_STASHES' },
   '<': { icon: 'CMD_MAP_PREV_LEVEL' },
   '>': { icon: 'CMD_MAP_NEXT_LEVEL' },
   d: { icon: 'CMD_DROP' },

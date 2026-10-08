@@ -125,10 +125,11 @@ describe('the screens drawn cell by cell', () => {
     expect(words(map)[0].slice(0, 4)).toEqual(['Ascend', 'Zoom in', 'Describe', 'Find up'])
     expect(words(map)[2][4]).toBe('Travel here')
     expect(words(map)[1]).toEqual(['Descend', 'Zoom out', '↑', 'Find down', 'Find you'])
-    // on you there is nowhere to travel to here, and Y travels further
+    // on you there is nowhere to travel to here, and the overview, which travels further, stands where Y would
     const home = ctx({ mode: 'levelmap', mapCursorHome: true })
     expect(drawn(home)[2][4]).toBe('·')
-    expect(words(home)[1][4]).toBe('Travel to…')
+    expect(drawn(home)[1][4]).toBe('R3')
+    expect(words(home)[1][4]).toBe('Overview')
   })
 })
 
@@ -405,7 +406,7 @@ describe('every touch button has a picture: crawl’s art where it has one, a gl
     expect(icons(ctx({ mode: 'targeting', hostilesInView: 2 }))).toMatchObject({ RB: 'target', LB: 'cycle', X: 'CMD_LOOKUP_HELP' })
   })
   it('on the level map: the stairs, finding yourself, travel, search and zoom', () => {
-    expect(icons(ctx({ mode: 'levelmap', mapCursorHome: true }))).toMatchObject({ LB: 'CMD_MAP_FIND_UPSTAIR', RB: 'CMD_MAP_FIND_DOWNSTAIR', Y: 'CMD_INTERLEVEL_TRAVEL', L3: 'CMD_SEARCH_STASHES', LT: 'zoom-out', RT: 'zoom-in' })
+    expect(icons(ctx({ mode: 'levelmap', mapCursorHome: true }))).toMatchObject({ LB: 'CMD_MAP_FIND_UPSTAIR', RB: 'CMD_MAP_FIND_DOWNSTAIR', R3: 'CMD_DISPLAY_OVERMAP', L3: 'CMD_SEARCH_STASHES', LT: 'zoom-out', RT: 'zoom-in' })
     expect(icons(ctx({ mode: 'levelmap' }))).toMatchObject({ A: 'CMD_MAP_GOTO_TARGET', Y: 'CMD_MAP_FIND_YOU' })
   })
   it('a key that means another thing on another screen wears that screen’s picture', () => {
