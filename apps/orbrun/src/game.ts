@@ -963,7 +963,7 @@ export class GameScreen {
     // situation did not put it in the corner, so the hold's progress has a place to show. It joins the
     // contextual ones, under the lessons.
     const held = this.holding
-    if (held && !padLabels.some((l) => l.button === held.button && !l.slot)) {
+    if (held && !padLabels.some((l) => l.button === held.button)) {
       padLabels = padLabels.filter((l) => l.button !== held.button)
       const l = barLabels(this.ctx).find((l) => l.button === held.button)
       if (l) {

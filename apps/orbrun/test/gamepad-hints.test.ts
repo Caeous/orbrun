@@ -172,32 +172,30 @@ describe('nothing standing: only the context and the lessons', () => {
   })
 })
 
-describe('as on the touch bar: what a choice brought, and places held', () => {
+describe('as on the touch bar: what a choice brought', () => {
   const menu = (over: Partial<MenuContext>, tag = 'pickup'): Context =>
     ctx({ mode: 'menu', menu: { menu: { tag, items: [], flags: 0 }, hoverable: [], multiselect: true, ...over } as unknown as MenuContext })
   const shop = (over: object) => menu({ multiselect: false, shop: { canBuy: true, anyMarked: false, anyListed: false, mode: 'buy', sortOrder: 'type', ...over } } as unknown as Partial<MenuContext>, 'shop')
   const lines = (c: Context, mode: 'adaptive' | 'contextual' | 'off' = 'contextual') =>
-    new GamepadHints().prompts(c, mode).filter((l) => !l.teaching).map((l) => l.button + (l.slot ? '_' : '') + (l.fresh ? '!' : '')).sort()
+    new GamepadHints().prompts(c, mode).filter((l) => !l.teaching).map((l) => l.button + (l.fresh ? '!' : '')).sort()
 
-  it('a menu’s accept is fresh once something is marked, and holds its place before', () => {
+  it('a menu’s accept is fresh once something is marked, and absent before', () => {
     expect(lines(menu({ anyMarked: true }))).toEqual(['A', 'START!'])
-    expect(lines(menu({ anyMarked: false }))).toEqual(['A', 'START_'])
+    expect(lines(menu({ anyMarked: false }))).toEqual(['A'])
     // the same with the hints off: the menu's own navigation still stands under it
-    expect(lines(menu({ anyMarked: false }), 'off')).toEqual(['A', 'START_'])
+    expect(lines(menu({ anyMarked: false }), 'off')).toEqual(['A'])
   })
 
-  it('the shop’s buy and list come fresh with a mark, their places held without one', () => {
+  it('the shop’s buy and list come fresh with a mark, and hold no place without one', () => {
     const marked = lines(shop({ anyMarked: true }))
     const bare = lines(shop({}))
     expect(marked.filter((b) => b.endsWith('!')).sort()).toEqual(['LT!', 'START!'])
-    // the same buttons in the same places, marked or not
-    expect(bare.map((b) => b.replace(/[_!]$/, ''))).toEqual(marked.map((b) => b.replace(/[_!]$/, '')))
-    expect(bare.filter((b) => b.endsWith('_')).sort()).toEqual(['LT_', 'START_'])
+    expect(bare).toEqual(marked.filter((b) => !b.endsWith('!')))
   })
 
   it('a screen no choice changes holds nothing and marks nothing', () => {
     const door = ctx({ ahead: { kind: 'door-closed', label: 'door' } })
-    expect(new GamepadHints().prompts(door, 'contextual').some((l) => l.slot || l.fresh)).toBe(false)
+    expect(new GamepadHints().prompts(door, 'contextual').some((l) => l.fresh)).toBe(false)
     expect(lines(menu({ multiselect: false }))).toEqual(['A'])
   })
 })

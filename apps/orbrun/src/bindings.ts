@@ -84,8 +84,6 @@ export interface BindingLabel {
    * crawl's light green round it (styles.css .tb.fresh, .chip.fresh).
    */
   fresh?: boolean
-  /** the place of a button that comes and goes, held while it is away so the rest keep theirs (`everyChoice`, hud.ts renderBar): never drawn */
-  slot?: boolean
 }
 
 const k = (text: string, label: string): Action => ({ kind: 'keys', seq: [{ text }], label })

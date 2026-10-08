@@ -116,6 +116,41 @@ const FOOT_PAIRS: readonly (readonly BindingLabel['button'][])[] = [
  */
 const UNDER_ORDER: readonly BindingLabel['button'][] = ['LSTICK', 'LSTICK_UP', 'DPAD', 'RSTICK', 'LB', 'RB', 'LT', 'RT', 'L3', 'R3', 'SELECT', 'START', 'Y', 'X', 'B', 'A']
 
+/** A prompt's cell under a menu (`footerPlaces`), 1-based as a grid's lines are. */
+export interface FooterPlace {
+  row: number
+  col: number
+}
+
+/**
+ * Where each prompt stands under a menu: in the cell of the footer that
+ * names it (menu.cc `pad_more_with` lays its switches out in columns), so a
+ * glyph is where the eye found its words: the shop's "mark item for
+ * purchase" top right, "put item on shopping list" under it, "buy|examine
+ * items" left of the first. The footer's rows and columns, closed up over
+ * the ones no prompt names. Null when the footer names none of them.
+ */
+export function footerPlaces(more: string, labels: readonly BindingLabel[]): Map<BindingLabel, FooterPlace> | null {
+  const lines = formattedStringToText(more).split('\n')
+  const hits: { l: BindingLabel; line: number; start: number }[] = []
+  for (const l of labels) {
+    const words = formattedStringToText(l.label).trim()
+    if (!words) continue
+    // the switch's words after its bracketed key, up to the column gap or the line's end (menu-nav.ts parseMoreSwitches)
+    const re = new RegExp('\\]\\s+' + words.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?= {2,}|\\s*$)')
+    for (let i = 0; i < lines.length; i++) {
+      const m = re.exec(lines[i])
+      if (!m) continue
+      hits.push({ l, line: i, start: lines[i].lastIndexOf('[', m.index) })
+      break
+    }
+  }
+  if (!hits.length) return null
+  const rows = [...new Set(hits.map((h) => h.line))].sort((a, b) => a - b)
+  const cols = [...new Set(hits.map((h) => h.start))].sort((a, b) => a - b)
+  return new Map(hits.map((h) => [h.l, { row: rows.indexOf(h.line) + 1, col: cols.indexOf(h.start) + 1 }]))
+}
+
 /** css px between a panel's foot and the prompts under it (placeBar) */
 const BAR_GAP = 16
 
@@ -1755,9 +1790,8 @@ export class Hud {
    * They show only what the situation created (bindings.ts `promptLabels`):
    * Attack with a hostile ahead, Descend on the stairs, the pile's own name
    * where one lies underfoot, a prompt's own answers; the standing bindings
-   * stay on the controls sheet. The stack grows upward from a fixed anchor:
-   * the interact prompt (A) is always the lowest line, so it never jumps
-   * when an attack prompt appears above it, and the pad's lessons
+   * stay on the controls sheet. The stack grows upward from the corner, a
+   * list with nothing held for a button that is away, and the pad's lessons
    * (gamepad-hints.ts) stack above the contextual ones. Labels sit left of
    * their glyphs so the glyphs line up in one column at the edge. Drawn only
    * while the pad spoke last: the keyboard and the mouse get no prompts (a
@@ -1774,15 +1808,15 @@ export class Hud {
     // the level map names every button it has, too many to stack: a line of pairs along its foot, each
     // pair one over the other (FOOT_PAIRS, styles.css .actionbar.contextual.foot)
     const foot = ctx.mode === 'levelmap'
-    // the place of a button that comes and goes (BindingLabel `slot`) is held in the line under a panel only: in the
-    // corner's column it would be a gap
-    const shown = (device === 'pad' && !spectating ? (padLabels ?? (hints ? promptLabels(ctx) : [])) : []).filter((l) => !l.slot || (under && !foot))
-    // A and B hold their places whether or not this screen has them (`slots`): under a panel, one order whatever the
-    // panel, A always at the right end and B always beside it (UNDER_ORDER); in the corner, A always the lowest line
-    const slots: BindingLabel['button'][] = !shown.length || foot ? [] : under ? ['B', 'A'] : ['A']
-    const held = slots.filter((b) => !shown.some((l) => l.button === b)).map((b): BindingLabel => ({ button: b, label: '', action: { kind: 'keys', label: '', seq: [] }, contextual: true, slot: true }))
-    const labels: BindingLabel[] = under ? [...shown, ...held].sort((a, b) => UNDER_ORDER.indexOf(a.button) - UNDER_ORDER.indexOf(b.button)) : [...held, ...shown]
-    const key = device + '|' + ctx.mode + '|' + ctx.layer + '|' + labels.map((l) => l.button + ':' + l.label + '/' + (l.hold || '') + !!l.teaching + (l.slot ? '_' : '') + (l.fresh ? '!' : '')).join(',') + padKind + under
+    const shown = device === 'pad' && !spectating ? (padLabels ?? (hints ? promptLabels(ctx) : [])) : []
+    // a list, nothing held for a button that is away: under a panel in one order whatever the panel, A last (UNDER_ORDER)
+    const labels: BindingLabel[] = under ? [...shown].sort((a, b) => UNDER_ORDER.indexOf(a.button) - UNDER_ORDER.indexOf(b.button)) : shown
+    // under a menu, laid out as its footer is where the footer names them (footerPlaces); the footer crawl shows is one or
+    // the other of the two it sends (overlays.ts updateMore), so the one that names more of them
+    const menu = under && !foot ? ctx.menu?.menu : undefined
+    const footers = menu ? [menu.more, menu.alt_more].filter((t): t is string => !!t) : []
+    const places = footers.map((t) => footerPlaces(t, labels)).reduce<Map<BindingLabel, FooterPlace> | null>((a, b) => (b && (!a || b.size > a.size) ? b : a), null)
+    const key = device + '|' + ctx.mode + '|' + ctx.layer + '|' + labels.map((l) => l.button + ':' + l.label + '/' + (l.hold || '') + !!l.teaching + (l.fresh ? '!' : '') + (places?.get(l) ? '@' + places.get(l)!.row + '.' + places.get(l)!.col : '')).join(',') + padKind + under
     if (this.actionbar.dataset.v === key) return
     this.actionbar.dataset.v = key
     this.actionbar.hidden = labels.length === 0
@@ -1791,12 +1825,12 @@ export class Hud {
     // column (styles.css .actionbar.contextual.row)
     this.actionbar.classList.toggle('row', under)
     this.actionbar.classList.toggle('foot', foot)
+    this.actionbar.classList.toggle('grid', !!places)
+    this.actionbar.style.gridTemplateColumns = places ? 'repeat(' + Math.max(...[...places.values()].map((p) => p.col)) + ', auto)' : ''
     const keep = new Map(this.barChips)
     this.barChips.clear()
     clear(this.actionbar)
     const chipFor = (l: BindingLabel) => {
-      // a held place is the button as it will be, unseen, so it takes the room it will take
-      if (l.slot) return h('span', { class: 'chip slot ' + l.button }, h('span', { class: 'key' }, glyph(l.button, padKind)), h('span', { class: 'text' }, label(l.label || '\u00a0')))
       const k = l.button + ':' + l.label + '/' + (l.hold || '') + !!l.teaching + !!l.fresh + padKind
       const kept = keep.get(l.button)
       const chip = kept && kept.dataset.k === k ? kept : this.chip(l, k, padKind)
@@ -1807,6 +1841,19 @@ export class Hud {
       for (const buttons of FOOT_PAIRS) {
         const pair = buttons.flatMap((b) => labels.filter((l) => l.button === b))
         if (pair.length) this.actionbar.append(h('span', { class: 'foot-pair' }, ...pair.map(chipFor)))
+      }
+      return
+    }
+    if (places) {
+      // what the footer does not name stands in a line above its cells, in UNDER_ORDER
+      const rest = labels.filter((l) => !places.has(l))
+      const line = rest.map(chipFor)
+      for (const chip of line) chip.style.gridArea = ''
+      if (line.length) this.actionbar.append(h('span', { class: 'rest' }, ...line))
+      for (const [l, p] of places) {
+        const chip = chipFor(l)
+        chip.style.gridArea = p.row + (line.length ? 1 : 0) + ' / ' + p.col
+        this.actionbar.append(chip)
       }
       return
     }

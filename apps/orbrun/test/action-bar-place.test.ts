@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest'
-import { Hud, type HudHooks } from '../src/hud'
+import { Hud, footerPlaces, type HudHooks } from '../src/hud'
 import { GridHost } from '../src/grid/host'
 import { gameSplit } from '../src/grid/console'
 import type { Context } from '../src/context'
@@ -139,49 +139,58 @@ describe('the prompt stack in the corner of the view', () => {
     }
     const l = (button: BindingLabel['button'], label: string) => ({ button, label, action: { kind: 'menu', op: 'select' }, contextual: true }) as BindingLabel
     inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('A', 'select'), l('X', 'Examine'), l('Y', 'Swap weapons'), l('LT', 'Shout')], true)
-    expect([...bar.querySelectorAll('.chip:not(.slot)')].map((c) => c.textContent)).toEqual(['LTShout', 'YSwap weapons', 'XExamine', 'Aselect'])
+    expect([...bar.querySelectorAll('.chip')].map((c) => c.textContent)).toEqual(['LTShout', 'YSwap weapons', 'XExamine', 'Aselect'])
   })
-  it('keeps A and B in their places under a panel, held empty when the screen lacks one', () => {
-    const { hud, bar } = setup()
-    const inner = hud as unknown as {
-      renderBar(ctx: Context, kind: string, spectating: boolean, device: string, hints: boolean, padLabels: BindingLabel[], under: boolean): void
-    }
-    const l = (button: BindingLabel['button'], label: string) => ({ button, label, action: { kind: 'menu', op: 'select' }, contextual: true }) as BindingLabel
-    const order = () => [...bar.querySelectorAll('.chip')].map((c) => (c.classList.contains('slot') ? '(' + [...c.classList].at(-1) + ')' : c.textContent))
-    inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('X', 'Examine'), l('B', 'cancel')], true)
-    expect(order()).toEqual(['XExamine', 'Bcancel', '(A)'])
-    inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('A', 'select'), l('X', 'Examine')], true)
-    expect(order()).toEqual(['XExamine', '(B)', 'Aselect'])
-  })
-  it('holds the place of a prompt that comes and goes under a panel, the size it will be, and wears a fresh one green', () => {
+  it('packs the prompts as a list, holding no place for a button that is away, and wears a fresh one green', () => {
     const { hud, bar } = setup()
     const inner = hud as unknown as {
       renderBar(ctx: Context, kind: string, spectating: boolean, device: string, hints: boolean, padLabels: BindingLabel[], under: boolean): void
     }
     const l = (button: BindingLabel['button'], label: string, over: Partial<BindingLabel> = {}) => ({ button, label, action: { kind: 'menu', op: 'select' }, contextual: true, ...over }) as BindingLabel
-    const order = () =>
-      [...bar.querySelectorAll('.chip')].map((c) => {
-        const b = ['A', 'B', 'START', 'RB'].find((b) => c.classList.contains(b))!
-        const words = c.querySelector('.label')?.textContent?.trim() ?? ''
-        return (c.classList.contains('slot') ? '(' + b + ' ' + words + ')' : b + ' ' + words) + (c.classList.contains('fresh') ? '!' : '')
-      })
-    inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('A', 'select'), l('START', 'accept', { slot: true })], true)
-    expect(order()).toEqual(['(START accept)', '(B )', 'A select'])
+    const order = () => [...bar.querySelectorAll('.chip')].map((c) => c.textContent + (c.classList.contains('fresh') ? '!' : ''))
+    inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('X', 'Examine'), l('B', 'cancel')], true)
+    expect(order()).toEqual(['XExamine', 'Bcancel'])
+    inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('A', 'select'), l('X', 'Examine')], true)
+    expect(order()).toEqual(['XExamine', 'Aselect'])
     inner.renderBar({ ...context, mode: 'menu' }, 'xbox', false, 'pad', true, [l('A', 'select'), l('START', 'accept', { fresh: true })], true)
-    expect(order()).toEqual(['START accept!', '(B )', 'A select'])
-    // in the corner's column a held place would be a gap: it is left out there
-    inner.renderBar(context, 'xbox', false, 'pad', true, [l('A', 'Open door'), l('RB', 'Fire dart', { slot: true })], false)
-    expect(order()).toEqual(['A Open door'])
+    expect(order()).toEqual(['accept!', 'Aselect'])
+    inner.renderBar(context, 'xbox', false, 'pad', true, [l('RB', 'Fire dart')], false)
+    expect(order()).toEqual(['RBFire dart'])
   })
-  it('keeps the corner\'s lowest line for A when there is none', () => {
+
+  // the shop's footer (shopping.cc ShopMenu::update_help) as CDI sent it, padded into columns
+  const SHOP_MORE =
+    '<yellow>You have 73 gold pieces.<lightgrey>                                                        \n' +
+    '<lightgrey>[<white>Esc<lightgrey>] exit          [<white>!<lightgrey>] <white>buy<lightgrey>|examine items       [<white>a<lightgrey>-<white>j<lightgrey>] mark item for purchase   \n' +
+    '[<white>/<lightgrey>] sort (type)                                 [<white>A<lightgrey>-<white>J<lightgrey>] put item on shopping list'
+  const shopLabel = (button: BindingLabel['button'], label: string) => ({ button, label, action: { kind: 'menu', op: 'select' }, contextual: true }) as BindingLabel
+
+  it('stands each prompt under a menu where its footer names it', () => {
+    const a = shopLabel('A', 'mark item for purchase'), x = shopLabel('X', 'buy|examine items'), y = shopLabel('Y', 'put item on shopping list'), lt = shopLabel('LT', 'List marked')
+    const places = footerPlaces(SHOP_MORE, [y, x, lt, a])!
+    // mark top right, put item under it, buy|examine left of mark; the empty first column closed up
+    expect(places.get(a)).toEqual({ row: 1, col: 2 })
+    expect(places.get(y)).toEqual({ row: 2, col: 2 })
+    expect(places.get(x)).toEqual({ row: 1, col: 1 })
+    expect(places.has(lt)).toBe(false)
+    expect(footerPlaces(SHOP_MORE, [shopLabel('A', 'select')])).toBeNull()
+  })
+
+  it('lays the prompts under a menu out as its footer, the ones it does not name in a line above', () => {
     const { hud, bar } = setup()
     const inner = hud as unknown as {
       renderBar(ctx: Context, kind: string, spectating: boolean, device: string, hints: boolean, padLabels: BindingLabel[], under: boolean): void
     }
-    const l = (button: BindingLabel['button'], label: string) => ({ button, label, action: { kind: 'menu', op: 'select' }, contextual: true }) as BindingLabel
-    inner.renderBar(context, 'xbox', false, 'pad', true, [l('RB', 'Fire dart')], false)
-    const chips = [...bar.querySelectorAll('.chip')]
-    expect(chips.map((c) => c.classList.contains('slot'))).toEqual([true, false])
+    const shop = { ...context, mode: 'menu', menu: { menu: { tag: 'shop', more: SHOP_MORE, items: [], flags: 0 } } } as unknown as Context
+    inner.renderBar(shop, 'xbox', false, 'pad', true, [shopLabel('A', 'mark item for purchase'), shopLabel('X', 'buy|examine items'), shopLabel('Y', 'put item on shopping list'), shopLabel('LT', 'List marked')], true)
+    expect(bar.classList.contains('grid')).toBe(true)
+    expect(bar.style.gridTemplateColumns).toBe('repeat(2, auto)')
+    expect([...bar.querySelectorAll('.rest .chip')].map((c) => c.textContent)).toEqual(['LTList marked'])
+    const at = (b: string) => (bar.querySelector(':scope > .chip.' + b) as HTMLElement).style.gridArea
+    expect([at('A'), at('Y'), at('X')].map((a) => a.replace(/\s/g, ''))).toEqual(['2/2', '3/2', '2/1'])
+    // a menu whose footer names none of them: the one line, as before
+    inner.renderBar({ ...shop, menu: { menu: { tag: 'x', more: '[<w>Esc</w>] exit', items: [], flags: 0 } } } as unknown as Context, 'xbox', false, 'pad', true, [shopLabel('A', 'select')], true)
+    expect(bar.classList.contains('grid')).toBe(false)
+    expect(bar.style.gridTemplateColumns).toBe('')
   })
 })
-

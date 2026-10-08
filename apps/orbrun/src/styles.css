@@ -2834,42 +2834,32 @@ canvas.minimap.hidden,
   padding: 0;
   transition: none;
 }
-/* A and B keep one width under every panel, so each glyph stands in the same place whatever the label (hud.ts renderBar);
-   a longer label is cut short rather than pushing B along */
-.actionbar.contextual.row.under .chip.A,
-.actionbar.contextual.row.under .chip.B {
-  width: 11em;
-  min-width: 0;
+/* under a menu, the prompts the footer names stand in its cells (hud.ts footerPlaces), each column's glyphs in a line at
+   its right edge; the rest in a line above them */
+.actionbar.contextual.row.grid {
+  display: grid;
+  direction: ltr;
+  justify-content: end;
+  justify-items: end;
+  column-gap: 1.4em;
+  row-gap: 0.2em;
 }
-.actionbar.contextual.row.under .chip.A .text,
-.actionbar.contextual.row.under .chip.B .text {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.actionbar.contextual.row.under .chip.A .label,
-.actionbar.contextual.row.under .chip.B .label {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.actionbar.contextual.row.grid .rest {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  column-gap: 1.4em;
+  row-gap: 0.2em;
 }
 /* a prompt the player's own choice brought (bindings.ts BindingLabel `fresh`), in the touch bar's light green
    (.touchbar .tb.fresh): with no box round it, its words wear the colour */
 .actionbar.contextual .chip.fresh .label {
   color: var(--color-10);
 }
-/* the place of a button this screen lacks, or of one that comes and goes (BindingLabel `slot`): held, never drawn */
-.actionbar.contextual .chip.slot {
-  visibility: hidden;
-  pointer-events: none;
-}
 /* the panel's key-help line stands over the dim the panel stands on (.overlay-stack), not under it with the world */
 .hud > .actionbar.under {
   z-index: 21;
-}
-/* but quieter than the panel it serves, so the eye stays on the panel; a held button comes up full as it fills */
-.hud > .actionbar.under .chip:not(.holding) {
-  opacity: 0.7;
 }
 .actionbar.contextual.row .group {
   display: contents;
