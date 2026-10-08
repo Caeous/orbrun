@@ -2071,9 +2071,9 @@ export class GameScreen {
    * Under a finger, a crawl menu goes the same way (`popupUp`), and so do
    * Orbrun's own panels: a tap outside them is their Escape, a step back
    * (B). A mouse leaves those be, as before: it has the view to drag while
-   * a setting is tuned. The touch bar's buttons are no outside: they are the
-   * pad's, and its Back already says what it does; the bar between and
-   * around them, and a cell's dim placeholder, are. A finger outside closes
+   * a setting is tuned. The touch bar is no outside, buttons or not: its
+   * buttons are the pad's, and its Back already says what it does, so a tap
+   * that misses one between them closes nothing. A finger outside closes
    * as it lifts rather than as it lands, since a swipe there turns the menu's
    * tabs as a swipe over it does (`outsideLift`).
    */
@@ -2084,7 +2084,7 @@ export class GameScreen {
     const touch = ev.pointerType === 'touch'
     if (touch) this.inputFrom('touch')
     const t = ev.target instanceof Element ? ev.target : null
-    if (t?.closest('.touchbar button')) return
+    if (t?.closest('.touchbar')) return
     if (touch && this.overlays.hasClientOverlay && !this.session.watching) {
       // inside a panel, on the on-screen keyboard or in the chat, the press is theirs
       if (t?.closest('.popup, .osk') || (t && this.chat.owns(t))) return

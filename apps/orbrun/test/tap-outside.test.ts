@@ -6,8 +6,8 @@ import { GameScreen } from '../src/game'
 /**
  * ui.js popup_clickoutside_handler: a press outside a popup is Escape. A
  * crawl menu is a popup too, and Orbrun's own panels step back the same way;
- * the touch bar's buttons are never outside: its Back is the pad's B. The
- * bar around them is.
+ * the touch bar is never outside: its Back is the pad's B, and a tap that
+ * misses a button between them closes nothing.
  */
 function harness(over: { mode: string; ours?: boolean }) {
   const chat = document.createElement('div')
@@ -63,7 +63,7 @@ describe('a tap outside what is up closes it, as Escape does', () => {
       expect(h.overlayInput).not.toHaveBeenCalled()
     }
   })
-  it('the touch bar where no button stands is outside: between the buttons, or on a dim placeholder', () => {
+  it('the touch bar where no button stands is no outside either: between the buttons, or on a dim placeholder', () => {
     const h = harness({ mode: 'menu' })
     const bar = h.el('touchbar')
     const idle = Object.assign(document.createElement('span'), { className: 'tb idle' })
@@ -71,10 +71,10 @@ describe('a tap outside what is up closes it, as Escape does', () => {
     document.body.append(bar)
     h.press(bar)
     h.press(idle)
-    expect(h.sent).toEqual([{ msg: 'key', keycode: 27 }, { msg: 'key', keycode: 27 }])
+    expect(h.sent).toEqual([])
     const ours = harness({ mode: 'command', ours: true })
-    ours.press(ours.el('touchbar'))
-    expect(ours.overlayInput).toHaveBeenCalledWith('cancel')
+    ours.press(ours.el('touchbar spellbar'))
+    expect(ours.overlayInput).not.toHaveBeenCalled()
   })
   it('a swipe outside is no tap: it turns the tabs, as a swipe over the menu does', () => {
     for (const ours of [true, false]) {

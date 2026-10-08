@@ -177,9 +177,10 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
   it('a button that comes and goes keeps its cell while away: nothing else moves', () => {
     const shop = (s: object) => menu({ shop: { canBuy: true, anyMarked: false, anyListed: false, mode: 'buy', sortOrder: 'type', ...s } } as unknown as Partial<MenuContext>, 'shop')
     const full = drawn(shop({ anyMarked: true }))
+    // laid out as its footer, turned over (SHOP_HOME)
     expect(full).toEqual([
-      ['·', 'R3', '·', '·', 'Y'],
-      ['·', 'LT', 'DU', 'X', 'START'],
+      ['·', '·', 'X', '·', 'START'],
+      ['R3', 'LT', 'DU', '·', 'Y'],
       ['B', 'DL', 'DD', 'DR', 'A'],
     ])
     for (const s of [{}, { anyListed: true }, { mode: 'examine' }]) {
@@ -222,14 +223,17 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     // the bracketed key is the picture, the words alone the caption
     expect(drawn(use, (l) => l.keycap ?? l.glyph ?? l.icon ?? '·')[0].slice(0, 2)).toEqual(['!', '?'])
     expect(words(use)[0].slice(0, 2)).toEqual(['read|quaff|evoke', 'describe selected'])
-    // the shop's flip and sort were X and R3: the footer's own switches stand for them, Esc and Enter stay the anchors'
+    // the shop's flip and sort were X and R3: the footer's own switches stand for them, where its footer has them (SHOP_HOME),
+    // Esc and Enter stay the anchors'
     const shop = { ...menu({ shop: { canBuy: true, anyMarked: true, anyListed: false, mode: 'buy', sortOrder: 'type' } } as unknown as Partial<MenuContext>, 'shop'), switches: [sw('Esc', 'exit'), sw('!', 'buy|examine items'), sw('/', 'sort (type)'), sw('Enter', 'buy marked items')] }
     expect(drawn(shop)).toEqual([
-      ['key:!', 'key:/', '·', '·', 'Y'],
-      ['·', 'LT', 'DU', '·', 'START'],
+      ['·', '·', 'key:!', '·', 'START'],
+      ['key:/', 'LT', 'DU', '·', 'Y'],
       ['B', 'DL', 'DD', 'DR', 'A'],
     ])
     expect(touchLabels(barLabels(shop), shop).find((l) => l.button === 'key:/')?.action).toEqual({ kind: 'keys', label: 'sort (type)', seq: [{ text: '/' }] })
+    // their words are too long for a button: the key alone, as the skills screen's are
+    expect(touchLabels(barLabels(shop), shop).filter((l) => l.button.startsWith('key:')).map((l) => [l.keycap, !!l.bare])).toEqual([['!', true], ['/', true]])
     // a named key in whatever case the menu prints it (the wear menu's `[tab]`) sends its keycode
     const wear = { ...menu({}, 'use_item'), switches: [sw('?', 'describe selected'), sw('!', 'equip|wield|wear'), sw('tab', 'equip|unequip')] }
     expect(drawn(wear)[0]).toEqual(['key:?', 'key:!', 'X', 'key:tab', '·'])

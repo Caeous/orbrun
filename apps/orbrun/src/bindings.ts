@@ -664,7 +664,7 @@ export type TouchLabel = Omit<BindingLabel, 'button'> &
     /** a switch's bracketed key and its words in the screen's colours (Switch `keyHtml`, `wordHtml`) */
     keycapHtml?: string
     labelHtml?: string
-    /** the bracketed key alone, its words only for a screen reader: the skills screen's switches, too long to read on a button */
+    /** the bracketed key alone, its words only for a screen reader: the skills screen's and the shop's switches, too long to read on a button */
     bare?: boolean
   }
 
@@ -780,6 +780,15 @@ const GENERIC_FREE: readonly TouchCell[] = ['gear', 'actions', 'explore', 'fight
 const SWITCH_CELLS: readonly TouchCell[] = ['corner', 'wait', 'examine', 'quiver', 'actions']
 /** where the switches the top row has no room for go: over Esc first, then either side of the up arrow, then up the right edge */
 const SWITCH_OVERFLOW: readonly TouchCell[] = ['spare', 'explore', 'fight', 'gear', 'actions']
+/**
+ * The shop as its footer stands (shopping.cc `ShopMenu::update_help`), turned
+ * over so its first line is the bar's foot, where Esc and the verb are: sort
+ * over Esc as it is under it, the shopping list over the verb, the buy|examine
+ * flip between them. Buying and listing what is marked, which the footer does
+ * not print, take the cells left. X and R3 send the flip and the sort where the
+ * footer has not printed them.
+ */
+const SHOP_HOME: Readonly<Partial<Record<Button | SwitchButton, TouchCell>>> = { 'key:!': 'examine', X: 'examine', 'key:/': 'spare', R3: 'spare', Y: 'gear', START: 'actions', LT: 'explore' }
 /** the switches that are an anchor's already, by keycode: Esc is Esc, and Enter is the menu's accept or its verb */
 const ANCHOR_SWITCHES = new Set<number>([Keys.ESC, Keys.ENTER])
 
@@ -846,14 +855,22 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
     const picture = bracketed ? { keycap: sw.key, ...(sw.keyHtml ? { keycapHtml: sw.keyHtml } : {}), ...(sw.wordHtml ? { labelHtml: sw.wordHtml } : {}) } : switchPicture(sw.word, sw.key, sw.item)
     // the verb the popup has lit, which Select does too, lit here as the popup's line lights it
     const lit = !bracketed && !!ctx.focus?.label && formattedStringToText(ctx.focus.label) === sw.label
-    const bare = bracketed && ctx.menu?.menu.tag === 'skills'
+    const bare = bracketed && BARE_SWITCH_MENUS.has(ctx.menu?.menu.tag ?? '')
     const idle = !!sw.idle
     out.push({ button: `key:${sw.key}`, label: bracketed ? words : touchCaption(words), action: { kind: 'keys', label: words, seq: [code ? { key: code } : { text: sw.key }] }, contextual: true, ...picture, ...(lit ? { lit } : {}), ...(bare ? { bare } : {}), ...(idle ? { idle } : {}), cell })
   }
+  // a screen laid out as its footer is (SHOP_HOME) has its switches and buttons where the footer puts them
+  const screenHome = ctx.menu?.shop ? SHOP_HOME : {}
+  const homed = new Set(Object.values(screenHome))
+  const unhomed = switches.filter((sw) => {
+    const cell = screenHome[`key:${sw.key}`]
+    if (cell) putSwitch(sw, cell)
+    return !cell
+  })
   // a menu's describe of the lit row keeps Examine's cell
   const examines = [...has].some(([b, l]) => b === 'X' && l.action.kind === 'menu' && l.action.op === 'examine')
-  const switchCells = SWITCH_CELLS.filter((c) => c !== 'examine' || !examines)
-  switches.slice(0, switchCells.length).forEach((sw, i) => putSwitch(sw, switchCells[i]))
+  const switchCells = SWITCH_CELLS.filter((c) => (c !== 'examine' || !examines) && !homed.has(c))
+  unhomed.slice(0, switchCells.length).forEach((sw, i) => putSwitch(sw, switchCells[i]))
   const bumper = (l: BindingLabel) => (l.button !== 'LB' && l.button !== 'RB') || l.action.kind === 'osk'
   const fits = (l: BindingLabel) => !placed.includes(JSON.stringify(l.action)) && bumper(l) && !switched.has(String(switchKey(l.action, ctx)))
   // a button the screen shows only now and then (the shop's buy, a menu's accept) keeps its cell while away, so
@@ -867,7 +884,7 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
     put(l, cell)
   }
   // a menu's describe of the lit row is Examine
-  const home = (b: Button, l: BindingLabel) => (b === 'X' && l.action.kind === 'menu' && l.action.op === 'examine' ? 'examine' : GENERIC_HOME[b])
+  const home = (b: Button, l: BindingLabel) => screenHome[b] ?? (b === 'X' && l.action.kind === 'menu' && l.action.op === 'examine' ? 'examine' : GENERIC_HOME[b])
   const label = (b: Button) => has.get(b) ?? away.get(b)
   for (const b of [...has.keys(), ...away.keys()]) {
     const l = label(b)!
@@ -881,12 +898,15 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
     if (cell) place(b, l, cell)
   }
   // more switches than the top row has room for take what is left, over Esc first
-  for (const sw of switches.slice(switchCells.length)) {
+  for (const sw of unhomed.slice(switchCells.length)) {
     const cell = SWITCH_OVERFLOW.find((c) => !taken.has(c))
     if (cell) putSwitch(sw, cell)
   }
   return out
 }
+
+/** menus whose bracketed switches are their key alone on a touch button (TouchLabel `bare`): their words are too long for one */
+const BARE_SWITCH_MENUS: ReadonlySet<string> = new Set(['skills', 'shop'])
 
 /** the skills screen's own buttons (skill-menu.cc `init_button_row`), always there, their text blanked where they do nothing now */
 const SKILLS_BUTTONS: readonly Switch[] = [
