@@ -92,9 +92,10 @@ while spectating, Escape opens it too.
   on, opens or closes the door ahead, attacks, picks up, or steps.
 - **B** cancels or backs out; in play it sends Escape.
 - **X** opens your spells, abilities, evocables and quiver as tabs; the
-  bumpers switch between them, Y swaps weapons and LT shouts. In a menu, X
-  describes the row under the cursor.
-- **Y** opens the gear menu, with your pack at the top.
+  bumpers switch between them. In a menu, X describes the row under the
+  cursor.
+- **Y** opens the gear menu, with your pack at the top; Y there swaps
+  weapons.
 - **LB** waits a turn; hold it to rest.
 - **RB** aims your quivered action; press it again to fire.
 - **LT** autoexplores.
@@ -107,8 +108,9 @@ while spectating, Escape opens it too.
   the rest of the map's commands. Every menu reopens on the row you last
   chose.
 - **Start** opens the Orbrun menu, which has two tabs: Character (skills,
-  spells, status, religion and the rest) and System (resume, repeat, the game
-  menu, help, chat, gamepad, settings, save and exit).
+  spells, status, religion, shouting to allies and the rest) and System
+  (resume, repeat, the game menu, help, chat, gamepad, settings, save and
+  exit).
 
 The action bar at the bottom of the screen always shows what each button does
 in the current mode. It never guesses the mode: the server reports it.

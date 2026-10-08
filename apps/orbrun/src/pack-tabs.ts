@@ -1,5 +1,5 @@
 import { Keys, MenuFlag, formattedStringToText, type GameState, type MenuState } from '@orbrun/webtiles'
-import type { KeyOrText } from './bindings'
+import type { Action, KeyOrText } from './bindings'
 
 /**
  * The pack's pages as tabs: Gear (3/52) | Potions | Scrolls (| Evocables).
@@ -14,6 +14,14 @@ import type { KeyOrText } from './bindings'
  * 3/52 gear slots") onto the Gear tab, where it stands on every page, and
  * its word on the keys at the strip's other end.
  */
+
+/**
+ * Y in the pack, where it stood in for the pack's help (`_`): swapping
+ * weapons is no row of the pack, so it is a button beside its pages. The
+ * pack goes first, then crawl's key.
+ */
+export const SWAP_WEAPONS_KEY = "'"
+export const SWAP_WEAPONS: Action = { kind: 'keys', label: 'Swap weapons', seq: [{ key: 27 }, { text: SWAP_WEAPONS_KEY }], contextual: true }
 
 export interface PackTab {
   /** the page, whatever its label says (the Gear tab's count changes) */

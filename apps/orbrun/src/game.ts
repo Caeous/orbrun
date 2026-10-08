@@ -22,7 +22,7 @@ import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './
 import { gamepadHints, type HintMode, type PadHintEvidence } from './gamepad-hints'
 import { touchHints, type TouchHintEvidence, type TouchLesson } from './touch-hints'
 import { isPack, openPackKeys } from './pack-tabs'
-import { OKAY_THEN, SHOUT_KEY, SWAP_WEAPONS_KEY, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
+import { OKAY_THEN, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
 import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INSET, type Settings } from './servers'
 import { fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap, type SettingGroup } from './settings-rows'
 import { PerfOverlay, type LogContext } from './perf'
@@ -1503,8 +1503,6 @@ export class GameScreen {
       if (ev.type === 'press') {
         // the button that opened this screen puts it away whole, before anything else it would do here
         if (ev.button === this.overlayOpener) this.overlays.clientOverlayInput('close')
-        // an empty tab of X's actions keeps the two that are no list: Y swaps weapons, LT shouts
-        else if (this.overlays.openMenu === 'battle' && (ev.button === 'Y' || ev.button === 'LT')) this.actionKey(ev.button === 'Y' ? SWAP_WEAPONS_KEY : SHOUT_KEY)
         else if (ev.button === 'A') this.overlays.clientOverlayInput('select')
         else if (ev.button === 'START') this.overlays.clientOverlayInput('submit')
         else if (ev.button === 'B') this.overlays.clientOverlayInput('cancel')
@@ -1744,8 +1742,6 @@ export class GameScreen {
       else if (ev.key === 'End') this.overlays.clientOverlayInput('last')
       // Enter and space both fire the row the cursor is on, as they do in a server menu
       else if (ev.key === 'Enter' || ev.key === ' ') this.overlays.clientOverlayInput('select')
-      // an empty tab of X's actions: crawl's own keys for the two that are no list
-      else if (this.overlays.openMenu === 'battle' && (ev.key === SWAP_WEAPONS_KEY || ev.key === SHOUT_KEY)) this.actionKey(ev.key)
       else if (!ev.altKey && !ev.metaKey) {
         if (ev.key === 'Tab') this.overlays.clientOverlayHotkey('Tab')
         else if (ev.key.length === 1) this.overlays.clientOverlayHotkey(ev.ctrlKey ? 'Ctrl-' + ev.key.toUpperCase() : ev.key)
@@ -2415,14 +2411,6 @@ export class GameScreen {
     const tab = actionTab(target)
     this.actionTurn = { target, sent: target, stage: 'sent', last: this.session.state.messages.lines.at(-1), t: performance.now() }
     this.runner.execute({ kind: 'keys', label: tab.label, seq: [{ text: tab.key }] })
-  }
-
-  /** Y or LT on an empty tab: the frame goes, and crawl's key for the action goes alone (no menu to put away). */
-  private actionKey(key: string) {
-    // a menu still opening would take the key as a row's letter: the frame waits for it
-    if (this.actionTurn) return
-    this.overlays.closeClientOverlay()
-    this.runner.execute({ kind: 'keys', label: key === SHOUT_KEY ? 'Shout' : 'Swap weapons', seq: [{ text: key }] })
   }
 
   /**

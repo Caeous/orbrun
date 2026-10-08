@@ -37,6 +37,7 @@ export const CHARACTER_COMMANDS: CommandEntry[] = [
   command('Spell list', 'I', 'the spells you know, and what they cost', 'BOOK'),
   command('Religion', '^', 'your god, and what they ask of you', 'CMD_DISPLAY_RELIGION'),
   command('Mutations', 'A', 'what the dungeon has made of you', 'CMD_DISPLAY_MUTATIONS'),
+  command('Shout / order allies', 't', 'call out, or tell your allies what to do'),
   control('Message history', 'Ctrl-P', 16, 'everything the game has told you', 'CMD_REPLAY_MESSAGES'),
   command('Adjust inventory letters', '=', 'move an item to a letter you will remember', 'CMD_DISPLAY_INVENTORY'),
   command('Known items / autopickup', '\\', 'what you have identified, and what to pick up', 'CMD_KNOWN_ITEMS'),

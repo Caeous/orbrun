@@ -124,6 +124,12 @@ describe('the bumpers in the pack', () => {
     expect(t.RT).toBeUndefined()
   })
 
+  it('leave Y to swap weapons: the pack goes, then crawl\'s key', () => {
+    const c = packCtx(TITLES.potions)
+    expect(bindingTable(c).Y).toMatchObject({ kind: 'keys', seq: [{ key: 27 }, { text: "'" }] })
+    expect(Object.fromEntries(barLabels(c).map((l) => [l.button, l.label])).Y).toBe('Swap weapons')
+  })
+
   it('leave the sections to the triggers', () => {
     const c = packCtx(TITLES.gear)
     c.menu!.sections = true

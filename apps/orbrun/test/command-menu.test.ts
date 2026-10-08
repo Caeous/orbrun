@@ -149,7 +149,7 @@ describe('the command menus', () => {
     const h = setup()
     h.system()
     h.ov.clientOverlayInput('pageNext')
-    expect(h.focused()).toBe('Runes collected')
+    expect(h.focused()).toBe('Known items / autopickup')
     expect(h.host.querySelector('.command-tabs .current')?.textContent).toBe('Character')
     h.ov.clientOverlayInput('pagePrev')
     expect(h.focused()).toBe('Skills')

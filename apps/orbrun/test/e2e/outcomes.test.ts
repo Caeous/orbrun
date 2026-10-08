@@ -88,7 +88,7 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     const empty = () => frame()?.querySelector('.action-empty')?.textContent
     expect(screen(g).title).toMatch(/^Your spells \(cast\)/)
     expect(tab()).toBe('Spells')
-    expect(screen(g).bar).toMatchObject({ LB: 'Quiver', RB: 'Abilities', Y: 'Swap weapons', LT: 'Shout' })
+    expect(screen(g).bar).toMatchObject({ LB: 'Quiver', RB: 'Abilities' })
     // a Conjurer has no abilities and no wands: crawl's own line stands where its menu would
     await g.press('RB')
     expect(tab()).toBe('Abilities')
@@ -127,18 +127,18 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     expect(bare).toBe(false)
   })
 
-  it("the actions' Y swaps weapons and LT shouts, from crawl's menu or an empty tab", async () => {
-    let g = await at('actions-empty')
-    expect(g.root.querySelector('.action-tabs .action-empty')?.textContent).toBe("You don't know any spells.")
-    g.clearSent()
-    await g.press('LT')
-    expect(screen(g).title).toBe('What are your orders?')
-    expect(g.root.querySelector('.action-tabs')).toBeNull()
-    g = await at('actions-quiver')
+  it("the pack's Y swaps weapons, and the Start menu's Character tab shouts", async () => {
+    const g = await at('gear')
     g.clearSent()
     await g.press('Y')
     expect(keysOf(g.sent)).toBe(JSON.stringify([27, 39]))
     expect(screen(g).mode).toBe('command')
+    await g.press('START')
+    const focused = () => g.root.querySelector('.sysmenu .focused .label')?.textContent
+    for (let i = 0; i < 20 && focused() !== 'Shout / order allies'; i++) await g.dpad(4)
+    expect(focused()).toBe('Shout / order allies')
+    await g.press('A')
+    expect(screen(g).title).toBe('What are your orders?')
   })
 
   it("the actions keep up with a quick player: presses ahead of crawl move the tab, and no key lands in a menu still opening", async () => {

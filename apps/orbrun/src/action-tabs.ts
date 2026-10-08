@@ -1,5 +1,4 @@
 import { formattedStringToText, type MenuState } from '@orbrun/webtiles'
-import type { Action } from './bindings'
 
 /**
  * X's actions as tabs: Spells | Abilities | Evocables | Quiver.
@@ -12,9 +11,6 @@ import type { Action } from './bindings'
  * `openActionTab`). A tab with nothing on it stands like any other: crawl
  * refuses its key with a line ("You don't know any spells.") and the frame
  * shows that line where the menu would be (Overlays.showActionTabs).
- *
- * Swapping weapons and shouting are no lists, so they are buttons on every
- * tab instead of rows: Y and LT.
  */
 
 export type ActionTabId = 'spells' | 'abilities' | 'evocables' | 'quiver'
@@ -58,14 +54,3 @@ export function actionTab(id: ActionTabId): ActionTab {
 
 /** What crawl says as it puts a menu away (MSG_OK): the Escape of a turn, never a tab's own answer. */
 export const OKAY_THEN = 'Okay, then.'
-
-/**
- * The buttons beside the tabs: Y swaps weapons, LT shouts. From one of
- * crawl's menus the Escape goes first; from an empty tab (no menu up) the
- * frame goes away and the key alone is sent (game.ts).
- */
-export const SWAP_WEAPONS_KEY = "'"
-export const SHOUT_KEY = 't'
-// contextual: they stand under every tab, as the empty frame's do (Overlays.padPrompts)
-export const SWAP_WEAPONS: Action = { kind: 'keys', label: 'Swap weapons', seq: [{ key: 27 }, { text: SWAP_WEAPONS_KEY }], contextual: true }
-export const SHOUT: Action = { kind: 'keys', label: 'Shout', seq: [{ key: 27 }, { text: SHOUT_KEY }], contextual: true }

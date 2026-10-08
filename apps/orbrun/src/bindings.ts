@@ -4,7 +4,7 @@ import type { Button, PadEvent } from './gamepad'
 import { DEFAULT_YESNO, LOG_DEFAULT_COLOUR, isFocusMode, type Context, type MenuContext, type ParsedPrompt, type ShopContext, type Switch } from './context'
 import type { FocusOp } from './focus'
 import { menuHasSections, moreSwitchKeycode } from './menu-nav'
-import { SHOUT, SHOUT_KEY, SWAP_WEAPONS, SWAP_WEAPONS_KEY } from './action-tabs'
+import { SWAP_WEAPONS, SWAP_WEAPONS_KEY } from './pack-tabs'
 import type { TouchGlyph } from './touch-glyphs'
 import ACTION_TILES from '../data/action-tiles.json'
 
@@ -155,11 +155,13 @@ function menuTable(m: MenuContext | undefined, ctx: Context): Partial<Record<But
   if (!m) return t
   // the menu's own help, on the key it names (the inventory's `_`); a menu that names none has none
   if (m.helpKey) t.Y = k(m.helpKey, 'Help')
-  // X's actions as tabs (action-tabs.ts): the bumpers turn them, and Y and LT are the two actions that are no list
+  // X's actions as tabs (action-tabs.ts): the bumpers turn them
   if (m.actions) {
     if (EXAMINING_MENUS.has(m.menu.tag)) t.X = { kind: 'menu', op: 'examine' }
-    return { ...t, LB: { kind: 'ui', op: 'actionTab', arg: -1 }, RB: { kind: 'ui', op: 'actionTab', arg: 1 }, Y: SWAP_WEAPONS, LT: SHOUT }
+    return { ...t, LB: { kind: 'ui', op: 'actionTab', arg: -1 }, RB: { kind: 'ui', op: 'actionTab', arg: 1 } }
   }
+  // the pack swaps weapons on Y, over its help (pack-tabs.ts)
+  if (m.pack) t.Y = SWAP_WEAPONS
   // the hovered row, described where it stands (the spell, ability and item menus' "[?] toggle ... description"
   // without the toggle, see Overlays.menuAction); Left/Right on a row cycles the mode, as `!` does
   if (EXAMINING_MENUS.has(m.menu.tag) && !m.togglesAtOnce) t.X = { kind: 'menu', op: 'examine' }
@@ -1135,7 +1137,7 @@ const KEY_ICONS: Record<string, TouchIcon> = {
   v: LOOK,
   ',': ours('all'),
   [SWAP_WEAPONS_KEY]: ours('swap'),
-  [SHOUT_KEY]: ours('shout'),
+  t: ours('shout'),
   ')': QUIVER,
   '(': QUIVER,
   '+': ours('cycle'),

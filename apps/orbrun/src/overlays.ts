@@ -29,7 +29,7 @@ import { packRows, packStrip, turnKeys, type PackStrip } from './pack-tabs'
 import { fits, menuColumns } from './menu-columns'
 import { attachSwipe } from './swipe'
 import { TabLean } from './tab-lean'
-import { ACTION_TABS, SHOUT, SWAP_WEAPONS, actionNeighbour, actionTabOf, type ActionTabId } from './action-tabs'
+import { ACTION_TABS, actionNeighbour, actionTabOf, type ActionTabId } from './action-tabs'
 import type { Button, PadKind } from './gamepad'
 import { DEFAULT_YESNO, isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt, type Switch } from './context'
 import type { InputDevice } from './game'
@@ -3153,13 +3153,13 @@ export class Overlays {
   /**
    * The pad's prompts under the client overlay that is up (hud.ts placeBar),
    * as crawl's menus get theirs from the situation (bindings.ts
-   * promptLabels): an empty tab of X's actions has the two buttons that are
-   * no list, a list has the lit row to fire. Null with none up.
+   * promptLabels): a list has the lit row to fire, an empty tab of X's
+   * actions nothing. Null with none up.
    */
   get padPrompts(): BindingLabel[] | null {
     const o = this.clientOverlay
     if (!o) return null
-    if (o.kind === 'actions') return [{ button: 'Y', label: 'Swap weapons', action: SWAP_WEAPONS, contextual: true }, { button: 'LT', label: 'Shout', action: SHOUT, contextual: true }]
+    if (o.kind === 'actions') return []
     return o.items.length ? [{ button: 'A', label: 'select', action: { kind: 'focus', op: 'select' }, contextual: true }] : []
   }
 
