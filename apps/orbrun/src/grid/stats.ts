@@ -295,9 +295,17 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
     piety.push({ text: rep('*', rank) + rep('.', 6 - rank - p.ostracism_pips), fg: pietyColour })
     if (p.ostracism_pips) piety.push({ text: rep('X', p.ostracism_pips), fg: 5 })
   }
-  const line2: Row = [{ text: speciesGod, fg: TITLE }]
-  if (piety.length) line2.push({ text: ' ' }, ...piety)
-  if (p.god === 'Gozag') line2.push(capShort(compact, ' Gold: ', ' $:'), { text: String(p.gold), ...(hasStatus(p, /gold aura/) ? { cls: 'boosted_stat' } : {}) })
+  const tail: Row = []
+  if (piety.length) tail.push({ text: ' ' }, ...piety)
+  if (p.god === 'Gozag') tail.push(capShort(compact, ' Gold: ', ' $:'), { text: String(p.gold), ...(hasStatus(p, /gold aura/) ? { cls: 'boosted_stat' } : {}) })
+  // too long for its room (beside the portrait on a phone held upright), the line keeps the piety or the
+  // gold whole: the species goes first, then the god's name is cut, the whole line its tooltip
+  const line2 = (room: number): Row => {
+    const full: Row = [{ text: speciesGod, fg: TITLE }, ...tail]
+    if (!p.god || rowLength(full) <= room) return cutRow(full, room)
+    const head = cutRow([{ text: p.god, fg: TITLE, title: speciesGod }], Math.max(1, room - rowLength(tail)), true)
+    return cutRow([...head, ...tail], room)
+  }
 
   // the two columns
   const showDoomContam = (v: number) => !(v === 0 && opts.always_show_doom_contam === false)
@@ -374,7 +382,7 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
   }
 
   rows.push(beside(titleIn(besideW)))
-  rows.push(beside(cutRow(line2, besideW)))
+  rows.push(beside(line2(besideW)))
   place(hpBar)
   if (mpValue) place(mpBar)
 
@@ -405,9 +413,9 @@ const CORNER_GAP = 2
  * weapon, the quiver, a row each, and the status lights, wrapped. `left`
  * and `right` are the pane's two columns.
  */
-function cornerRows(width: number, lead: number, r: { title: (room: number) => Row; line2: Row; hp: (room: number) => Row; mp: ((room: number) => Row) | null; left: Row[]; right: Row[]; doomContam: Row; noise: Row; time: Row; weapon: Row; offhand: Row | null; quiver: Row; lights: Row }): Row[] {
+function cornerRows(width: number, lead: number, r: { title: (room: number) => Row; line2: (room: number) => Row; hp: (room: number) => Row; mp: ((room: number) => Row) | null; left: Row[]; right: Row[]; doomContam: Row; noise: Row; time: Row; weapon: Row; offhand: Row | null; quiver: Row; lights: Row }): Row[] {
   const room = Math.max(1, width - lead)
-  const rows: Row[] = [r.title(room), cutRow(r.line2, room), r.hp(room), r.mp ? r.mp(room) : []].map((l) => [blank(lead), ...l])
+  const rows: Row[] = [r.title(room), r.line2(room), r.hp(room), r.mp ? r.mp(room) : []].map((l) => [blank(lead), ...l])
   // the attributes on one column after the widest defence
   const defenceW = Math.max(...r.left.slice(0, 3).map(rowLength))
   for (let i = 0; i < 3; i++) rows.push([...padRow(r.left[i], defenceW + CORNER_GAP), ...r.right[i]])

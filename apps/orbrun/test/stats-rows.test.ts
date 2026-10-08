@@ -303,6 +303,14 @@ describe('stats pane beside the minimap', () => {
     expect(text(rows[12]).endsWith('…')).toBe(true)
   })
 
+  it('keeps the piety stars when the species line is too long, dropping the species, then cutting the god', () => {
+    const devout = { ...st.player, species_display_name: 'Mountain Dwarf', god: 'Makhleb', piety_rank: 4, ostracism_pips: 0, penance: false }
+    expect(text(statsRows(devout, st.options, {}, width, lead, true).rows[1])).toBe(' '.repeat(lead) + 'Makhleb ****..')
+    expect(text(statsRows({ ...devout, god: 'The Shining One' }, st.options, {}, width, lead, true).rows[1])).toBe(' '.repeat(lead) + 'The Shining… ****..')
+    // room for it all: the line as WebTiles prints it
+    expect(text(statsRows(devout, st.options, {}, 50, lead, true).rows[1])).toBe(' '.repeat(lead) + 'Mountain Dwarf of Makhleb ****..')
+  })
+
   it('a pane with no Magic row keeps its rows where they were', () => {
     const rows = statsRows({ ...st.player, species: 'Djinni' }, st.options, {}, width, lead, true).rows
     expect(text(rows[3]).trim()).toBe('')
