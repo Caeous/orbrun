@@ -4,11 +4,12 @@ Orbrun is an unofficial [DCSS](https://crawl.develz.org) client that puts you
 inside the dungeon. It plays on the public
 [WebTiles](https://crawl.develz.org/wordpress/howto) servers, or on your own
 device with no server at all. It draws the game in first person and is built
-to be played with a gamepad on a handheld, the Steam Deck first.
+to be played on a handheld: with a gamepad on the Steam Deck, or by touch on a
+phone or tablet.
 
 If you play on WebTiles, you keep your game, your account, your rc file and
-your keys. Orbrun adds a 3D view and controller support on top, and asks you
-to relearn nothing.
+your keys. Orbrun adds a 3D view, controller support and touch on top, and
+asks you to relearn nothing.
 
 ## Getting started
 
@@ -18,7 +19,9 @@ game. There is nothing to install and no Orbrun account: your browser talks
 to the DCSS server directly.
 
 To play from a Steam Deck's library, [Add to Steam](STEAM.md) has the five
-steps that put Orbrun there, artwork included.
+steps that put Orbrun there, artwork included. On a phone or
+tablet, [add it to your home screen](INSTALL.md) before you play: it then opens full
+screen from its own icon, even offline. A computer can do the same.
 
 ## Features
 
@@ -34,6 +37,10 @@ steps that put Orbrun there, artwork included.
   firing and examining are each one button away, and a bar shows what each
   button does right now. An on-screen keyboard covers prompts, inscriptions
   and chat.
+- **Touch.** On a phone or tablet the whole game plays by touch, in portrait or
+  landscape. Tap to step, swipe to turn, and the buttons under your
+  thumbs explore, fight, cast and open your gear, each with crawl's own
+  picture.
 - **The keyboard you know, with one change.** Direction keys are relative to
   the way you face: `k` steps forward, `h` and `l` turn. Every other key goes
   to the server untouched.
@@ -41,9 +48,9 @@ steps that put Orbrun there, artwork included.
   in your browser, and your saves stay on your device. Offline games don't
   reach a scoreboard.
 - **Spectating**, in first person, from a link you can share.
-- **Made for the Steam Deck.** Orbrun stops drawing whenever nothing on screen
-  moves. Add it to Steam as a non-Steam game, or install it as an app from the
-  browser.
+- **Made for handhelds.** Orbrun stops drawing whenever nothing on screen
+  moves. Add it to Steam as a non-Steam game, or to a phone's or
+  tablet's home screen.
 
 ## The minimap
 
@@ -115,11 +122,39 @@ while spectating, Escape opens it too.
 The action bar at the bottom of the screen always shows what each button does
 in the current mode. It never guesses the mode: the server reports it.
 
+### Touch
+
+On a phone or tablet, buttons stand under your thumbs (on a phone in
+landscape, under the minimap), named and drawn with crawl's own pictures. They
+change with the screen, but Esc is always in the bottom-left corner, the
+arrows beside it, and the do-it button in the bottom-right corner.
+
+- Tap the view to step forward. Swipe across it to turn: a short swipe turns
+  45°, a long one 90°. Hold a finger still on it to examine what's ahead.
+- On the map the buttons explore, fight, wait (hold to rest), quiver, open
+  your spells and your gear, and list what is in view. Tap Quiver to aim and
+  again to fire.
+- Your spells stand under the message log. Tap one to ready it, and tap it
+  again to cast.
+- Tap your stats for the Orbrun menu, and the minimap for the level map.
+  There, tap to move the cursor, drag to move the map and pinch to zoom.
+- In a menu, tap a row to take it, and swipe sideways to change tabs. A row
+  that would spend a turn lights on the first tap and is taken on the
+  second.
+- Prompts that ask for a number bring up a number pad.
+
 ## Add to Steam
 
 Orbrun goes into a Steam Deck's library as a non-Steam game that opens Chrome
 in kiosk mode on orbrun.app. It takes five steps and no script: see
 [STEAM.md](STEAM.md).
+
+## Add to Home Screen
+
+On a phone or tablet, add Orbrun to your home screen: it opens from its own icon, full
+screen, and starts with no connection. A computer can install it the same
+way, in a window of its own. [INSTALL.md](INSTALL.md) has the steps for
+Android, iPhone, iPad and computers.
 
 ## Version support
 

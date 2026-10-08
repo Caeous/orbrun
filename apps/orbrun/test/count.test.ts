@@ -8,8 +8,8 @@ import { countEvent, type EventsDataset } from '../worker/count'
 
 /**
  * The counts name nobody: the Worker keeps an event from the list, a bundled
- * server, stable or trunk, the window's size, whether a pad was connected and
- * each setting, and nothing else a beacon carries, not even a header. And
+ * server, stable or trunk, the window's size, whether a pad was connected,
+ * whether a finger was the pointer and each setting, and nothing else a beacon carries, not even a header. And
  * nothing is counted once a game is under way.
  */
 const q = (s: string) => new URLSearchParams(s)
@@ -19,13 +19,14 @@ const defaultText = Object.fromEntries(WORD_SETTINGS.map((k) => [k, String(defau
 const defaultNumbers = Object.fromEntries(NUMBER_SETTINGS.map((k) => [k, Number(defaultSettings[k])]))
 
 describe('counts: what the Worker keeps', () => {
-  it('keeps a listed event, its server, version, window size, pad and settings', () => {
-    expect(parseCount(q('e=boot&w=1280&h=800'))).toEqual({ event: 'boot', text: { event: 'boot', server: '', version: '' }, numbers: { pad: 0, width: 1280, height: 800 } })
-    expect(parseCount(q('e=spectate&s=other&pad=1'))).toEqual({ event: 'spectate', text: { event: 'spectate', server: 'other', version: '' }, numbers: { pad: 1 } })
+  it('keeps a listed event, its server, version, window size, pad, touch and settings', () => {
+    expect(parseCount(q('e=boot&w=1280&h=800'))).toEqual({ event: 'boot', text: { event: 'boot', server: '', version: '' }, numbers: { pad: 0, touch: 0, width: 1280, height: 800 } })
+    expect(parseCount(q('e=spectate&s=other&pad=1'))).toEqual({ event: 'spectate', text: { event: 'spectate', server: 'other', version: '' }, numbers: { pad: 1, touch: 0 } })
+    expect(parseCount(q('e=boot&touch=1&w=390&h=840'))).toEqual({ event: 'boot', text: { event: 'boot', server: '', version: '' }, numbers: { pad: 0, touch: 1, width: 390, height: 840 } })
     expect(parseCount(q('e=play&s=cdi&v=trunk&fov=95&hints=off&uiScale=1.15&viewmodel=0&eyeHeight=0.62&nearby=other'))).toEqual({
       event: 'play',
       text: { event: 'play', server: 'cdi', version: 'trunk', hints: 'off', nearby: 'other' },
-      numbers: { pad: 0, fov: 95, uiScale: 1.15, viewmodel: 0, eyeHeight: 0.62 },
+      numbers: { pad: 0, touch: 0, fov: 95, uiScale: 1.15, viewmodel: 0, eyeHeight: 0.62 },
     })
   })
 
@@ -48,6 +49,8 @@ describe('counts: what the Worker keeps', () => {
       'e=play&s=192.168.1.20',
       'e=play&pad=orbrun',
       'e=play&pad=0',
+      'e=play&touch=0',
+      'e=play&touch=yes',
       'e=play&w=1280x800',
       'e=play&w=20000',
       'e=play&w=-10',
@@ -65,14 +68,14 @@ describe('counts: what the Worker keeps', () => {
   it('writes the row and nothing of the request', () => {
     const points: unknown[] = []
     const EVENTS: EventsDataset = { writeDataPoint: (p) => void points.push(p) }
-    const req = new Request(`https://orbrun.app${countUrl('play-offline', { server: 'offline', game: 'dcss-0.34', settings: defaultSettings, pad: true }, DECK)}`, {
+    const req = new Request(`https://orbrun.app${countUrl('play-offline', { server: 'offline', game: 'dcss-0.34', settings: defaultSettings, pad: true, touch: true }, DECK)}`, {
       method: 'POST',
       headers: { 'CF-Connecting-IP': '203.0.113.7', 'User-Agent': 'orbrun-test', Referer: 'https://orbrun.app/play/offline/dcss-0.34#orbrun' },
     })
     expect(countEvent(req, new URL(req.url), { EVENTS }).status).toBe(204)
     expect(points).toEqual([{
       blobs: ['play-offline', 'offline', 'stable', ...WORD_SETTINGS.map((k) => defaultText[k])],
-      doubles: [1, 1280, 800, ...NUMBER_SETTINGS.map((k) => defaultNumbers[k])],
+      doubles: [1, 1280, 800, ...NUMBER_SETTINGS.map((k) => defaultNumbers[k]), 1],
       indexes: ['play-offline'],
     }])
     expect(JSON.stringify(points)).not.toMatch(/203\.0\.113|orbrun-test|#orbrun|0\.34/)
@@ -80,7 +83,9 @@ describe('counts: what the Worker keeps', () => {
 
   it('names its columns in the order they are written, within what Analytics Engine keeps (20 of each)', () => {
     expect(BLOB_COLUMNS).toEqual(['event', 'server', 'version', 'leftRightKeys', 'leftRightPad', 'hints', 'nearby'])
-    expect(DOUBLE_COLUMNS).toEqual(['pad', 'width', 'height', 'eyeHeight', 'restPitch', 'fov', 'viewmodel', 'lookSensitivity', 'invertLook', 'uiScale', 'minimapTiles', 'minimapCell', 'minimapTurns', 'messageLines'])
+    expect(DOUBLE_COLUMNS).toEqual(['pad', 'width', 'height', 'eyeHeight', 'restPitch', 'fov', 'viewmodel', 'lookSensitivity', 'invertLook', 'uiScale', 'minimapTiles', 'minimapCell', 'minimapTurns', 'messageLines', 'touch'])
+    // the numbers are written out: a number setting added later needs a column of its own, after touch
+    for (const k of NUMBER_SETTINGS) expect(DOUBLE_COLUMNS, k).toContain(k)
     expect(BLOB_COLUMNS.length).toBeLessThanOrEqual(20)
     expect(DOUBLE_COLUMNS.length).toBeLessThanOrEqual(20)
     expect(new Set([...BLOB_COLUMNS, ...DOUBLE_COLUMNS]).size).toBe(BLOB_COLUMNS.length + DOUBLE_COLUMNS.length)
@@ -188,7 +193,7 @@ describe('counts: what the app sends', () => {
       expect(parseCount(url.searchParams), e).toEqual({
         event: e,
         text: { event: e, server: 'cdi', version: 'trunk', ...defaultText },
-        numbers: { pad: 1, width: 1280, height: 800, ...defaultNumbers },
+        numbers: { pad: 1, touch: 0, width: 1280, height: 800, ...defaultNumbers },
       })
     }
   })
@@ -196,6 +201,11 @@ describe('counts: what the app sends', () => {
   it('sends a pad only when there is one', () => {
     expect(countUrl('spectate', { pad: true })).toBe(`${COUNT_PATH}?e=spectate&pad=1`)
     expect(countUrl('spectate', { pad: false })).toBe(`${COUNT_PATH}?e=spectate`)
+  })
+
+  it('sends a finger only when it is the pointer', () => {
+    expect(countUrl('boot', { touch: true })).toBe(`${COUNT_PATH}?e=boot&touch=1`)
+    expect(countUrl('boot', { touch: false })).toBe(`${COUNT_PATH}?e=boot`)
   })
 
   it('names a server added by hand as other, since its address is what the player typed', () => {

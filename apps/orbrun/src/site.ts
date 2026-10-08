@@ -34,7 +34,7 @@ export const HOME: Page = {
   name: 'Orbrun',
   title: 'Orbrun - Dungeon Crawl Stone Soup',
   description:
-    'Play Dungeon Crawl Stone Soup (DCSS) in first-person 3D with a gamepad, in your browser. Built for the Steam Deck, on your own WebTiles account.',
+    'Play Dungeon Crawl Stone Soup (DCSS) in first-person 3D, with a gamepad or by touch. Built for the Steam Deck, phones and tablets, on your WebTiles account.',
 }
 
 export const PAGES: Page[] = [
@@ -45,7 +45,7 @@ export const PAGES: Page[] = [
     doc: 'ABOUT.md',
     title: 'About Orbrun - DCSS in first person',
     description:
-      'Orbrun plays Dungeon Crawl Stone Soup in first person with a gamepad, on the public servers with your own account. See it, and what it does.',
+      'Orbrun plays Dungeon Crawl Stone Soup in first person with a gamepad or by touch, on the public servers with your own account. See it, and what it does.',
   },
   {
     path: '/about/new',
@@ -62,6 +62,15 @@ export const PAGES: Page[] = [
     title: 'Add Orbrun to Steam on the Steam Deck',
     description:
       'Five steps that put Orbrun, Dungeon Crawl Stone Soup in first person, in your Steam Deck’s library, with artwork and controller support.',
+  },
+  {
+    path: '/about/install',
+    name: 'Add to Home Screen',
+    doc: 'INSTALL.md',
+    contents: true,
+    title: 'Add Orbrun to your phone or tablet’s home screen',
+    description:
+      'Put Orbrun, Dungeon Crawl Stone Soup in first person, on your phone or tablet’s home screen, or install it on a computer. It opens full screen, even offline.',
   },
 ]
 

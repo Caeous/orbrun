@@ -12,15 +12,17 @@ const sent = new Set<CountedEvent>()
 /**
  * Where an event happened and how the game was set up: a server's id
  * (serverTag keeps it to the bundled ones), its game id (sent as stable or
- * trunk), the settings, and whether a gamepad is connected (which the page
+ * trunk), the settings, whether a gamepad is connected (which the page
  * cannot tell on its own: a browser shows a pad only once a button is
- * pressed).
+ * pressed), and whether a finger is the pointer (a phone or a tablet, as the
+ * app's touch layouts tell one: `pointer: coarse`).
  */
 export interface CountWhere {
   server?: string
   game?: string | null
   settings?: Settings
   pad?: boolean
+  touch?: boolean
 }
 
 /** The address one event is sent to, from a window `size` css px across and down. */
@@ -29,6 +31,7 @@ export function countUrl(event: CountedEvent, where: CountWhere = {}, size?: { w
   if (where.server) q.set('s', serverTag(where.server))
   if (where.game) q.set('v', versionTag(where.game))
   if (where.pad) q.set('pad', '1')
+  if (where.touch) q.set('touch', '1')
   const w = size && sideParam(size.width)
   const h = size && sideParam(size.height)
   if (w && h) {
@@ -59,7 +62,8 @@ export function count(event: CountedEvent, where: CountWhere = {}): void {
   if (import.meta.env.DEV || sent.has(event) || optedOut() || !countedHost(location.hostname)) return
   sent.add(event)
   try {
-    navigator.sendBeacon(countUrl(event, where, { width: window.innerWidth, height: window.innerHeight }))
+    const touch = window.matchMedia?.('(pointer: coarse)').matches ?? false
+    navigator.sendBeacon(countUrl(event, { ...where, touch }, { width: window.innerWidth, height: window.innerHeight }))
   } catch {
     // counting never gets in the way of the game
   }

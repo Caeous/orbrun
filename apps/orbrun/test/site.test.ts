@@ -18,12 +18,13 @@ describe('the site’s pages', () => {
   it('knows a page with or without its trailing slash, in any case', () => {
     expect(pageAt('/')).toBe(HOME)
     expect(pageAt('/about/steam/')?.doc).toBe('STEAM.md')
+    expect(pageAt('/about/install')?.doc).toBe('INSTALL.md')
     expect(pageAt('/About/New')?.doc).toBe('CHANGELOG.md')
     expect(pageAt('/about/nope')).toBeNull()
   })
 
   it('tells pages from the app’s screens from nothing at all', () => {
-    for (const p of ['/', '/about', '/about/new', '/about/steam']) expect(addressKind(p), p).toBe('page')
+    for (const p of ['/', '/about', '/about/new', '/about/steam', '/about/install']) expect(addressKind(p), p).toBe('page')
     for (const p of ['/settings', '/settings/camera', '/accounts/add', '/watch', '/watch/cdi', '/watch/cdi/bob', '/play/cdi/dcss-0.34', '/play/cdi/orbrun/dcss-0.34', '/login/cdi', '/register/cko', '/accounts/versions/cdi', '/accounts/rc/cdi/dcss-0.34', '/accounts/rc/offline', '/whats-new'])
       expect(addressKind(p), p).toBe('app')
     for (const p of ['/wp-admin', '/about/nope', '/about/controls', '/about/how-it-works', '/index.php', '/play', '/settings/controls/gamepad/x', '/versions/cdi', '/accounts/versions', '/accounts/rc', '/accounts/rc/cdi/dcss-0.34/more']) expect(addressKind(p), p).toBe('none')
@@ -121,6 +122,7 @@ describe('the site’s pages', () => {
       '@A 2D minimap',
       '@Made for a controller',
       '@On the Steam Deck',
+      '@On your phone',
       '@The keyboard you know',
       '@And more',
       '@Your account stays yours',
@@ -147,7 +149,7 @@ describe('the site’s pages', () => {
     // no manual, and the card is the hero
     expect(doc.querySelector('.doc')).toBeNull()
     expect(doc.querySelector('meta[property="og:image"]')?.getAttribute('content')).toBe(`${SITE_URL}/about/card.jpg`)
-    expect(Array.from(doc.querySelectorAll('.bar nav a:not([target])'), (a) => a.getAttribute('href'))).toEqual(['/about', '/about/new', '/about/steam'])
+    expect(Array.from(doc.querySelectorAll('.bar nav a:not([target])'), (a) => a.getAttribute('href'))).toEqual(['/about', '/about/new', '/about/steam', '/about/install'])
     void window.happyDOM.close()
   })
 

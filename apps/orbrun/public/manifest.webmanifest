@@ -1,7 +1,7 @@
 {
   "name": "Orbrun",
   "short_name": "Orbrun",
-  "description": "Play Dungeon Crawl Stone Soup (DCSS) in first-person 3D with a gamepad. Built for the Steam Deck, on your own WebTiles account.",
+  "description": "Play Dungeon Crawl Stone Soup (DCSS) in first-person 3D with a gamepad or by touch. Built for the Steam Deck, phones and tablets, on your own WebTiles account.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

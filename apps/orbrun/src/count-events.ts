@@ -9,7 +9,8 @@ import servers from '../data/servers.json' with { type: 'json' }
  *
  * Nothing names anyone. A row is an event from `EVENTS`, the server (one of
  * the bundled ones, this device, or `other`), stable or trunk, the window's
- * size, whether a pad was connected, and each of `COUNTED_SETTINGS`:
+ * size, whether a pad was connected, whether a finger is the pointer, and
+ * each of `COUNTED_SETTINGS`:
  * `parseCount` is the whole of what the Worker keeps of a beacon, and it drops
  * anything else. It never reads the address or the browser a beacon came from.
  * A browser that asks not to be measured (Global Privacy Control) is not, and
@@ -119,10 +120,16 @@ export function sideParam(px: number): string | null {
  * The dataset's columns by name: Analytics Engine numbers them (blob1…,
  * double1…), in this order. Append only: a column moved is every old row
  * misread. tools/build/counts.mjs queries by these names. A setting is only
- * on a game start's row; on the others it is empty, or 0.
+ * on a game start's row; on the others it is empty, or 0. The numbers are
+ * written out, since `touch` came after the settings of its day: a number
+ * setting added since goes after it (a test holds every one to a column).
  */
 export const BLOB_COLUMNS: readonly string[] = ['event', 'server', 'version', ...WORD_SETTINGS]
-export const DOUBLE_COLUMNS: readonly string[] = ['pad', 'width', 'height', ...NUMBER_SETTINGS]
+export const DOUBLE_COLUMNS: readonly string[] = [
+  'pad', 'width', 'height',
+  'eyeHeight', 'restPitch', 'fov', 'viewmodel', 'lookSensitivity', 'invertLook', 'uiScale', 'minimapTiles', 'minimapCell', 'minimapTurns', 'messageLines',
+  'touch',
+]
 
 /** A row as the Worker writes it: every column by name, empty or 0 where the beacon did not say. */
 export interface CountRow {
@@ -140,7 +147,7 @@ export function dataPoint(row: CountRow): { blobs: string[]; doubles: number[]; 
   }
 }
 
-const KEYS: readonly string[] = ['e', 's', 'v', 'pad', 'w', 'h', ...SETTING_KEYS]
+const KEYS: readonly string[] = ['e', 's', 'v', 'pad', 'touch', 'w', 'h', ...SETTING_KEYS]
 const NUMBER_RE = /^-?\d{1,5}(\.\d{1,2})?$/
 
 /** What is kept of a beacon's query, or null when any of it is anything but what a row may hold. */
@@ -150,12 +157,14 @@ export function parseCount(search: URLSearchParams): CountRow | null {
   const server = search.get('s')
   const version = search.get('v')
   const pad = search.get('pad')
+  const touch = search.get('touch')
   if (!(EVENTS as readonly string[]).includes(event)) return null
   if (server !== null && !SERVER_IDS.includes(server)) return null
   if (version !== null && !(VERSIONS as readonly string[]).includes(version)) return null
   if (pad !== null && pad !== '1') return null
+  if (touch !== null && touch !== '1') return null
   const text: Record<string, string> = { event, server: server ?? '', version: version ?? '' }
-  const numbers: Record<string, number> = { pad: pad === '1' ? 1 : 0 }
+  const numbers: Record<string, number> = { pad: pad === '1' ? 1 : 0, touch: touch === '1' ? 1 : 0 }
   for (const [param, column] of [['w', 'width'], ['h', 'height']] as const) {
     const v = search.get(param)
     if (v === null) continue
