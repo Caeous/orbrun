@@ -214,7 +214,11 @@ function applyRoute(r: Route) {
  * that.
  */
 function openSession(server: ServerInfo, username: string | null, i?: Intent): Session {
-  session?.close()
+  // let go of the connection this one replaces before closing it, as leaveFor does: its close is not a drop to
+  // retry or redraw for (an offline one says it has closed at once, while it would otherwise still be `session`)
+  const old = session
+  session = null
+  old?.close()
   intent = i ?? null
   playedGameId = null
   const s = (session = new Session(server, username))
@@ -284,7 +288,7 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
         if (!away) setTimeout(() => restore(s))
       } else scheduleRetry(s)
     }
-    if (e.type === 'open' || e.type === 'closed') lobby?.refresh()
+    if ((e.type === 'open' || e.type === 'closed') && s === session) lobby?.refresh()
   })
   return s
 }

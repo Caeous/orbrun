@@ -1330,6 +1330,38 @@ describe('the front end: accounts and servers', () => {
     expect(connect).toHaveBeenCalledWith(cdi, null)
   })
 
+  it('a `/watch/cdi` address over the offline account watches on CDI, though the offline session closes as it is left', () => {
+    vi.stubEnv('MODE', 'development')
+    try {
+      const player: Account = { serverId: 'offline', username: 'Player' }
+      localStorage.setItem('orbrun.accounts', JSON.stringify([player]))
+      localStorage.setItem('orbrun.account', JSON.stringify(player))
+      const device = fakeSession(OFFLINE_SERVER, 'Player', { username: 'Player' })
+      const roster = fakeSession(cdi, null, { complete: true, entries: new Map([[1, playing('bob')]]) })
+      let current: Session = device
+      const { screen, connect } = make((server, username) => (current.server.id === server.id && (current.username ?? null) === username ? current : null))
+      // main.ts openSession: the session it replaces closes, and an offline one says so at once, before the new one is up
+      connect.mockImplementationOnce(() => {
+        ;(device as { closed: boolean }).closed = true
+        ;(device as unknown as { emit(e: unknown): void }).emit({ type: 'closed', reason: 'closed' })
+        current = roster
+        return roster
+      })
+      screen.watchServer(cdi)
+      expect(connect).toHaveBeenCalledTimes(1)
+      expect(connect).toHaveBeenCalledWith(cdi, null)
+      expect(screen.view).toBe('watch')
+      expect(labels(screen)).toEqual(['Back', 'bob'])
+      // the roster's socket opening redraws the Watch screen of CDI, not the offline account's
+      screen.refresh()
+      expect(screen.view).toBe('watch')
+      expect(labels(screen)).toEqual(['Back', 'bob'])
+      expect(connect).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('a login that lands keeps the account, chooses it, and comes home', () => {
     const s = fakeSession(cko, null)
     const { screen } = make()

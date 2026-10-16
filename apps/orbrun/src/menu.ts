@@ -2125,6 +2125,10 @@ export class FrontEnd {
       if (s !== this.session) this.follow(s)
       return s
     }
+    // the session left behind is closed by the connect, which is no drop for this screen to say or redraw for: a
+    // redraw then would be of the screen this one is leaving (the home screen under a `/watch/cdi` address)
+    this.unsub?.()
+    this.unsub = null
     const n = this.hooks.connect(server, username)
     this.follow(n)
     return n
