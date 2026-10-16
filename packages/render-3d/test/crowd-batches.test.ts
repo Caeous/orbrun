@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import type * as THREE from 'three'
 import { settle, shadowsWritten, stubbed, written } from './bed.js'
 import { cellKey, emptyScene, makeCamera, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
@@ -140,6 +141,33 @@ describe('the crowd as instanced draws', () => {
     // and the buffer behind the attribute is at least as long as the instances written into it
     const a = was.getAttribute('iAnchor')
     expect(a.array.length).toBeGreaterThanOrEqual(was.instanceCount * 3)
+    r.destroy()
+  })
+
+  it('uploads only the span that changed, and nothing when nothing did', () => {
+    const bed = stubbed({}, tiles)
+    const { r, g } = bed
+    r.setCamera(makeCamera(1, 1))
+    const s = crowd()
+    r.setScene(s)
+    r.render()
+    settle(bed)
+    // the stub never uploads, so what three is asked to upload piles up on the buffer: start the count here
+    const buffers = [...g.batches.values(), g.shadowBatch].map((b) => (b.geometry.getAttribute('iAnchor') as THREE.InterleavedBufferAttribute).data)
+    for (const d of buffers) d.clearUpdateRanges()
+    // the same crowd written again
+    s.revision++
+    r.setScene(s)
+    r.render()
+    expect(buffers.flatMap((d) => d.updateRanges)).toEqual([])
+    // one monster steps: one span, inside its own instance
+    s.billboards[0] = { ...s.billboards[0], x: 4 }
+    s.revision++
+    r.setScene(s)
+    r.render()
+    const opaque = (g.batches.get('main|opaque')!.geometry.getAttribute('iAnchor') as THREE.InterleavedBufferAttribute).data
+    expect(opaque.updateRanges).toHaveLength(1)
+    expect(opaque.updateRanges[0].count).toBeLessThanOrEqual(opaque.stride)
     r.destroy()
   })
 })

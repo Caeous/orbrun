@@ -11,9 +11,10 @@ import { findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getS
 import { gamedataUrls } from '@orbrun/gamedata'
 import { morgueDirOf } from './whereis'
 import { settingsPanel } from './settings-panel'
-import { engines, keepEngines } from './engines'
+import { appSettled, engines, keepEngines } from './engines'
 import { HOME } from './site'
 import { canQuit } from './quit'
+import { installBack } from './back'
 
 const app = document.getElementById('app')!
 const gamepad = new GamepadInput()
@@ -710,8 +711,8 @@ function leaveFor(s: Session) {
 // game's key handlers see the key.
 installPadKeys(gamepad)
 
-window.addEventListener('pointerdown', () => {
-  lastInput = 'pointer'
+window.addEventListener('pointerdown', (ev) => {
+  lastInput = ev.pointerType === 'touch' ? 'touch' : 'pointer'
 }, true)
 window.addEventListener('keydown', (ev) => {
   lastInput = 'keyboard'
@@ -719,6 +720,15 @@ window.addEventListener('keydown', (ev) => {
     if (lobby.key(ev)) ev.stopImmediatePropagation()
   }
 }, true)
+
+// Android's back: Save and exit over the map, B everywhere else; only the bare home screen lets it leave the app (back.ts)
+const syncBack = installBack(
+  () => !!game || !!lobby?.goesBack,
+  () => {
+    if (game) game.back()
+    else lobby?.pad({ type: 'press', button: 'B', t: performance.now(), touch: true })
+  },
+)
 
 // gamepad loop: every frame while a pad is there; with none, a look every quarter second on a timer (navigator.getGamepads
 // is not free, and a keyboard-only session should not pay it, or an animation frame, sixty times a second), and at once
@@ -730,7 +740,9 @@ function tick(now: number) {
   pollFrame = 0
   gamepad.poll(now)
   lobby?.updateInputHints()
-  if (gamepad.connected) pollFrame = requestAnimationFrame(tick)
+  syncBack()
+  // a touch bar arrow held down repeats on the pad's timing, so it is polled as a pad would be
+  if (gamepad.connected || gamepad.virtualHeld) pollFrame = requestAnimationFrame(tick)
   else pollTimer = window.setTimeout(() => { pollFrame = requestAnimationFrame(tick) }, IDLE_POLL_MS)
 }
 window.addEventListener('gamepadconnected', () => {
@@ -739,6 +751,12 @@ window.addEventListener('gamepadconnected', () => {
   pollFrame = requestAnimationFrame(tick)
 })
 gamepad.on((e) => {
+  // a finger on the touch bar wakes the loop now rather than at the next idle look, for a held arrow's repeat
+  if (e.type === 'press' && e.touch && !gamepad.connected) {
+    clearTimeout(pollTimer)
+    cancelAnimationFrame(pollFrame)
+    pollFrame = requestAnimationFrame(tick)
+  }
   if (isPadActivity(e)) {
     lastInput = 'pad'
   }
@@ -776,7 +794,10 @@ count('boot')
 
 // the game's chunk, fetched while the player is still on the front end, so it is cached by the time they press Play;
 // then the tiles of the version they played last, which are the bulk of what Play would otherwise wait on
-;(window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 1500)))(() => void gameModule().catch(() => {}).then(warmGamedata))
+// (once a new version of the app found at load has installed: they would share its connection, for a page about to switch)
+void appSettled().then(() =>
+  (window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 1500)))(() => void gameModule().catch(() => {}).then(warmGamedata)),
+)
 
 /**
  * Warm the HTTP cache with the gamedata of the version played last on this

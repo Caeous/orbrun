@@ -176,7 +176,17 @@ export class Session {
     if (this.diagnostics.length > 100) this.diagnostics.shift()
   }
 
-  send(msg: ClientMessage) {
+  /**
+   * Orbrun's own: a key the player sends may be held back while the spell
+   * bar looks the spell list up (spell-bar.ts `SpellBook`), and is sent once
+   * the look is done; true when it was held. `own` is the look's, never held.
+   */
+  hold: ((msg: ClientMessage) => boolean) | null = null
+  /** what the server sends may be the same look's, kept from the state and the screen: true when it was */
+  intercept: ((m: ServerMessage) => boolean) | null = null
+
+  send(msg: ClientMessage, own = false) {
+    if (!own && this.hold?.(msg)) return
     this.conn.send(msg)
     this.emit({ type: 'sent', msg })
   }
@@ -290,6 +300,7 @@ export class Session {
       ask.answer?.(typeof m.contents === 'string' ? m.contents : '')
       return
     }
+    if (this.intercept?.(m)) return
     if (m.msg === 'login_success' || m.msg === 'login_fail') this.loggingIn = false
     if (m.msg === 'login_success') {
       // the name the server answered with: an account just added had none on this connection until now

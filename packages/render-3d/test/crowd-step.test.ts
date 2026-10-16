@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { stubbed, shadowsWritten, written, type Guts } from './bed.js'
+import { settle, stubbed, shadowsWritten, written, type Guts } from './bed.js'
 import { STEP_SECONDS } from '../src/motion.js'
 import { Render3d } from '../src/index.js'
 import { cellKey, emptyScene, makeCamera, type Billboard, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
@@ -145,11 +145,14 @@ describe('a monster stepping', () => {
 
   it('drops motion on a level reset or when reduced motion is enabled mid-step', () => {
     for (const reduced of [false, true]) {
-      const { r, g } = stubbed({ motion: true }, tiles)
+      const bed = stubbed({ motion: true }, tiles)
+      const { r, g } = bed
       r.setCamera(makeCamera(2, 2))
       const s = room(monster(5, 5))
       r.setScene(s, 1)
       r.render(1)
+      // the level whole first: a build sliced over frames keeps the renderer animating too, and this is about the step
+      settle(bed, 1)
       s.billboards = [monster(6, 5)]
       s.revision++
       r.setScene(s, 1.1)
@@ -158,6 +161,7 @@ describe('a monster stepping', () => {
       else r.resetMotion()
       r.setScene(s, 1.13)
       r.render(1.13)
+      settle(bed, 1.13)
       expect(r.animating).toBe(false)
       expect(r.monsterPosition(s.billboards[0], 1.13)).toEqual({ x: 6, y: 5 })
       for (const p of drawn(g)) expect(p.x).toBeCloseTo(6.5, 6)

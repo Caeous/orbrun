@@ -83,12 +83,13 @@ function setup(o: { saves?: Set<string>; caches?: ReturnType<typeof memoryCaches
   const caches = o.caches ?? memoryCaches()
   const pub = o.pub ?? publisher()
   let busy = false
+  let metered = false
   const saves = o.saves ?? new Set<string>()
-  const store = new EngineStore({ base: BASE, caches: caches.caches, fetch: pub.fetch, busy: () => busy, hasSaves: async (slot) => saves.has(slot) })
+  const store = new EngineStore({ base: BASE, caches: caches.caches, fetch: pub.fetch, busy: () => busy, metered: () => metered, hasSaves: async (slot) => saves.has(slot) })
   let changes = 0
   store.onChange(() => changes++)
   const ids = async () => (await store.channels()).map((c) => c.id)
-  return { store, caches, pub, ids, saves, setBusy: (b: boolean) => (busy = b), changes: () => changes }
+  return { store, caches, pub, ids, saves, setBusy: (b: boolean) => (busy = b), setMetered: (m: boolean) => (metered = m), changes: () => changes }
 }
 
 describe('EngineStore', () => {
@@ -284,6 +285,71 @@ describe('EngineStore', () => {
     await s.store.update()
     expect(s.pub.fetched.slice(2)).toEqual(['builds/bb/crawl.wasm', 'gamedata/bb/main.png'])
     expect(await s.ids()).toEqual(['offline-trunk'])
+  })
+
+  describe('on mobile data', () => {
+    it('holds an update until the connection is not metered, saying so on its row, and downloads it then', async () => {
+      const s = setup()
+      s.pub.publish(build('trunk', 'bb', '0.35-a0-9-gbb'))
+      await s.store.played('offline-trunk')
+      await s.store.update()
+
+      const next = setup({ caches: s.caches, pub: s.pub })
+      next.setMetered(true)
+      s.pub.publish(build('trunk', 'cc', '0.35-a0-10-gcc'))
+      const fetched = s.pub.fetched.length
+      await next.store.update()
+      expect(s.pub.fetched.length).toBe(fetched)
+      expect(next.store.note('offline-trunk')).toEqual({ kind: 'held' })
+      expect((await next.store.channels())[0].commit).toBe('bb')
+
+      next.setMetered(false)
+      await next.store.update()
+      expect((await next.store.channels())[0].commit).toBe('cc')
+      expect(next.store.note('offline-trunk')).toBeNull()
+    })
+
+    it('still finishes a build that was played: its game fetched most of it, and with no connection it would not start', async () => {
+      const s = setup()
+      s.setMetered(true)
+      s.pub.publish(build('trunk', 'bb', '0.35-a0-9-gbb'))
+      await s.store.played('offline-trunk')
+      await s.store.update()
+      expect(s.caches.files()).toEqual(['builds/bb/crawl.js', 'builds/bb/crawl.wasm', 'gamedata/bb/main.png'])
+      expect(s.store.note('offline-trunk')).toBeNull()
+    })
+
+    it('holds a new release, saying so on the release it would join', async () => {
+      const s = setup()
+      s.pub.publish(build('stable', 'aa', '0.34.1-4-gaa'))
+      await s.store.played('offline-0.34')
+      await s.store.update()
+
+      const next = setup({ caches: s.caches, pub: s.pub })
+      next.setMetered(true)
+      s.pub.publish(build('stable', 'dd', '0.35.0-0-gdd'))
+      await next.store.update()
+      expect(await next.ids()).toEqual(['offline-0.34'])
+      expect(next.store.note('offline-0.34')).toEqual({ kind: 'held' })
+      expect(s.caches.files().some((f) => f.includes('/dd/'))).toBe(false)
+    })
+
+    it('stops an update when the connection turns metered, keeping every whole file', async () => {
+      const s = setup()
+      s.pub.publish(build('trunk', 'bb', '0.35-a0-9-gbb'))
+      await s.store.played('offline-trunk')
+      await s.store.update()
+
+      const next = setup({ caches: s.caches, pub: s.pub })
+      s.pub.publish(build('trunk', 'cc', '0.35-a0-10-gcc'))
+      s.pub.onFile((path) => {
+        if (path.endsWith('cc/crawl.wasm')) next.setMetered(true)
+      })
+      await next.store.update()
+      expect(s.caches.files().filter((f) => f.includes('/cc/'))).toEqual(['builds/cc/crawl.js'])
+      expect(next.store.note('offline-trunk')).toEqual({ kind: 'held' })
+      expect((await next.store.channels())[0].commit).toBe('bb')
+    })
   })
 
   it('keeps a channel and its download when engine.json answers with a server error, not a 404', async () => {

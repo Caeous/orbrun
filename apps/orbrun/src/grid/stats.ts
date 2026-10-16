@@ -135,21 +135,13 @@ export const PORTRAIT_ROWS = 4
  * wants 16 of the left column's 45%. So under it the pane prints the same
  * lines with the captions cut to what names them (`Next:` dropped entirely,
  * the percentage simply following the level; `Place:` down to the `@` that
- * is the player), and the portrait shrinks to two rows -- the title and the
- * species line beside it -- leaving the Health and Magic bars the pane's
- * full width instead of what is left beside a four-row square.
+ * is the player). The portrait keeps its four rows, as on the wide pane.
  */
 const COMPACT_WIDTH = 36
 
 /** the pane at `width` cells prints the short captions */
 function compactStats(width: number): boolean {
   return width < COMPACT_WIDTH
-}
-
-/** the rows the portrait stands over at `width` cells: the square, or two rows when compact */
-const COMPACT_PORTRAIT_ROWS = 2
-export function portraitRows(width: number): number {
-  return compactStats(width) ? COMPACT_PORTRAIT_ROWS : PORTRAIT_ROWS
 }
 
 /** the pane's regions, in cells, for a sidebar `width` wide */
@@ -265,18 +257,19 @@ const rep = (ch: string, n: number) => ch.repeat(Math.max(0, n))
  * Time or Turn on the right), the weapon, the off-hand weapon for Coglins,
  * the quiver, and the status lights, wrapped. `prev` is the bar memory from
  * the last call; the returned one feeds the next. `portrait` is the cells the
- * first `portraitRows(width)` rows leave blank at the left for the portrait;
+ * first `PORTRAIT_ROWS` rows leave blank at the left for the portrait;
  * those rows keep their layout in the room that is left (the wizmode marker still
- * ends at the pane's right edge, the bars run to it).
+ * ends at the pane's right edge, the bars run to it). `corner` lays the same out
+ * beside the minimap at the top of a phone held upright (`cornerRows`).
  */
-export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory = {}, width = STAT_WIDTH, portrait = 0): { rows: Row[]; prev: BarMemory } {
+export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory = {}, width = STAT_WIDTH, portrait = 0, corner = false): { rows: Row[]; prev: BarMemory; bars: StatBars } {
   const { split } = statsColumns(width)
-  const compact = compactStats(width)
+  const compact = corner || compactStats(width)
   const rows: Row[] = []
   const next: BarMemory = {}
   // the rows beside the portrait: blank cells under it, then the row on what is left
   const lead = Math.max(0, Math.min(portrait, width))
-  const leadAt = (i: number) => (i < portraitRows(width) ? lead : 0)
+  const leadAt = (i: number) => (i < PORTRAIT_ROWS ? lead : 0)
   const beside = (row: Row): Row => (leadAt(rows.length) ? [blank(leadAt(rows.length)), ...row] : row)
   const besideW = width - leadAt(0)
   /** a row built for the room the next row has: `room` cells, its columns by `statsColumns` */
@@ -288,7 +281,7 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
   // title line, the wizmode marker floated right
   const wiz = p.wizard ? '*WIZARD*' : p.explore ? '*EXPLORE*' : ''
   const title: Row = [{ text: p.name + ((p.title || '')[0] === ',' ? '' : ' ') + (p.title || ''), fg: TITLE }]
-  rows.push(beside(wiz ? joinRows(title, besideW - wiz.length, [{ text: wiz, fg: WIZMODE }]) : cutRow(title, besideW)))
+  const titleIn = (room: number): Row => (wiz ? joinRows(title, room - wiz.length, [{ text: wiz, fg: WIZMODE }]) : cutRow(title, room))
 
   // species of god, piety pips, Gozag's gold. Trunk's player.js prints `species_display_name`; a 0.34
   // server (the recorded CDI session) sends only `species`, which its own client printed.
@@ -302,11 +295,43 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
     piety.push({ text: rep('*', rank) + rep('.', 6 - rank - p.ostracism_pips), fg: pietyColour })
     if (p.ostracism_pips) piety.push({ text: rep('X', p.ostracism_pips), fg: 5 })
   }
-  const line2: Row = [{ text: speciesGod, fg: TITLE }]
-  if (piety.length) line2.push({ text: ' ' }, ...piety)
-  if (p.god === 'Gozag') line2.push(capShort(compact, ' Gold: ', ' $:'), { text: String(p.gold), ...(hasStatus(p, /gold aura/) ? { cls: 'boosted_stat' } : {}) })
-  rows.push(beside(cutRow(line2, besideW)))
+  const tail: Row = []
+  if (piety.length) tail.push({ text: ' ' }, ...piety)
+  if (p.god === 'Gozag') tail.push(capShort(compact, ' Gold: ', ' $:'), { text: String(p.gold), ...(hasStatus(p, /gold aura/) ? { cls: 'boosted_stat' } : {}) })
+  // too long for its room (beside the portrait on a phone held upright), the line keeps the piety or the
+  // gold whole: the species goes first, then the god's name is cut, the whole line its tooltip
+  const line2 = (room: number): Row => {
+    const full: Row = [{ text: speciesGod, fg: TITLE }, ...tail]
+    if (!p.god || rowLength(full) <= room) return cutRow(full, room)
+    const head = cutRow([{ text: p.god, fg: TITLE, title: speciesGod }], Math.max(1, room - rowLength(tail)), true)
+    return cutRow([...head, ...tail], room)
+  }
 
+  // the two columns
+  const showDoomContam = (v: number) => !(v === 0 && opts.always_show_doom_contam === false)
+  const doomColour = p.doom >= 75 ? 5 : p.doom >= 50 ? 12 : p.doom >= 25 ? 14 : p.doom === 0 ? 8 : 7
+  const contamColour = p.contam >= 200 ? 4 : p.contam >= 100 ? 14 : 8
+  const showTime = opts.show_game_time === true
+  const clock = showTime ? (p.time / 10).toFixed(1) : String(p.turn)
+  const time = clock + (p.time_delta ? ` (${(p.time_delta / 10).toFixed(1)})` : '')
+  const left: Row[] = [
+    [cap('AC:'), { text: ' ' }, defense(p, 'ac')],
+    [cap('EV:'), { text: ' ' }, defense(p, 'ev')],
+    [cap('SH:'), { text: ' ' }, defense(p, 'sh')],
+    // compact: the percentage follows the level with no caption between them, as `XL: 27 44%`
+    compact ? [cap('XL:'), { text: ` ${p.xl} ` }, { text: `${p.progress}%`, title: 'Next' }] : [cap('XL:'), { text: ` ${p.xl} ` }, cap('Next:'), { text: ` ${p.progress}%` }],
+    noiseRow(p, prev, next, split, compact),
+  ]
+  const right: Row[] = [
+    [capShort(compact, 'Str:', 'St:'), { text: ' ' }, stat(p, opts, 'str')],
+    [capShort(compact, 'Int:', 'In:'), { text: ' ' }, stat(p, opts, 'int')],
+    [capShort(compact, 'Dex:', 'Dx:'), { text: ' ' }, stat(p, opts, 'dex')],
+    [capShort(compact, 'Place:', '@:'), { text: ' ' + p.place + (p.depth ? ':' + p.depth : '') }],
+    [capShort(compact, showTime ? 'Time:' : 'Turn:', 'T:'), { text: ' ' + time }],
+  ]
+  // game.html: Doom sits 2.2em after Str, Contam 1.1em after Int
+  if (showDoomContam(p.doom)) right[0].push({ text: compact ? ' ' : '  ' }, capShort(compact, 'Doom:', 'Dm:'), { text: ` ${p.doom}%`, fg: doomColour, title: p.doom_desc || undefined })
+  if (showDoomContam(p.contam)) right[1].push({ text: ' ' }, capShort(compact, 'Contam:', 'Cn:'), { text: ` ${p.contam}%`, fg: contamColour })
   // Health and Magic: the bar over the row, one cell, then the value/max left-aligned in one column at the
   // pane's right edge (as wide as the longer of the two, so the bars end together). WebTiles prints
   // `Health:` / `Magic:` (and `HP:` when drained) before the number; here the bar's colour names it and the
@@ -329,40 +354,13 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
   const widest = (value: Row, v: number, max: number) => rowLength(value) + Math.max(0, String(max).length - String(v).length)
   const valueW = Math.max(widest(hpValue, p.hp, p.hp_max), mpValue ? widest(mpValue, p.mp, p.mp_max) : 0)
   const valueBar = (value: Row, room: number, paint: (cells: number) => Row): Row => [...paint(Math.max(1, room - valueW - 1)), blank(1), ...padRow(cutRow(value, valueW), valueW)]
-  place((room) => valueBar(hpValue, room, (cells) => paintBar(cells, barCells(BAR_FRAME, p.hp, p.hp_max, prev.hp, p.poison_survival), HP_BAR)))
-  if (mpValue) place((room) => valueBar(mpValue!, room, (cells) => paintBar(cells, barCells(BAR_FRAME, p.mp, p.mp_max, prev.mp), MP_BAR)))
-
-  // the two columns
-  const showDoomContam = (v: number) => !(v === 0 && opts.always_show_doom_contam === false)
-  const doomColour = p.doom >= 75 ? 5 : p.doom >= 50 ? 12 : p.doom >= 25 ? 14 : p.doom === 0 ? 8 : 7
-  const contamColour = p.contam >= 200 ? 4 : p.contam >= 100 ? 14 : 8
-  const showTime = opts.show_game_time === true
-  const time = (showTime ? (p.time / 10).toFixed(1) : String(p.turn)) + (p.time_delta ? ` (${(p.time_delta / 10).toFixed(1)})` : '')
-  const left: Row[] = [
-    [cap('AC:'), { text: ' ' }, defense(p, 'ac')],
-    [cap('EV:'), { text: ' ' }, defense(p, 'ev')],
-    [cap('SH:'), { text: ' ' }, defense(p, 'sh')],
-    // compact: the percentage follows the level with no caption between them, as `XL: 27 44%`
-    compact ? [cap('XL:'), { text: ` ${p.xl} ` }, { text: `${p.progress}%`, title: 'Next' }] : [cap('XL:'), { text: ` ${p.xl} ` }, cap('Next:'), { text: ` ${p.progress}%` }],
-    noiseRow(p, prev, next, split, compact),
-  ]
-  const right: Row[] = [
-    [capShort(compact, 'Str:', 'St:'), { text: ' ' }, stat(p, opts, 'str')],
-    [capShort(compact, 'Int:', 'In:'), { text: ' ' }, stat(p, opts, 'int')],
-    [capShort(compact, 'Dex:', 'Dx:'), { text: ' ' }, stat(p, opts, 'dex')],
-    [capShort(compact, 'Place:', '@:'), { text: ' ' + p.place + (p.depth ? ':' + p.depth : '') }],
-    [capShort(compact, showTime ? 'Time:' : 'Turn:', 'T:'), { text: ' ' + time }],
-  ]
-  // game.html: Doom sits 2.2em after Str, Contam 1.1em after Int
-  if (showDoomContam(p.doom)) right[0].push({ text: compact ? ' ' : '  ' }, capShort(compact, 'Doom:', 'Dm:'), { text: ` ${p.doom}%`, fg: doomColour, title: p.doom_desc || undefined })
-  if (showDoomContam(p.contam)) right[1].push({ text: ' ' }, capShort(compact, 'Contam:', 'Cn:'), { text: ` ${p.contam}%`, fg: contamColour })
-  // a Djinni's pane has no Magic row, so its AC row still sits beside the portrait
-  for (let i = 0; i < 5; i++) place((_, cols) => joinRows(left[i], cols.split, right[i]))
+  const hpBar = (room: number) => valueBar(hpValue, room, (cells) => paintBar(cells, barCells(BAR_FRAME, p.hp, p.hp_max, prev.hp, p.poison_survival), HP_BAR))
+  const mpBar = (room: number) => valueBar(mpValue!, room, (cells) => paintBar(cells, barCells(BAR_FRAME, p.mp, p.mp_max, prev.mp), MP_BAR))
 
   // weapon, off-hand weapon (Coglins), quiver
-  rows.push(cutRow([cap(indexToLetter(p.weapon_index) + ')'), { text: ' ' }, wieldedWeapon(p, false)], width, true))
-  if (p.offhand_weapon) rows.push(cutRow([cap(indexToLetter(p.offhand_index) + ')'), { text: ' ' }, wieldedWeapon(p, true)], width, true))
-  rows.push(cutRow(fromFormatted(p.quiver_desc || ''), width, true))
+  const weapon: Row = [cap(indexToLetter(p.weapon_index) + ')'), { text: ' ' }, wieldedWeapon(p, false)]
+  const offhand: Row | null = p.offhand_weapon ? [cap(indexToLetter(p.offhand_index) + ')'), { text: ' ' }, wieldedWeapon(p, true)] : null
+  const quiver = fromFormatted(p.quiver_desc || '')
 
   // status lights: only entries with a light, in the server's colour and order, wrapped
   const lights: Row = []
@@ -371,9 +369,83 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
     if (lights.length) lights.push({ text: ' ' })
     lights.push({ text: st.light, fg: st.col ?? 7, title: st.desc || undefined })
   }
+
+  if (corner) {
+    // Doom and Contam without the gap after Str and Int that sets them off there, one cell between them
+    const doomContam: Row = []
+    if (showDoomContam(p.doom)) doomContam.push(...right[0].slice(4), { text: ' ' })
+    if (showDoomContam(p.contam)) doomContam.push(...right[1].slice(4), { text: ' ' })
+    // the time without the last action's length after it: the column has no room to spare for it
+    const clockRow: Row = [capShort(true, showTime ? 'Time:' : 'Turn:', 'T:'), { text: ' ' + clock }]
+    const stacked = cornerRows(width, lead, { title: titleIn, line2, hp: hpBar, mp: mpValue ? mpBar : null, left, right: right.map((r) => r.slice(0, 3)), doomContam, noise: noiseRow(p, prev, next, CORNER_NOISE, true), time: clockRow, weapon, offhand, quiver, lights })
+    return { rows: stacked, prev: next, bars: { hp: hpBar, mp: mpValue ? mpBar : null } }
+  }
+
+  rows.push(beside(titleIn(besideW)))
+  rows.push(beside(line2(besideW)))
+  place(hpBar)
+  if (mpValue) place(mpBar)
+
+  // a Djinni's pane has no Magic row, so its AC row still sits beside the portrait
+  for (let i = 0; i < left.length; i++) place((_, cols) => joinRows(left[i], cols.split, right[i]))
+
+  rows.push(cutRow(weapon, width, true))
+  if (offhand) rows.push(cutRow(offhand, width, true))
+  rows.push(cutRow(quiver, width, true))
   for (const l of wrapRow(lights, width)) rows.push(l)
 
-  return { rows, prev: next }
+  return { rows, prev: next, bars: { hp: hpBar, mp: mpValue ? mpBar : null } }
+}
+
+/** The pane's Health and Magic rows, each its bar and value/max in `room` cells; no Magic for a Djinni. */
+export interface StatBars {
+  hp: (room: number) => Row
+  mp: ((room: number) => Row) | null
+}
+
+/** the cells between Health and Magic in `glanceRow` */
+const GLANCE_GAP = 2
+
+/**
+ * Orbrun's own, for a phone held upright (hud.ts `renderGlance`): the pane's
+ * Health and Magic rows side by side in one row `width` cells wide, a gap
+ * between them, Health on the left; a Djinni's Health takes the whole row.
+ */
+export function glanceRow(bars: StatBars, width: number): Row {
+  if (!bars.mp) return bars.hp(width)
+  const left = Math.floor((width - GLANCE_GAP) / 2)
+  return [...bars.hp(left), blank(GLANCE_GAP), ...bars.mp(width - left - GLANCE_GAP)]
+}
+
+/** the noise bar's room in the corner, as `noiseRow`'s split: a short bar after the caption */
+const CORNER_NOISE = 8
+/** the cells between the defences and the attributes */
+const CORNER_GAP = 2
+
+/**
+ * The pane as a column of `width` cells beside the minimap at the top of a
+ * phone held upright (console.ts gameSplit). WebTiles has no such layout.
+ * Beside the portrait (`lead` cells) the title, the species line and the two
+ * bars; under it, the stats as narrow as they go, the band being taller than
+ * it is wide: the defences beside the attributes, a pair a row, as game.html
+ * stands its two columns, then the level, the noise, the place and the time
+ * a row each; then Doom and Contam when they show, the weapon, the off-hand
+ * weapon, the quiver, a row each, and the status lights, wrapped. `left`
+ * and `right` are the pane's two columns.
+ */
+function cornerRows(width: number, lead: number, r: { title: (room: number) => Row; line2: (room: number) => Row; hp: (room: number) => Row; mp: ((room: number) => Row) | null; left: Row[]; right: Row[]; doomContam: Row; noise: Row; time: Row; weapon: Row; offhand: Row | null; quiver: Row; lights: Row }): Row[] {
+  const room = Math.max(1, width - lead)
+  const rows: Row[] = [r.title(room), r.line2(room), r.hp(room), r.mp ? r.mp(room) : []].map((l) => [blank(lead), ...l])
+  // the attributes on one column after the widest defence
+  const defenceW = Math.max(...r.left.slice(0, 3).map(rowLength))
+  for (let i = 0; i < 3; i++) rows.push([...padRow(r.left[i], defenceW + CORNER_GAP), ...r.right[i]])
+  rows.push(r.left[3], r.noise, r.right[3], r.time)
+  if (r.doomContam.length) rows.push(r.doomContam.slice(0, -1))
+  rows.push(r.weapon)
+  if (r.offhand) rows.push(r.offhand)
+  if (r.quiver.length) rows.push(r.quiver)
+  for (const l of wrapRow(r.lights, width)) if (r.lights.length) rows.push(l)
+  return rows.map((row) => cutRow(row, width, true))
 }
 
 /**

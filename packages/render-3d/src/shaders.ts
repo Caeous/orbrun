@@ -5,9 +5,8 @@
  * Every shader that draws into the frame shares `FIELDS`: the shade map (one
  * texel per cell, how bright the cell is drawn) and the flash map (the wash
  * the game lays over a cell), both over the level's bounds. Colour is worked
- * in linear light; the frame's render target is sRGB, so the shaders that draw
- * into it write linear and the hardware encodes, while the ones that draw on
- * the canvas (`OUT_SRGB`) encode themselves.
+ * in linear light, and the shaders that draw on the canvas (`OUT_SRGB`)
+ * encode it themselves.
  */
 
 /** Uniforms and helpers for the cell fields. */
@@ -553,24 +552,4 @@ void main() {
   if (a < 0.01) discard;
   fragColor = outColor(vec4(color.rgb, color.a * a));
 #endif
-}`
-
-// ------------------------------------------------------------------- blit
-
-export const BLIT_VERT = /* glsl */ `
-precision highp float;
-in vec3 position;
-out vec2 vUv;
-void main() {
-  vUv = position.xy * 0.5 + 0.5;
-  gl_Position = vec4(position.xy, 0.0, 1.0);
-}`
-
-export const BLIT_FRAG = /* glsl */ `
-precision highp float;
-uniform sampler2D map;
-in vec2 vUv;
-out vec4 fragColor;
-void main() {
-  fragColor = vec4(texture(map, vUv).rgb, 1.0);
 }`

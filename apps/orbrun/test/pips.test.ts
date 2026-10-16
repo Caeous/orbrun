@@ -10,6 +10,14 @@ describe('edgePlace: which edge a camera-space point rides', () => {
     expect(edgePlace({ x: 0, y: 0, z: -3 }, LENS)).toBeNull()
     expect(edgePlace({ x: 2.9, y: -1, z: -3 }, LENS)).toBeNull()
   })
+  it('frames a sprite while any of it is in sight: the pip waits until the whole of it has left', () => {
+    // the centre is past the right edge (x/-z = 1.1), but the left half of a cell-wide sprite still shows
+    expect(edgePlace({ x: 3.3, y: 0, z: -3 }, LENS)).not.toBeNull()
+    expect(edgePlace({ x: 3.3, y: 0, z: -3 }, LENS, 0.5)).toBeNull()
+    // its near side past the edge too: a pip
+    expect(edgePlace({ x: 3.9, y: 0, z: -3 }, LENS, 0.5)!.u).toBe(1)
+    expect(edgePlace({ x: 3.3, y: 4, z: -3 }, LENS, 0.5)).not.toBeNull()
+  })
   it('puts a thing just outside the right of the lens on the right edge', () => {
     const p = edgePlace({ x: 6, y: 0, z: -3 }, LENS)!
     expect(p.u).toBe(1)
@@ -19,6 +27,15 @@ describe('edgePlace: which edge a camera-space point rides', () => {
     const p = edgePlace({ x: 0, y: 6, z: -3 }, LENS)!
     expect(p.v).toBe(0)
     expect(p.u).toBeCloseTo(0.5)
+  })
+  it('follows a lens shifted up (a phone held upright): straight ahead stands above the middle', () => {
+    const up = { ...LENS, shiftY: 0.4 }
+    // a third of the way up: in sight on the centred lens, past the top once the lens looks higher
+    expect(edgePlace({ x: 0, y: 0.7, z: -1 }, LENS)).toBeNull()
+    expect(edgePlace({ x: 0, y: 0.7, z: -1 }, up)!.v).toBe(0)
+    // low down: past the bottom on the centred lens, in sight on the shifted one
+    expect(edgePlace({ x: 0, y: -1.3, z: -1 }, LENS)!.v).toBe(1)
+    expect(edgePlace({ x: 0, y: -1.3, z: -1 }, up)).toBeNull()
   })
   it('puts a thing just behind the left shoulder low on the left edge, whatever its height', () => {
     const p = edgePlace({ x: -3, y: -0.4, z: 1 }, LENS)!
@@ -149,6 +166,7 @@ function scene(): Scene {
   cell(9, 5, 'visible')
   cell(4, 5, 'visible')
   cell(3, 5, 'visible')
+  cell(2, 5, 'visible')
   const mon = (x: number, y: number, extra: Partial<Billboard> = {}): Billboard => ({ x, y, tile: 1, kind: 'monster', height: 0.8, attitude: 'hostile', ref: { name: 'jackal', att: 0, typedata: {} }, ...extra })
   const item = (x: number, y: number, extra: Partial<Billboard> = {}): Billboard => ({ x, y, tile: 2, kind: 'item', height: 0.4, name: 'dagger', ...extra })
   return {
@@ -156,7 +174,7 @@ function scene(): Scene {
     cells,
     player: { x: 5, y: 5 },
     playerOnLevel: true,
-    billboards: [mon(6, 5), mon(7, 5, { scenery: true }), mon(4, 5, { attitude: 'friendly', ref: { name: 'foxfire', att: 4, typedata: { no_exp: true } } }), mon(8, 5, { attitude: 'friendly', ref: { name: 'foxfire', att: 4, typedata: { no_exp: true } } }), item(7, 5), item(8, 5), item(9, 5), item(5, 5), item(9, 5, { scenery: true }), item(4, 5, { name: 'jackal corpse' }), item(3, 5, { name: 'rat skeleton' })],
+    billboards: [mon(6, 5), mon(7, 5, { scenery: true }), mon(4, 5, { attitude: 'friendly', ref: { name: 'foxfire', att: 4, typedata: { no_exp: true } } }), mon(8, 5, { attitude: 'friendly', ref: { name: 'foxfire', att: 4, typedata: { no_exp: true } } }), item(7, 5), item(8, 5), item(9, 5), item(5, 5), item(9, 5, { scenery: true }), item(3, 5, { name: 'jackal corpse', lying: true }), item(2, 5, { name: 'bone humanoid', lying: true })],
     level: { ceilingTile: null, sky: 'none', tint: { r: 1, g: 1, b: 1 } },
     revision: 1,
   }

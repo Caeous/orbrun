@@ -11,7 +11,8 @@ import { MOVED, PAGES } from './src/site'
  * tiles), the two stills the menus stand in and the icons. Not the site's pages and the rest of their pictures, the social cards or the source maps; the engine is kept apart
  * (@orbrun/offline EngineStore).
  *
- * The build writes the list, with a version made from the files' contents,
+ * The build writes the list, with a version made from the files' contents
+ * and each file's own sum,
  * into dist/sw.js in place of its `const SHELL = null`. So each deploy that
  * changes a file is a new sw.js, which the browser installs in the
  * background; the dev server serves sw.js as written, and keeps nothing.
@@ -38,6 +39,8 @@ const KEPT = [
 export interface Shell {
   version: string
   files: string[]
+  /** each file's contents, by a short hash: a file a version kept with the same sum is copied, not fetched */
+  sums: Record<string, string>
   network: string[]
 }
 
@@ -80,11 +83,14 @@ export function keepShell(): Plugin {
       const built = walk(dir)
       const files = shellFiles(built)
       const hash = createHash('sha256')
+      const sums: Record<string, string> = {}
       for (const f of files) {
+        const body = fs.readFileSync(path.join(dir, f === '/' ? 'index.html' : f.slice(1)))
         hash.update(f + '\0')
-        hash.update(fs.readFileSync(path.join(dir, f === '/' ? 'index.html' : f.slice(1))))
+        hash.update(body)
+        sums[f] = createHash('sha256').update(body).digest('hex').slice(0, 16)
       }
-      const shell: Shell = { version: hash.digest('hex').slice(0, 16), files, network: networkPaths(built) }
+      const shell: Shell = { version: hash.digest('hex').slice(0, 16), files, sums, network: networkPaths(built) }
       const sw = path.join(dir, 'sw.js')
       fs.writeFileSync(sw, withShell(fs.readFileSync(sw, 'utf8'), shell))
     },

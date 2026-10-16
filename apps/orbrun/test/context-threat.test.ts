@@ -66,7 +66,7 @@ describe('plants are not hostiles worth fighting', () => {
     const scene = room()
     const hurt = deriveContext(st, scene, cam, 'micro')
     expect(hurt.injured).toBe(true)
-    expect(promptLabels(hurt).find((l) => l.button === 'LB')).toMatchObject({ label: 'Wait one turn', hold: 'Rest' })
+    expect(promptLabels(hurt).find((l) => l.button === 'LB')).toMatchObject({ label: 'Wait', hold: 'Rest' })
     monster(scene, 7, 7, 'rat')
     const threatened = deriveContext(st, scene, cam, 'micro')
     expect(threatened.injured).toBe(true)

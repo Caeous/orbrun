@@ -72,40 +72,52 @@ describe('the app kept on the device', () => {
 
   it('writes the list into sw.js, which keeps nothing of the app as written', () => {
     expect(sw).toContain('const SHELL = null')
-    const out = withShell(sw, { version: 'v1', files: ['/'], network: ['/about'] })
-    expect(out).toContain('const SHELL = {"version":"v1","files":["/"],"network":["/about"]}')
-    expect(() => withShell('self.addEventListener()', { version: 'v1', files: [], network: [] })).toThrow()
+    const out = withShell(sw, { version: 'v1', files: ['/'], sums: { '/': 'a1' }, network: ['/about'] })
+    expect(out).toContain('const SHELL = {"version":"v1","files":["/"],"sums":{"/":"a1"},"network":["/about"]}')
+    expect(() => withShell('self.addEventListener()', { version: 'v1', files: [], sums: {}, network: [] })).toThrow()
   })
 })
 
-/** A device's CacheStorage, shared by every version of sw.js run on it; `addAll` fails while `failing` holds. */
+/** A device's CacheStorage, shared by every version of sw.js run on it; `addAll` fails while `failing` holds, and lists in `fetched` what it got. */
 function device() {
   const stores = new Map<string, Map<string, unknown>>()
+  // a Cache takes an address relative to the worker's
+  const at = (url: string) => new URL(url, 'https://orbrun.app').href
   const dev = {
     failing: false,
+    fetched: [] as string[],
     caches: {
       open: async (name: string) => {
         if (!stores.has(name)) stores.set(name, new Map())
         const m = stores.get(name)!
         return {
-          match: async (url: string) => m.get(url),
-          put: async (url: string, res: unknown) => void m.set(url, res),
+          // a Response is read once, and a Cache hands out a fresh one each time
+          match: async (url: string) => {
+            const hit = m.get(at(url))
+            return hit instanceof Response ? hit.clone() : hit
+          },
+          put: async (url: string, res: unknown) => void m.set(at(url), res),
           addAll: async (rs: { url: string }[]) => {
             if (dev.failing) throw new Error('a file would not come')
-            for (const r of rs) m.set(r.url, `${name} page`)
+            dev.fetched.push(...rs.map((r) => r.url))
+            for (const r of rs) m.set(at(r.url), `${name} ${r.url === '/' ? 'page' : r.url}`)
           },
         }
       },
       keys: async () => [...stores.keys()],
       delete: async (name: string) => stores.delete(name),
-      match: async () => undefined,
+      // as CacheStorage looks: in every cache, the oldest first
+      match: async (url: string) => [...stores.values()].map((m) => m.get(at(url))).find((hit) => hit !== undefined),
     },
   }
   return dev
 }
 
-/** sw.js of app version `version`, on `dev`: its install, and a page load of `/` once all it set off has settled */
-function serviceWorker(dev: ReturnType<typeof device>, version: string) {
+/**
+ * sw.js of app version `version` keeping `files`, whose contents are `sums` (each file's own by default), on
+ * `dev`: its install, a page load of `/` and a fetch of a file, once all each set off has settled
+ */
+function serviceWorker(dev: ReturnType<typeof device>, version: string, files = ['/'], sums = Object.fromEntries(files.map((f) => [f, version]))) {
   const on: Record<string, (e: unknown) => void> = {}
   const self = {
     location: { href: 'https://orbrun.app/sw.js', origin: 'https://orbrun.app' },
@@ -116,7 +128,7 @@ function serviceWorker(dev: ReturnType<typeof device>, version: string) {
   class Request {
     constructor(readonly url: string) {}
   }
-  new Function('self', 'caches', 'Request', 'fetch', withShell(sw, { version, files: ['/'], network: [] }))(self, dev.caches, Request, async () => 'network page')
+  new Function('self', 'caches', 'Request', 'fetch', withShell(sw, { version, files, sums, network: [] }))(self, dev.caches, Request, async () => 'network page')
   const settle = async (type: string, event: object) => {
     const waits: Promise<unknown>[] = []
     let answer: Promise<unknown> = Promise.resolve()
@@ -128,6 +140,7 @@ function serviceWorker(dev: ReturnType<typeof device>, version: string) {
   return {
     install: () => settle('install', {}),
     load: () => settle('fetch', { request: { method: 'GET', url: 'https://orbrun.app/', mode: 'navigate' } }),
+    get: (path: string) => settle('fetch', { request: { method: 'GET', url: 'https://orbrun.app' + path, mode: 'cors' } }),
   }
 }
 
@@ -142,6 +155,28 @@ describe('a new version of the app', () => {
     expect(await v2.load()).toBe('orbrun-app-v1 page')
     dev.failing = false
     expect(await v2.load()).toBe('orbrun-app-v1 page')
+    expect(await v2.load()).toBe('orbrun-app-v2 page')
+  })
+
+  it('answers with its own copy of a file kept under a fixed name, such as the manifest, not the older version’s', async () => {
+    const dev = device()
+    await serviceWorker(dev, 'v1', ['/', '/manifest.webmanifest', '/assets/v1.js']).install()
+    const v2 = serviceWorker(dev, 'v2', ['/', '/manifest.webmanifest', '/assets/v2.js'])
+    await v2.install()
+    expect(await v2.get('/manifest.webmanifest')).toBe('orbrun-app-v2 /manifest.webmanifest')
+    // a page opened before the deploy still finds its own bundles
+    expect(await v2.get('/assets/v1.js')).toBe('orbrun-app-v1 /assets/v1.js')
+  })
+
+  it('copies the files an older version kept that have not changed, and fetches only the rest', async () => {
+    const dev = device()
+    await serviceWorker(dev, 'v1', ['/', '/room/places/lair.png', '/manifest.webmanifest'], { '/': 'p1', '/room/places/lair.png': 'l', '/manifest.webmanifest': 'm1' }).install()
+    const v2 = serviceWorker(dev, 'v2', ['/', '/room/places/lair.png', '/manifest.webmanifest'], { '/': 'p2', '/room/places/lair.png': 'l', '/manifest.webmanifest': 'm2' })
+    dev.fetched = []
+    await v2.install()
+    expect(dev.fetched).toEqual(['/', '/manifest.webmanifest'])
+    expect(await v2.get('/room/places/lair.png')).toBe('orbrun-app-v1 /room/places/lair.png')
+    expect(await v2.get('/manifest.webmanifest')).toBe('orbrun-app-v2 /manifest.webmanifest')
     expect(await v2.load()).toBe('orbrun-app-v2 page')
   })
 })

@@ -62,6 +62,11 @@ Orbrun goes onto a Steam Deck as a non-Steam game that opens Chrome in kiosk
 mode on orbrun.app. It takes five steps and needs no script.
 [STEAM.md](STEAM.md) walks through them.
 
+## Add to Home Screen
+
+On a phone or tablet, Orbrun goes on the home screen as an app that opens full screen
+and works offline; a computer can install it the same way. [INSTALL.md](INSTALL.md) has the steps.
+
 ## DCSS as a library
 
 Orbrun is an npm workspace. The game lives in `apps/orbrun`. What it knows

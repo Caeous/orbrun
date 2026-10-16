@@ -321,6 +321,15 @@ const PAD_BOARD: { buttons: GlyphName[]; name: string; does: string }[] = [
 ]
 
 /**
+ * The phones are drawn, not photographed: a plain handset around a still of
+ * the app at 390 × 844 in portrait (`phone-screen`) and 844 × 390 in landscape
+ * (`phone-wide`), both twice over, the HUD and the touch bar on, as it plays
+ * from the home screen.
+ */
+const PHONE_WIDE_ALT = 'The same fight a turn later on a phone in landscape: the goblin in reach and a bat swooping in across the wide view, the stats at the top left, the minimap and the touch buttons at the right'
+const PHONE_ALT = 'Orbrun on a phone in portrait: first person on Dungeon:1, a goblin with a club in reach, a gnoll, a kobold and a bat around it, the stats and the minimap along the top, the message log and Foxfire on the spell bar above the touch buttons'
+
+/**
  * A Steam Deck, face on (`deck.webp`, Valve's picture, cut to the
  * device), and the game on its screen: a still at the panel's
  * own 1280 × 800, the HUD on (`deck-screen`), stood over the lit part of the
@@ -366,6 +375,10 @@ const FAQ: { q: string; a: string }[] = [
     a: 'They are real games of the current release or trunk, run in your browser, but they never reach a scoreboard. Your saves stay on your device.',
   },
   {
+    q: 'Can I play on my phone or tablet?',
+    a: 'Yes, by touch, in portrait or landscape. Add it to your home screen first so it has the whole screen. On an iPhone or iPad it plays on the public servers, but not offline.',
+  },
+  {
     q: 'What does it cost?',
     a: 'Nothing. Orbrun is free and open source under the AGPL-3.0, and it is not affiliated with the DCSS team.',
   },
@@ -396,6 +409,7 @@ function aboutMain(dom: Dom): string {
     <div class="actions">
       <a class="btn play" href="/">▶ Play in your browser</a>
       <a class="btn ghost" href="/about/steam">Add to Steam</a>
+      <a class="btn ghost" href="/about/install">Add to Home Screen</a>
     </div>
     <span class="small-print">Free and open source · AGPL-3.0 · Unofficial</span>
   </div>
@@ -450,6 +464,17 @@ function aboutMain(dom: Dom): string {
     <figcaption>Dungeon:1 at the Deck’s own 1280 × 800, a hobgoblin in reach. The prompt beneath it says what the stick does now.</figcaption>
   </figure>
   <p class="say">The Deck came first: the whole game on its buttons, and nothing drawn while nothing on screen moves, to spare the battery. <a href="/about/steam">Add Orbrun to Steam</a> in five steps, artwork included, and it opens from your library like any other game.</p>
+</section>
+
+<section class="act field dungeon">
+  ${still('branch-bg', '', 1920, 1080).replace('alt=""', 'alt="" class="ground"')}
+  ${label('on-your-phone', 'On your phone', 'Or tablet · portrait or landscape')}
+  <figure class="handset">
+    <div class="phone"><img class="screen" src="${STILLS}/phone-screen.webp" alt="${esc(PHONE_ALT)}" width="780" height="1688" loading="lazy" decoding="async" /></div>
+    <div class="phone wide"><img class="screen" src="${STILLS}/phone-wide.webp" alt="${esc(PHONE_WIDE_ALT)}" width="1688" height="780" loading="lazy" decoding="async" /></div>
+    <figcaption>One fight on Dungeon:1, in portrait and landscape: a goblin in reach, a bat swooping in.</figcaption>
+  </figure>
+  <p class="say">Take the dungeon with you. The whole game plays on your phone or tablet, every command a tap away, in portrait or landscape. <a href="/about/install">Add it to your home screen</a> and it opens full screen from its own icon, like any other app.</p>
 </section>
 
 <section class="act field depths">
@@ -510,6 +535,7 @@ function aboutMain(dom: Dom): string {
 const DOC_LOOK: Record<string, { still: string; tint: string; sub?: () => string }> = {
   '/about/new': { still: 'keys-bg', tint: 'depths', sub: () => latestRelease() },
   '/about/steam': { still: 'account-bg', tint: 'abyss' },
+  '/about/install': { still: 'pad-bg', tint: 'lair' },
 }
 
 /** the changelog's newest release, as its heading names it: "Version 0.2.1 · 2026-09-25" */

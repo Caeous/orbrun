@@ -25,11 +25,22 @@ import {
   type Dir8,
   type Scene,
 } from '@orbrun/scene'
+import { HEADING, detent, detentSlope, releaseSteps, undetent } from './fling'
+
+/** A finger lifting off a look drag: its speeds in radians a second, and the radians past which it meant the next heading (fling.ts). */
+export interface DragRelease {
+  yawSpeed: number
+  pitchSpeed: number
+  commit: number
+}
 
 /**
  * Camera controller: yaw easing toward the facing goal,
  * free look with the right stick or a mouse or touch drag (yaw
- * unbounded, pitch free short of the poles, nothing snaps back), and the eye's
+ * unbounded, pitch free short of the poles; a mouse drag stays where it
+ * points, a stick letting go settles the yaw on the nearest heading, its
+ * pitch kept, and a finger lifting springs on to the next heading the way it
+ * swiped and the pitch back to rest, fling.ts), and the eye's
  * glide after a step along the path the feet took (`walkTo`); a jump snaps.
  */
 /** The yaw in radians; enough to put the camera back facing where it faced (the pitch is not kept). */
@@ -41,30 +52,20 @@ export class CameraController {
   camera: Camera = makeCamera()
   /** yaw the camera is easing toward */
   private goalYaw = 0
-  /**
-   * The heading the minimap's ground shows at the top, in radians, where the
-   * ground stands on compass quarters (MAP_TURNS_DIAGONAL off): eases toward
-   * the map heading (`mapFacingOf`) the same way the view's yaw eases toward
-   * its facing, so the map turns in step with the scene rather than
-   * snapping. Where the ground turns with the view itself it is not used:
-   * `mapYaw` is the view's own yaw then, so the map and the scene cannot
-   * come apart, under a keyed turn or a look.
-   */
-  private _mapYaw = 0
-  /**
-   * The heading what is painted on that ground is turned back to, in radians:
-   * the grid heading (`gridFacing`), eased at the same rate. Where the ground
-   * turns on diagonals too the two run 45 degrees apart there, so the
-   * features, the highlights and the cursor lie with the ground instead of
-   * standing upright over it (the monsters, items and the player stay
-   * upright); easing both means the lean grows and falls away smoothly
-   * instead of flipping as a turn crosses the diagonal.
-   */
-  private _uprightYaw = 0
   private freeLook = false
-  /** the right stick tilting the view up and down only, the yaw left to its easing (`tilt`) */
-  private tilting = false
   private dragging = false
+  /**
+   * the heading a drag set off from, how far off it the view stood then, how
+   * far the drag has turned it since, and under `detents` the finger's turn
+   * in headings from that heading (`fling.ts detent`)
+   */
+  private dragFrom: { dir: Dir8; at: number; turned: number; detents?: number } | null = null
+  /** the yaw's speed while a lifted finger's spring carries it onto its heading, radians a second; null under the plain ease */
+  private yawSpring: number | null = null
+  /** the same for the pitch, springing back to rest after a finger lifts */
+  private pitchSpring: number | null = null
+  /** radians a finger swiping a heading at a time leans the view off its turn (`lean`), already in the yaw */
+  private leanNow = 0
   private lookVel = 0
   private pitchVel = 0
   private _steeringRevision = 0
@@ -76,8 +77,8 @@ export class CameraController {
   /**
    * Where the camera points at rest: the Camera angle setting, in radians,
    * negative below the horizon. It is the pitch a fresh camera starts on;
-   * free look is measured from wherever the camera happens to point, so
-   * nothing ever springs back to it.
+   * free look is measured from wherever the camera happens to point, and
+   * only a finger lifting springs back to it.
    */
   restPitch = REST_PITCH
   private lastMoveTs = 0
@@ -97,38 +98,12 @@ export class CameraController {
   }
 
   setFacing(d: Dir8, immediate = false) {
+    this.yawSpring = null
     this.camera.facing = d
     this.goalYaw = dirToYaw(d)
     if (immediate || this.reducedMotion) {
       this.camera.yaw = this.goalYaw
-      this._mapYaw = this.mapGoal
-      this._uprightYaw = this.uprightGoal
     }
-  }
-
-  /**
-   * The heading up the minimap's ground right now, in radians; `mapFacingOf`
-   * once the turn settles. Where the ground turns with the view
-   * (MAP_TURNS_DIAGONAL) it is the view's yaw itself, every frame: a keyed
-   * turn eases both as one, and a stick or drag look, which turns the view
-   * to any heading between the detents, turns the map with it, so what is
-   * ahead in the scene is up the map at all times.
-   */
-  get mapYaw(): number {
-    return MAP_TURNS_DIAGONAL ? this.camera.yaw : this._mapYaw
-  }
-
-  /** The heading the minimap lays its features, highlights and cursor against right now, in radians; `gridFacing` once the turn settles. */
-  get mapUprightYaw(): number {
-    return this._uprightYaw
-  }
-
-  private get mapGoal(): number {
-    return dirToYaw(mapFacingOf(this.camera.facing))
-  }
-
-  private get uprightGoal(): number {
-    return dirToYaw(this.gridFacing)
   }
 
   turn(by: number) {
@@ -225,8 +200,7 @@ export class CameraController {
     c.yaw = normalizeYaw(view.yaw)
     c.facing = yawToDir(c.yaw)
     this.goalYaw = c.yaw
-    this._mapYaw = this.mapGoal
-    this._uprightYaw = this.uprightGoal
+    this.yawSpring = this.pitchSpring = null
   }
 
   /**
@@ -246,9 +220,11 @@ export class CameraController {
   /**
    * Right stick input; dx, dy in [-1,1]. Zero releases the stick. Look is
    * free: yaw is unbounded, pitch is clamped to PITCH_MAX, and releasing the
-   * stick leaves the camera exactly where it points (no detent, no spring).
+   * stick eases the yaw onto the nearest heading, as a finger lifting does
+   * (`endDrag`); the pitch stays where the stick left it.
    */
   look(dx: number, dy: number, sensitivity = 1, invert = false) {
+    if (dx !== 0 || dy !== 0) this.yawSpring = this.pitchSpring = null
     if (dx === 0 && dy === 0) {
       if (this.freeLook) this.endFreeLook()
       this.lookVel = 0
@@ -262,37 +238,81 @@ export class CameraController {
   }
 
   /**
-   * The right stick on Turn: dy in [-1,1] tilts the view as `look` does,
-   * while the yaw keeps easing onto the heading the turns chose. Zero lets go.
-   */
-  tilt(dy: number, sensitivity = 1, invert = false) {
-    this.tilting = dy !== 0
-    this.pitchVel = this.tilting ? (invert ? dy : -dy) * LOOK_PITCH_SPEED * sensitivity : 0
-  }
-
-  /**
    * Relative look from a mouse or touch drag: `dyaw`/`dpitch` in radians,
-   * applied at once. Call `endDrag` when the drag ends.
+   * applied at once. Call `endDrag` when the drag ends. A finger's turn goes
+   * through `detents`: the view lingers on each heading it passes.
    */
-  lookBy(dyaw: number, dpitch: number) {
+  lookBy(dyaw: number, dpitch: number, detents = false) {
     if (dyaw !== 0 || dpitch !== 0) this._steeringRevision++
     const c = this.camera
-    c.yaw = normalizeYaw(c.yaw + dyaw)
+    if (!this.dragging) {
+      const at = yawDelta(dirToYaw(c.facing), c.yaw)
+      this.dragFrom = { dir: c.facing, at, turned: 0, detents: detents ? undetent(at / HEADING) : undefined }
+    }
+    const from = this.dragFrom!
+    from.turned += dyaw
+    this.yawSpring = this.pitchSpring = null
+    if (from.detents === undefined) c.yaw = normalizeYaw(c.yaw + dyaw)
+    else {
+      from.detents += dyaw / HEADING
+      c.yaw = normalizeYaw(dirToYaw(from.dir) + detent(from.detents) * HEADING)
+    }
     c.pitch = this.clampPitch(c.pitch + dpitch)
     c.facing = yawToDir(c.yaw)
     this.goalYaw = c.yaw
     this.dragging = true
   }
 
-  endDrag() {
+  /**
+   * The drag let go. A mouse leaves the view where it points. A finger
+   * (`release`) springs the yaw on to the heading its swipe meant
+   * (`releaseSteps`: the next one the way it went), from the speed it lifted
+   * at, so the turn carries on from the finger without a hitch and never
+   * swings past that heading and back (`settle`); a quick swipe (QUICK_TURN)
+   * eases there instead, as an arrow key's turn does; and the pitch back to rest
+   * the same way, so a touch look always ends square to the grid and level.
+   */
+  endDrag(release?: DragRelease) {
+    this.dragging = false
+    const from = this.dragFrom
+    this.dragFrom = null
+    if (!release || !from) return
+    const n = releaseSteps(yawDelta(dirToYaw(from.dir), this.camera.yaw), from.turned, release.yawSpeed, release.commit)
+    this.setFacing(rotateDir(from.dir, n))
+    if (this.reducedMotion) {
+      this.camera.yaw = this.goalYaw
+      this.camera.pitch = this.restPitch
+      return
+    }
+    // a quick swipe still turning toward its heading finishes as a keyed turn does (`turn`), the view's own ease
+    const quick = Math.abs(release.yawSpeed) >= QUICK_TURN && release.yawSpeed * yawDelta(this.camera.yaw, this.goalYaw) > 0
+    this.yawSpring = quick ? null : from.detents === undefined ? release.yawSpeed : release.yawSpeed * detentSlope(from.detents)
+    this.pitchSpring = release.pitchSpeed
+  }
+
+  /**
+   * A finger swiping a heading at a time (swipe-turn.ts) turns the view `rad`
+   * off its heading, at once, so the dungeon moves as the finger does; a turn
+   * still easing in runs on under it. Call `endLean` when it lifts, then
+   * `turn` to the heading it meant.
+   */
+  lean(rad: number) {
+    this._steeringRevision++
+    this.camera.yaw = normalizeYaw(this.camera.yaw + rad - this.leanNow)
+    this.leanNow = rad
+    this.dragging = true
+  }
+
+  /** The swipe lifted: what it leaned is left to the turn's ease, which takes the view onto its heading. */
+  endLean() {
+    this.leanNow = 0
     this.dragging = false
   }
 
-  /** Stick released: keep the current view; facing is the nearest heading. */
+  /** Stick released: the yaw eases onto the nearest heading, the pitch stays. */
   private endFreeLook() {
     this.freeLook = false
-    this.camera.facing = yawToDir(this.camera.yaw)
-    this.goalYaw = this.camera.yaw
+    this.setFacing(yawToDir(this.camera.yaw))
   }
 
   /**
@@ -360,7 +380,7 @@ export class CameraController {
   faceAfterMove(scene: Scene, dx: number, dy: number) {
     if (this.autofightOverridden) return
     if (this.faceHostile(scene)) return
-    this.setFacing(this.openHeading(scene, yawToDir(Math.atan2(dx, -dy))))
+    this.setFacing(this.openHeading(scene, yawToDir(Math.atan2(dx, -dy)), true))
   }
 
   /**
@@ -513,12 +533,19 @@ export class CameraController {
    * turns before large. "Room" is measured as open depth along the heading
    * (see `openDepth`): two cells of it means we are not looking at a wall,
    * one cell is better than none, and only when every heading is blocked do
-   * we keep `d`.
+   * we keep `d`. After a step (`onward`), the way ahead, up to a quarter
+   * turn either side, is tried before anything behind: one cell short of a
+   * corner the road ahead has room for one cell only, and the corridor
+   * behind has more, but looking back the way we came is no view of where
+   * we are going. An arrival has no way ahead, only the heading it was left
+   * with, so there every heading competes on room alone.
    */
-  private openHeading(scene: Scene, d: Dir8): Dir8 {
+  private openHeading(scene: Scene, d: Dir8, onward = false): Dir8 {
     const candidates = [d, ...HEADING_OFFSETS.map((off) => rotateDir(d, off))]
-    for (const need of [OPEN_DEPTH, 1]) {
-      for (const c of candidates) if (this.openDepth(scene, c) >= need) return c
+    for (const heads of onward ? [candidates.slice(0, AHEAD_HEADINGS), candidates] : [candidates]) {
+      for (const need of [OPEN_DEPTH, 1]) {
+        for (const c of heads) if (this.openDepth(scene, c) >= need) return c
+      }
     }
     return d
   }
@@ -559,35 +586,24 @@ export class CameraController {
       c.pitch = this.clampPitch(c.pitch + this.pitchVel * dt)
       c.facing = yawToDir(c.yaw)
       moved = true
+    } else if (this.yawSpring !== null) {
+      const [x, v] = settle(yawDelta(this.goalYaw, c.yaw), this.yawSpring, dt)
+      this.yawSpring = v
+      if (Math.abs(x) < SPRING_REST && Math.abs(v) < SPRING_REST_SPEED) this.yawSpring = null
+      c.yaw = this.yawSpring === null ? this.goalYaw : normalizeYaw(this.goalYaw + x)
+      moved = true
     } else {
-      const yaw = this.ease(c.yaw, this.goalYaw, dt, TURN_RATE)
+      const yaw = normalizeYaw(this.ease(normalizeYaw(c.yaw - this.leanNow), this.goalYaw, dt, TURN_RATE) + this.leanNow)
       if (yaw !== c.yaw) {
         c.yaw = yaw
         moved = true
       }
-      if (this.tilting) {
-        c.pitch = this.clampPitch(c.pitch + this.pitchVel * dt)
-        moved = true
-      }
     }
-    // The minimap's ground: where it turns with the view it *is* the view's
-    // yaw (`mapYaw`), so there is nothing to ease — the same turn, the same
-    // look, the map and the scene swing as one. On quarters it has a
-    // different heading to reach, and eases there with a touch of extra
-    // speed. What is painted on the ground follows the grid heading at the
-    // view's rate, so the lean grows and falls away in step with the ground
-    // it lies on.
-    const rate = MAP_TURNS_DIAGONAL ? TURN_RATE : MAP_TURN_RATE
-    if (!MAP_TURNS_DIAGONAL) {
-      const map = this.ease(this._mapYaw, this.mapGoal, dt, rate)
-      if (map !== this._mapYaw) {
-        this._mapYaw = map
-        moved = true
-      }
-    }
-    const upright = this.ease(this._uprightYaw, this.uprightGoal, dt, rate)
-    if (upright !== this._uprightYaw) {
-      this._uprightYaw = upright
+    if (this.pitchSpring !== null && !this.freeLook) {
+      const [x, v] = settle(c.pitch - this.restPitch, this.pitchSpring, dt)
+      this.pitchSpring = v
+      if (Math.abs(x) < SPRING_REST && Math.abs(v) < SPRING_REST_SPEED) this.pitchSpring = null
+      c.pitch = this.pitchSpring === null ? this.restPitch : this.clampPitch(this.restPitch + x)
       moved = true
     }
     return moved
@@ -700,16 +716,50 @@ export function trailStep(scene: Scene): { dx: number; dy: number } | null {
   return null
 }
 
+/**
+ * One frame of a lifted finger's motion toward 0: `x` off it, `v` units a
+ * second, after `dt` seconds. It starts from the finger's own speed, so a
+ * lifted turn carries on without a hitch, and never passes 0 and comes back.
+ * Mostly a critically damped spring; but one heading home faster than
+ * SPRING_RATE × the way left would overshoot, so that motion slows instead
+ * at the rate it arrived with (x e^(−bt), b = −v/x): its speed is the
+ * finger's at the start and nil at 0, as a flicked scroll view decelerates.
+ * A spring never turns into such a motion, nor the other way, so both are
+ * solved exactly and hold at any frame rate.
+ */
+function settle(x: number, v: number, dt: number): [number, number] {
+  const b = x !== 0 ? -v / x : 0
+  if (b <= SPRING_RATE) return spring(x, v, dt)
+  const nx = x * Math.exp(-b * dt)
+  return [nx, -b * nx]
+}
+
+/** One frame of a critically damped spring toward 0, solved exactly. */
+function spring(x: number, v: number, dt: number): [number, number] {
+  const w = SPRING_RATE
+  const e = Math.exp(-w * dt)
+  const b = v + w * x
+  return [(x + b * dt) * e, (v - w * b * dt) * e]
+}
+
+/** a lifted finger's spring, in radians a second of stiffness: settled in about a quarter second */
+const SPRING_RATE = 22
+/** close enough to land on the heading: radians off and radians a second */
+const SPRING_REST = 0.002
+const SPRING_REST_SPEED = 0.05
+/** a finger lifting faster than this, in radians a second, toward the heading it turns to is a quick swipe: it finishes as a keyed turn (about 300 css px a second) */
+const QUICK_TURN = 2
 /** Exponential turn rates, calibrated to the old 60 Hz feel but independent of frame rate. */
 const TURN_RATE = 16
 /** The right stick at full push, in radians a second: its yaw about as quick as a 45° turn. */
 const LOOK_YAW_SPEED = 4.2
 const LOOK_PITCH_SPEED = 1.05
-const MAP_TURN_RATE = 21
 /** how far ahead a heading must be open before it counts as not facing a wall */
 const OPEN_DEPTH = 2
 /** rotations from a preferred heading, nearest first, ending with a full about-turn */
 const HEADING_OFFSETS = [1, -1, 2, -2, 3, -3, 4]
+/** the preferred heading and its turns up to a quarter either side, the first of the candidates */
+const AHEAD_HEADINGS = 5
 
 /** pitch limit: nearly straight up or down, stopping short of the pole so yaw stays meaningful */
 const PITCH_MAX = (Math.PI / 180) * 85
@@ -727,31 +777,12 @@ function clamp(v: number, lo: number, hi: number) {
 }
 
 /**
- * Experiment: the minimap's ground turns to every heading, diagonals
- * included, instead of standing on the compass quarter. Only the ground —
- * the grid the keys are read against (`gridFacingOf`) keeps its quarters, so
- * an aim, an examine and a fire pick cells exactly as they always did. The
- * monsters, items and the player stay upright over the turned ground; the
- * features, the highlights and the cursor lie with it.
- */
-export const MAP_TURNS_DIAGONAL = true
-
-/**
  * The compass heading the grid is read against under a facing (`gridFacing`):
  * a compass facing itself, a diagonal the compass heading on its left, so
  * north-east reads as north. An aim's keys are read against it (runner
- * `absoluteAim`), and under quarter turns the minimap stands on it too.
+ * `absoluteAim`).
  */
 function gridFacingOf(f: Dir8): Dir8 {
   return f % 2 === 0 ? f : rotateDir(f, -1)
 }
 
-/**
- * The heading the minimap's ground stands on under a facing: the grid's
- * heading, or the facing itself where the map turns on diagonals too
- * (MAP_TURNS_DIAGONAL). The keys keep reading against `gridFacingOf` either
- * way, so on a diagonal the map leans under a cursor that does not.
- */
-export function mapFacingOf(f: Dir8): Dir8 {
-  return MAP_TURNS_DIAGONAL ? f : gridFacingOf(f)
-}

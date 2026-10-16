@@ -8,6 +8,7 @@ import {
   Keys,
   type ClientMessage,
   type GameState,
+  type InvItem,
   type MenuState,
   type Popup,
 } from '@orbrun/webtiles'
@@ -17,17 +18,20 @@ import { controlsSheet } from './controls-sheet'
 import { h, clear, escapeHtml, onDprChange, snapToPixels } from './dom'
 import { Osk, oskPrompts, type OskOp, type OskTarget } from './osk'
 import commands from '../data/commands.json'
-import { FocusNav, focusStep, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
-import { scrapeCrt } from './crt-scrape'
-import { focusFallback, promptButtons, submitOnStartOnly, type Action, type BindingLabel } from './bindings'
+import { FocusNav, focusStep, tapLights, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
+import { crtPlainText, scrapeCrt, stackSkills } from './crt-scrape'
+import { focusFallback, numberPrompt, promptButtons, submitOnStartOnly, typedInLog, type Action, type BindingLabel } from './bindings'
 import { CHARACTER_COMMANDS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandMenu } from './command-menu'
 import { VIEW_OPTIONS } from './servers'
 import { settingGroups, type SettingGroup } from './settings-rows'
 import { glyph, glyphName } from './glyphs'
 import { packRows, packStrip, turnKeys, type PackStrip } from './pack-tabs'
-import { ACTION_TABS, SHOUT, SWAP_WEAPONS, actionNeighbour, actionTabOf, type ActionTabId } from './action-tabs'
+import { fits, menuColumns } from './menu-columns'
+import { attachSwipe } from './swipe'
+import { TabLean } from './tab-lean'
+import { ACTION_TABS, actionNeighbour, actionTabOf, type ActionTabId } from './action-tabs'
 import type { Button, PadKind } from './gamepad'
-import { DEFAULT_YESNO, isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt } from './context'
+import { DEFAULT_YESNO, isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt, type Switch } from './context'
 import type { InputDevice } from './game'
 import {
   cycleHeadersTarget,
@@ -39,6 +43,8 @@ import {
   menuKeyIntent,
   moreSwitchKeycode,
   parseMoreSwitches,
+  pickSpendsTurn,
+  printedSwitch,
   nextHoverableItem,
   relativeHover,
   relativeHoverTarget,
@@ -62,6 +68,9 @@ const GAME_MENU_TAG = 'game_menu'
 const GAME_MENU_ROW_KEY = 'o'
 const GAME_MENU_ROW_TEXT = ` ${GAME_MENU_ROW_KEY} - Orbrun settings`
 
+/** crawl's tile for each settings group's row, as the Start menu's rows carry theirs */
+const SETTING_GROUP_TILES: Record<SettingGroup, string> = { Camera: 'CMD_DISPLAY_MAP', Controls: 'CMD_KEYBOARD', Interface: 'CMD_DISPLAY_CHARACTER_STATUS' }
+
 export interface OverlayHooks {
   /** the connected controller's family, for the glyphs on the controls sheet */
   padKind?(): PadKind
@@ -75,6 +84,10 @@ export interface OverlayHooks {
   settingsPanel(group: SettingGroup, back: () => void, controls: () => void): { el: HTMLElement; rows: HTMLElement[] }
   /** one of X's actions as tabs picked, by a click or the bumpers (action-tabs.ts, game.ts `openActionTab`) */
   actionTab?(to: ActionTabId): void
+  /** a finger swiped sideways over a screen: the d-pad's Right (1) or Left (-1), swipe.ts */
+  swipe?(step: 1 | -1): void
+  /** a letter went into a field typed in the message log (`typedInLog`), which the pane shows */
+  typed?(): void
 }
 
 export interface TileRef {
@@ -96,6 +109,10 @@ export interface PopupAction {
   key: string
   label: string
   send(): void
+  /** where a switch of a popup's more line is drawn, for its colours (`switchColours`) */
+  el?: HTMLElement
+  /** a row of the popup's list (a book's spell), which a finger taps where it stands: no touch button of its own (`popupSwitches`) */
+  row?: boolean
 }
 
 /**
@@ -105,7 +122,7 @@ export interface PopupAction {
  * pixelated path while the canvas was a layer of its own and a filtered one
  * once the window lost focus, and the icon changed under the player.
  */
-function tileCanvas(gd: Gamedata | null, tiles: TileRef[], scale = 1, size = 32 * scale): HTMLCanvasElement {
+export function tileCanvas(gd: Gamedata | null, tiles: TileRef[], scale = 1, size = 32 * scale): HTMLCanvasElement {
   const c = h('canvas', { class: 'tile' })
   c.style.width = size + 'px'
   c.style.height = size + 'px'
@@ -164,14 +181,38 @@ function drawTiles(c: HTMLCanvasElement, gd: Gamedata | null, tiles: TileRef[], 
 /**
  * A command row's icon, by tile name (command-menu.ts `tile`). Crawl's own
  * command icons live in the GUI atlas (`CMD_*`, the ones its touch command bar
- * draws, tilereg-cmd.cc); the item tiles the other rows borrow live in main.
+ * draws, tilereg-cmd.cc); the item tiles the other rows borrow live in main,
+ * and a monster's (the touch bar's In view eye) in the player atlas.
  * The id carries its own atlas -- `Gamedata.tile` finds the module by id range
  * -- so the caller needs no texture index. Undefined until gamedata has
  * loaded, and for a name this version of crawl does not have.
  */
 export function commandTileId(gd: Gamedata | null, name: string | undefined): number | undefined {
   if (!gd || !name) return undefined
-  return gd.gui.id(name) ?? gd.main.id(name)
+  return gd.gui.id(name) ?? gd.main.id(name) ?? gd.player.id(name)
+}
+
+/**
+ * A tab's name, in a span of its own so a strip too narrow for every name
+ * (a phone held upright) can fold the others to their icons; the name stays
+ * on the button for screen readers and as its tooltip.
+ */
+function tabName(label: string): HTMLElement {
+  return h('span', { class: 'tab-name' }, label)
+}
+
+/**
+ * Folds a tab strip to fit its row: while every name does not fit, the tabs
+ * but the current one show only their icons. Measured again whenever the row
+ * resizes; the returned refit is for when the current tab changes in place.
+ */
+function fitTabs(tabs: HTMLElement): () => void {
+  const refit = () => {
+    tabs.classList.remove('tight')
+    if (tabs.scrollWidth > tabs.clientWidth) tabs.classList.add('tight')
+  }
+  new ResizeObserver(refit).observe(tabs)
+  return refit
 }
 
 function fmtBody(txt: string): string {
@@ -351,6 +392,70 @@ function parseActions(text: string): { key: string; label: string }[] {
   return out
 }
 
+/**
+ * A switch drawn as text (`[!] words`, between two offsets of `root`'s
+ * text): its bracketed key and its words, each as html in the colours it is
+ * drawn in, so the touch button reads as the footer does (the key in its
+ * colour, the lit half of `auto|manual` bright). A `|` may end a caption's
+ * line.
+ */
+export function switchColours(root: HTMLElement, start: number, end: number, key: string): { keyHtml: string; wordHtml: string } {
+  const text = root.textContent ?? ''
+  const keyEnd = Math.min(end, start + key.length + 2)
+  let word = keyEnd
+  while (word < end && text[word] === ' ') word++
+  return { keyHtml: colouredSlice(root, start, keyEnd), wordHtml: colouredSlice(root, word, end).replace(/\.((?:<\/span>)?)$/, '$1').replace(/\|/g, '|<wbr>') }
+}
+
+/** what `switchLook` has read off a switch drawn as text, by its element and range */
+const switchLooks = new WeakMap<HTMLElement, Map<string, { keyHtml: string; wordHtml: string }>>()
+
+/** A switch drawn as text, in its colours (`switchColours`), read once an element: the touch bar asks every frame. */
+function switchLook(root: HTMLElement, start: number, end: number, key: string): { keyHtml: string; wordHtml: string } {
+  let byRange = switchLooks.get(root)
+  if (!byRange) switchLooks.set(root, (byRange = new Map()))
+  const id = start + ':' + end + ':' + key
+  let look = byRange.get(id)
+  if (!look) byRange.set(id, (look = switchColours(root, start, end, key)))
+  return look
+}
+
+/** `root`'s text between two offsets as html, a span a run of one colour (the `fgN` class of the element it stands in) */
+function colouredSlice(root: HTMLElement, start: number, end: number): string {
+  let out = ''
+  let run = ''
+  let cur: string | null = null
+  const flush = () => {
+    if (run) out += cur ? `<span class="${cur}">${escapeHtml(run)}</span>` : escapeHtml(run)
+    run = ''
+  }
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let pos = 0
+  for (let n = walker.nextNode(); n && pos < end; n = walker.nextNode()) {
+    const t = n.nodeValue ?? ''
+    const a = Math.max(start, pos)
+    const b = Math.min(end, pos + t.length)
+    if (a < b) {
+      let fg: string | null = null
+      for (let el = n.parentElement; el; el = el === root ? null : el.parentElement) {
+        const m = typeof el.className === 'string' ? /\bfg\d+\b/.exec(el.className) : null
+        if (m) {
+          fg = m[0]
+          break
+        }
+      }
+      if (fg !== cur) {
+        flush()
+        cur = fg
+      }
+      run += t.slice(a - pos, b - pos)
+    }
+    pos += t.length
+  }
+  flush()
+  return out
+}
+
 function clickifyActions(text: string): string {
   return text
     .split(', ')
@@ -360,6 +465,33 @@ function clickifyActions(text: string): string {
       return a.prefix + `<span${attr}>${escapeHtml(a.text)}</span>` + a.suffix
     })
     .join(', ')
+}
+
+/**
+ * The new-game buttons' icons: 32px, or on an upright phone about 24, at a
+ * whole number of device pixels per tile pixel where the screen allows, so
+ * they stay crisp (drawTiles). With the letters gone (markHotkeyPrefix) that
+ * fits the background screen's three columns.
+ */
+function newgameIconSize(): number {
+  if (!window.matchMedia(PHONE_UPRIGHT).matches) return 32
+  const dpr = window.devicePixelRatio || 1
+  return (32 * Math.max(1, Math.round((dpr * 24) / 32))) / dpr
+}
+
+/**
+ * Put a new-game button's key ("a - ", "Space - ") in a span of its own, so
+ * an upright phone, which types no letters, can drop it and fit the grid's
+ * three columns (styles.css .newgame .key-prefix).
+ */
+function markHotkeyPrefix(btn: HTMLElement) {
+  const walker = document.createTreeWalker(btn, NodeFilter.SHOW_TEXT)
+  let node: Text | null
+  while ((node = walker.nextNode() as Text | null) && !node.data.trim()) {}
+  const m = node?.data.match(/^\s*\S+ - /)
+  if (!node || !m) return
+  node.splitText(m[0].length)
+  node.replaceWith(h('span', { class: 'key-prefix' }, node.data))
 }
 
 /**
@@ -384,6 +516,33 @@ function textRange(root: HTMLElement, start: number, end: number): Range | null 
   range.setStart(from.node, from.offset)
   range.setEnd(to.node, to.offset)
   return range
+}
+
+/**
+ * Wrap each column of `el`'s text (menu-columns.ts) in a span of its own, the
+ * text and its colours as they were, so styles.css can lay the row out anew
+ * where crawl's padded line would wrap.
+ */
+function splitColumns(el: HTMLElement, starts: number[]) {
+  const len = el.textContent?.length ?? 0
+  const bounds = [0, ...starts.map((s) => Math.min(s, len)), len]
+  const cells = bounds.slice(0, -1).map((start, i) => {
+    const cell = h('span', { class: 'col' })
+    const range = start < bounds[i + 1] ? textRange(el, start, bounds[i + 1]) : null
+    if (!range) return cell
+    // a cell inside one colour's span comes out bare; the spans it sits in go back round it
+    let content: Node = range.cloneContents()
+    for (let up = range.commonAncestorContainer; up !== el; up = up.parentNode!) {
+      if (up.nodeType !== Node.ELEMENT_NODE) continue
+      const wrap = up.cloneNode(false)
+      wrap.appendChild(content)
+      content = wrap
+    }
+    cell.append(content)
+    return cell
+  })
+  el.replaceChildren(...cells)
+  el.classList.add('cols')
 }
 
 /** Official textinput.js keeps the last ten entries per historyId (up/down recall). */
@@ -461,11 +620,15 @@ interface MoreSwitchEl {
 
 /** LB / RB on a new-game grid move the cursor this many rows. */
 const NEWGAME_PAGE_ROWS = 5
+/** the width styles.css drops the new-game letters at */
+const PHONE_UPRIGHT = '(max-width: 600px)'
 
 export class Overlays {
   root: HTMLElement
   private hooks: OverlayHooks
   private lastUiRev = -1
+  /** the skills screen as last laid out, for a resize to lay it out again when its room changes (`crtLayout`) */
+  private crtFitted: { tag: string; lines: string[]; key: string; el: HTMLElement } | null = null
   private menuEl: HTMLElement | null = null
   /** the menu `menuEl` shows (the top one), for the scroll memo */
   private menuTop: MenuState | null = null
@@ -481,6 +644,8 @@ export class Overlays {
    * the rows. Down past the last row walks into them, up walks back.
    */
   private menuFooter: MoreSwitchEl[] = []
+  /** the top CRT screen's footer switches (the skills screen's `[=] set a skill target`), as scraped (crt-scrape.ts) */
+  private crtFooter: { sw: Switch; root: HTMLElement; start: number; end: number }[] = []
   private menuFooterIndex = -1
   /** the menu the footer cursor belongs to, so a rebuild of the same menu keeps it and a menu opened after (even one with the same tag) starts on its rows */
   private menuFooterOf: MenuState | null = null
@@ -505,9 +670,10 @@ export class Overlays {
    * Scroll position of each server overlay's body, by the state object it
    * draws, so a rebuild (an `update_menu_items` chunk, a `ui-state`, a
    * `menu_scroll`) keeps the reader's place; the official client keeps its
-   * DOM and never has to.
+   * DOM and never has to. Across too: the new-game grid scrolls sideways on
+   * an upright phone, and the echo of a tap on its far column rebuilds it.
    */
-  private scrollMemo = new WeakMap<object, number>()
+  private scrollMemo = new WeakMap<object, { top: number; left: number }>()
   /** the last server scroll line applied per popup (`Popup.scrollSeq`) */
   private popupScrollApplied = new WeakMap<Popup, number>()
   private scrollerTimer: number | null = null
@@ -535,6 +701,8 @@ export class Overlays {
   private currentTextTarget(): OskTarget | null { return this.textTarget }
   /** the seed-selection popup's field, wired when the matching init_input is up */
   private seedInput: HTMLInputElement | null = null
+  /** a line read in the message pane: under a finger, its popup stands unseen over the pane (`placeLogInput`) */
+  private logInput: HTMLElement | null = null
   private actions: PopupAction[] = []
   private gen = 0
   /** the focus layer's cursor over the top server overlay, or over the prompt strip */
@@ -573,6 +741,9 @@ export class Overlays {
   private pointerLive = true
   private pointerAt = { x: -1, y: -1 }
 
+  /** the tab strip leaning under a swipe that has not lifted yet (tab-lean.ts); game.ts leans it for a swipe beside the menu too */
+  readonly tabLean: TabLean
+
   constructor(host: HTMLElement, hooks: OverlayHooks) {
     this.hooks = hooks
     this.root = h('div', { class: 'overlay-stack' })
@@ -580,6 +751,9 @@ export class Overlays {
     this.root.addEventListener('pointermove', (ev) => this.pointerWakes(ev), { passive: true })
     // a click is the mouse speaking: the hover under it counts again, so a click straight after a key lands where the mouse is
     this.root.addEventListener('pointerdown', (ev) => this.pointerWakes(ev, true), { passive: true })
+    this.tabLean = new TabLean(this.root)
+    attachSwipe(this.root, (step) => this.hooks.swipe?.(step), (lean) => this.tabLean.lean(lean), (step) => this.tabLean.end(step))
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.refitCrt()).observe(this.root)
   }
 
   /** A mouse event over an overlay. Only a move that really moved wakes the pointer: a list scrolled under a still mouse can report one that did not. */
@@ -667,8 +841,10 @@ export class Overlays {
       if (he === this.promptEl) continue
       if (!he.dataset.client || he.classList.contains('osk')) he.remove()
     }
+    this.crtFitted = null
     this.menuEl = null
     this.menuTop = null
+    this.crtFooter = []
     this.menuMore = null
     this.menuFooter = []
     this.menuExtra = null
@@ -676,6 +852,7 @@ export class Overlays {
     this.popupTop = null
     this.textTarget = null
     this.seedInput = null
+    this.logInput = null
     this.actions = []
     this.focusables = []
     this.focusScreen = ''
@@ -760,10 +937,10 @@ export class Overlays {
     // its keys at once; the keyboard follows the field across rebuilds. After a physical keyboard or the
     // mouse the field stands alone and takes the typing (the on-screen keyboard would cover it and its
     // prompt, and show none of what was typed); X still brings it up (`oskOp`). The new game's seed
-    // field waits to be asked.
+    // field waits to be asked. A finger gets the number pad of a number prompt at once (`oskFor`).
     const tt = this.currentTextTarget() // reassigned by the render helpers above
-    const prompt = !!ti && ti.type !== 'seed-selection' && !this.hooks.watching() && this.device === 'pad'
-    if (tt && (oskWasUp || prompt)) this.osk.attach(tt, tt.input.closest('.popup') || this.root)
+    const prompt = !!ti && ti.type !== 'seed-selection' && !this.hooks.watching() && !!tt && this.oskFor(tt, this.device)
+    if (tt && (oskWasUp || prompt)) this.osk.attach(tt, this.oskHost(tt))
     else if (!tt && !this.clientOverlay) this.osk.detach()
     // now that the new elements are laid out: the reader's place, or the scroll the server asked for
     this.restoreScroll()
@@ -773,11 +950,11 @@ export class Overlays {
   private memoScroll() {
     if (this.menuTop) {
       const body = this.menuEl?.querySelector('.body') as HTMLElement | null
-      if (body) this.scrollMemo.set(this.menuTop, body.scrollTop)
+      if (body) this.scrollMemo.set(this.menuTop, { top: body.scrollTop, left: body.scrollLeft })
     }
     if (this.popupTop) {
       const body = this.popupScrollBody()
-      if (body) this.scrollMemo.set(this.popupTop, body.scrollTop)
+      if (body) this.scrollMemo.set(this.popupTop, { top: body.scrollTop, left: body.scrollLeft })
     }
   }
 
@@ -794,14 +971,20 @@ export class Overlays {
       this.menuMore?.()
       const body = this.menuEl.querySelector('.body') as HTMLElement | null
       const memo = this.scrollMemo.get(this.menuTop)
-      if (body && memo !== undefined) body.scrollTop = memo
+      if (body && memo) {
+        body.scrollTop = memo.top
+        body.scrollLeft = memo.left
+      }
       this.scrollHoverIntoView()
     }
     const p = this.popupTop
     const body = this.popupScrollBody()
     if (p && body) {
       const memo = this.scrollMemo.get(p)
-      if (memo !== undefined) body.scrollTop = memo
+      if (memo) {
+        body.scrollTop = memo.top
+        body.scrollLeft = memo.left
+      }
       if (p.scrollSeq !== undefined && this.popupScrollApplied.get(p) !== p.scrollSeq) {
         this.popupScrollApplied.set(p, p.scrollSeq)
         if (typeof p.scroll === 'number' && (!p.scrollFromWebtiles || this.hooks.watching())) {
@@ -856,6 +1039,15 @@ export class Overlays {
       if (!this.hooks.watching()) setTimeout(() => input.focus(), 30)
       this.textTarget = target
     }
+    // a console table (the spells, the abilities): its columns in spans of their own, laid out anew on an upright phone (styles.css .cols)
+    const cols = tp ? null : menuColumns(formattedStringToText(menu.title?.text || ''), menu.items.map((it) => (it && (it.level ?? 2) === 2 ? formattedStringToText(it.text || '') : '')))
+    if (cols) {
+      el.style.setProperty('--menu-cols', cols.widths.map((w) => w + 'ch').join(' '))
+      const head = h('span')
+      head.append(...title.childNodes)
+      title.append(head)
+      splitColumns(head, cols.starts)
+    }
     const strip = top ? packStrip(menu, state) : null
     // one of X's actions: the tabs over crawl's title, which keeps its column heads (failure, cost)
     const action = top ? actionTabOf(menu) : null
@@ -868,10 +1060,12 @@ export class Overlays {
     if (!strip || (tp && !tp.raw)) el.append(title)
     if (strip) el.append(this.packTabs(strip))
     const body = h('div', { class: 'body' })
+    const ol = h('ol')
     if (strip) {
-      // one size whatever the page: as wide as styles.css says, as tall as the fullest page's rows
+      // one size whatever the page: as wide as styles.css says, as tall as the fullest page's rows. The rows hold
+      // that height, not the body, so where the popup's height runs out the body still gives way and scrolls
       el.classList.add('paged-pack')
-      body.style.minHeight = `min(${packRows(state)} * var(--pack-row, ${this.packRowPx ? this.packRowPx + 'px' : '2.2em'}), 64vh)`
+      ol.style.minHeight = `min(${packRows(state)} * var(--pack-row, ${this.packRowPx ? this.packRowPx + 'px' : '2.2em'}), 64vh)`
       requestAnimationFrame(() => {
         const row = body.querySelector('li.level2')?.getBoundingClientRect().height
         if (!row || row === this.packRowPx) return
@@ -879,7 +1073,6 @@ export class Overlays {
         body.style.setProperty('--pack-row', row + 'px')
       })
     }
-    const ol = h('ol')
     const arrows = !!(menu.flags & MenuFlag.ARROWS_SELECT)
     for (let i = 0; i < menu.items.length; i++) {
       const it = menu.items[i]
@@ -890,10 +1083,15 @@ export class Overlays {
         continue
       }
       if (it.tiles && it.tiles.length) li.append(tileCanvas(gd, it.tiles))
-      li.append(h('span', { html: formattedStringToHtml(it.text || '') }))
+      const text = h('span', { html: formattedStringToHtml(it.text || '') })
+      if (cols && (it.level ?? 2) === 2 && fits(text.textContent || '', cols.starts)) splitColumns(text, cols.starts)
+      li.append(text)
       const selectable = (it.level ?? 2) === 2 && (menu.tag === 'use_item' || (it.hotkeys && it.hotkeys.length) || arrows)
       if (selectable) {
         li.classList.add('selectable')
+        // where taking a row spends a turn, a finger lights it first, as the arrows would, and a
+        // tap on the lit row takes it; elsewhere a tap takes it at once
+        tapLights(li, () => !pickSpendsTurn(menu) || this.hovered === i, () => this.setHover(menu, i, true))
         li.addEventListener('click', () => {
           if (arrows) {
             this.setHover(menu, i, true)
@@ -938,8 +1136,9 @@ export class Overlays {
       const current = i === strip.current
       const id = commandTileId(gd, t.tile)
       // an empty page stands, dimmed and inert, so the player knows it is there
-      tabs.append(h('button', { type: 'button', role: 'tab', class: current ? 'current' : t.empty ? 'empty' : '', disabled: !!t.empty, 'aria-selected': String(current), onclick: () => this.turnPack(strip, i) }, id === undefined ? null : tileCanvas(gd, [{ t: id }]), t.label))
+      tabs.append(h('button', { type: 'button', role: 'tab', class: current ? 'current' : t.empty ? 'empty' : '', disabled: !!t.empty, 'aria-selected': String(current), 'aria-label': t.label, title: t.label, onclick: () => this.turnPack(strip, i) }, id === undefined ? null : tileCanvas(gd, [{ t: id }]), tabName(t.label)))
     })
+    fitTabs(tabs)
     // the rest of crawl's title, at the far end: the keys that turn the page
     // (whole or not at all: cut short, it only says less than the bar does)
     if (strip.hint) {
@@ -968,8 +1167,9 @@ export class Overlays {
     for (const t of ACTION_TABS) {
       const on = t.id === current
       const id = commandTileId(gd, t.tile)
-      tabs.append(h('button', { type: 'button', role: 'tab', class: on ? 'current' : '', 'aria-selected': String(on), onclick: () => { if (!on) this.hooks.actionTab?.(t.id) } }, id === undefined ? null : tileCanvas(gd, [{ t: id }]), t.label))
+      tabs.append(h('button', { type: 'button', role: 'tab', class: on ? 'current' : '', 'aria-selected': String(on), 'aria-label': t.label, title: t.label, onclick: () => { if (!on) this.hooks.actionTab?.(t.id) } }, id === undefined ? null : tileCanvas(gd, [{ t: id }]), tabName(t.label)))
     }
+    fitTabs(tabs)
     return tabs
   }
 
@@ -1148,7 +1348,7 @@ export class Overlays {
       const span = h('span', { class: 'more-hot', title: sw.label })
       span.append(range.extractContents())
       range.insertNode(span)
-      span.addEventListener('click', () => this.sendMoreSwitch(sw.key))
+      span.addEventListener('click', () => this.sendMenuSwitch(sw.key))
       // where it stands in the line, which is laid out in columns (menu.cc `pad_more_with`): the cursor
       // moves over them as they are drawn, up and down between the lines and sideways along one
       const lineStart = text.lastIndexOf('\n', sw.start - 1) + 1
@@ -1174,8 +1374,50 @@ export class Overlays {
     this.paintFooter()
   }
 
+  /** The switches the top menu's more line prints now, in the order it prints them: the touch bar's top row (bindings.ts `touchLabels`). */
+  menuSwitches(): Switch[] {
+    if (this.crtFooter.length) return this.crtFooter.map((f) => ({ ...f.sw, ...switchLook(f.root, f.start, f.end, f.sw.key) }))
+    if (!this.menuEl) return []
+    const out: Switch[] = []
+    // two keys for one switch (the spell list's `[!]/[I] toggle spell headers`) are one button, on the first key:
+    // the first one's label is just the slash between them
+    for (let i = 0; i < this.menuFooter.length; i++) {
+      const f = this.menuFooter[i]
+      const next = this.menuFooter[i + 1]
+      const all = (el: HTMLElement, key: string) => switchLook(el, 0, el.textContent?.length ?? 0, key)
+      if (f.label === '/' && next) out.push({ ...printedSwitch(f.key, next.label), ...all(f.el, f.key), wordHtml: all(next.el, next.key).wordHtml }), i++
+      else out.push({ ...printedSwitch(f.key, f.label), ...all(f.el, f.key) })
+    }
+    return out
+  }
+
+  /**
+   * The top popup's verbs and switches for the touch bar, less its list's
+   * rows: a verb as the actions line prints it, its key in brackets on the
+   * button, so the word goes without it ("(s)kill target" is `s` over "skill
+   * target", "(=)adjust" `=` over "adjust").
+   */
+  popupSwitches(): Switch[] {
+    const item = this.popupItem()
+    return this.actions.filter((a) => !a.row).map((a) => ({ ...printedSwitch(a.key, a.label), ...(item ? { item } : {}), ...(a.el ? switchLook(a.el, 0, a.el.textContent?.length ?? 0, a.key) : {}) }))
+  }
+
+  /** the item a describe popup is of, as its header draws it, in the inventory's form (tileweb.cc `_send_item`) */
+  private popupItem(): InvItem['tile'] | undefined {
+    const d = this.popupTop?.type === 'describe-item' ? (this.popupTop.data as Record<string, unknown>) : null
+    const refs = d && ((d.tiles as TileRef[] | undefined) ?? (d.tile ? [d.tile as TileRef] : undefined))
+    return refs?.length ? refs.map((r) => (r.tex !== undefined ? { t: r.t, tex: r.tex, ...(r.ymax !== undefined ? { ymax: r.ymax } : {}) } : r.t)) : undefined
+  }
+
+  /** A touch button's switch: the top popup's own way of sending it where it has one, else as a menu's more line sends it. */
+  sendSwitch(key: string) {
+    const a = this.popupEl ? this.actions.find((x) => x.key === key && !x.row) : undefined
+    if (a) a.send()
+    else this.sendMenuSwitch(key)
+  }
+
   /** A more-line switch: the key it prints, as the official client would send it. */
-  private sendMoreSwitch(key: string) {
+  sendMenuSwitch(key: string) {
     const code = moreSwitchKeycode(key)
     if (code) this.hooks.send(cm.key(code))
     else if (key.length === 1) this.hooks.send(cm.input(key))
@@ -1566,7 +1808,7 @@ export class Overlays {
           break
         }
         if (this.menuFooterIndex >= 0) {
-          this.sendMoreSwitch(this.menuFooter[this.menuFooterIndex].key)
+          this.sendMenuSwitch(this.menuFooter[this.menuFooterIndex].key)
           break
         }
         const hk = menu.items[this.hovered]?.hotkeys?.[0]
@@ -1681,7 +1923,7 @@ export class Overlays {
       body.append(h('div', { html: fmtBody(parts[0]) }))
       if (books.length) {
         body.append(this.spellset(books, items, () => row++, colour))
-        for (const b of books) for (const s of b.spells) acts.push({ key: s.letter, label: formattedStringToText(s.title), send: () => this.hooks.send(cm.textInput(s.letter)) })
+        for (const b of books) for (const s of b.spells) acts.push({ key: s.letter, label: formattedStringToText(s.title), send: () => this.hooks.send(cm.textInput(s.letter)), row: true })
       }
       if (parts.length > 1) body.append(h('div', { html: fmtBody(parts.slice(1).join('')) }))
       el.append(body)
@@ -1848,9 +2090,9 @@ export class Overlays {
       const r = row
       const sws = this.hotSwitches(moreEl)
       for (const sw of sws) {
-        const send = () => this.sendMoreSwitch(sw.key)
+        const send = () => this.sendMenuSwitch(sw.key)
         items.push({ label: sw.label, el: sw.el, activate: send, row: r + sw.line, col: sw.col, id: 'more:' + sw.key })
-        acts.push({ key: sw.key, label: sw.label, send })
+        acts.push({ key: sw.key, label: sw.label, send, el: sw.el })
       }
       row += Math.max(0, ...sws.map((sw) => sw.line)) + 1
     }
@@ -1939,7 +2181,8 @@ export class Overlays {
         // official: a click sends the letter as text input
         const send = () => this.hooks.send(cm.textInput(s.letter))
         li.addEventListener('click', send)
-        items.push({ label: formattedStringToText(s.title), el: li, activate: send, row: pairRow, col: i % 2, id: 'spell:' + s.letter })
+        const item: Focusable = { label: formattedStringToText(s.title), el: li, activate: send, row: pairRow, col: i % 2, id: 'spell:' + s.letter }
+        items.push(item)
         ol.append(li)
       })
       c.append(ol)
@@ -1977,6 +2220,7 @@ export class Overlays {
     const buttons: HTMLElement[] = []
     // the sub grid's rows follow the main grid's, so down from the last species reaches the random / recommended row
     let rowBase = 0
+    const icon = newgameIconSize()
     const grid = (data: Record<string, unknown> | undefined, cls: string) => {
       const g = h('div', { class: 'grid ' + cls })
       if (!data) return g
@@ -1985,9 +2229,10 @@ export class Overlays {
       let maxRow = -1
       for (const b of (data.buttons as Record<string, unknown>[]) || []) {
         const btn = h('div', { class: 'button hlc-' + (b.highlight_colour ?? 0) })
-        if (Array.isArray(b.tile) && (b.tile as TileRef[]).length) btn.append(tileCanvas(gd, b.tile as TileRef[]))
+        if (Array.isArray(b.tile) && (b.tile as TileRef[]).length) btn.append(tileCanvas(gd, b.tile as TileRef[], 1, icon))
         const labels = (b.labels as string[]) || [String(b.label || '')]
         for (const l of labels) btn.append(h('span', { html: formattedStringToHtml(l) }))
+        markHotkeyPrefix(btn)
         const x = Number(b.x) + 1
         const y = Number(b.y) + 1
         maxCol = Math.max(maxCol, x)
@@ -2021,6 +2266,11 @@ export class Overlays {
         btn.addEventListener('mouseenter', () => {
           // the pointer moves the one cursor too, so A and Enter take what the mouse is over
           if (!this.pointerLive) return
+          const i = this.focusables.indexOf(item)
+          if (i >= 0 && this.nav.count === this.focusables.length) this.nav.focus(i)
+          else show()
+        })
+        tapLights(btn, () => btn.classList.contains('selected'), () => {
           const i = this.focusables.indexOf(item)
           if (i >= 0 && this.nav.count === this.focusables.length) this.nav.focus(i)
           else show()
@@ -2073,21 +2323,30 @@ export class Overlays {
    * official text.js injects it verbatim), so no formatted-string pass here.
    * On a screen the scraper knows (the skills screen), each hotkey the text
    * prints gets a cursor marker over its row, measured in `ch` since the
-   * screen is monospace; the markers are the focusables.
+   * screen is monospace; the markers are the focusables. Where the popup is
+   * too narrow for crawl's two columns of skills, they stand in one
+   * (`crtLayout`).
    */
   private crtBody(state: GameState, tag: string, top: boolean): HTMLElement {
     const pre = h('div', { class: 'crt' })
-    const lines: string[] = []
+    let lines: string[] = []
     const areas = [state.crt.lines, ...Array.from(state.crt.areas.entries()).filter(([k]) => k !== 'crt').map(([, v]) => v)]
     for (const area of areas) {
       const max = Math.max(-1, ...area.keys())
       for (let i = 0; i <= max; i++) lines.push(area.get(i) || '')
     }
-    const els = lines.map((l) => h('div', { class: 'crt-line', html: l || ' ' }))
+    const layout = tag === 'skills' ? this.crtLayout(tag, lines) : null
+    if (layout) this.crtFitted = { tag, lines, key: layout.key, el: pre }
+    if (layout?.stacked) {
+      lines = layout.stacked
+      if (layout.font) pre.style.fontSize = layout.font + 'px'
+    }
+    const hotkeys = scrapeCrt(tag, lines)
+    const els = lines.map((l, i) => h('div', { class: 'crt-line' + (layout?.prose?.has(i) ? ' wrap' : ''), html: l || ' ' }))
     pre.append(...els)
     if (!top) return pre
+    this.crtFooter = hotkeys.filter((hk) => hk.kind === 'footer' && els[hk.line]).map((hk) => ({ sw: printedSwitch(hk.key, hk.label), root: els[hk.line], start: hk.col, end: hk.col + hk.len }))
     const items: Focusable[] = []
-    const hotkeys = scrapeCrt(tag, lines)
     // skill-menu.cc: `=` puts the screen in set-target mode (set_flag, so a second `=` is harmless)
     // and a skill's letter then prompts for its target (read_skill_target, text input `skill_target`).
     // A row's Y sends both, so one press asks for the target without a mode switch first. The screen
@@ -2099,7 +2358,6 @@ export class Overlays {
       if (!line) continue
       const marker = h('span', { class: 'crt-hot ' + hk.kind, style: { left: hk.col + 'ch', width: hk.len + 'ch' }, title: hk.label })
       const send = () => this.hooks.send(cm.input(hk.key))
-      marker.addEventListener('click', send)
       line.append(marker)
       // rows sit in the screen's columns; footer switches get columns of their own so a
       // column walk never jumps from the last row into the footer
@@ -2107,12 +2365,72 @@ export class Overlays {
       const col = hk.kind === 'row' ? n : 10 + n
       const item: Focusable = { label: hk.label, el: marker, activate: send, row: hk.line, col, group: hk.group, id: hk.kind + ':' + hk.key }
       if (targets && hk.kind === 'row') item.alt = { label: 'Set target', activate: () => this.hooks.send(cm.input('=' + hk.key)) }
+      // a click toggles a skill at once and lights it, so its Set target is the touch bar's next press
+      marker.addEventListener('click', () => {
+        const at = hk.kind === 'row' && this.nav.count === this.focusables.length ? this.focusables.indexOf(item) : -1
+        if (at >= 0) this.nav.focus(at)
+        send()
+      })
       items.push(item)
     }
     // the skills screen is two columns of rows, and a row often has an entry in
     // only one of them: left / right cross columns rather than staying on the line
     this.registerFocus('crt:' + tag, items, { wrap: true, pageRows: 8, columns: true })
     return pre
+  }
+
+  /**
+   * How the skills screen stands in its popup: as crawl lays it out where
+   * its widest line fits, else in one column (crt-scrape.ts `stackSkills`),
+   * and always in one column on a phone held upright, where the two would
+   * only fit at a size too small to read,
+   * the font brought down only where even that column is too wide for the
+   * popup; the prose under the rows (`prose`, line numbers) wraps instead.
+   * `key` names the layout, so a resize lays the screen out again only when
+   * it changes (`refitCrt`). Null where nothing is laid out to measure.
+   */
+  private crtLayout(tag: string, lines: string[]): { key: string; stacked?: string[]; font?: number; prose?: Set<number> } | null {
+    const cls = 'popup menu menu_' + tag
+    const room = this.crtRoom(cls, lines.length)
+    if (!room) return null
+    const width = (ls: string[]) => Math.max(0, ...ls.map((l) => crtPlainText(l).trimEnd().length))
+    const upright = !!this.root.closest('.phone') && window.matchMedia('(orientation: portrait)').matches
+    if (!upright && width(lines) <= room.cols) return { key: 'wide' }
+    const stacked = stackSkills(lines)
+    const hotkeys = scrapeCrt(tag, stacked)
+    const hot = new Set(hotkeys.map((hk) => hk.line))
+    const rows = Math.max(-1, ...hotkeys.filter((hk) => hk.kind === 'row').map((hk) => hk.line))
+    const prose = new Set(stacked.flatMap((_, i) => (i > rows && !hot.has(i) ? [i] : [])))
+    const tall = this.crtRoom(cls, stacked.length) ?? room
+    const need = width(stacked.filter((_, i) => !prose.has(i)))
+    const font = need > tall.cols ? Math.floor((tall.font * tall.cols * 10) / need) / 10 : undefined
+    return { key: 'stacked:' + (font ?? ''), stacked, font, prose }
+  }
+
+  /**
+   * The width a CRT popup of class `cls` may grow to, in columns of its font:
+   * a stand-in as wide as it can be, `lines` tall so a scrollbar takes its
+   * share as the real one's would, measured and taken away again.
+   */
+  private crtRoom(cls: string, lines: number): { cols: number; font: number } | null {
+    const probe = h('span', null, 'x'.repeat(200))
+    const rows = Array.from({ length: Math.max(0, lines - 1) }, () => h('div', { class: 'crt-line' }, ' '))
+    const crt = h('div', { class: 'crt' }, h('div', { class: 'crt-line' }, probe), ...rows)
+    const el = h('div', { class: cls, style: { visibility: 'hidden' } }, crt)
+    this.root.append(el)
+    const cs = getComputedStyle(crt)
+    const ch = probe.getBoundingClientRect().width / 200
+    const inner = crt.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+    const font = parseFloat(cs.fontSize)
+    el.remove()
+    return ch > 0 && inner > 0 ? { cols: inner / ch, font } : null
+  }
+
+  /** The overlay stack resized: where the skills screen's layout no longer fits its room, the next update builds it again. */
+  private refitCrt() {
+    const f = this.crtFitted
+    if (!f?.el.isConnected) return
+    if (this.crtLayout(f.tag, f.lines)?.key !== f.key) this.lastUiRev = -1
   }
 
   // ------------------------------------------------------------ focus layer
@@ -2476,9 +2794,30 @@ export class Overlays {
 
   private renderTextInput(state: GameState): HTMLElement {
     const ti = state.textInput!
-    const el = h('div', { class: 'popup', style: { top: 'auto', bottom: '9rem', transform: 'translateX(-50%)', minWidth: '20rem' } })
+    const number = numberPrompt(ti.tag)
+    const inLog = typedInLog(ti)
+    const el = h('div', { class: 'popup text-input' + (number ? ' number' : '') + (inLog ? ' in-log' : '') + (ti.tag ? ' tag-' + ti.tag : '') })
     const input = h('input', { class: 'text', type: 'text', maxlength: ti.maxlen, size: ti.size })
-    el.append(h('div', { class: 'header', html: formattedStringToHtml(ti.prompt || 'Input here (ESC to cancel): ') }), h('div', { class: 'body' }, input))
+    if (inLog) {
+      // the pane draws what is typed after crawl's prompt (hud.ts renderMessages): the typing goes into an unseen
+      // field over the pane, which a tap or a click on the log focuses again (a phone keyboard put away, say)
+      this.logInput = el
+      input.autocapitalize = 'off'
+      input.autocomplete = 'off'
+      input.spellcheck = false
+      input.addEventListener('input', () => {
+        ti.text = input.value
+        this.hooks.typed?.()
+      })
+    }
+    // skill-menu.cc read_skill_target asks "Enter a skill target for Fighting: ": the skill stands out, the colon goes
+    const skill = ti.tag === 'skill_target' ? /^Enter a skill target for (.+?):?\s*$/.exec(ti.prompt || '') : null
+    const header = skill
+      ? h('div', { class: 'header' }, h('span', { class: 'what' }, 'Skill target'), h('span', { class: 'skill' }, skill[1]))
+      : h('div', { class: 'header', html: formattedStringToHtml(ti.prompt || 'Input here (ESC to cancel): ') })
+    el.append(header, h('div', { class: 'body' }, input))
+    // the keys, for a keyboard: the pad's keyboard brings its own line, and stands this one down (styles.css)
+    if (skill) el.append(h('div', { class: 'keys-hint' }, h('span', null, h('b', null, 'Enter'), ' set'), h('span', null, h('b', null, '-'), ' clear'), h('span', null, h('b', null, 'Esc'), ' cancel')))
     this.wireInput(input, ti, true)
     return el
   }
@@ -2549,6 +2888,9 @@ export class Overlays {
     if (tag === 'travel_depth') target.extras = TRAVEL_DEPTH_KEYS
     // the prompt opened off Y (Set target on a skill row), so Y does not also confirm it: Start does (bindings.ts SKILL_TARGET_TEXT)
     if (submitOnStartOnly(tag)) target.submitButton = 'START'
+    // a number is typed on the number pad: a tap on the field brings up no phone keyboard over it
+    target.numpad = seed ? undefined : numberPrompt(tag)
+    input.inputMode = target.numpad ? 'none' : ''
     input.addEventListener('keydown', (ev) => {
       ev.stopPropagation()
       if (ev.key === 'Escape') {
@@ -2577,6 +2919,26 @@ export class Overlays {
     }
   }
 
+  /**
+   * Stand a line read in the message pane over the pane (`pane`, in the
+   * page's pixels; null while the pane is hidden): the popup is unseen
+   * there (styles.css .in-log), a tap or a click on the log reaching its field.
+   * The pane is measured only while there is such a line: a measure forces
+   * the frame's layout, and this runs every frame.
+   */
+  placeLogInput(measure: () => DOMRect | null) {
+    const el = this.logInput
+    if (!el) return
+    const pane = measure()
+    el.classList.toggle('placed', !!pane)
+    if (!pane) return
+    const at = this.root.getBoundingClientRect()
+    el.style.setProperty('--log-left', pane.left - at.left + 'px')
+    el.style.setProperty('--log-top', pane.top - at.top + 'px')
+    el.style.setProperty('--log-w', pane.width + 'px')
+    el.style.setProperty('--log-h', pane.height + 'px')
+  }
+
   private submitText(text: string, tag?: string, finalChar = 13) {
     // ctrl-u + ctrl-k wipe any prefill on the crawl side; 'repeat' has none
     if (tag !== 'repeat') {
@@ -2595,7 +2957,7 @@ export class Overlays {
     if (!this.osk.visible) {
       const t = this.textTarget
       if (!t) return
-      this.osk.attach(t, t.input.closest('.popup') || this.root)
+      this.osk.attach(t, this.oskHost(t))
       // the press that reveals the keyboard leaves its cursor on the first key
       // and types nothing: it is a reveal, not a step, a letter or a shift
       if (op === 'move' || op === 'type' || op === 'shift') return
@@ -2624,6 +2986,11 @@ export class Overlays {
     this.root.append(el)
     this.clientOverlay = { kind, el, focus: 0, items, back }
     this.itemsTakeMouse(items)
+    // a finger lights a row of the command lists first, since a row can spend a turn; Orbrun's
+    // menus (system, settings, the shortcuts sheet) take a tap at once, as the front end's do
+    if (kind === 'choices' || kind === 'palette') {
+      items.forEach((it, i) => tapLights(it, () => this.clientOverlay?.items === items && this.clientOverlay.focus === i, () => this.setClientFocus(i, false)))
+    }
     this.setClientFocus(0)
     this.hooks.onClientOverlayChange()
   }
@@ -2852,13 +3219,13 @@ export class Overlays {
   /**
    * The pad's prompts under the client overlay that is up (hud.ts placeBar),
    * as crawl's menus get theirs from the situation (bindings.ts
-   * promptLabels): an empty tab of X's actions has the two buttons that are
-   * no list, a list has the lit row to fire. Null with none up.
+   * promptLabels): a list has the lit row to fire, an empty tab of X's
+   * actions nothing. Null with none up.
    */
   get padPrompts(): BindingLabel[] | null {
     const o = this.clientOverlay
     if (!o) return null
-    if (o.kind === 'actions') return [{ button: 'Y', label: 'Swap weapons', action: SWAP_WEAPONS, contextual: true }, { button: 'LT', label: 'Shout', action: SHOUT, contextual: true }]
+    if (o.kind === 'actions') return []
     return o.items.length ? [{ button: 'A', label: 'select', action: { kind: 'focus', op: 'select' }, contextual: true }] : []
   }
 
@@ -2869,16 +3236,35 @@ export class Overlays {
    */
   setDevice(device: InputDevice) {
     const cls = device === 'pad' ? 'device-pad' : 'device-keyboard'
+    const was = this.device
     this.device = device
-    if (this.root.classList.contains(cls)) return
+    if (this.root.classList.contains(cls) && was === device) return
     this.root.classList.remove('device-pad', 'device-keyboard')
     this.root.classList.add(cls)
+    // a finger reads the touch bar, not the keyboard's hint line (styles.css .device-touch)
+    this.root.classList.toggle('device-touch', device === 'touch')
     // a server text prompt that is up: the pad taking over brings the on-screen keyboard with it, and a
     // physical key or the mouse puts it away so the field it was covering shows what is typed
     const t = this.textTarget
     if (!t || this.clientOverlay) return
-    if (device === 'pad' && !this.osk.visible) this.osk.attach(t, t.input.closest('.popup') || this.root)
-    else if (device !== 'pad' && this.osk.visible && this.osk.input === t.input) this.osk.detach()
+    const wanted = this.oskFor(t, device)
+    if (wanted && !this.osk.visible) this.osk.attach(t, this.oskHost(t))
+    else if (!wanted && this.osk.visible && this.osk.input === t.input) this.osk.detach()
+  }
+
+  /** Where the pad's keyboard stands: in its field's popup, or over the view when that popup is the log's unseen one. */
+  private oskHost(t: OskTarget): Element {
+    const popup = t.input.closest('.popup')
+    return popup && popup !== this.logInput ? popup : this.root
+  }
+
+  /**
+   * Whether a server text prompt comes with the on-screen keyboard up for the
+   * device that spoke last: the pad's, always; a finger's, where it is a
+   * number pad, there being no phone keyboard for a number (`wireInput`).
+   */
+  private oskFor(t: OskTarget, device: InputDevice): boolean {
+    return device === 'pad' || (device === 'touch' && !!t.numpad)
   }
 
   showChoices(title: string, choices: { label: string; key?: string; sub?: string; tile?: string; sep?: boolean; run(): void }[], back?: () => void, remember = title) {
@@ -2916,11 +3302,12 @@ export class Overlays {
       p.panel.setAttribute('role', 'tabpanel')
       p.panel.setAttribute('aria-labelledby', tabId)
       const id = commandTileId(gd, p.tile)
-      const tab = h('button', { id: tabId, type: 'button', role: 'tab', 'aria-controls': p.panel.id, title: p.hint, onclick: () => { o.category = index; o.rebuild!() } }, id === undefined ? null : tileCanvas(gd, [{ t: id }]), p.label)
+      const tab = h('button', { id: tabId, type: 'button', role: 'tab', 'aria-controls': p.panel.id, 'aria-label': p.label, title: p.hint, onclick: () => { o.category = index; o.rebuild!() } }, id === undefined ? null : tileCanvas(gd, [{ t: id }]), tabName(p.label))
       this.itemsTakeMouse(p.items)
       tabs.append(tab)
       return { ...p, tab }
     })
+    const refit = fitTabs(tabs)
     o.category = Math.max(0, panels.findIndex((p) => p.id === start))
     o.categories = panels.map((p) => p.id)
     o.rebuild = () => {
@@ -2933,6 +3320,7 @@ export class Overlays {
         tab.classList.toggle('current', active)
         tab.setAttribute('aria-selected', String(active))
       })
+      refit()
       const current = built[o.category!]
       onTab(current.id)
       o.el.dataset.remember = remember + current.id
@@ -3038,43 +3426,34 @@ export class Overlays {
     const again = () => this.showSystem(opts)
     const el = h('div', { class: 'popup menu game sysmenu' })
     el.append(h('div', { class: 'title' }, 'Orbrun'))
-    const ol = h('ol', { class: 'sysrows' })
-    const body = h('div', { class: 'body' }, ol)
+    const body = h('div', { class: 'body' })
     el.append(body)
-    const items: HTMLElement[] = []
-    // what the row does, for the line under the list (`clientHint`), as the command rows of the
-    // Character tab carry theirs (command-menu.ts `sub`): both tabs speak, so the line never goes
-    // quiet on one of them
-    const add = (label: string, hint: string, fn: () => void, sep = false) => {
-      const k = String.fromCharCode(97 + items.length)
-      const it = h('li', { class: 'row level2 selectable fg7' + (sep ? ' sep' : ''), dataset: { hotkey: k, hint } },
-        h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, label))
-      it.addEventListener('click', () => {
-        this.closeClientOverlay()
-        fn()
-      })
-      items.push(it)
-      ol.append(it)
-    }
+    // drawn as the Character tab's commands are (`choiceRows`): crawl's tile, the label, the game's key on the right,
+    // and what the row does on the line under the list (`clientHint`), so the two tabs read as one menu
+    const choices: { label: string; key?: string; sub: string; tile?: string; sep?: boolean; run(): void }[] = []
+    const add = (label: string, key: string | undefined, sub: string, tile: string | undefined, run: () => void, sep = false) => choices.push({ label, key, sub, tile, sep, run })
     const playing = opts.inGame && !opts.spectating
     // three runs under rules: the game (back to it, its own commands and screens), Orbrun (the pad, the settings),
     // and last the way out
-    add('Resume', 'back to the dungeon, where you left it', () => {})
+    add('Resume', 'Esc', 'back to the dungeon, where you left it', 'CMD_MAP_EXIT_MAP', () => {})
     if (playing) {
-      add(`${REPEAT_COMMAND.label} (${REPEAT_COMMAND.key})`, 'do the last thing again', () => this.hooks.send(cm.input(REPEAT_COMMAND.key)))
+      add(REPEAT_COMMAND.label, REPEAT_COMMAND.key, 'do the last thing again', 'CMD_REST', () => this.hooks.send(cm.input(REPEAT_COMMAND.key)))
       // crawl binds CMD_GAME_MENU to `~` and F1 (cmd-keys.h); Escape does nothing in the main view
-      add('Game menu (F1)', "crawl's own menu: saving, options, the lot", () => this.hooks.send(cm.input('~')))
-      add(`${HELP_COMMAND.label} (${HELP_COMMAND.key})`, 'the manual, and what every key does', () => this.hooks.send(cm.input(HELP_COMMAND.key)))
+      add('Game menu', 'F1', "crawl's own menu: saving, options, the lot", 'CMD_GAME_MENU', () => this.hooks.send(cm.input('~')))
+      add(HELP_COMMAND.label, HELP_COMMAND.key, 'the manual, and what every key does', 'CMD_DISPLAY_COMMANDS', () => this.hooks.send(cm.input(HELP_COMMAND.key)))
     }
-    if (opts.inGame && opts.chat !== false) add('Chat (F12)', 'talk to whoever is watching', () => this.hooks.onSystemAction('chat'))
+    if (opts.inGame && opts.chat !== false) add('Chat', 'F12', 'talk to whoever is watching', 'CMD_REPLAY_MESSAGES', () => this.hooks.onSystemAction('chat'))
     // 2D is out for now (VIEW_OPTIONS in servers.ts)
-    if (playing && VIEW_OPTIONS) add('Toggle 2D / 3D view', 'the floor laid flat, or stood up around you', () => this.hooks.onSystemAction('toggleRenderer'))
-    add('Gamepad controls', 'what each button does, and how to change it', () => this.showBindings(this.hooks.padKind?.() ?? 'generic', again), true)
-    add('Settings', "Orbrun's own options: the camera, the controls, the HUD", () => this.showSettings(again))
+    if (playing && VIEW_OPTIONS) add('Toggle 2D / 3D view', undefined, 'the floor laid flat, or stood up around you', 'CMD_DISPLAY_MAP', () => this.hooks.onSystemAction('toggleRenderer'))
+    add('Gamepad controls', undefined, 'what each button does, and how to change it', 'CMD_KEYBOARD', () => this.showBindings(this.hooks.padKind?.() ?? 'generic', again), true)
+    add('Settings', undefined, "Orbrun's own options: the camera, the controls, the HUD", 'CMD_EDIT_PLAYER_TILE', () => this.showSettings(again))
     // a player saves (crawl's S, which asks first, then go_lobby brings the front end back); a spectator has nothing to
     // save and goes back to the Watch screen (`/watch/<server>`) the game was picked from
-    if (playing) add('Save and exit (S)', 'the game keeps; come back to it whenever', () => this.hooks.send(cm.input('S')), true)
-    else add(opts.spectating ? 'Stop watching' : 'Leave game', opts.spectating ? 'back to the list of games being played' : 'back to the front door', () => this.hooks.onSystemAction('disconnect'), true)
+    if (playing) add('Save and exit', 'S', 'the game keeps; come back to it whenever', 'CMD_SAVE_GAME_NOW', () => this.hooks.send(cm.input('S')), true)
+    else add(opts.spectating ? 'Stop watching' : 'Leave game', undefined, opts.spectating ? 'back to the list of games being played' : 'back to the front door', 'CMD_MAP_EXIT_MAP', () => this.hooks.onSystemAction('disconnect'), true)
+    const items = this.choiceRows(choices)
+    const ol = h('ol', { class: 'sysrows' }, ...items)
+    body.append(ol)
     // a spectator sends no keys, so the character commands are the player's alone
     const run = playing ? opts.run : undefined
     const character = run ? this.choiceRows(this.commandChoices(CHARACTER_COMMANDS, run)) : []
@@ -3082,6 +3461,7 @@ export class Overlays {
     const hint = this.clientHint([...items, ...character])
     if (hint) el.append(hint)
     el.append(h('div', { class: 'more' }, '[Esc] resume'))
+    el.classList.add('command-menu')
     if (!run) {
       this.openClientOverlay('system', el, items)
       // where it was left: the same row again, by its name, since which rows are drawn depends on the game
@@ -3089,7 +3469,6 @@ export class Overlays {
       if (at > 0) this.setClientFocus(at)
       return
     }
-    el.classList.add('command-menu')
     const characterPanel = h('ol', null, ...character)
     body.prepend(characterPanel)
     this.openClientOverlay('system', el, items)
@@ -3107,24 +3486,17 @@ export class Overlays {
    */
   showSettings(back?: () => void) {
     const again = () => this.showSettings(back)
-    const el = h('div', { class: 'popup menu game settings-groups' })
+    const el = h('div', { class: 'popup menu game command-menu settings-groups' })
     el.append(h('div', { class: 'title' }, 'Orbrun settings'))
-    const ol = h('ol')
-    el.append(h('div', { class: 'body' }, ol))
-    const items: HTMLElement[] = []
-    const add = (label: string, fn: () => void, sep = false) => {
-      const k = String.fromCharCode(97 + items.length)
-      const it = h('li', { class: 'row level2 selectable fg7' + (sep ? ' sep' : ''), dataset: { hotkey: k } }, h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, label))
-      it.addEventListener('click', () => {
-        this.closeClientOverlay()
-        fn()
-      })
-      items.push(it)
-      ol.append(it)
-    }
-    for (const g of settingGroups()) add(g.group, () => this.showSettingsGroup(g.group, again))
-    add('Back', () => back?.(), true)
-    el.append(h('div', { class: 'more' }, '[Esc] back'))
+    // the Start menu's rows (`choiceRows`), each group's own words on the line under the list
+    const items = this.choiceRows([
+      ...settingGroups().map((g) => ({ label: g.group, sub: g.hint, tile: SETTING_GROUP_TILES[g.group], run: () => this.showSettingsGroup(g.group, again) })),
+      { label: 'Back', key: 'Esc', sub: 'back to the Start menu', tile: 'CMD_MAP_EXIT_MAP', sep: true, run: () => back?.() },
+    ])
+    el.append(h('div', { class: 'body' }, h('ol', null, ...items)))
+    const hint = this.clientHint(items)
+    if (hint) el.append(hint)
+    el.append(this.clientFooter(false))
     this.openClientOverlay('settings', el, items, back)
     // where it was left: the group opened last is under the cursor again
     const at = items.findIndex((it) => rowLabel(it) === this.settingsAt)
@@ -3148,7 +3520,10 @@ export class Overlays {
         this.showBindings(this.hooks.padKind?.() ?? 'generic', () => this.showSettingsGroup(group, back))
       },
     )
-    panel.el.classList.add('popup', 'settings')
+    // the Start menu's look: what the lit row does goes on the line under the list, not in a letter before it
+    panel.el.classList.add('popup', 'settings', 'command-menu')
+    const hint = this.clientHint(panel.rows)
+    if (hint) panel.el.querySelector('.body')!.after(hint)
     this.openClientOverlay('settings', panel.el, panel.rows, back)
   }
 

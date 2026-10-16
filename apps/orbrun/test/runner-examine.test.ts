@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { emptyScene } from '@orbrun/scene'
+import { dirFromDelta, emptyScene, type Scene } from '@orbrun/scene'
 import { MouseMode } from '@orbrun/webtiles'
 import { LOOK_WINDOW_MS, ORBIT_WINDOW_MS, Runner, type RunnerHooks } from '../src/runner'
 import type { Session, SessionEvent } from '../src/session'
@@ -33,6 +33,15 @@ function harness(facing = 0, ahead: Context['ahead'] = { kind: 'monster', monste
   } as unknown as Session
   const cam = {
     facing,
+    steering: false,
+    setFacing(d: number) {
+      this.facing = d
+    },
+    // the cells these tests aim at lie on the eight rays, where the nearest heading is the ray's
+    faceCell(s: Scene, x: number, y: number) {
+      const d = dirFromDelta(Math.sign(x - s.player.x), Math.sign(y - s.player.y))
+      if (d !== null) this.facing = d
+    },
     // the camera's rule: a diagonal facing reads its left-hand axis as north
     get gridFacing() {
       return this.facing % 2 === 0 ? this.facing : (this.facing + 7) % 8
@@ -133,14 +142,11 @@ describe('LT fires', () => {
     // the aim opened on a monster behind: the view is held there too (game.ts faceCursor)
     h.mode(MouseMode.TARGET_PATH, { x: 8, y: 12 })
     expect(h.r.holdingView('targeting')).toBe(true)
-    // confirming the shot inside the aim, or a typed f there, turns nothing
-    h.r.fire()
-    expect(h.cam.facing).toBe(1)
     // the first step of the cursor releases the hold and walks the grid in
     // view: facing north-east, k is north, up the left-hand edge of the view
     h.r.step(0)
     expect(h.cam.facing).toBe(1)
-    expect(h.keys()).toEqual(['f', 'f', 'k'])
+    expect(h.keys()).toEqual(['f', 'k'])
     expect(h.r.holdingView('targeting')).toBe(false)
     // u is straight ahead, up the right-hand edge of the grid in view
     h.r.step(1)
@@ -151,7 +157,65 @@ describe('LT fires', () => {
     // cursor, not from the cursor the server last reported (`orbitFrom`)
     h.r.step(2)
     h.r.step(6)
-    expect(h.keys()).toEqual(['f', 'f', 'k', 'u', 'k', 'j'])
+    expect(h.keys()).toEqual(['f', 'k', 'u', 'k', 'j'])
+  })
+
+  it('firing faces where the shot goes, as a swing faces what it hits, though the lock itself turned nothing', () => {
+    // the aim locked onto a monster south-west, behind the player: held
+    const h = harness(1)
+    h.r.fire()
+    h.mode(MouseMode.TARGET_PATH, { x: 8, y: 12 })
+    expect(h.cam.facing).toBe(1)
+    // the second f fires at it: the view turns to it
+    h.r.fire()
+    expect(h.cam.facing).toBe(5)
+    // Enter, typed or as a keycode, and . select too; a cursor key does not
+    for (const [msg, facing] of [
+      [{ msg: 'key', keycode: 13 }, 4],
+      [{ msg: 'input', text: '.' }, 4],
+      [{ msg: 'input', text: 'j' }, 0],
+    ] as const) {
+      const e = harness(0)
+      e.r.send({ msg: 'input', text: 'z' })
+      e.mode(MouseMode.TARGET, { x: 10, y: 13 })
+      e.r.send(msg)
+      expect(e.cam.facing).toBe(facing)
+    }
+    // the cursor walked round the player and the server has not caught up: the walk's end is where it fires
+    const w = harness(0)
+    w.r.fire()
+    w.mode(MouseMode.TARGET_PATH, { x: 10, y: 8 })
+    w.r.step(2)
+    w.r.fire()
+    expect(w.cam.facing).toBe(1)
+  })
+
+  it('a shot fired along a heading faces it: Shift and a direction in an aim, a plain one where only a direction is asked', () => {
+    const h = harness(0)
+    h.r.send({ msg: 'input', text: 'z' })
+    h.mode(MouseMode.TARGET)
+    h.r.send({ msg: 'input', text: 'L' })
+    expect(h.cam.facing).toBe(2)
+    const d = harness(0)
+    d.r.send({ msg: 'input', text: 'z' })
+    d.mode(MouseMode.TARGET_DIR, null)
+    d.r.send({ msg: 'input', text: 'b' })
+    expect(d.cam.facing).toBe(5)
+  })
+
+  it('a look turns nothing when A describes, nor does a dragged view', () => {
+    const h = harness(0)
+    h.r.examine()
+    h.mode(MouseMode.TARGET, { x: 10, y: 13 })
+    h.ctx.examining = true
+    h.r.send({ msg: 'key', keycode: 13 })
+    expect(h.cam.facing).toBe(0)
+    const s = harness(0)
+    s.r.fire()
+    s.mode(MouseMode.TARGET_PATH, { x: 10, y: 13 })
+    s.cam.steering = true
+    s.r.fire()
+    expect(s.cam.facing).toBe(0)
   })
 
   it('the hold ends with the aim, and any other command drops one a refused f left behind', () => {

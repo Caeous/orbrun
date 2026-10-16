@@ -31,7 +31,7 @@ function setup() {
   st.phase = 'playing' as GameState['phase']
   st.inputMode = MouseMode.COMMAND
   /** one frame of the game loop: overlays, context, prompt strip, focus */
-  const frame = (device: 'pad' | 'keyboard' | 'pointer' = 'pad'): Context => {
+  const frame = (device: 'pad' | 'keyboard' | 'pointer' | 'touch' = 'pad'): Context => {
     ov.setDevice(device)
     ov.update(st)
     const ctx = deriveContext(st, scene, cam, 'micro')
@@ -268,6 +268,20 @@ describe('skills screen (crt menu)', () => {
     sent.length = 0
     ov.focusOp(st, ctx, 'cancel')
     expect(sent).toEqual([{ msg: 'key', keycode: Keys.ESC }])
+  })
+  it('a tap toggles a skill at once and lights it, so Y sets its target next', () => {
+    const { ov, st, sent, frame, host } = setup()
+    load(st)
+    let ctx = frame('touch')
+    const conj = Array.from(host.querySelectorAll<HTMLElement>('.crt-hot.row')).find((m) => m.title === 'Conjurations')!
+    const tap = () => {
+      conj.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true } as PointerEventInit))
+      conj.click()
+    }
+    tap()
+    ctx = frame('touch')
+    expect(ov.focusInfo(ctx)?.label).toBe('Conjurations')
+    expect(sent).toEqual([{ msg: 'input', text: 'j' }])
   })
   it('Y on a skill row sets its target: `=` for set-target mode, then the letter, in one send', () => {
     const { ov, st, sent, frame } = setup()
@@ -900,6 +914,14 @@ describe('newgame', () => {
     expect(host.querySelector('.button.selected')?.textContent).toBe('Octopode')
   })
 
+  it('sets each button\'s key apart, for an upright phone to drop', () => {
+    const { st, frame, host } = setup()
+    push(st)
+    frame()
+    expect(host.querySelector('.button[data-hotkey="42"] .key-prefix')?.textContent).toBe('* - ')
+    expect(host.querySelector('.button[data-hotkey="97"] .key-prefix')).toBeNull()
+  })
+
   it('stops hovering once a key has the cursor, until the mouse is moved again', () => {
     // the grid scrolls under a resting pointer as the cursor walks it: the
     // `mouseenter` that fires must not drag the cursor back to the mouse
@@ -996,6 +1018,36 @@ describe('server menus keep their own hover', () => {
     ov.menuOp(st, 'next')
     expect(sent[0]).toMatchObject({ msg: 'menu_hover' })
   })
+
+  it('a tap takes a row at once where taking it is free: the pack describes, a cast list in describe mode', () => {
+    for (const [tag, title] of [['inventory', 'Inventory'], ['spell', 'Your spells (describe)'], ['ability', 'Ability - describe what?']]) {
+      const { st, sent, frame, host } = setup()
+      reduce(st, { msg: 'menu', tag, flags: 0, title: { text: title }, items: [{ text: 'a - a dagger', hotkeys: [97], level: 2 }, { text: 'b - a robe', hotkeys: [98], level: 2 }], total_items: 2, last_hovered: -1 })
+      frame('touch')
+      const robe = host.querySelectorAll<HTMLElement>('li.selectable')[1]
+      robe.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true } as PointerEventInit))
+      robe.click()
+      expect(sent, tag).toEqual([cm.key(98)])
+    }
+  })
+
+  it('where taking a row spends a turn, a tap lights it first, as the arrows would; a tap on the lit row takes it', () => {
+    for (const [tag, title] of [['use_item', 'Drink which item?'], ['spell', 'Your spells (cast)'], ['ability', 'Ability - do what?']]) {
+      const { st, sent, frame, host } = setup()
+      reduce(st, { msg: 'menu', tag, flags: 0, title: { text: title }, items: [{ text: 'a - a potion', hotkeys: [97], level: 2 }, { text: 'b - a scroll', hotkeys: [98], level: 2 }], total_items: 2, last_hovered: -1 })
+      frame('touch')
+      const row = host.querySelectorAll<HTMLElement>('li.selectable')[1]
+      const tap = () => {
+        row.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true } as PointerEventInit))
+        row.click()
+      }
+      tap()
+      expect(sent, tag).toEqual([cm.menuHover(1, true)])
+      expect(row.classList.contains('hovered')).toBe(true)
+      tap()
+      expect(sent.slice(1), tag).toEqual([cm.key(98)])
+    }
+  })
 })
 
 /**
@@ -1021,10 +1073,9 @@ describe('client overlays', () => {
     ov.clientOverlayInput('last')
     expect(focused()).toBe(rows().length - 1)
     // space fires what the cursor is on, as it does in a server menu
-    // the letter and the label, not the subline under them
-    rows().forEach((r) => r.addEventListener('click', () => acts.push(`${r.querySelector('.hotkey')?.textContent}-${r.querySelector('.label')?.textContent}`)))
+    rows().forEach((r) => r.addEventListener('click', () => acts.push(r.querySelector('.label')?.textContent ?? '')))
     ov.clientOverlayInput('space')
-    expect(acts).toEqual(['e-Stop watching'])
+    expect(acts).toEqual(['Stop watching'])
   })
 })
 
@@ -1188,13 +1239,15 @@ describe('the travel depth prompt', () => {
     expect(host.querySelector('.osk')).toBeNull()
   })
 
-  it("spells its hint line the way the dialogs do: a glyph and a label per button, the keys at the end", () => {
+  it("spells its hint line the way the dialogs do: a glyph and a label per button, the keys at the end; a number pad has no shift or space", () => {
     const { st, frame, host } = setup()
     reduce(st, { msg: 'init_input', type: 'messages', tag: 'travel_depth', prompt: 'What level of Dungeon? (default D:3, ? - help) ', maxlen: 100 })
-    frame()
+    const ctx = frame()
     const line = host.querySelector('.osk .more')!
-    expect(Array.from(line.querySelectorAll('.osk-prompt')).map((p) => p.getAttribute('aria-label'))).toEqual(['A Type', 'X Backspace', 'RB Space', 'LB Shift', 'Y Done'])
-    expect(line.querySelectorAll('.osk-prompt svg').length).toBe(5)
+    expect(Array.from(line.querySelectorAll('.osk-prompt')).map((p) => p.getAttribute('aria-label'))).toEqual(['A Type', 'X Backspace', 'Y Done'])
+    expect(line.querySelectorAll('.osk-prompt svg').length).toBe(3)
+    expect(bindingTable(ctx).LB).toBeUndefined()
+    expect(bindingTable(ctx).RB).toBeUndefined()
     expect(line.textContent!.endsWith(' · Enter / Esc')).toBe(true)
     expect(host.querySelector('.osk .muted')).toBeNull()
   })
@@ -1207,24 +1260,81 @@ describe('the travel depth prompt', () => {
     expect(bindingTable(ctx).Y).toBeUndefined()
     expect(bindingTable(ctx).START).toEqual({ kind: 'osk', op: 'submit' })
     const line = host.querySelector('.osk .more')!
-    expect(Array.from(line.querySelectorAll('.osk-prompt')).map((p) => p.getAttribute('aria-label'))).toEqual(['A Type', 'X Backspace', 'RB Space', 'LB Shift', 'Menu Done'])
+    expect(Array.from(line.querySelectorAll('.osk-prompt')).map((p) => p.getAttribute('aria-label'))).toEqual(['A Type', 'X Backspace', 'Menu Done'])
   })
 
-  it('up and down keep their column: a wide row into the narrow extras row lands on its last key, not sideways', () => {
+  it("is a number pad under the prompt's own keys: up and down keep their column, the gap beside the 0 is stepped over", () => {
     const { ov, st, frame, host } = setup()
     reduce(st, { msg: 'init_input', type: 'messages', tag: 'travel_depth', prompt: 'What level of Dungeon? (default D:3, ? - help) ', maxlen: 100 })
     frame()
+    expect(host.querySelector('.osk')?.classList.contains('numpad')).toBe(true)
+    expect(Array.from(host.querySelectorAll('.osk .keys .row')).map((r) => r.textContent)).toEqual(['123', '456', '789', '0⌫'])
     const focused = () => host.querySelector('.osk .key.focused')?.textContent
     ov.oskOp('move', 4)
-    for (let i = 0; i < 9; i++) ov.oskOp('move', 2)
-    expect(focused()).toBe('0')
+    expect(focused()).toBe('1')
     ov.oskOp('move', 4)
-    expect(focused()).toBe('p')
-    ov.oskOp('move', 0)
+    ov.oskOp('move', 4)
+    expect(focused()).toBe('7')
+    // no point in a depth: down from the 7 is the 0 beside the gap, and left from the 0 goes round to the backspace
+    ov.oskOp('move', 4)
     expect(focused()).toBe('0')
+    ov.oskOp('move', 6)
+    expect(focused()).toBe('⌫')
     ov.oskOp('move', 0)
+    expect(focused()).toBe('9')
+    // the extras row is a key wider than the pad: its last comes down to the pad's last column
+    ov.oskOp('move', 0)
+    ov.oskOp('move', 0)
+    ov.oskOp('move', 0)
+    expect(focused()).toBe('^ Entrance')
+    ov.oskOp('move', 2)
     expect(focused()).toBe('$ Deepest')
     ov.oskOp('move', 4)
-    expect(focused()).toBe('4')
+    expect(focused()).toBe('3')
+  })
+
+  it("a skill target's pad has a point; its backspace key erases, and a key pressed by a finger is lit", () => {
+    const { ov, st, sent, frame, host } = setup()
+    reduce(st, { msg: 'init_input', type: 'messages', tag: 'skill_target', prompt: 'Enter a skill target for Armour: ', maxlen: 5, size: 5 })
+    frame()
+    expect(Array.from(host.querySelectorAll('.osk .keys .row')).map((r) => r.textContent)).toEqual(['123', '456', '789', '.0⌫'])
+    const key = (t: string) => Array.from(host.querySelectorAll<HTMLElement>('.osk .key')).find((k) => k.textContent === t)!
+    key('1').click()
+    key('2').click()
+    key('.').click()
+    key('5').click()
+    const input = host.querySelector<HTMLInputElement>('.popup input.text')!
+    expect(input.value).toBe('12.5')
+    expect(host.querySelector('.osk .key.focused')?.textContent).toBe('5')
+    key('⌫').click()
+    expect(input.value).toBe('12.')
+    // the pad's A on the lit backspace erases too
+    expect(host.querySelector('.osk .key.focused')?.textContent).toBe('⌫')
+    ov.oskOp('type')
+    expect(input.value).toBe('12')
+    ov.oskOp('submit')
+    expect(sent).toEqual([{ msg: 'key', keycode: 21 }, { msg: 'key', keycode: 11 }, { msg: 'text_input', text: '12\r' }])
+  })
+
+  it('a finger gets the number pad at once, with no phone keyboard to cover it, and no hint line: the touch bar names the buttons', () => {
+    const { st, frame, host } = setup()
+    reduce(st, { msg: 'init_input', type: 'messages', tag: 'skill_target', prompt: 'Enter a skill target for Armour: ', maxlen: 5, size: 5 })
+    frame('touch')
+    expect(host.querySelectorAll('.osk.numpad').length).toBe(1)
+    expect(host.querySelector<HTMLInputElement>('.popup input.text')!.inputMode).toBe('none')
+    expect(host.querySelector('.overlay-stack')!.classList.contains('device-touch')).toBe(true)
+    // the mouse puts it away as it puts the pad's away; the finger brings it back
+    frame('pointer')
+    expect(host.querySelector('.osk')).toBeNull()
+    frame('touch')
+    expect(host.querySelectorAll('.osk.numpad').length).toBe(1)
+  })
+
+  it("a line of words waits for the touch bar's Type: the phone keyboard can take it", () => {
+    const { st, frame, host } = setup()
+    reduce(st, { msg: 'init_input', type: 'messages', tag: 'inscribe', prompt: 'Inscribe with what? ', maxlen: 80 })
+    frame('touch')
+    expect(host.querySelector('.osk')).toBeNull()
+    expect(host.querySelector<HTMLInputElement>('.popup input.text')!.inputMode).toBe('')
   })
 })

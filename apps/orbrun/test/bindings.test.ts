@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Keys, MouseMode, initialState, type MenuState } from '@orbrun/webtiles'
+import { Keys, MouseMode, initialState, reduce, type MenuState } from '@orbrun/webtiles'
 import { actionLabel, armsTapOrHold, barLabels, bindingTable, buttonAction, contextualLabel, controlSheet, holdAction, NO_ACTION, promptLabels, resolve, screenKey } from '../src/bindings'
 import { deriveMode, readiedAction, shopContext, type Context } from '../src/context'
 import commands from '../data/commands.json'
@@ -47,6 +47,16 @@ describe('modes come from the server, never from message text', () => {
     // a line printed after the prompt means the command moved on without reading a key of ours
     st.inputMode = MouseMode.NORMAL
     st.messages.lines.push({ text: 'Okay, then.', turn: 40, channel: 0 })
+    expect(deriveMode(st)).toBe('command')
+  })
+  it("an aim's line, left last as crawl leaves the targeter for NORMAL to run the shot, is no prompt", () => {
+    // what crawl sends as a fired Magic Dart leaves the aim: the line was the targeter's, and the bar stays (spell-bar.ts)
+    const st = initialState()
+    st.phase = 'playing' as typeof st.phase
+    reduce(st, { msg: 'input_mode', mode: MouseMode.TARGET })
+    reduce(st, { msg: 'msgs', messages: [{ text: '<cyan>Aim: <lightgrey>a goblin, wielding a +0 dagger', channel: 2 }] })
+    expect(deriveMode(st)).toBe('targeting')
+    reduce(st, { msg: 'input_mode', mode: MouseMode.NORMAL })
     expect(deriveMode(st)).toBe('command')
   })
   it('a yes/no is the yes/no card however crawl asks it: its own popup menu, a menu footer, the message pane', () => {
@@ -204,19 +214,23 @@ describe('focus modes share one binding set', () => {
   })
 })
 
-describe('every non-command mode can reach its section of the palette', () => {
-  for (const [mode, section] of [
-    ['targeting', 'targeting'],
-    ['levelmap', 'levelmap'],
-    ['menu', 'menu'],
-    ['crt', 'command'],
-    ['prompt', 'command'],
-  ] as const) {
-    it(`${mode} -> ${section}`, () => {
-      const t = bindingTable(ctx({ mode, menu: mode === 'menu' ? ({ menu: { items: [], flags: 0 } as never, hoverable: [], arrowsSelect: false, multiselect: false, wrap: false }) : undefined }))
-      // on the level map the palette is Select's hold, under its close
-      const pal = Object.values(t).map((a) => (a.kind === 'hold' ? a.hold : a)).find((a) => a.kind === 'ui' && a.op === 'palette')
-      expect(pal).toMatchObject({ category: section })
+describe('no button opens the palette', () => {
+  const menu = { menu: { items: [], flags: 0 } as never, hoverable: [], arrowsSelect: false, multiselect: false, wrap: false }
+  for (const c of [
+    ctx({}),
+    ctx({ mode: 'targeting' }),
+    ctx({ mode: 'targeting', examining: { label: 'goblin' } as never }),
+    ctx({ mode: 'levelmap' }),
+    ctx({ mode: 'menu', menu }),
+    ctx({ mode: 'menu', menu: { ...menu, shop: { mode: 'buy', canBuy: true } as never } }),
+    ctx({ mode: 'crt' }),
+    ctx({ mode: 'prompt' }),
+    ctx({ mode: 'yesno' }),
+    ctx({ mode: 'popup' }),
+  ]) {
+    it(c.mode + (c.examining ? ' (look)' : c.menu?.shop ? ' (shop)' : ''), () => {
+      const actions = Object.values(bindingTable(c)).flatMap((a) => (a.kind === 'hold' ? [a.tap, a.hold] : [a]))
+      expect(actions.filter((a) => a.kind === 'ui' && a.op === 'palette')).toEqual([])
     })
   }
 })
@@ -330,7 +344,7 @@ describe('direct command controls', () => {
   it('offers wait/rest on LB only while hurt with nothing in view', () => {
     const hurt = ctx({ injured: true })
     const b = promptLabels(hurt).find((l) => l.button === 'LB')!
-    expect(b).toMatchObject({ label: 'Wait one turn', hold: 'Rest', contextual: true })
+    expect(b).toMatchObject({ label: 'Wait', hold: 'Rest', contextual: true })
     // whole: nothing to rest for
     expect(promptLabels(ctx({})).find((l) => l.button === 'LB')).toBeUndefined()
     // a hostile in view: resting is not the move, so autofight takes the corner instead
@@ -406,7 +420,7 @@ describe('direct command controls', () => {
   it('the controls sheet describes Cancel, LB wait/rest and R3 examine', () => {
     const sheet = controlSheet()
     expect(sheet.find((r) => r.button === 'B')?.action).toEqual({ tap: 'Cancel' })
-    expect(sheet.find((r) => r.button === 'LB')?.action).toEqual({ tap: 'Wait one turn', hold: 'Rest' })
+    expect(sheet.find((r) => r.button === 'LB')?.action).toEqual({ tap: 'Wait', hold: 'Rest' })
     expect(sheet.find((r) => r.button === 'R3')?.action).toEqual({ tap: 'Examine' })
   })
   it.each(['R3', 'L3'] as const)('%s examines once on press without repeating or acting on release', (button) => {
@@ -642,6 +656,19 @@ describe('the action bar shows only what the situation created', () => {
     expect(bindingTable(c).X).toEqual({ kind: 'ui', op: 'popupAction', arg: 0 })
     expect(bindingTable(ctx({ mode: 'popup', popupActions: [] })).X).toBeUndefined()
     expect(bindingTable(ctx({ mode: 'dialog' })).X).toBeUndefined()
+  })
+  it("a popup whose verbs nothing lights puts the rest on Y and the triggers: the overview's altars and shops", () => {
+    const actions = [{ key: 'G', label: '(G) Travel' }, { key: '_', label: '(_) Altar' }, { key: '$', label: '($) Shops' }, { key: '!', label: '(!) Annotate' }]
+    const overview = ctx({ mode: 'popup', popupActions: actions, focus: { label: null, cancelLabel: null, index: -1, count: 4 } })
+    expect(show(overview)).toEqual(['X (G) Travel', 'Y (_) Altar', 'LT ($) Shops', 'RT (!) Annotate'])
+    // a describe popup lights its verbs for the d-pad: A takes the lit one, and only the first has a button
+    const item = ctx({ mode: 'popup', popupActions: actions, focus: { label: '(G) Travel', cancelLabel: null, index: 0, count: 4 } })
+    expect(bindingTable(item).Y).toBeUndefined()
+  })
+  it("the travel menu's other list is on Y, in its title's words", () => {
+    const menu = { menu: { tag: 'travel', items: [], flags: 0 } as never, hoverable: [], arrowsSelect: true, multiselect: false, wrap: false, filter: false, sections: false, anyMarked: false }
+    expect(bindingTable(ctx({ mode: 'menu', menu: { ...menu, listSwitch: { key: '_', label: 'list branches' } } })).Y).toMatchObject({ kind: 'keys', seq: [{ text: '_' }], label: 'list branches' })
+    expect(bindingTable(ctx({ mode: 'menu', menu })).Y).toBeUndefined()
   })
   it('a --more-- names itself on A, with the other prompts', () => {
     expect(show(ctx({ mode: 'more' }))).toEqual(['A --more--'])

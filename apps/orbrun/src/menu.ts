@@ -7,11 +7,11 @@ import { h, replace } from './dom'
 import { FocusNav, type Focusable } from './focus'
 import { nextHomePlace } from './room/places'
 import { RoomView } from './room/view'
-import { addAccount, addServer, ensureDeviceAccount, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, offlineRuns, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { addAccount, addServer, ensureDeviceAccount, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, offlineRuns, onIOS, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import type { Session } from './session'
 import { deleteProfileSaves, profileName, type EngineInfo, type EngineNote } from '@orbrun/offline'
-import { engines, updateApp } from './engines'
+import { appSettled, connection, engines, updateApp } from './engines'
 import type { PadEvent, PadKind } from './gamepad'
 import { Osk, oskPrompts } from './osk'
 import { glyph, glyphName, type GlyphName } from './glyphs'
@@ -52,14 +52,25 @@ const BACK = 'back'
 
 /** the margin glyph for a player on this device, where a server account has `\`: a wall, a place of its own */
 const DEVICE_MARKER = '#'
-/** What a browser that cannot run the offline engine (servers.ts offlineRuns) is asked to do. */
-const NEWER_BROWSER = 'This browser can’t run games on this device. Update it to its newest version to play here.'
+/**
+ * What a browser that cannot run the offline engine (servers.ts offlineRuns) is told, as a row's sub line and its
+ * hint. On iOS no browser has the engine's feature yet, so asking for an update there would send the player off
+ * for nothing.
+ */
+function cantRunOffline(): { sub: string; hint: string } {
+  return onIOS()
+    ? { sub: 'not on iPhone or iPad yet', hint: 'Games on this device don’t run on iPhone or iPad yet. Play on a server instead.' }
+    : { sub: 'needs a newer browser', hint: 'This browser can’t run games on this device. Update it to its newest version to play here.' }
+}
 
 /** what the dot after the chosen account's name says, for a screen reader */
 const CONN_WORDS = { wait: 'connecting', down: 'not connected' } as const
 
 /** how long a server has to answer for an rc file before the editor says it did not */
 const RC_MS = 10_000
+
+/** the least the front end's words come down to (fitHome); past it, the title screen scrolls */
+const HOME_LEAST_SHRINK = 0.75
 
 /**
  * The rc file on show (showRc): whose, and which. A server keeps one file per
@@ -279,6 +290,9 @@ export class FrontEnd {
     this.root.addEventListener('focusin', this.onNativeFocus)
     // each visit the room stands in the next place round the cycle (places.ts)
     this.roomView = new RoomView(this.root, nextHomePlace().id)
+    // the room fills the screen, so it is the one to say the screen changed size; a web font landing can rewrap a line
+    this.roomView.onfit = this.fitHome
+    document.fonts?.addEventListener('loadingdone', this.fitHome, { signal: this.aborter.signal })
     // an offline build checked for, downloading, or new is said on its game's row
     this.unwatchEngines = engines.onChange(() => {
       if (this._view === 'home') this.showHome()
@@ -294,6 +308,8 @@ export class FrontEnd {
       { signal: this.aborter.signal },
     )
     window.addEventListener('offline', () => this._view === 'home' && this.showHome(), { signal: this.aborter.signal })
+    // onto Wi-Fi: an update held back on mobile data comes down now, or the next time this screen comes up
+    connection?.addEventListener('change', () => this._view === 'home' && this.showHome(), { signal: this.aborter.signal })
     this.showHome()
   }
 
@@ -303,6 +319,7 @@ export class FrontEnd {
     this.unsub?.()
     this.unwatchEngines()
     if (this.frame) cancelAnimationFrame(this.frame)
+    document.documentElement.style.removeProperty('--front-shrink')
     this.osk.detach()
     this.roomView.destroy()
     this.root.remove()
@@ -310,6 +327,11 @@ export class FrontEnd {
 
   get view(): View {
     return this._view
+  }
+
+  /** Whether B goes anywhere: every screen but the bare home screen (back.ts lets Android's back leave the app there). */
+  get goesBack(): boolean {
+    return this._view !== 'home' || this.osk.visible
   }
 
   // ------------------------------------------------------------------ input
@@ -683,6 +705,41 @@ export class FrontEnd {
       this.rosterTable = null
     }
   }
+
+  /**
+   * The front end's words come down until the title screen holds them, as a phone's game menus come down with
+   * its grid (game.ts shrinkText): the page's font (styles.css html) at a share of its size, a step at a time
+   * from the whole. A phone on its side has no room for them at full size. Every other screen stands at the
+   * size the title screen comes to, so the words keep one size from screen to screen: with another screen on
+   * show (the phone turned on Settings, a font landing), the title screen as last drawn stands in again out of
+   * sight to be measured. It is measured with its hint line, even where a phone on its side hides that line
+   * (styles.css `.fitting`): the words keep the size they would have beside it, not the whole size the room
+   * the line leaves would allow.
+   */
+  private fitHome = () => {
+    const frame = this.homeFrame
+    if (!frame || this.destroyed) return
+    const away = !frame.isConnected
+    if (away) {
+      frame.style.visibility = 'hidden'
+      this.root.append(frame)
+    }
+    const st = document.documentElement.style
+    st.removeProperty('--front-shrink')
+    frame.classList.add('fitting')
+    let shrink = 1
+    while (shrink > HOME_LEAST_SHRINK && frame.scrollHeight > frame.clientHeight) {
+      shrink = Math.round(shrink * 100 - 1) / 100
+      st.setProperty('--front-shrink', String(shrink))
+    }
+    frame.classList.remove('fitting')
+    if (away) {
+      frame.remove()
+      frame.style.visibility = ''
+    }
+  }
+  /** the title screen as last drawn: the one every screen's words are sized by (fitHome) */
+  private homeFrame: HTMLElement | null = null
 
   /** Put the screen on show in the address bar, unless it is there already; `force` says it again whatever it said last. */
   private at(r: Route, force = false) {
@@ -1091,7 +1148,7 @@ export class FrontEnd {
    */
   showHome() {
     // the home screen is where offline builds update: never under a game, never in the player's way
-    if (offlineOffered() && offlineRuns()) void engines.update()
+    if (offlineOffered() && offlineRuns()) void appSettled().then(() => engines.update())
     // and the app itself: once this screen is up, so it is the one a switch to a new version finds at rest
     queueMicrotask(updateApp)
     ensureDeviceAccount()
@@ -1135,17 +1192,18 @@ export class FrontEnd {
         const ordered = offered.map(({ game, version }) => ({ game, save: this.saveOf(game, version, who, s, where) }))
         const primary = ordered[0]
         const stuck = server.offline && !offlineRuns()
-        if (stuck && ordered.length) notices.push(h('div', { class: 'notice' }, NEWER_BROWSER))
+        if (stuck && ordered.length) notices.push(h('div', { class: 'notice' }, cantRunOffline().hint))
         for (const { game: g, save } of ordered) {
           rows.push({
             id: 'play:' + g.id, label: `${save ? 'Continue' : 'Play'} ${g.label}`,
-            sub: stuck ? 'needs a newer browser' : save?.sub ?? (g.save ? `[${g.save}]` : server.offline ? engineSub(engines.note(g.id)) : null), marker: '>', main: g === primary?.game, off: stuck,
+            sub: stuck ? cantRunOffline().sub : save?.sub ?? (g.save ? `[${g.save}]` : server.offline ? engineSub(engines.note(g.id)) : null), marker: '>', main: g === primary?.game, off: stuck,
             hint: stuck
-              ? NEWER_BROWSER
+              ? cantRunOffline().hint
               : server.offline
-              ? (save?.hint ?? `A new character in ${g.label}, on this device.`) + engineHint(engines.note(g.id))
+              ? (save?.hint ?? `A new character in ${g.label}, on this device.`)
               : (save?.hint ?? `A new game of ${g.label} on ${server.host}.`),
-            fine: server.offline ? engineBuild(engines.build(g.id), engines.note(g.id)) : undefined,
+            // the line stands empty until the build is known, so the help under the menu never grows a line when it lands
+            fine: server.offline ? (engineBuild(engines.build(g.id), engines.note(g.id)) ?? '\u00a0') : undefined,
             fn: () => this.connectTo(account, { kind: 'play', gameId: g.id }),
           })
         }
@@ -1215,6 +1273,8 @@ export class FrontEnd {
     this.shape.set('home', shape)
     const first = rows.find((r) => r.main)?.id ?? rows[0]?.id
     this.list({ cls: 'home-list' + (redraw ? ' still' : ''), title: 'Orbrun', lede: 'An unofficial first\u2011person client for Dungeon\u00a0Crawl\u00a0Stone\u00a0Soup.', splash: this.splash, rows, utilities, notices, extra, focus: keep ?? this.marks.get('home') ?? first })
+    this.homeFrame = this.root.querySelector<HTMLElement>('.frame.home-list')
+    this.fitHome()
     if (report) this.showExit(report.s, report.exit, report.why, report.words)
   }
 
@@ -1612,7 +1672,7 @@ export class FrontEnd {
       rows.push({ id: 'offline', label: OFFLINE_SERVER.name, heading: true, gap: true })
       accounts.filter((a) => a.serverId === OFFLINE_SERVER.id).forEach(accountRow)
       const runs = offlineRuns()
-      rows.push({ id: 'add-player', label: 'Add an offline account', sub: runs ? 'on this device' : 'needs a newer browser', marker: '+', off: !runs, hint: 'An account on this device: a name, no password, and saved characters of its own.' + (runs ? '' : ' ' + NEWER_BROWSER), fn: () => {
+      rows.push({ id: 'add-player', label: 'Add an offline account', sub: runs ? 'on this device' : cantRunOffline().sub, marker: '+', off: !runs, hint: 'An account on this device: a name, no password, and saved characters of its own.' + (runs ? '' : ' ' + cantRunOffline().hint), fn: () => {
         this.adding = OFFLINE_SERVER
         this.showLogin()
       } })
@@ -2012,7 +2072,7 @@ export class FrontEnd {
     if (intent) this.lost = false
     const server = findServer(account.serverId)
     if (!server) return this.showHome()
-    // a game here would crash at start: the home screen asks for a newer browser instead (a reload of #play too)
+    // a game here would crash at start: the home screen says why instead (a reload of #play too)
     if (server.offline && !offlineRuns()) intent = undefined
     const session = this.hooks.connect(server, account.username, intent)
     const last = getLast()
@@ -2430,27 +2490,27 @@ function serverWhere(sv: ServerInfo): string {
 
 /**
  * What an offline game's row says about its build, under the label: once, until the next game, that it is a new
- * release. Its downloads are said beside its version (`engineBuild`).
+ * release. Trunk's nightly build is not news, and its downloads, like every build's, are said only beside its
+ * version (`engineBuild`): a line that came and went under a row, or in the help, moved the whole menu.
  */
 function engineSub(note: EngineNote | null): string | null {
-  if (note?.kind !== 'new') return null
-  return note.version ? `new · ${note.version}` : 'new'
-}
-
-/** The message line's word on the same, after the row's own hint. */
-function engineHint(note: EngineNote | null): string {
-  if (note?.kind === 'updating') return ' An update is on its way; until it is whole, Play starts the version you have.'
-  if (note?.kind === 'downloading') return ' It is being kept on this device, to play with no connection.'
-  return ''
+  return note?.kind === 'new' && note.version ? `new · ${note.version}` : null
 }
 
 /**
  * Which build an offline game plays, in the message line's small print: crawl's version less its commit hash
- * (`0.35-a0-1079`), and beside it a look for an update or how far a download is.
+ * (`0.35-a0-1079`), and beside it a look for an update, how far a download is, or an update held off mobile data.
  */
 function engineBuild(info: EngineInfo | null, note: EngineNote | null): string | undefined {
   const version = info?.version.replace(/-g[0-9a-f]+$/, '')
-  const doing = note?.kind === 'checking' ? 'checking for updates…' : note && 'percent' in note ? `${note.kind}… ${note.percent}%` : null
+  const doing =
+    note?.kind === 'checking'
+      ? 'checking for updates…'
+      : note?.kind === 'held'
+        ? 'update waits for Wi-Fi'
+        : note && 'percent' in note
+          ? `${note.kind}… ${note.percent}%`
+          : null
   return [version, doing].filter(Boolean).join(' · ') || undefined
 }
 

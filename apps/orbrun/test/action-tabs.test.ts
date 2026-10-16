@@ -40,20 +40,17 @@ describe("X's actions as tabs", () => {
     expect(actionNeighbour('spells', -1)).toBe('quiver')
   })
 
-  it('put the tabs on the bumpers, named for where they turn, and the two that are no list on Y and LT', () => {
+  it('put the tabs on the bumpers, named for where they turn; swapping weapons is the pack\'s and shouting the character\'s', () => {
     for (const m of [CAST, ABILITIES, EVOKE, QUIVER]) {
       const t = bindingTable(up(m))
       expect(t.LB).toEqual({ kind: 'ui', op: 'actionTab', arg: -1 })
       expect(t.RB).toEqual({ kind: 'ui', op: 'actionTab', arg: 1 })
-      // from crawl's menu, it goes first: Escape, then the key
-      expect(t.Y).toMatchObject({ kind: 'keys', seq: [{ key: 27 }, { text: "'" }] })
-      expect(t.LT).toMatchObject({ kind: 'keys', seq: [{ key: 27 }, { text: 't' }] })
+      expect(t.LT).toBeUndefined()
     }
     const bar = Object.fromEntries(barLabels(up(CAST)).map((l) => [l.button, l.label]))
-    expect(bar).toMatchObject({ LB: 'Quiver', RB: 'Abilities', X: 'Examine', Y: 'Swap weapons', LT: 'Shout' })
-    // Y and LT stand under every tab, as they do under the empty frame (Overlays.padPrompts)
-    const prompts = promptLabels(up(CAST)).map((l) => l.button + ' ' + l.label)
-    expect(prompts).toEqual(expect.arrayContaining(['Y Swap weapons', 'LT Shout']))
+    expect(bar).toMatchObject({ LB: 'Quiver', RB: 'Abilities', X: 'Examine' })
+    expect(Object.values(bar)).not.toContain('Swap weapons')
+    expect(promptLabels(up(CAST)).map((l) => l.label)).not.toContain('Shout')
   })
 
   it("an empty tab is a frame of Orbrun's with crawl's line in it, its tabs turning as the bumpers and arrows do", () => {
@@ -73,7 +70,7 @@ describe("X's actions as tabs", () => {
     expect(host.querySelector('.action-tabs')).toBe(frame)
     expect(frame.querySelector('.action-empty')?.textContent).toBe("Sorry, you're not good enough to have a special ability.")
     // the pad's buttons stand under the frame as under crawl's menus, not in it; the frame's own line is the keyboard's
-    expect(ov.padPrompts?.map((l) => l.button + ' ' + l.label)).toEqual(['Y Swap weapons', 'LT Shout'])
+    expect(ov.padPrompts).toEqual([])
     expect(frame.querySelector('.more')?.classList.contains('kbd-only')).toBe(true)
     expect(frame.querySelector('svg')).toBeNull()
     ov.clientOverlayInput('bumperNext')

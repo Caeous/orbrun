@@ -1,4 +1,4 @@
-import { MouseMode, UiState, floorItemsLabel, formattedStringToSpans, formattedStringToText, isStationaryItemName, topMenu, topPopup, type GameState, type MenuState, type Monster } from '@orbrun/webtiles'
+import { MouseMode, UiState, floorItemsLabel, formattedStringToSpans, formattedStringToText, isStationaryItemName, topMenu, topPopup, type GameState, type InvItem, type MenuState, type Monster } from '@orbrun/webtiles'
 import { cellAhead, cellUnder, billboardsAt, getCell, isThreat, monstersInView, type Camera, type Feature, type Scene, type SceneCell } from '@orbrun/scene'
 import type { FocusInfo } from './focus'
 import { neighbour, packStrip } from './pack-tabs'
@@ -69,6 +69,23 @@ export interface ParsedPrompt {
   cancel: boolean
 }
 
+/**
+ * A key the screen prints beside its words (Context.switches): the button's
+ * caption as printed (`label`: "(q)uaff", "[!] read|quaff|evoke"), so it reads
+ * as one of the screen's options, the words alone (`word`) for its picture,
+ * the item a describe popup is of, for the verbs that use it, and the key and
+ * words in the screen's colours (`keyHtml`, `wordHtml`) where it has them.
+ */
+export interface Switch {
+  key: string
+  label: string
+  word: string
+  item?: InvItem['tile']
+  /** the bracketed key and the words as the screen draws them, in its colours (html, `fgN` spans), where it is drawn as text */
+  keyHtml?: string
+  wordHtml?: string
+}
+
 export interface MenuContext {
   menu: MenuState
   hoverable: number[]
@@ -83,6 +100,12 @@ export interface MenuContext {
   anyMarked: boolean
   /** the key the menu's own help is on, when it names one ("_ for help"); absent, it has none */
   helpKey?: string
+  /**
+   * The travel menu's other list, as its title names it (travel.cc
+   * `TravelPromptMenu::refresh_prompt`: "_ - list branches" from the altars,
+   * "* - list waypoints" and back); absent where it names none
+   */
+  listSwitch?: { key: string; label: string }
   /** a row picked takes effect at once (the known-items menu's autopickup): nothing is marked, nothing accepted */
   togglesAtOnce?: boolean
   /** the pack's pages as tabs (pack-tabs.ts): the page up (its id), and the labels of the ones the bumpers turn to, when there is another page to turn to */
@@ -117,6 +140,8 @@ export interface Context {
   layer: Layer
   /** The server's description of the action fired by LT; absent when nothing is quivered. */
   readiedAction?: string
+  /** the quivered item's tile (`quiver_item` in `inv`), for the touch bar's Fire; absent for a spell or an ability */
+  readiedTile?: InvItem['tile']
   ahead: Target
   under: Target
   prompt?: ParsedPrompt
@@ -124,6 +149,12 @@ export interface Context {
   popupType?: string
   /** Actions the top popup offers (describe-item verbs, pane switches), in pad order. Filled by the app from the overlays. */
   popupActions?: { key: string; label: string }[]
+  /**
+   * The keys the top menu or popup prints beside their words, a touch button
+   * each (bindings.ts `touchLabels`): a menu's more line (`[!] read|quaff|evoke`),
+   * a describe popup's verbs (`(d)rop`) and its pane switch. Filled by the app from the overlays.
+   */
+  switches?: Switch[]
   /**
    * The focus layer's cursor over the top overlay (popup, prompt, CRT screen,
    * dialog): what A and B would do. Filled by the app from the overlays; absent
@@ -246,12 +277,15 @@ export function deriveMode(state: GameState): Mode {
  * nothing else has changed the mode since. The letters must reach it raw
  * (the official client sends every key raw; Orbrun's facing-relative
  * rewrite of `b` would hand it another compass letter, `n` cancelling and
- * `y` converting), so it is a prompt, not command mode.
+ * `y` converting), so it is a prompt, not command mode. A prompt line
+ * printed before the last mode that read a key (`readTo`) was that mode's,
+ * and is answered: an aim's "Aim: a goblin" stays last while crawl leaves
+ * the targeter for NORMAL to run the cast.
  */
 function rawKeyPrompt(state: GameState): boolean {
   const lines = state.messages.lines
   const last = lines[lines.length - 1]
-  return last !== undefined && last.channel === CH_PROMPT
+  return last !== undefined && last.channel === CH_PROMPT && lines.length > state.messages.readTo
 }
 
 /**
@@ -576,6 +610,9 @@ const KNOWN_ITEMS_RE = /^Recognised items\./
 /** The help a menu offers, as its title or footer names the key: "(_ for help)", "[?] help"; none named, none sent. */
 const MENU_HELP_RE = /\(([_?]) for help\)|\[<?\w*>?\s*([_?])\s*<?\/?\w*>?\]\s*help/
 
+/** The travel menu's switch to another list, as its title prints it: "(_ - list branches, ? - help)". */
+const TRAVEL_LIST_RE = /([_*]) - (list \w+)/
+
 function menuContext(state: GameState): MenuContext | undefined {
   const menu = topMenu(state)
   if (!menu) return undefined
@@ -595,6 +632,8 @@ function menuContext(state: GameState): MenuContext | undefined {
   const help = MENU_HELP_RE.exec(formattedStringToText((menu.title?.text ?? '') + '\n' + (menu.more ?? '') + '\n' + (menu.alt_more ?? '')))
   const ctx: MenuContext = { menu, hoverable, arrowsSelect, multiselect: !!(menu.flags & 0x0004), wrap: !!(menu.flags & 0x0080), filter: !!(menu.flags & 0x0100), sections: blocks >= 2, anyMarked }
   if (help) ctx.helpKey = help[1] ?? help[2]
+  const list = menu.tag === 'travel' ? TRAVEL_LIST_RE.exec(formattedStringToText(menu.title?.text ?? '')) : null
+  if (list) ctx.listSwitch = { key: list[1], label: list[2] }
   if (known) ctx.togglesAtOnce = true
   if (menu.tag === 'shop') ctx.shop = shopContext(menu)
   const strip = packStrip(menu, state)
@@ -670,6 +709,8 @@ export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer
   const hostiles = inView.filter(isThreat).length
   const p = state.player
   const ctx: Context = { mode, layer, ahead, under, hostilesInView: hostiles, monstersInView: inView.length, readiedAction: readiedAction(p.quiver_desc) }
+  const quivered = p.quiver_item >= 0 ? p.inv[p.quiver_item]?.tile : undefined
+  if (ctx.readiedAction && quivered !== undefined) ctx.readiedTile = quivered
   if (p.hp < p.hp_max || p.mp < p.mp_max) ctx.injured = true
   if (mode === 'yesno' || mode === 'prompt') ctx.prompt = parsePrompt(state)
   if (mode === 'more') ctx.moreText = state.messages.moreText || '--more--'

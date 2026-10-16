@@ -13,9 +13,10 @@ import type { OfflineChannel } from './server.js'
  * network: a first game played online installs its build as it goes.
  *
  * Play never waits on a download. Updates are fetched only while no game is
- * running (`busy`), a file at a time, keeping every file already whole, and
- * switch in at the next game start. Trunk updates in place. A new release is
- * a slot of its own, offered once whole, beside the last one; an older
+ * running (`busy`) and not over mobile data (`metered`), a file at a time,
+ * keeping every file already whole, and switch in at the next game start.
+ * Trunk updates in place. A new release is a slot of its own, offered once
+ * whole, beside the last one; an older
  * release is dropped once no profile has a character saved in it, since
  * crawl carries a save into a new release and never back.
  */
@@ -51,6 +52,8 @@ export type EngineNote =
   /** looking for a newer build of one that is installed */
   | { kind: 'checking' }
   | { kind: 'downloading' | 'updating'; percent: number }
+  /** a newer build is published, and waits for a connection that is not mobile data */
+  | { kind: 'held' }
   /** `version`: the release's own, `0.34.2`; null for trunk, whose versions say nothing to a player */
   | { kind: 'new'; version: string | null }
 
@@ -62,6 +65,12 @@ export interface EngineStoreOptions {
   fetch?: typeof fetch
   /** Whether a game is running or starting: downloads wait for it to end. */
   busy?(): boolean
+  /**
+   * Whether the connection is paid for by the byte (a phone's mobile data):
+   * updates and new releases wait for one that is not. A build that was
+   * played still finishes: its game fetched most of it already.
+   */
+  metered?(): boolean
   /** Whether any profile has a character saved in a slot (channels `hasSaves`). */
   hasSaves?(slot: string): Promise<boolean>
 }
@@ -81,6 +90,8 @@ export class EngineStore {
   /** Whether a check for new builds is under way. */
   private checking = false
   private progress = new Map<string, number>()
+  /** Installed slots with a newer build waiting on a connection that is not metered (a new release is said on the newest release's row). */
+  private held = new Set<string>()
   private listeners = new Set<() => void>()
   private running: Promise<void> | null = null
   private readonly fetch: typeof fetch
@@ -121,6 +132,7 @@ export class EngineStore {
     if (percent !== undefined) return { kind: installed ? 'updating' : 'downloading', percent }
     if (installed?.news === 'new') return { kind: 'new', version: releaseOf(installed) ? installed.version.replace(/-.*/, '') : null }
     if (installed && this.checking) return { kind: 'checking' }
+    if (installed && this.held.has(slot)) return { kind: 'held' }
     return null
   }
 
@@ -223,6 +235,10 @@ export class EngineStore {
     return this.o.busy?.() ?? false
   }
 
+  private metered() {
+    return this.o.metered?.() ?? false
+  }
+
   private changed() {
     for (const fn of this.listeners) fn()
   }
@@ -272,6 +288,12 @@ export class EngineStore {
     const cache = await this.cache()
     if (!cache) return
     const newest = newestRelease(Object.values(s.installed))
+    const held = new Set<string>()
+    const hold = () => {
+      if (this.held.size === held.size && [...held].every((h) => this.held.has(h))) return
+      this.held = held
+      this.changed()
+    }
     for (const info of Object.values(s.published)) {
       const slot = slotOf(info)
       const release = releaseOf(info)
@@ -282,18 +304,26 @@ export class EngineStore {
         (!!release && !!newest && compareReleases(release, newest) > 0)
       const before = s.installed[slot]
       if (!kept || (before && buildOf(before) === buildOf(info))) continue
-      if (!(await this.download(cache, slot, info))) return
+      // only what the player asked for comes down over mobile data: a build they played, not its updates
+      const waits = () => !s.wanted.includes(slot) && this.metered()
+      const whole = !waits() && (await this.download(cache, slot, info, waits))
+      if (!whole && waits()) {
+        held.add(before ? slot : newest!)
+        continue
+      }
+      if (!whole) return hold()
       s.installed[slot] = { ...info, news: !before && release && newest ? 'new' : undefined }
       s.wanted = s.wanted.filter((w) => w !== slot)
       await this.save()
       this.changed()
     }
+    hold()
     await this.prune(s)
     await this.sweep(cache, s)
   }
 
-  /** Every file of a build into the cache, a file at a time. False if it stopped short: a game started, or the network went. */
-  private async download(cache: Cache, slot: string, info: EngineInfo): Promise<boolean> {
+  /** Every file of a build into the cache, a file at a time. False if it stopped short: a game started, the network went, or `halt` said so. */
+  private async download(cache: Cache, slot: string, info: EngineInfo, halt: () => boolean): Promise<boolean> {
     const total = info.files.reduce((n, [, size]) => n + size, 0) || 1
     let done = 0
     const missing: [string, number][] = []
@@ -314,7 +344,7 @@ export class EngineStore {
     }
     if (missing.length) report()
     for (const [path, size] of missing) {
-      if (this.busy()) return stop()
+      if (this.busy() || halt()) return stop()
       let res: Response
       try {
         res = await this.fetch(this.url(path))
@@ -333,7 +363,7 @@ export class EngineStore {
           got += value.byteLength
           done += value.byteLength
           report()
-          if (this.busy()) {
+          if (this.busy() || halt()) {
             await reader.cancel()
             return stop()
           }

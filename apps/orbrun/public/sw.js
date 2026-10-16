@@ -4,9 +4,10 @@
 // The app's files are listed by the build (shell.ts), which writes them in
 // below in place of `null`; under the dev server nothing of the app is kept.
 // They are kept at install, all or none, in a cache named after their
-// version. A page load of any of the app's addresses is answered with the
-// kept page at once, connection or not; a new deploy installs in the
-// background and is what the next page load gets. The site's pages and the
+// version, copied from an older version where they have not changed. A
+// page load of any of the app's addresses is answered with the kept page
+// at once, connection or not; a new deploy installs in the background and
+// is what the next page load gets. The site's pages and the
 // build's other files go to the network as they are.
 //
 // Answers requests for an engine build or its gamedata from the engine cache,
@@ -28,14 +29,32 @@ const appCache = SHELL && APP + SHELL.version
 const appFiles = new Set(SHELL ? SHELL.files.map((f) => new URL(f, self.location.origin).href) : [])
 const network = new Set(SHELL ? SHELL.network : [])
 
-/** Keep this version of the app, unless it is kept already. addAll keeps every file or none, so a kept page means a whole app. */
+// where a kept version records its files' sums (SHELL.sums), once it is whole
+const SUMS = '/.orbrun-sums'
+
+/**
+ * Keep this version of the app, unless it is kept already. A file an older
+ * version kept with the same sum is copied from it, so a deploy downloads
+ * only what changed, and is ready the sooner. addAll keeps every other file
+ * or none, the page among them, so a kept page means a whole app.
+ */
 async function keepApp() {
   if (!appCache) return
   const cache = await caches.open(appCache)
   if (await cache.match('/')) return
+  const older = (await caches.keys()).filter((k) => k.startsWith(APP) && k !== appCache).reverse()
+  const sums = await Promise.all(older.map(async (k) => (await (await caches.open(k)).match(SUMS))?.json().catch(() => null)))
+  const fetched = []
+  for (const f of SHELL.files) {
+    const from = f === '/' ? -1 : sums.findIndex((s) => s && s[f] === SHELL.sums[f])
+    const hit = from >= 0 && (await (await caches.open(older[from])).match(f))
+    if (hit) await cache.put(f, hit)
+    else fetched.push(f)
+  }
   // the hashed bundles and the fonts never change under their names; the rest is asked of the server again
   const fresh = (f) => !f.startsWith('/assets/') && !f.startsWith('/fonts/')
-  await cache.addAll(SHELL.files.map((f) => new Request(f, { cache: fresh(f) ? 'no-cache' : 'default' })))
+  await cache.addAll(fetched.map((f) => new Request(f, { cache: fresh(f) ? 'no-cache' : 'default' })))
+  await cache.put(SUMS, new Response(JSON.stringify(SHELL.sums)))
 }
 
 /**
@@ -58,6 +77,16 @@ async function keptPage() {
     if (hit) return hit
   }
   return undefined
+}
+
+/**
+ * One of the app's files: this version's, else an older version's, where an
+ * older page's bundles are. Not caches.match alone: it looks in the oldest
+ * cache first, which for a file kept under a fixed name (the manifest, the
+ * icons, the places) is the last deploy's copy.
+ */
+async function appFile(url) {
+  return (await (await caches.open(appCache)).match(url)) || caches.match(url)
 }
 
 /** Whether a page load of `url` is the app's: anything but the site's pages, in any case, and the build's other files, as the Worker has it. */
@@ -83,8 +112,7 @@ self.addEventListener('fetch', (e) => {
     return
   }
   if (appFiles.has(url.origin + url.pathname) || (appCache && url.origin === self.location.origin && url.pathname.startsWith('/assets/'))) {
-    // an older page's bundles are found in its version's cache
-    e.respondWith(caches.match(url.origin + url.pathname).then((hit) => hit || fetch(req)))
+    e.respondWith(appFile(url.origin + url.pathname).then((hit) => hit || fetch(req)))
     return
   }
   if (!kept.some((p) => req.url.startsWith(p))) return

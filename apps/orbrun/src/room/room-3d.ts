@@ -1,6 +1,7 @@
 import { Render3d } from '@orbrun/render-3d'
 import type { Camera } from '@orbrun/scene'
 import { CHAMFER, getSettings, WALL_INSET, type Settings } from '../servers'
+import { fovOf } from '../settings-rows'
 import { loadPlace, type LoadedPlace } from './places'
 
 /**
@@ -59,5 +60,5 @@ export class Room3d {
 
 /** The renderer's options under `st`: first person always (there is no @ to stand behind), the eye and the lens as the player set them, the walls as the game builds them. */
 function roomOptions(st: Settings) {
-  return { fov: st.fov, eyeHeight: st.eyeHeight, viewmodel: false, motion: false, wallInset: WALL_INSET, chamfer: CHAMFER }
+  return { fov: fovOf(st), eyeHeight: st.eyeHeight, viewmodel: false, motion: false, wallInset: WALL_INSET, chamfer: CHAMFER }
 }

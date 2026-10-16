@@ -9,7 +9,6 @@
  */
 import { cellKey, type Billboard, type CellKey, type Scene } from '@orbrun/scene'
 import { visibleMonsters } from '@orbrun/scene-webtiles'
-import { isStationaryItemName } from '@orbrun/webtiles'
 
 /** What gets a pip: nothing, the monster list's monsters, or those and items on cells in sight. */
 export type EdgePipMode = 'off' | 'monsters' | 'all'
@@ -27,6 +26,8 @@ export interface Projector {
   tanHalfY: number
   /** width over height */
   aspect: number
+  /** how far up the view straight ahead stands, in halves of its height (render-3d `setLensFoot`) */
+  shiftY?: number
   /** the view's height in CSS pixels, which is what the vertical field of view spans */
   height: number
   /** The centre of cell (x, y) at height h (0 floor, 1 lid) in camera space. */
@@ -49,10 +50,11 @@ export interface EdgePlace {
  * the list's monsters; under `all`, the items on cells in sight as well, never the cell
  * the player stands on (items underfoot are the pick-up prompt), never
  * a cell that already has a monster's pip (the stack mark rides the sprite),
- * and never a corpse or skeleton (`isStationaryItemName`: `g` refuses them,
- * so there is nothing there to go and take; and as a corpse links below the
- * movable items on its cell, a corpse tile on top means the pile holds
- * nothing else).
+ * and never a corpse or skeleton (the billboard's `lying`, read off the
+ * tile, since the tile's name for a skeleton is only "bone": `g` refuses
+ * them, so there is nothing there to go and take; and as a corpse links
+ * below the movable items on its cell, a corpse tile on top means the pile
+ * holds nothing else).
  */
 export function pipTargets(scene: Scene, mode: EdgePipMode): Billboard[] {
   if (mode === 'off') return []
@@ -72,7 +74,7 @@ export function pipTargets(scene: Scene, mode: EdgePipMode): Billboard[] {
   }
   if (mode === 'all') {
     for (const b of scene.billboards) {
-      if (b.kind !== 'item' || b.scenery || (b.name && isStationaryItemName(b.name))) continue
+      if (b.kind !== 'item' || b.scenery || b.lying) continue
       if (b.x === scene.player.x && b.y === scene.player.y) continue
       const k = cellKey(b.x, b.y)
       if (taken.has(k) || scene.cells.get(k)?.visibility !== 'visible') continue
@@ -85,7 +87,11 @@ export function pipTargets(scene: Scene, mode: EdgePipMode): Billboard[] {
 
 /**
  * Where a camera-space point lands on the view's edge, or null when the
- * lens frames it (then the sprite itself is on screen and needs no pip). A
+ * lens frames any of the sprite round it (then the sprite itself is on
+ * screen, if only in part, and needs no pip). `reach` is half the sprite's
+ * side in world units: it faces the eye (render-3d `stand`), so it is a
+ * square at the point's own depth, and the pip waits until the whole of it
+ * has left the frame rather than turning up while half of it still shows. A
  * point in front projects normally and is clamped to the edge along the
  * ray from the view's centre. A point behind the lens is placed by its
  * horizontal bearing alone (its height says nothing about where to turn):
@@ -104,14 +110,14 @@ export function pipTargets(scene: Scene, mode: EdgePipMode): Billboard[] {
  * clamp is the truth) to abeam (where the walk behind takes over): the pip
  * slides to the middle of the side edge instead of jumping to it.
  */
-export function edgePlace(p: CamPoint, proj: { tanHalfY: number; aspect: number }): EdgePlace | null {
+export function edgePlace(p: CamPoint, proj: { tanHalfY: number; aspect: number; shiftY?: number }, reach = 0): EdgePlace | null {
   const tx = proj.tanHalfY * proj.aspect
   const ty = proj.tanHalfY
   let u: number, v: number
   if (p.z < 0) {
     let dx = p.x / (-p.z * tx)
-    let dy = p.y / (-p.z * ty)
-    if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) return null
+    let dy = p.y / (-p.z * ty) + (proj.shiftY ?? 0)
+    if (Math.abs(dx) - reach / (-p.z * tx) <= 1 && Math.abs(dy) - reach / (-p.z * ty) <= 1) return null
     // the fade: 0 while the lens still has the point between its side walls (|dx| <= 1, so the height is untouched for
     // anything that left over the top or the bottom), 1 abeam, where dy is nothing and the clamp lands on the middle of
     // the side edge — exactly where the walk behind starts

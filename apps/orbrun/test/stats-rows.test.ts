@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { initialState, reduce, type ServerMessage } from '@orbrun/webtiles'
-import { HP_BAR, MP_BAR, PORTRAIT_ROWS, statsRows } from '../src/grid/stats'
+import { HP_BAR, MP_BAR, PORTRAIT_ROWS, glanceRow, statsRows } from '../src/grid/stats'
 import { rowLength, type Row } from '../src/grid/rows'
 import { STAT_WIDTH } from '../src/grid/console'
 
@@ -224,18 +224,115 @@ describe('stats pane on a narrow sidebar', () => {
     expect(rowWith(rows, / @: /)!.find((s) => s.text === '@:')!.title).toBe('Place')
   })
 
-  it('stands the portrait on two rows, so the bars keep the pane’s full width', () => {
+  it('stands the portrait on four rows, as the wide pane does', () => {
     const lead = 4
     const blank = ' '.repeat(lead)
     const wide = statsRows(st.player, st.options, {}, STAT_WIDTH, lead).rows
     const narrow = statsRows(st.player, st.options, {}, width, lead).rows
-    // the wide pane keeps its four rows beside the portrait; the narrow one the title and the species line
-    expect(wide[1][0].text).toBe(blank)
-    expect(narrow[0][0].text).toBe(blank)
-    expect(narrow[1][0].text).toBe(blank)
-    expect(narrow[2][0].text).not.toBe(blank)
-    // the Health bar starts at the pane's left edge and the row still ends at its right one
-    expect(narrow[HP][0].bg).toBeTypeOf('string')
+    // both keep four rows beside the portrait: the title, the species line and the two bars
+    for (const rows of [wide, narrow]) {
+      for (let i = 0; i < 4; i++) expect(rows[i][0].text).toBe(blank)
+      expect(rows[4][0].text).not.toBe(blank)
+    }
+    // the Health bar starts after the portrait and the row still ends at the pane's right edge
+    expect(narrow[HP][1].bg).toBeTypeOf('string')
     expect(rowLength(narrow[HP])).toBe(width)
+  })
+})
+
+/** The column beside the minimap at the top of a phone held upright (grid/stats.ts `cornerRows`), which WebTiles has no counterpart for. */
+describe('stats pane beside the minimap', () => {
+  const st = recordedState()
+  const text = (row: Row) => row.map((s) => s.text).join('')
+  const lead = 9
+  const width = 28
+
+  it('stands the title, the species line and the bars beside the portrait, then the stats as narrow as they go, two a row and one', () => {
+    for (const w of [width, 34]) {
+      const rows = statsRows(st.player, st.options, {}, w, lead, true).rows
+      for (const row of rows) expect(rowLength(row)).toBeLessThanOrEqual(w)
+      for (let i = 0; i < PORTRAIT_ROWS; i++) expect(rows[i][0].text).toBe(' '.repeat(lead))
+      expect(text(rows[0])).toMatch(/^ +Dwarfsong/)
+      expect(text(rows[1])).toMatch(/^ +Mountain Dwarf/)
+      expect(rows[2][1].bg).toBeTypeOf('string')
+      expect(rows[3][1].bg).toBeTypeOf('string')
+      // the bars end with the values at the pane's right edge
+      expect(rowLength(rows[2])).toBe(w)
+      // the defences beside the attributes, as game.html's two columns, the attributes lined up
+      expect(text(rows[4])).toBe('AC: 35  St: 30')
+      expect(text(rows[5])).toBe('EV: 7   In: 10')
+      expect(text(rows[6])).toBe('SH: 11  Dx: 9')
+      // then the level, the noise, the place and the time a row each
+      expect(text(rows[7])).toMatch(/^XL: 14 \d+%$/)
+      expect(text(rows[8])).toMatch(/^N: +$/)
+      expect(text(rows[9])).toBe('@: Snake Pit:2')
+      expect(text(rows[10])).toMatch(/^T: \d+(\.\d)?$/)
+      // the stats no wider than the place
+      for (let i = 4; i <= 10; i++) expect(rowLength(rows[i])).toBeLessThanOrEqual(14)
+    }
+  })
+
+  it('keeps a long game\'s count whole, and a growing count moves nothing', () => {
+    const at = (time: number) => statsRows({ ...st.player, time, turn: Math.round(time / 10) }, st.options, {}, width, lead, true).rows
+    const short = at(10)
+    const long = at(1234567)
+    expect(text(long[10])).toBe('T: 123456.7')
+    for (const rows of [short, long]) for (const row of rows) expect(rowLength(row)).toBeLessThanOrEqual(width)
+    expect(text(long[2])).toBe(text(short[2]))
+    expect(text(long[9])).toBe(text(short[9]))
+  })
+
+  it('puts what is in hand a row each, then the status lights, wrapped to the pane', () => {
+    const rows = statsRows(st.player, st.options, {}, width, lead, true).rows
+    expect(text(rows[11])).toBe('e) +2 hand axe (elec)')
+    expect(text(rows[12])).toBe('Throw: 23 darts (poison)')
+    expect(text(rows[13])).toBe('Drain')
+    expect(rows).toHaveLength(14)
+    // Doom and Contam, when they show, on a row of their own under the stats
+    const doomed = statsRows({ ...st.player, doom: 40, contam: 120 }, st.options, {}, width, lead, true).rows
+    expect(text(doomed[11])).toBe('Dm: 40% Cn: 120%')
+    expect(text(doomed[12])).toMatch(/^e\) /)
+    const lit = { ...st.player, status: ['Slow', 'Poison', 'Might', 'Agile', 'Haste'].map((light) => ({ light, col: 7 })) } as typeof st.player
+    const lights = statsRows(lit, st.options, {}, 16, lead, true).rows.slice(13)
+    expect(lights.map((r) => text(r).trimEnd())).toEqual(['Slow Poison', 'Might Agile', 'Haste'])
+  })
+
+  it('cuts what is too long for the pane, the cut marked', () => {
+    const rows = statsRows({ ...st.player, quiver_desc: 'Zap: wand of paralysis (10) and more besides' }, st.options, {}, width, lead, true).rows
+    expect(rowLength(rows[12])).toBe(width)
+    expect(text(rows[12]).endsWith('…')).toBe(true)
+  })
+
+  it('keeps the piety stars when the species line is too long, dropping the species, then cutting the god', () => {
+    const devout = { ...st.player, species_display_name: 'Mountain Dwarf', god: 'Makhleb', piety_rank: 4, ostracism_pips: 0, penance: false }
+    expect(text(statsRows(devout, st.options, {}, width, lead, true).rows[1])).toBe(' '.repeat(lead) + 'Makhleb ****..')
+    expect(text(statsRows({ ...devout, god: 'The Shining One' }, st.options, {}, width, lead, true).rows[1])).toBe(' '.repeat(lead) + 'The Shining… ****..')
+    // room for it all: the line as WebTiles prints it
+    expect(text(statsRows(devout, st.options, {}, 50, lead, true).rows[1])).toBe(' '.repeat(lead) + 'Mountain Dwarf of Makhleb ****..')
+  })
+
+  it('a pane with no Magic row keeps its rows where they were', () => {
+    const rows = statsRows({ ...st.player, species: 'Djinni' }, st.options, {}, width, lead, true).rows
+    expect(text(rows[3]).trim()).toBe('')
+    expect(text(rows[4])).toMatch(/^AC: 35/)
+  })
+})
+
+describe('glanceRow (Health and Magic side by side, held upright)', () => {
+  const st = recordedState()
+  const text = (row: Row) => row.map((s) => s.text).join('')
+
+  it('puts the pane’s Health then its Magic in one row of the width, values and all', () => {
+    const p = { ...st.player, hp: 7, hp_max: 14, real_hp_max: 14, mp: 3, mp_max: 6 }
+    const row = glanceRow(statsRows(p, st.options).bars, 40)
+    expect(rowLength(row)).toBe(40)
+    expect(text(row)).toMatch(/^ + 7\/14 + 3\/6 *$/)
+    expect(text(row).indexOf('7/14')).toBeLessThan(20)
+  })
+  it('gives a Djinni’s Health the whole row', () => {
+    const p = { ...st.player, species: 'Djinni', hp: 7, hp_max: 14, real_hp_max: 14 }
+    const row = glanceRow(statsRows(p, st.options).bars, 40)
+    expect(rowLength(row)).toBe(40)
+    expect(text(row)).toMatch(/^ + 7\/14 *$/)
   })
 })

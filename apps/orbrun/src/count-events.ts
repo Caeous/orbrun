@@ -9,7 +9,8 @@ import servers from '../data/servers.json' with { type: 'json' }
  *
  * Nothing names anyone. A row is an event from `EVENTS`, the server (one of
  * the bundled ones, this device, or `other`), stable or trunk, the window's
- * size, whether a pad was connected, and each of `COUNTED_SETTINGS`:
+ * size, whether a pad was connected, whether a finger is the pointer, and
+ * each of `COUNTED_SETTINGS`:
  * `parseCount` is the whole of what the Worker keeps of a beacon, and it drops
  * anything else. It never reads the address or the browser a beacon came from.
  * A browser that asks not to be measured (Global Privacy Control) is not, and
@@ -46,7 +47,7 @@ export function countedHost(hostname: string): boolean {
 export const COUNTED_SETTINGS = {
   eyeHeight: [0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9],
   restPitch: [-30, -25, -20, -15, -10, -5, 0, 5, 10],
-  fov: [60, 70, 75, 85, 95],
+  fov: [0, ...Array.from({ length: 15 }, (_, i) => 50 + 5 * i)],
   viewmodel: [true, false],
   leftRightKeys: ['turn', 'strafe'],
   leftRightPad: ['turn', 'strafe'],
@@ -55,10 +56,9 @@ export const COUNTED_SETTINGS = {
   hints: ['adaptive', 'contextual', 'off'],
   uiScale: [1, 1.15, 1.3, 1.5, 0.85],
   nearby: ['list', 'pips'],
-  minimapTiles: Array.from({ length: 27 }, (_, i) => 9 + 2 * i),
-  minimapCell: [8, 10, 12, 14, 16, 20, 24, 28, 32],
-  minimapTurns: [true, false],
-  rightStick: ['look', 'turn'],
+  minimapTiles: [0, ...Array.from({ length: 24 }, (_, i) => 15 + 2 * i)],
+  minimapCell: [0, 8, 10, 12, 14, 16, 20, 24, 28, 32],
+  messageLines: [0, ...Array.from({ length: 19 }, (_, i) => 2 + i)],
 } as const satisfies Record<string, readonly (number | boolean | string)[]>
 export type CountedSetting = keyof typeof COUNTED_SETTINGS
 export const SETTING_KEYS = Object.keys(COUNTED_SETTINGS) as CountedSetting[]
@@ -119,10 +119,17 @@ export function sideParam(px: number): string | null {
  * The dataset's columns by name: Analytics Engine numbers them (blob1…,
  * double1…), in this order. Append only: a column moved is every old row
  * misread. tools/build/counts.mjs queries by these names. A setting is only
- * on a game start's row; on the others it is empty, or 0.
+ * on a game start's row; on the others it is empty, or 0. The numbers are
+ * written out, since `touch` came after the settings of its day: a number
+ * setting added since goes after it (a test holds every one to a column).
  */
 export const BLOB_COLUMNS: readonly string[] = ['event', 'server', 'version', ...WORD_SETTINGS]
-export const DOUBLE_COLUMNS: readonly string[] = ['pad', 'width', 'height', ...NUMBER_SETTINGS]
+export const DOUBLE_COLUMNS: readonly string[] = [
+  'pad', 'width', 'height',
+  // minimapTurns: retired with its setting (the minimap is north up), kept so the columns after it stay where they were
+  'eyeHeight', 'restPitch', 'fov', 'viewmodel', 'lookSensitivity', 'invertLook', 'uiScale', 'minimapTiles', 'minimapCell', 'minimapTurns', 'messageLines',
+  'touch',
+]
 
 /** A row as the Worker writes it: every column by name, empty or 0 where the beacon did not say. */
 export interface CountRow {
@@ -140,7 +147,7 @@ export function dataPoint(row: CountRow): { blobs: string[]; doubles: number[]; 
   }
 }
 
-const KEYS: readonly string[] = ['e', 's', 'v', 'pad', 'w', 'h', ...SETTING_KEYS]
+const KEYS: readonly string[] = ['e', 's', 'v', 'pad', 'touch', 'w', 'h', ...SETTING_KEYS]
 const NUMBER_RE = /^-?\d{1,5}(\.\d{1,2})?$/
 
 /** What is kept of a beacon's query, or null when any of it is anything but what a row may hold. */
@@ -150,12 +157,14 @@ export function parseCount(search: URLSearchParams): CountRow | null {
   const server = search.get('s')
   const version = search.get('v')
   const pad = search.get('pad')
+  const touch = search.get('touch')
   if (!(EVENTS as readonly string[]).includes(event)) return null
   if (server !== null && !SERVER_IDS.includes(server)) return null
   if (version !== null && !(VERSIONS as readonly string[]).includes(version)) return null
   if (pad !== null && pad !== '1') return null
+  if (touch !== null && touch !== '1') return null
   const text: Record<string, string> = { event, server: server ?? '', version: version ?? '' }
-  const numbers: Record<string, number> = { pad: pad === '1' ? 1 : 0 }
+  const numbers: Record<string, number> = { pad: pad === '1' ? 1 : 0, touch: touch === '1' ? 1 : 0 }
   for (const [param, column] of [['w', 'width'], ['h', 'height']] as const) {
     const v = search.get(param)
     if (v === null) continue

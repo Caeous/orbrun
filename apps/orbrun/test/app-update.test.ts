@@ -7,19 +7,28 @@ async function page(controlled: boolean) {
   vi.resetModules()
   const listeners: (() => void)[] = []
   const update = vi.fn(async () => {})
+  // the version a look found, installing until `installed`
+  const found = { state: 'installing', on: [] as (() => void)[], addEventListener: (_: string, f: () => void) => found.on.push(f) }
+  const reg = { update, installing: null as typeof found | null, waiting: null }
   const sw = {
     controller: controlled ? {} : null,
-    register: async () => ({}),
+    register: async () => reg,
     getRegistration: async () => ({ update }),
     addEventListener: (_: string, f: () => void) => listeners.push(f),
   }
   const reload = vi.fn()
   vi.stubGlobal('navigator', { serviceWorker: sw })
   vi.stubGlobal('location', { href: 'https://orbrun.app/', reload })
-  const { keepEngines, updateApp } = await import('../src/engines')
+  const { appSettled, keepEngines, updateApp } = await import('../src/engines')
   const p = { busy: false, resting: true }
+  // a look that finds a new version (`found`), as the next deploy is
+  update.mockImplementation(async () => void (reg.installing = found))
   keepEngines(() => p.busy, () => p.resting)
-  return Object.assign(p, { updateApp, reload, update, takeOver: () => listeners.forEach((f) => f()) })
+  const installed = () => {
+    found.state = 'activated'
+    found.on.forEach((f) => f())
+  }
+  return Object.assign(p, { appSettled, updateApp, reload, update, installed, takeOver: () => listeners.forEach((f) => f()) })
 }
 
 describe('switching to a new version of the app', () => {
@@ -56,8 +65,29 @@ describe('switching to a new version of the app', () => {
     expect(p.reload).toHaveBeenCalledTimes(1)
   })
 
+  it('looks for a new version as the page loads, and holds the downloads that wait on it until it has installed', async () => {
+    const p = await page(true)
+    await vi.waitFor(() => expect(p.update).toHaveBeenCalledTimes(1))
+    let settled = false
+    void p.appSettled().then(() => (settled = true))
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(settled).toBe(false)
+    p.installed()
+    await vi.waitFor(() => expect(settled).toBe(true))
+  })
+
+  it('stops holding them when a new version takes too long to install', async () => {
+    const p = await page(true)
+    let settled = false
+    void p.appSettled().then(() => (settled = true))
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(settled).toBe(true)
+  })
+
   it('asks after a new version from the home screen, no more than every few minutes', async () => {
     const p = await page(true)
+    await vi.waitFor(() => expect(p.update).toHaveBeenCalledTimes(1))
+    p.update.mockClear()
     p.updateApp()
     expect(p.update).not.toHaveBeenCalled()
     vi.advanceTimersByTime(5 * 60_000 + 1)

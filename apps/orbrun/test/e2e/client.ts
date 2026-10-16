@@ -72,6 +72,7 @@ interface ScreenInternals {
   dirty: boolean
   loop(now: number): void
   pad(ev: PadEvent): void
+  back(): void
   destroy(): void
 }
 
@@ -131,6 +132,8 @@ export interface E2e {
   click(el: Element): Promise<void>
   /** any recorded input, applied as live */
   apply(i: Input): Promise<void>
+  /** Android's back button (GameScreen.back) */
+  back(): Promise<void>
   /** keys sent straight to crawl, around the client: a scenario's setup */
   raw(text: string): Promise<void>
   /** a message sent straight to crawl, around the client */
@@ -313,7 +316,7 @@ async function startClient(t: Transport, device: InputDevice, before: (settle: (
     settings: () => ({ ...getSettings(), renderer: '2d' }),
     settingsPanel: () => ({ el: document.createElement('div'), rows: [] }),
     onSystem() {},
-    gamepad: { kind: 'xbox', isHeld: (b: Button) => held.has(b) } as never,
+    gamepad: { kind: 'xbox', isHeld: (b: Button) => held.has(b), virtualRelease() {} } as never,
     initialInput: device,
     renderer: noRenderer,
   })
@@ -350,6 +353,10 @@ async function startClient(t: Transport, device: InputDevice, before: (settle: (
     },
     async click(el) {
       el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      await settle()
+    },
+    async back() {
+      screen!.back()
       await settle()
     },
     raw: (text) => apply({ kind: 'raw', text }),

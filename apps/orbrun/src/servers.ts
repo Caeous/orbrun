@@ -42,10 +42,19 @@ export function offlineOffered(): boolean {
  * Whether this browser can run the offline engine: it needs JSPI, which the
  * engine blocks in while it waits for the player (Firefox 151 has none, and a
  * game there crashes at start). Without it Offline is still offered, and asks
- * for a newer browser where a game would start.
+ * for a newer browser where a game would start (or, on iOS, says it can't yet).
  */
 export function offlineRuns(): boolean {
   return typeof (WebAssembly as { Suspending?: unknown }).Suspending === 'function'
+}
+
+/**
+ * Whether this is an iPhone or iPad, where every browser is WebKit underneath: none of them has JSPI yet, so
+ * updating the browser would not let the offline engine run. iPadOS asks for desktop pages as a Mac, which only
+ * its touch screen gives away.
+ */
+export function onIOS(): boolean {
+  return /\b(iPhone|iPad|iPod)\b/.test(navigator.userAgent) || (/\bMacintosh\b/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
 }
 
 const KEY = 'orbrun.servers'
@@ -496,8 +505,6 @@ type Nearby = 'list' | 'pips'
  * the diagonals are the same either way (runner.ts `step`).
  */
 export type LeftRight = 'turn' | 'strafe'
-/** The right stick: free look, or the left stick's 45° turn on left and right (game.ts `stickTurn`). */
-export type RightStick = 'look' | 'turn'
 
 /**
  * Where a direction came from: the three keyboard sets keys.ts `directionKey`
@@ -526,6 +533,7 @@ export interface Settings {
   renderer: '3d' | '2d'
   /** How high the eye stands, in cells: 0 is the floor, 1 the lid (rendering-3d.md II.11). */
   eyeHeight: number
+  /** The up-and-down field of view in degrees, 0 for Auto (settings-rows.ts `fovOf`). */
   fov: number
   /** Where the camera points at rest, in degrees off the horizon: negative looks down, positive up (rendering-3d.md II.11). */
   restPitch: number
@@ -537,20 +545,25 @@ export interface Settings {
   viewmodel: boolean
   /** What is around you: the monster list, or edge pips on the 3D view (hud.md "What is around you"). */
   nearby: Nearby
-  /** How many tiles the minimap shows across (hud.md "Minimap"); 19 tiles reads at a glance and reaches a little past the reference layout's sidebar column. */
+  /** How many tiles the minimap shows across (hud.md "Minimap"); 0 is Auto (settings-rows.ts `MINIMAP_AUTO`), the screen's pick. */
   minimapTiles: number
-  /** How big a minimap tile is drawn, in css px (hud.md "Minimap"); 20 is the cell the map follows the player at. */
+  /** How big a minimap tile is drawn, in css px on a 1080-tall screen (hud.md "Minimap"); 0 is Auto, the screen's pick. */
   minimapCell: number
-  /** Whether the minimap turns with the player (hud.md "Minimap"), or stands with north up. */
-  minimapTurns: boolean
+  /** How many lines of messages the message pane shows; 0 is Auto (settings-rows.ts `MESSAGE_LINES_AUTO`), as many as the server's `layout` asks for. */
+  messageLines: number
   /** The gamepad prompts in the corner of the view (gamepad-hints.ts `HintMode`). */
   hints: HintMode
   /** Keyboard (arrows, h/l, numpad 4/6): what left and right do. */
   leftRightKeys: LeftRight
   /** Gamepad (d-pad and left stick): what left and right do. */
   leftRightPad: LeftRight
-  /** Gamepad right stick: free look, or a 45° turn each push left or right. */
-  rightStick: RightStick
+  /**
+   * A finger swiping the 3D view sideways: `step` turns it a heading at a
+   * time as it goes, as an arrow key does (swipe-turn.ts); `drag` is the earlier turn that follows the finger
+   * and settles on a heading as it lifts (fling.ts). Offered for a side-by-side
+   * on a phone, until one is chosen.
+   */
+  swipeTurn: 'step' | 'drag'
 }
 
 const HINT_MODES: readonly string[] = ['adaptive', 'contextual', 'off']
@@ -607,7 +620,7 @@ export const WALL_INSET = 12 / 32
 export const defaultSettings: Settings = {
   renderer: '3d',
   eyeHeight: 0.6,
-  fov: 85,
+  fov: 0,
   restPitch: -5,
   uiScale: 1,
   invertLook: false,
@@ -615,13 +628,13 @@ export const defaultSettings: Settings = {
   confirmStairs: false,
   viewmodel: true,
   nearby: 'pips',
-  minimapTiles: 19,
-  minimapCell: 20,
-  minimapTurns: true,
+  minimapTiles: 0,
+  minimapCell: 0,
+  messageLines: 0,
   hints: 'adaptive',
   leftRightKeys: 'turn',
   leftRightPad: 'turn',
-  rightStick: 'look',
+  swipeTurn: 'step',
 }
 
 export function getSettings(): Settings {

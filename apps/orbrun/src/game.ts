@@ -8,29 +8,40 @@ import { RendererPark } from './park'
 import { escapeHtml, h, onDprChange } from './dom'
 import type { Session } from './session'
 import { CameraController } from './camera'
-import { deriveContext, deriveMode, type Context } from './context'
-import { HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, type Action, type CommandCategory, type RelDir } from './bindings'
+import { deriveContext, deriveMode, type Context, type Mode } from './context'
+import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchExtraAction, touchLabels, typedInLog, type TouchLabel, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
 import type { CommandMenu } from './command-menu'
-import { Runner, type LastStep } from './runner'
-import { Hud, rcFont } from './hud'
-import { GridHost } from './grid/host'
-import { gameSplit, levelMapSplit } from './grid/console'
+import { ORBIT_WINDOW_MS, Runner, type LastStep } from './runner'
+import { GLANCE_GAP_PX, Hud, glanceRowPx, rcFont } from './hud'
+import { GridHost, isPhone } from './grid/host'
+import { gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from './grid/console'
 import { Chat } from './chat'
 import { Overlays } from './overlays'
 import { directionKey, isTextEntry, keydownMessage } from './keys'
 import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
-import { gamepadHints, type PadHintEvidence } from './gamepad-hints'
+import { gamepadHints, type HintMode, type PadHintEvidence } from './gamepad-hints'
+import { touchHints, type TouchHintEvidence, type TouchLesson } from './touch-hints'
 import { isPack, openPackKeys } from './pack-tabs'
-import { OKAY_THEN, SHOUT_KEY, SWAP_WEAPONS_KEY, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
+import { OKAY_THEN, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
 import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INSET, type Settings } from './servers'
-import { type SettingGroup } from './settings-rows'
+import { fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap, type SettingGroup } from './settings-rows'
 import { PerfOverlay, type LogContext } from './perf'
 import { MapHold } from './map-hold'
+import { swipeLean, swipeStep } from './swipe'
+import { SWIPE_HEADING_PX, swipeRest, swipeView } from './swipe-turn'
+import { HEADING } from './fling'
+import { LookDrag } from './look-drag'
+import type { DragRelease } from './camera'
+import { SpellBar, SpellBook, spellShort, type Spell } from './spell-bar'
 
 /** The most drawn pixels per CSS pixel the game view gets (Part IV of rendering-3d.md): the display's density, capped here. */
 const VIEW_MAX_DPR = 1
 /** at rest the frame loop sleeps, waking to run its body this often, so nothing that changed without waking it waits longer */
 const IDLE_TICK_MS = 250
+/** how long crawl and we must have said nothing before the spell bar looks its list up (spell-bar.ts) */
+const SPELL_LOOK_STILL_MS = 500
+/** what the spell bar takes from the log's last row down, in css px: a spell's art (hud.ts SPELL_SLOT) and a gap under it */
+const SPELL_ROW_PX = 32 + 6
 /** how long after the last thing that wanted a frame the loop keeps the display's rate before it parks (`awake`) */
 const ACTIVE_MS = 500
 
@@ -41,14 +52,51 @@ const ACTIVE_MS = 500
  * player is waiting for, short enough to be done before a level is drawn.
  */
 const WARM_DELAY_MS = 2000
-const DRAG_SLOP = 6
+/** css pixels a finger turning the view has to go one way before letting go means the next heading that way (fling.ts) */
+const TURN_COMMIT = 14
+/** a finger's tilt of the view, against holding the dungeon under it (`lookPerPx`) */
+const TOUCH_LOOK = 0.5
+/** css pixels a finger drags the view across to turn it one heading, 45°: a short swipe; two take a long one (`lookPerPx`) */
+const TOUCH_HEADING_PX = 120
 /** level-map cells per unit of right-stick look while the map is open */
 const MAP_PAN_RATE = 0.12
+/** tileweb.cc `zoom_dungeon`: `tile_map_scale` in percent, a step a zoom key, clamped to 20..300 */
+const MAP_SCALE_STEP = 10
+const MAP_SCALE_MIN = 20
+const MAP_SCALE_MAX = 300
 /** game.js `show_diameter`: the cells across a full field of view, which the view is fitted to */
 const SHOW_DIAMETER = 17
+/** the screens a tap on the minimap closes (with Escape) instead of opening the level map over them */
+const MINIMAP_CLOSES: ReadonlySet<Mode> = new Set(['more', 'menu', 'popup', 'newgame', 'text', 'yesno', 'prompt', 'crt', 'dialog'])
 
-/** The device the player touched last; the prompt strip is drawn for it. */
-export type InputDevice = 'pad' | 'keyboard' | 'pointer'
+/**
+ * A panel of ours leaves B unnamed (its footer says Esc, a pad player knows
+ * B): a finger has no B to know, so the touch bar names it, the way back.
+ */
+function withBack(labels: BindingLabel[]): BindingLabel[] {
+  // the press goes the pad's way (Game.pad: B cancels a panel of ours), so the label's action is never run
+  return labels.some((l) => l.button === 'B') ? labels : [...labels, { button: 'B', label: 'Back', action: { kind: 'keys', label: 'Back', seq: [] }, contextual: false }]
+}
+
+/** A press on the view, from down to up: a tap, a look drag, or a finger held still (`hold` its timer, `held` once it fired). */
+interface Drag {
+  id: number
+  /** the press as a look drag: where it is, whether it has moved, its axis and speed (look-drag.ts) */
+  g: LookDrag
+  button: number
+  touch: boolean
+  hold?: number
+  held?: boolean
+  /** a finger dragging the level map: css px moved and not yet a whole cell (`panMapBy`) */
+  pan?: { x: number; y: number }
+  /** radians a css pixel of this drag turns and tilts the view, read as it starts (`lookPerPx`) */
+  k?: { yaw: number; pitch: number }
+  /** a finger's swipe across turning the view a heading at a time (`swipeTurn` step, swipe-turn.ts): css px a heading, read as it starts */
+  stepping?: number
+}
+
+/** The device the player touched last; the prompt strip is drawn for it. A finger is `touch`, a mouse or a pen `pointer`. */
+export type InputDevice = 'pad' | 'keyboard' | 'pointer' | 'touch'
 
 export interface GameHooks {
   settings(): Settings
@@ -179,9 +227,15 @@ export class GameScreen {
    * opened by mouse or keyboard, which have Esc.
    */
   private overlayOpener: Button | null = null
+  /** The pointer now down closed a menu as it came down (`onDocPointer`); its click is spent on that. */
+  private pointerClosed = false
+  /** A finger down outside a menu: lifted where it came down it closes the menu, swiped sideways it turns its tabs (`outsideLift`). */
+  private outsideTouch: { id: number; x: number; y: number; t: number; close: () => void } | null = null
   private lastCursor: SceneCursor | null = null
   private lastOptKey = ''
-  private drag: { id: number; x: number; y: number; x0: number; y0: number; moved: boolean; button: number } | null = null
+  private drag: Drag | null = null
+  /** Two fingers on the level map: where each is, how far apart they came down, and the zoom steps sent so far (`pinchMap`). */
+  private pinch: { pts: Map<number, { x: number; y: number }>; d0: number; scale0: number; sent: number } | null = null
   /** Lets go of a drag with no click behind it: the window lost focus, or the button was released out of sight. */
   private cancelDrag: () => void = () => {}
   /** One per screen, however many canvases it goes through: a renderer swap must not leave the old canvas's listener behind. */
@@ -212,6 +266,10 @@ export class GameScreen {
   private pickMemo: CellKey | null | undefined
   /** the canvas's place on the screen, from the last relayout, in css px */
   private viewPx: { left: number; top: number; width: number; height: number } | null = null
+  /** The last tap on the level map: where the cursor stood and where it was sent (`tapMapCursor`). */
+  private mapTap: { from: { x: number; y: number }; to: { x: number; y: number }; t: number } | null = null
+  /** css px of the level map's canvas under the touch bar (`relayout`) */
+  private mapFoot = 0
   /**
    * What the player touched last: the prompt strip is drawn for it (pad
    * glyphs, key caps, nothing for the mouse). Merely plugging in a pad is
@@ -219,6 +277,9 @@ export class GameScreen {
    */
   private lastInput: InputDevice = 'keyboard'
   private padHints = gamepadHints()
+  private touchHints = touchHints()
+  /** the game (its player, which a new game replaces) in which crawl has asked for a command: before that, as the species are coming, there is no map to teach */
+  private commandedIn: object | null = null
   /** the pack's page last up (pack-tabs.ts), which Y opens it on again */
   private packPage: string | null = null
   /** the item the cursor was last on in each of the pack's pages, by its letter: Y puts the cursor back on it */
@@ -238,6 +299,15 @@ export class GameScreen {
    */
   private actionTurn: { target: ActionTabId; sent: ActionTabId | null; stage: 'closing' | 'sent' | 'listing'; last?: GameMessage; t: number } | null = null
   private padStep: LastStep | null = null
+  /** the spells the touch spell bar shows, looked up quietly (spell-bar.ts) */
+  private spellBook: SpellBook
+  /** the spell bar's taps: the first arms, the second spends */
+  private spellBar: SpellBar
+  /** when the last message went to the server, and the last came from it, for the spell list's look to wait for a still moment */
+  private lastSent = 0
+  private lastHeard = 0
+  /** the touch bar's last buttons, held through the spell bar's cast prompt */
+  private lastTouch: TouchLabel[] | null = null
   private padLooking = false
   /** right-stick travel accumulated toward the next level-map cursor step */
   private mapPan = { x: 0, y: 0 }
@@ -255,7 +325,13 @@ export class GameScreen {
     this.perf = new PerfOverlay(this.root, () => this.perfContext())
     this.unsub.push(this.perf.watch(session))
     this.grid = new GridHost(this.root, this.textPx())
-    this.grid.onfit = () => this.relayout(true)
+    // a phone's text comes down to fit a phone's console (host.ts PHONE_COLS), asked again at every resize
+    this.grid.setLeast(isPhone)
+    this.shrinkText()
+    this.grid.onfit = () => {
+      this.shrinkText()
+      this.relayout(true)
+    }
     this.renderer = this.makeRenderer()
     this.cam.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
     this.cam.setRestPitch(radians(st.restPitch))
@@ -266,7 +342,13 @@ export class GameScreen {
     this.hud = new Hud(this.root, {
       onSelectMonster: (b) => this.faceBillboard(b),
       onBarAction: (a) => this.runner.execute(a),
-      onMinimapClick: () => this.runner.execute(LEVEL_MAP),
+      onMinimapClick: () => this.minimapTap(),
+      // on the map with nothing of ours up, as the pad's Start opens it there
+      onStatsClick: () => {
+        if (this.ctx.mode !== 'command' || this.session.watching || this.overlays.hasClientOverlay) return
+        this.touchAttempt('menu')
+        this.runner.execute({ kind: 'ui', op: 'system' })
+      },
       // action_panel.js: items act only in command mode
       onPanelItem: (slot, describe) => {
         if (this.session.state.inputMode !== MouseMode.COMMAND) return
@@ -280,6 +362,22 @@ export class GameScreen {
       },
       // WebTiles' own settings menu here is the panel's rc options; Orbrun's settings screen is where those live
       onPanelSettings: () => this.overlays.showSettings(),
+      // the touch bar's buttons are the pad's, pressed by a finger: the press goes the pad's way (`pad`), the device is the finger
+      onTouchButton: (button, down) => {
+        this.inputFrom('touch')
+        if (down) this.hooks.gamepad.virtualDown(button, performance.now(), true)
+        else this.hooks.gamepad.virtualUp(button, performance.now(), true)
+      },
+      onSpellTap: (spell) => this.spellTap(spell),
+      onSpellMore: () => this.spellMore(),
+      onTouchSwitch: (key) => {
+        this.inputFrom('touch')
+        this.overlays.sendSwitch(key)
+      },
+      onTouchExtra: (id) => {
+        this.inputFrom('touch')
+        this.runner.execute(touchExtraAction(id, this.ctx))
+      },
     })
     this.chat = new Chat(this.root, { send: (m) => this.runner.send(m), padKind: () => this.hooks.gamepad.kind })
     this.overlays = new Overlays(this.root, {
@@ -295,6 +393,8 @@ export class GameScreen {
       onSystemAction: (op) => this.systemAction(op),
       settingsPanel: (group, back, controls) => this.hooks.settingsPanel(group, back, controls),
       actionTab: (to) => this.openActionTab(to),
+      swipe: (step) => this.touchPress(step > 0 ? 'DR' : 'DL'),
+      typed: () => this.wake(),
     })
     this.runner = new Runner(session, this.cam, {
       context: () => this.ctx,
@@ -313,6 +413,29 @@ export class GameScreen {
       },
     })
     this.ctx = deriveContext(session.state, session.scene, this.cam.camera, 'micro')
+    this.spellBook = new SpellBook({
+      send: (m) => this.session.send(m, true),
+      changed: () => {
+        this.needsRender = true
+        this.wake()
+      },
+      now: () => performance.now(),
+    })
+    session.hold = (m) => this.spellBook.hold(m)
+    session.intercept = (m) => this.spellBook.intercept(m)
+    // they go with the screen: a session that outlives it (a reconnect's next screen) gets its own
+    this.unsub.push(() => {
+      session.hold = null
+      session.intercept = null
+    })
+    this.spellBar = new SpellBar({
+      mode: () => this.ctx,
+      turn: () => this.session.state.player.turn,
+      now: () => performance.now(),
+      cast: (spell) => this.runner.execute({ kind: 'keys', label: 'Cast ' + spell.name, seq: [{ text: 'z' }, { text: spell.letter, await: 'prompt' }] }),
+      fire: () => this.runner.execute({ kind: 'fire' }),
+      cancel: () => this.runner.execute({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] }),
+    })
     this.lastInput = hooks.initialInput ?? 'keyboard'
     this.padHints.cancel() // no pending server reply survives a screen/run change
     this.unsub.push(
@@ -321,6 +444,7 @@ export class GameScreen {
           this.wake()
           this.onScene()
         } else if (e.type === 'state') {
+          this.lastHeard = performance.now()
           this.wake()
           this.trackHop()
           this.trackActions(performance.now(), false)
@@ -331,6 +455,8 @@ export class GameScreen {
             if (this.session.gamedata && !this.session.loading) this.hideLoading()
             else this.showLoading('Loading game data…')
           }
+        } else if (e.type === 'sent') {
+          this.lastSent = performance.now()
         } else if (e.type === 'gamedata') {
           if (e.status === 'ready') {
             this.hideLoading()
@@ -353,6 +479,17 @@ export class GameScreen {
     window.addEventListener('keydown', this.onKeyDown, true)
     this.onResize = this.onResize.bind(this)
     window.addEventListener('resize', this.onResize)
+    // a phone's keyboard moves the visual viewport alone: the log is lifted onto it while a line is typed there (hud.liftLog)
+    const vv = window.visualViewport
+    if (vv) {
+      const wake = () => this.wake()
+      vv.addEventListener('resize', wake)
+      vv.addEventListener('scroll', wake)
+      this.unsub.push(() => {
+        vv.removeEventListener('resize', wake)
+        vv.removeEventListener('scroll', wake)
+      })
+    }
     // a move to a screen of another density need not resize the window, and every canvas is drawn for the old one
     this.unsub.push(onDprChange(() => {
       this.wake()
@@ -360,6 +497,11 @@ export class GameScreen {
     }))
     this.onDocPointer = this.onDocPointer.bind(this)
     document.addEventListener('pointerdown', this.onDocPointer, true)
+    this.outsideLift = this.outsideLift.bind(this)
+    document.addEventListener('pointerup', this.outsideLift, true)
+    document.addEventListener('pointercancel', this.outsideLift, true)
+    this.outsideMove = this.outsideMove.bind(this)
+    document.addEventListener('pointermove', this.outsideMove, true)
     this.onDocContextMenu = this.onDocContextMenu.bind(this)
     document.addEventListener('contextmenu', this.onDocContextMenu, true)
     this.attachPointer(this.canvas)
@@ -369,9 +511,13 @@ export class GameScreen {
   }
 
   destroy() {
+    setAutoMessageLines(null)
+    setAutoMinimap(null)
     this.destroyed = true
+    // a finger on the touch bar as it goes (a reconnect, the screen torn down under it) never lifts where the page
+    // can hear it: let go here, or a held arrow walks on into the next game. The releases land on nothing (`pad`)
+    this.hooks.gamepad.virtualRelease()
     this.hooks.gamepad.fourWay = false
-    this.hooks.gamepad.rightStickTurns = false
     this.saveView()
     window.removeEventListener('pagehide', this.saveView)
     cancelAnimationFrame(this.raf)
@@ -379,6 +525,9 @@ export class GameScreen {
     window.removeEventListener('keydown', this.onKeyDown, true)
     window.removeEventListener('resize', this.onResize)
     document.removeEventListener('pointerdown', this.onDocPointer, true)
+    document.removeEventListener('pointerup', this.outsideLift, true)
+    document.removeEventListener('pointercancel', this.outsideLift, true)
+    document.removeEventListener('pointermove', this.outsideMove, true)
     if (this.onWindowBlur) window.removeEventListener('blur', this.onWindowBlur)
     document.removeEventListener('contextmenu', this.onDocContextMenu, true)
     for (const u of this.unsub) u()
@@ -390,9 +539,22 @@ export class GameScreen {
     this.overlays.destroy()
     this.perf.destroy()
     this.grid.destroy()
+    document.documentElement.style.removeProperty('--phone-shrink')
     this.renderer.destroy()
     this.park.clear()
     this.root.remove()
+  }
+
+  /**
+   * On a phone the menus and popups come down with the grid's text (host.ts `setLeast`): they are sized from the
+   * page's font (styles.css html), which would leave them a desktop's size over a phone's console. The `phone`
+   * class spreads them across the screen (styles.css `.game.phone .popup`).
+   */
+  private shrinkText() {
+    this.root.classList.toggle('phone', this.grid.phone)
+    const st = document.documentElement.style
+    if (this.grid.phone && this.grid.shrink < 1) st.setProperty('--phone-shrink', this.grid.shrink.toFixed(3))
+    else st.removeProperty('--phone-shrink')
   }
 
   /** The grid's text size: the console cell's font in px, from the UI scale setting. */
@@ -406,7 +568,8 @@ export class GameScreen {
    * gives them, sized as game.js `layout` sizes them. While the level map is
    * open the canvas keeps to the clear part of the view and grows over the
    * sidebar and the messages exactly when the rc's `tile_level_map_hide_*`
-   * say so (`levelMapSplit`). Cheap to call every frame; only acts on change.
+   * say so (`levelMapSplit`), running on under a phone's touch bar
+   * (`levelMapCanvas`). Cheap to call every frame; only acts on change.
    */
   private relayout(force = false) {
     if (!this.hud) return
@@ -415,29 +578,111 @@ export class GameScreen {
     const g = this.grid.grid
     const mapView = this.mapShown
     const hideSidebar = mapView && o.tile_level_map_hide_sidebar === true
-    const hideMessages = mapView && o.tile_level_map_hide_messages === true
+    // a line crawl reads in the log (Find…, off the map) asks its question there: the log stands while it waits
+    const hideMessages = mapView && o.tile_level_map_hide_messages === true && !typedInLog(st.textInput)
     // no character yet: the official client's crt layer (game.js `set_ui_state`, `client.set_layer("crt")`) covers
     // the sidebar while the new-game chooser has the UI in CRT state (newgame.cc `choose_game`), until the redraw
     // that sends the first `player` (tileweb.cc `redraw`); a continued game has no sheet before that message either.
     const hideStats = hideSidebar || st.uiState === UiState.CRT || !st.player.received
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, st.messages.paneHeight, hideStats, hideSidebar, hideMessages, window.devicePixelRatio].join(',')
+    // the touch bar's rows are its own: along the foot the panes stand above them; on its side, at the right column's
+    // foot, the column ends above them and the view keeps its height (touchBeside); with the column gone, the foot
+    const beside = touchBeside(g) && !hideSidebar
+    const barRows = Math.ceil(this.hud.touchbarHeight / g.ch)
+    // the Message lines setting; on Auto a phone's few, elsewhere what the server's `layout` asks for
+    const msgRows = messageLinesOf(this.settings(), st.messages.paneHeight, this.grid.phone)
+    // off a phone, the settings' Message lines row reads Auto with what this server asks for
+    setAutoMessageLines(st.messages.paneHeight)
+    // upright, the minimap and the stats pane share a band across the top (gameSplit); the level map takes the band too,
+    // standing in for the minimap, the stats pane over its corner
+    const band = isPortrait(g) ? this.hud.portraitBand(this.grid) : { rows: 0, cols: 0 }
+    // the spell bar's row under the messages, while there is one (spell-bar.ts); the level map has none
+    // it stands in the log's last row, the --more-- line's, which is bare whenever the bar shows (spellsLive)
+    const spells = this.spellsShown() && !mapView
+    // held upright on a phone, the Health and Magic row above it, or above the touch bar (hud.ts renderStats)
+    const glance = this.upright && !mapView && !hideStats
+    const underPx = (spells ? SPELL_ROW_PX : 0) + (glance ? glanceRowPx(g.ch) + GLANCE_GAP_PX : 0)
+    // the log's last row, the --more-- line's, is bare but for a --more--, so what stands under the log takes it (hud.ts placeLog)
+    const spellRows = underPx ? Math.max(0, Math.ceil(underPx / g.ch) - 1) : 0
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, band.rows, band.cols, spellRows, spells, glance].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
-    const cells = gameSplit(g, st.messages.paneHeight)
-    const view = mapView ? levelMapSplit(g, cells, { hideSidebar, hideMessages }) : cells.view
+    const cells = gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, band.rows, band.cols, spellRows)
+    this.hud.touchBeside = beside
+    // the level map's canvas runs on under the touch bar; what rides the map's edges keeps to the part the bar leaves
+    const map = mapView ? levelMapSplit(g, cells, { hideSidebar, hideMessages }) : null
+    const view = map ? levelMapCanvas(cells, map, beside && barRows > 0, g.rows) : cells.view
     this.grid.place(this.canvas, view)
     const px = this.grid.px(view)
+    // upright, the view runs across the whole screen, the grid's margins too, from under the minimap's band down to the
+    // screen's foot, under the touch bar (gameSplit); the 3D view runs on up under the band too, to the screen's top,
+    // its lens still fitted to the part below the band (render-3d `setLensTop`)
+    let lensTop = 0
+    if (!map && isPortrait(g)) {
+      px.left = 0
+      px.width = this.root.clientWidth || px.width
+      px.height = Math.max(px.height, this.root.clientHeight - px.top)
+      if (this.renderer instanceof Render3d) {
+        lensTop = px.top
+        px.height += px.top
+        px.top = 0
+      }
+      this.canvas.style.left = px.left + 'px'
+      this.canvas.style.top = px.top + 'px'
+      this.canvas.style.width = px.width.toFixed(2) + 'px'
+      this.canvas.style.height = px.height.toFixed(2) + 'px'
+    } else if (!map) {
+      // the grid keeps clear of a phone's cutouts (host.ts `insets`); the view the cells stand over runs on under them
+      const ins = this.grid.insets
+      const dl = view.x === 0 ? ins.left : 0
+      const dt = view.y === 0 ? ins.top : 0
+      const dr = view.x + view.w >= g.cols ? ins.right : 0
+      if (dl || dt || dr) {
+        px.left -= dl
+        px.top -= dt
+        px.width += dl + dr
+        px.height += dt
+        this.canvas.style.left = px.left + 'px'
+        this.canvas.style.top = px.top + 'px'
+        this.canvas.style.width = px.width.toFixed(2) + 'px'
+        this.canvas.style.height = px.height.toFixed(2) + 'px'
+      }
+    }
     this.viewPx = px
+    // the map is centred, and its cells fitted, on its part above the touch bar (render-2d `foot`)
+    const mapPx = map ? this.grid.px(map) : null
+    this.mapFoot = mapPx ? Math.max(0, px.top + px.height - mapPx.top - mapPx.height) : 0
     this.renderer.resize(px.width, px.height, this.viewDpr())
+    // the view runs on under the touch bar along the foot, where the panes stop (gameSplit): the hands stand where they stop;
+    // upright they stand on the screen's bottom edge, behind the log and the bar, which would lift them halfway up the screen
+    const msgPx = this.grid.px(cells.messages)
+    if (this.renderer instanceof Render3d) {
+      this.renderer.setFoot(mapView || isPortrait(g) ? 0 : px.top + px.height - msgPx.top - msgPx.height)
+      this.renderer.setUpright(this.upright)
+      this.renderer.setLensTop(lensTop)
+      // upright the log and the bar hide the view's foot, so the lens looks ahead into what is left above them
+      this.renderer.setLensFoot(this.upright && !mapView ? px.top + px.height - msgPx.top : 0)
+      // Auto's field of view is a computer's or a phone's on its side or upright, and turning the phone (or a browser's
+      // device toolbar) changes which
+      const lens = this.lensHeld()
+      if (lens !== this.lensKey) {
+        this.lensKey = lens
+        if (!this.settings().fov) this.renderer.setOptions(this.render3dOptions(this.settings()))
+      }
+    }
     // what rides the view's edges keeps clear of the panes
-    const free = mapView ? view : cells.clear
+    const free = map ?? cells.clear
+    this.hud.spellRow = spells
+    this.hud.glanceRow = glance
     this.hud.layout(this.grid, cells, free, { stats: hideStats, sidebar: hideSidebar, messages: hideMessages })
-    // the chat box (client.html #chat) sits at the foot of the right column, as wide as the sidebar
-    const side = this.grid.px(cells.sidebar)
-    const chat = this.chat.root.style
-    chat.left = side.left + 'px'
-    chat.width = side.width + 'px'
-    chat.bottom = Math.max(0, this.root.clientHeight - side.top - side.height) + 'px'
+    // the settings' minimap rows read Auto with what it came out as here (kept while the level map has the column)
+    if (this.hud.minimapShown) setAutoMinimap(this.hud.minimapShown)
+    // a popup and its dim stop short of the touch bar, so its buttons stay in reach under any of them (styles.css .overlay-stack)
+    const inset = this.hud.touchbarInset
+    this.overlays.root.style.setProperty('--touch-right', inset.right + 'px')
+    this.overlays.root.style.setProperty('--touch-bottom', inset.bottom + 'px')
+    // the chat box (client.html #chat) sits at the foot of the right column, as wide as the sidebar; on a phone over the log
+    const log = hideMessages || !msgPx.width ? null : msgPx
+    this.chat.place(this.grid.px(cells.sidebar), this.root.clientHeight, this.root.clientWidth, !!this.grid.phone, log)
     this.needsRender = true
   }
 
@@ -533,6 +778,7 @@ export class GameScreen {
     this.cam.setRestPitch(radians(st.restPitch))
     document.documentElement.style.setProperty('--ui-scale', String(st.uiScale))
     this.grid.setTextSize(this.textPx())
+    this.shrinkText()
     const want3d = st.renderer === '3d' && !this.mapBorrowed2d
     // a 3D view parked for the map's close has no close to return to once the setting is 2D
     if (st.renderer !== '3d') this.park.clear()
@@ -549,6 +795,11 @@ export class GameScreen {
     return (this.settingsCache ??= this.hooks.settings())
   }
 
+  /** A phone held upright: the hands shrink with the view's width (render-3d `setUpright`). */
+  private get upright(): boolean {
+    return this.grid.phone && isPortrait(this.grid.grid)
+  }
+
   /**
    * How wide the 3D view opens across, in radians: the Field of view setting
    * is the vertical angle, so the across one follows the view's shape. The
@@ -556,13 +807,19 @@ export class GameScreen {
    */
   private viewFov(): number {
     const lens = (this.renderer instanceof Render3d ? this.renderer : this.park.kept)?.projector()
-    const tanHalfY = lens ? lens.tanHalfY : Math.tan((this.settings().fov * Math.PI) / 360)
     const aspect = lens ? lens.aspect : this.viewPx && this.viewPx.height ? this.viewPx.width / this.viewPx.height : 16 / 9
+    const tanHalfY = lens ? lens.tanHalfY : Math.tan((fovOf(this.settings(), this.grid.phone, this.upright) * Math.PI) / 360)
     return 2 * Math.atan(tanHalfY * aspect)
   }
 
+  /** how the device was held when the 3D view's Auto field of view was last set (`relayout`) */
+  private lensKey: 'desktop' | 'sideways' | 'upright' = 'desktop'
+  private lensHeld() {
+    return !this.grid.phone ? 'desktop' : this.upright ? 'upright' : 'sideways'
+  }
+
   private render3dOptions(st: Settings) {
-    return { eyeHeight: st.eyeHeight, fov: st.fov, viewmodel: st.viewmodel, wallInset: WALL_INSET, chamfer: CHAMFER, motion: !this.cam.reducedMotion }
+    return { eyeHeight: st.eyeHeight, fov: fovOf(st, this.grid.phone, this.upright), viewmodel: st.viewmodel, wallInset: WALL_INSET, chamfer: CHAMFER, motion: !this.cam.reducedMotion }
   }
 
   /** A melee attack lifts the weapon a touch (rendering-3d.md II.7); frames follow until it settles. */
@@ -686,12 +943,13 @@ export class GameScreen {
     this.ctx = this.deriveContext(st)
     const walking = this.is3d && this.ctx.mode === 'command'
     this.hooks.gamepad.fourWay = walking
-    this.hooks.gamepad.rightStickTurns = walking && this.settings().rightStick === 'turn' && !this.overlays.hasClientOverlay && !this.chat.capturing
     this.fireHolds(now)
     // the server reports targeting alone; the runner knows whether its `x` opened it
     if (this.runner.examining(this.ctx.mode)) this.ctx.examining = true
     this.viewHeld = this.runner.holdingView(this.ctx.mode)
     if (this.ctx.mode === 'popup') this.ctx.popupActions = this.overlays.popupActions()
+    if (this.ctx.mode === 'menu') this.ctx.switches = this.overlays.menuSwitches()
+    if (this.ctx.mode === 'popup') this.ctx.switches = this.overlays.popupSwitches()
     this.overlays.updatePrompt(this.ctx.mode, this.ctx.prompt, this.lastInput)
     this.overlays.syncFocus(this.ctx)
     const fi = this.overlays.focusInfo(this.ctx)
@@ -699,7 +957,9 @@ export class GameScreen {
     this.ctx.pageable = this.overlays.pageable(this.ctx)
     this.trackPack()
     this.trackActions(now, true)
+    this.spellFrame()
     if (this.padHints.waiting) this.padHints.observe(this.padHintEvidence(), now)
+    if (this.touchHints.waiting) this.touchHints.observe(this.touchHintEvidence(), now)
     const cursor = this.cursorFor()
     const lc = this.lastCursor
     if ((cursor?.x !== lc?.x || cursor?.y !== lc?.y || cursor?.mode !== lc?.mode || cursor?.tile !== lc?.tile) && !(cursor === null && lc === null)) {
@@ -721,25 +981,36 @@ export class GameScreen {
     const nearby = this.is3d ? settings.nearby : 'list'
     // one of our own panels has its prompts from the panel (Overlays.padPrompts), set under it as crawl's menus' are
     const ours = this.overlays.padPrompts
-    const padLabels = this.chat.capturing ? [] : ours ?? this.padHints.prompts(this.ctx, settings.hints)
+    let padLabels = this.chat.capturing ? [] : ours ?? this.padHints.prompts(this.ctx, settings.hints)
     // A held tap-or-hold button (B: Wait, hold for Rest) shows its prompt while it is down, even when the
     // situation did not put it in the corner, so the hold's progress has a place to show. It joins the
     // contextual ones, under the lessons.
     const held = this.holding
     if (held && !padLabels.some((l) => l.button === held.button)) {
+      padLabels = padLabels.filter((l) => l.button !== held.button)
       const l = barLabels(this.ctx).find((l) => l.button === held.button)
       if (l) {
         const at = padLabels.findIndex((l) => l.teaching)
         padLabels.splice(at < 0 ? padLabels.length : at, 0, l)
       }
     }
-    // north up: the ground and all on it stand unturned, and the map is drawn without its north mark
-    this.hud.minimapTurns = settings.minimapTurns
-    this.hud.minimapUp = settings.minimapTurns ? this.cam.mapYaw : 0
-    this.hud.minimapUpright = settings.minimapTurns ? this.cam.mapUprightYaw : 0
-    // and marks the way the 3D view faces instead, as the level map does
-    this.hud.minimapFov = !settings.minimapTurns && this.renderer instanceof Render3d ? this.viewFov() : null
-    this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours)
+    // the minimap stands north up, and marks the way the 3D view faces, as the level map does
+    this.hud.minimapFov = this.renderer instanceof Render3d ? this.viewFov() : null
+    // a finger gets every button the screen has, by its word (bindings.ts touchLabels); a panel of ours names its own.
+    // A spectator's too: B and Start open the Orbrun menu, where Stop watching is, the one way out on a phone
+    // the bar's cast passes through crawl's "Cast which spell?" on its way to the aim: the buttons hold still through it,
+    // rather than flash the prompt's own for a frame or two
+    const passing = this.castPrompt()
+    const touch = passing ? this.lastTouch : this.lastInput === 'touch' && !this.chat.capturing ? touchLabels(ours ? withBack(ours) : barLabels(this.ctx), this.ctx, !!ours) : null
+    this.lastTouch = touch
+    this.hud.update(st, this.session.scene, this.cam.camera, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, nearby, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours, touch)
+    // a line typed in the log (bindings.ts typedInLog) stands on the phone's keyboard, and what Chrome lays over its top
+    const field = typedInLog(st.textInput) ? this.overlays.activeInput() : null
+    this.hud.liftLog(field && document.activeElement === field ? keyboardCover(this.root) : 0)
+    this.overlays.placeLogInput(() => this.hud.logRect())
+    this.hud.showTouchHints(this.touchLessons(settings.hints), this.session.gamedata)
+    const book = this.spellBook.spells
+    this.hud.renderSpellBar(this.spellsShown() && this.spellsLive() ? { spells: book, lit: this.spellBar.lit(), short: book.filter((s) => spellShort(s, st.player)).map((s) => s.letter) } : null, this.session.gamedata)
     this.chat.update(st, this.chatOn && (st.phase === 'playing' || st.phase === 'watching'), !!st.lobby.username)
     this.syncTarget()
     perf?.mark('ui')
@@ -853,7 +1124,7 @@ export class GameScreen {
     if (this.dirty || this._needsRender || this.pickDirty || this.hoverMoved) return true
     if (this.cam.steering || this.padLooking) return true
     if (this.is3d && (this.renderer as Render3d).animating) return true
-    return this.pressTimes.size > 0 || this.padHints.waiting
+    return this.pressTimes.size > 0 || this.padHints.waiting || this.touchHints.waiting
   }
 
   /**
@@ -903,6 +1174,7 @@ export class GameScreen {
       // the cell size is fitted to the view (`cellPixels`), so its size belongs to the key (`relayout` ran first in the frame)
       this.viewPx?.width,
       this.viewPx?.height,
+      this.mapFoot,
       o.tile_cell_pixels,
       o.tile_viewport_scale,
       o.tile_map_scale,
@@ -960,6 +1232,7 @@ export class GameScreen {
       ;(this.renderer as Render2d).setOptions({
         cellSize: this.cellPixels(Math.max(8, Math.round((px * scale) / 100)), mode),
         mode,
+        foot: mapView ? this.mapFoot : 0,
         filterScaling: o.tile_filter_scaling === true,
         glyphFont: rcFont(o.glyph_mode_font),
         minibars,
@@ -972,13 +1245,14 @@ export class GameScreen {
    * dungeon_renderer.js `fit_to`: the cells from the rc options, shrunk to fit
    * if a full field of view (game.js `show_diameter`) would not otherwise
    * stand in the view. Glyph modes size their cells from the font instead, so
-   * they are left alone.
+   * they are left alone. The level map is not fitted, as WebTiles' is: on a
+   * phone the fit already holds its default scale, and zooming in did nothing.
    */
   private cellPixels(cell: number, mode: string): number {
-    if (mode === 'glyphs') return cell
+    if (mode === 'glyphs' || this.mapShown) return cell
     const w = this.canvas.clientWidth
-    const h = this.canvas.clientHeight
-    if (!w || !h) return cell
+    const h = this.canvas.clientHeight - (this.mapShown ? this.mapFoot : 0)
+    if (!w || h <= 0) return cell
     const span = SHOW_DIAMETER * cell
     if (span <= w && span <= h) return cell
     return Math.max(1, Math.floor(cell * Math.min(w / span, h / span)))
@@ -997,7 +1271,8 @@ export class GameScreen {
    * (camera `faceCursorBehind`); the keys read against whatever grid is in
    * view (camera `gridFacing`). A fire that locked onto a target behind the
    * player turns nothing at all until the cursor is first stepped
-   * (`viewHeld`): the lock is crawl's, not a move of the player's. A
+   * (`viewHeld`): the lock is crawl's, not a move of the player's. Firing
+   * turns the view to the shot (runner `faceAim`), as a swing does. A
    * spectated player's aim faces the cell itself.
    */
   private faceCursor(c: SceneCursor) {
@@ -1238,6 +1513,7 @@ export class GameScreen {
   }
 
   pad(ev: PadEvent) {
+    if (this.destroyed) return
     this.wake()
     // a press, a stick or the d-pad is the pad speaking; a stick settling back to centre is not
     if (isPadActivity(ev)) this.inputFrom('pad')
@@ -1249,8 +1525,6 @@ export class GameScreen {
       if (ev.type === 'press') {
         // the button that opened this screen puts it away whole, before anything else it would do here
         if (ev.button === this.overlayOpener) this.overlays.clientOverlayInput('close')
-        // an empty tab of X's actions keeps the two that are no list: Y swaps weapons, LT shouts
-        else if (this.overlays.openMenu === 'battle' && (ev.button === 'Y' || ev.button === 'LT')) this.actionKey(ev.button === 'Y' ? SWAP_WEAPONS_KEY : SHOUT_KEY)
         else if (ev.button === 'A') this.overlays.clientOverlayInput('select')
         else if (ev.button === 'START') this.overlays.clientOverlayInput('submit')
         else if (ev.button === 'B') this.overlays.clientOverlayInput('cancel')
@@ -1278,14 +1552,7 @@ export class GameScreen {
         return
       }
       this.mapPan = { x: 0, y: 0 }
-      if (this.hooks.gamepad.rightStickTurns) {
-        // on Turn the stick's left and right come as `rstick` directions; a look is only ever up or down
-        this.cam.look(0, 0)
-        this.cam.tilt(ev.dy, st.lookSensitivity, st.invertLook)
-      } else {
-        this.cam.tilt(0)
-        this.cam.look(ev.dx, ev.dy, st.lookSensitivity, st.invertLook)
-      }
+      this.cam.look(ev.dx, ev.dy, st.lookSensitivity, st.invertLook)
       this.needsRender = true
       return
     }
@@ -1320,8 +1587,9 @@ export class GameScreen {
     // reached from inside one (A on a settings row) keeps the opener it came with
     if (ev.type === 'press') {
       if (!this.overlays.hasClientOverlay) this.overlayOpener = null
-      // (the frame a turn of X's tabs stands in is no screen of the bumper's: the bumper turns it again)
-      else if (!overlayWasUp && this.overlays.openMenu !== 'battle') this.overlayOpener = ev.button
+      // (the frame a turn of X's tabs stands in is no screen of the bumper's: the bumper turns it again;
+      // nor is A's chooser of what to do underfoot A's: A picks a row there, as in every list)
+      else if (!overlayWasUp && this.overlays.openMenu !== 'battle' && ev.button !== 'A') this.overlayOpener = ev.button
     }
     this.needsRender = true
   }
@@ -1335,6 +1603,23 @@ export class GameScreen {
       focus: this.overlays.focusInfo(this.ctx)?.index ?? st.menus.at(-1)?.last_hovered ?? -1,
       clientOverlay: this.overlays.hasClientOverlay,
     }
+  }
+
+  private touchHintEvidence(): TouchHintEvidence {
+    return { mode: deriveMode(this.session.state), clientOverlay: this.overlays.hasClientOverlay }
+  }
+
+  /** A finger made one of the gestures the touch bar has no cell for: what it opens next frame teaches it (touch-hints.ts). */
+  private touchAttempt(lesson: TouchLesson) {
+    if (this.lastInput === 'touch') this.touchHints.attempt(lesson, this.touchHintEvidence(), performance.now())
+  }
+
+  /** The finger's lessons to stand this frame, when a finger is playing (touch-hints.ts `shown`). */
+  private touchLessons(mode: HintMode): TouchLesson[] {
+    const st = this.session.state
+    if (st.inputMode === MouseMode.COMMAND) this.commandedIn = st.player
+    if (this.lastInput !== 'touch' || this.session.watching || this.chat.capturing || this.commandedIn !== st.player) return []
+    return this.touchHints.shown(this.ctx, mode, this.overlays.hasClientOverlay)
   }
 
   private executePadAction(a: Action) {
@@ -1363,8 +1648,59 @@ export class GameScreen {
     this.needsRender = true
   }
 
-  private inputActed() {
+  /**
+   * The spell bar's part of a frame (spell-bar.ts): the lit spell goes out when its moment passes, and the list
+   * is looked up when it is wanted (a finger playing) and crawl stands still at its prompt with nothing up, a
+   * moment after the last key and the last word from crawl, so the look never lands in the middle of something:
+   * travel and explore keep the command mode while they run, and a key stops them.
+   */
+  private spellFrame() {
+    this.spellBook.tick()
+    this.spellBar.frame()
+    const st = this.session.state
+    const still = st.inputMode === MouseMode.COMMAND && !st.menus.length && !st.ui.length && !st.textInput && !st.dialog && !st.messages.more
+    if (this.lastInput === 'touch' && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()
+  }
+
+  /** The spell bar stands (and the messages over it): a finger playing a character with spells. */
+  private spellsShown(): boolean {
+    return this.lastInput === 'touch' && this.session.playing && !this.session.watching && this.spellBook.spells.length > 0
+  }
+
+  /** crawl's question which spell, asked of the bar's own cast on its way to the aim (spl-cast.cc `cast_a_spell`) */
+  private castPrompt(): boolean {
+    if (this.ctx.mode !== 'prompt' || !this.spellBar.casting()) return false
+    // a line on the prompt channel, not a prompt the context parses: "Cast which spell? (? or * to list)", or with the
+    // last spell offered first (trunk), "Confirm with . or Enter, or press ? or * to list all spells."
+    const last = this.session.state.messages.lines.at(-1)
+    return !!last && last.channel === MSGCH.PROMPT && /^Cast which spell\b|\bto list all spells\b/.test(formattedStringToText(last.text).trim())
+  }
+
+  /** Its buttons show: on the map, in an aim, and through the cast's own prompt, with nothing of ours up. Elsewhere its row is bare. */
+  private spellsLive(): boolean {
+    const m = this.ctx.mode
+    return (m === 'command' || (m === 'targeting' && !this.ctx.examining) || this.castPrompt()) && !this.overlays.hasClientOverlay && !this.chat.capturing && !this.mapShown
+  }
+
+  /** A spell on the bar tapped: armed, or spent (spell-bar.ts SpellBar). */
+  private spellTap(spell: Spell) {
+    this.inputFrom('touch')
+    // the spell bar's own tap keeps what it lit: its second tap is what spends it
+    this.inputActed(false)
+    this.spellBar.tap(spell)
+    this.needsRender = true
+  }
+
+  /** The bar's More: every spell, in crawl's cast list (X's Spells). */
+  private spellMore() {
+    this.inputFrom('touch')
+    this.inputActed()
+    if (this.ctx.mode === 'command') this.openActionTab('spells')
+  }
+
+  private inputActed(disarmSpell = true) {
     this.tapArmed.clear()
+    if (disarmSpell) this.spellBar?.disarm()
     this.holding = null
     if (!this.pointerLive) return
     this.pointerLive = false
@@ -1399,7 +1735,7 @@ export class GameScreen {
     else if (this.overlays.hasClientOverlay) this.overlays.clientOverlayInput('close')
     // elsewhere the Orbrun menu opens where Start opens it, and nowhere Start means something else
     else if (menu === 'system') { const a = buttonAction('START', this.ctx); if (a?.kind === 'ui' && a.op === 'system') this.uiOp('system') }
-    // off the map F2 is the Select button there: the palette for the screen
+    // off the map F2 opens the palette for the screen, which no button opens
     else if (menu === 'levelmap') this.overlays.showPalette(this.ctx.mode === 'targeting' || this.ctx.mode === 'menu' ? this.ctx.mode : 'command')
   }
 
@@ -1429,8 +1765,6 @@ export class GameScreen {
       else if (ev.key === 'End') this.overlays.clientOverlayInput('last')
       // Enter and space both fire the row the cursor is on, as they do in a server menu
       else if (ev.key === 'Enter' || ev.key === ' ') this.overlays.clientOverlayInput('select')
-      // an empty tab of X's actions: crawl's own keys for the two that are no list
-      else if (this.overlays.openMenu === 'battle' && (ev.key === SWAP_WEAPONS_KEY || ev.key === SHOUT_KEY)) this.actionKey(ev.key)
       else if (!ev.altKey && !ev.metaKey) {
         if (ev.key === 'Tab') this.overlays.clientOverlayHotkey('Tab')
         else if (ev.key.length === 1) this.overlays.clientOverlayHotkey(ev.ctrlKey ? 'Ctrl-' + ev.key.toUpperCase() : ev.key)
@@ -1512,17 +1846,77 @@ export class GameScreen {
    * rests on, and while targeting it moves the server's cursor. The gamepad's
    * right stick turns the camera whenever it is pushed, drag or no drag.
    */
+  /**
+   * Radians a css pixel of drag turns and tilts the view. A finger on the 3D
+   * view turns it a heading every TOUCH_HEADING_PX, so the finger takes the
+   * view all the way to the heading it means, 45° or 90°, and the release
+   * has little left to do; it tilts it by a fraction (`TOUCH_LOOK`) of the
+   * lens's own angle at the view's middle, whatever the field of view. The
+   * Look sensitivity (the stick's) leaves a finger be. A mouse, or the 2D
+   * view, turns about a half turn a drag across the view.
+   */
+  private lookPerPx(touch: boolean): { yaw: number; pitch: number } {
+    if (touch && this.renderer instanceof Render3d) {
+      const lens = this.renderer.projector()
+      return { yaw: Math.PI / 4 / TOUCH_HEADING_PX, pitch: ((2 * lens.tanHalfY) / lens.height) * TOUCH_LOOK }
+    }
+    const k = (Math.PI / Math.max(300, this.canvas.clientWidth)) * this.hooks.settings().lookSensitivity
+    return { yaw: k, pitch: k }
+  }
+
+  /**
+   * Css px a finger's swipe takes the 3D view one heading: what the lens
+   * shows 45° across at the view's middle, so the dungeon stays under the
+   * finger (swipe-turn.ts). The 2D view keeps swipe-turn's own pace.
+   */
+  private swipeHeadingPx(): number {
+    if (!(this.renderer instanceof Render3d)) return SWIPE_HEADING_PX
+    const lens = this.renderer.projector()
+    return (HEADING * lens.height) / (2 * lens.tanHalfY)
+  }
+
+  /**
+   * How a finger lifts off a look drag at `now`: its speeds turned into the
+   * view's (a mouse leaves the view where it points). A touch the system took
+   * away (`cancelled`: pointercancel, the page losing focus) was no swipe, so
+   * it settles on the nearest heading, as Android drops a fling on cancel.
+   */
+  private release(d: Drag, now: number, cancelled = false): DragRelease | undefined {
+    if (!d.touch) return undefined
+    if (cancelled) return { yawSpeed: 0, pitchSpeed: 0, commit: Infinity }
+    const k = d.k ?? this.lookPerPx(true)
+    const { vx, vy } = d.g.speed(now)
+    return {
+      yawSpeed: -vx * k.yaw * 1000,
+      pitchSpeed: (this.hooks.settings().invertLook ? -1 : 1) * vy * k.pitch * 1000,
+      commit: TURN_COMMIT * k.yaw,
+    }
+  }
+
   private attachPointer(c: HTMLCanvasElement) {
     c.addEventListener('contextmenu', (ev) => ev.preventDefault())
     c.addEventListener('pointerdown', (ev) => {
-      this.inputFrom('pointer')
+      this.inputFrom(ev.pointerType === 'touch' ? 'touch' : 'pointer')
       // mouse_control.js: any mousedown hides the cell tooltip
       clearTimeout(this.tooltipTimer)
       this.hud.hideTooltip()
       // a click is the mouse speaking: its selection is live again, so a click right after a key still acts on the hovered cell
       if (ev.pointerType === 'mouse') this.pointerLive = true
-      if (this.drag) return
-      this.drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY, moved: false, button: ev.button }
+      if (this.drag) {
+        if (this.startPinch(this.drag, ev)) c.setPointerCapture(ev.pointerId)
+        return
+      }
+      const touch = ev.pointerType === 'touch'
+      const d: Drag = (this.drag = { id: ev.pointerId, g: new LookDrag(touch, { t: ev.timeStamp, x: ev.clientX, y: ev.clientY }), button: ev.button, touch })
+      // a finger held still on the view is R3, the stick click the touch bar has no cell for (bindings.ts TOUCH_CELLS):
+      // what is ahead examined on the map, the overview on the level map; the lift then does nothing more
+      if (d.touch) {
+        d.hold = window.setTimeout(() => {
+          if (this.drag !== d || d.g.moved) return
+          d.held = true
+          this.touchPress('R3')
+        }, HOLD_MS)
+      }
       c.setPointerCapture(ev.pointerId)
     })
     c.addEventListener('pointermove', (ev) => {
@@ -1536,6 +1930,7 @@ export class GameScreen {
         this.wake()
         this.armCellTooltip(ev.pageX, ev.pageY)
       }
+      if (this.pinch?.pts.has(ev.pointerId)) return this.pinchMap(ev)
       const d = this.drag
       if (!d || ev.pointerId !== d.id) return
       // the button came up somewhere the page could not see it (off the window
@@ -1543,30 +1938,55 @@ export class GameScreen {
       // held, is that release. Drop the drag instead of orbiting a held button
       // that is not held.
       if (ev.pointerType === 'mouse' && ev.buttons === 0) return this.cancelDrag()
-      const dx = ev.clientX - d.x
-      const dy = ev.clientY - d.y
-      d.x = ev.clientX
-      d.y = ev.clientY
-      if (!d.moved && Math.hypot(ev.clientX - d.x0, ev.clientY - d.y0) < DRAG_SLOP) return
-      d.moved = true
-      const st = this.hooks.settings()
-      // radians per css pixel; a full drag across the view is about a half turn
-      const k = (Math.PI / Math.max(300, this.canvas.clientWidth)) * st.lookSensitivity
+      const coalesced = ev.getCoalescedEvents?.() ?? []
+      const step = d.g.move((coalesced.length ? coalesced : [ev]).map((e) => ({ t: e.timeStamp, x: e.clientX, y: e.clientY })))
+      if (!step || d.held) return
+      clearTimeout(d.hold)
+      if (d.touch && this.panMapBy(d, step.dx, step.dy)) return
+      const { dx, dy } = d.g.look(step.dx, step.dy)
+      // a finger's swipe across turns the view with it, and onto whole headings as it lifts (swipe-turn.ts);
+      // the dungeon goes the finger's way, so a swipe to the right turns left
+      if (d.touch && d.g.axis === 'x' && this.hooks.settings().swipeTurn === 'step') {
+        d.stepping ??= this.swipeHeadingPx()
+        this.cam.lean(-swipeView(d.g.x - d.g.x0, d.stepping) * HEADING)
+        this.needsRender = true
+        return
+      }
+      const k = (d.k ??= this.lookPerPx(d.touch))
       // the drag grabs the world, the way a Mac scrolls: the dungeon follows the
       // pointer, so dragging right swings the view left and dragging down looks up
-      this.cam.lookBy(-dx * k, (st.invertLook ? -dy : dy) * k)
+      this.cam.lookBy(-dx * k.yaw, (this.hooks.settings().invertLook ? -dy : dy) * k.pitch, d.touch)
       this.needsRender = true
     })
     const end = (ev: PointerEvent) => {
+      if (this.pinch?.pts.has(ev.pointerId)) {
+        // either finger lifting ends the pinch, and the one left on the glass does nothing more
+        for (const id of this.pinch.pts.keys()) if (c.hasPointerCapture(id)) c.releasePointerCapture(id)
+        this.pinch = null
+        this.drag = null
+        return
+      }
       const d = this.drag
       if (!d || ev.pointerId !== d.id) return
       this.drag = null
+      clearTimeout(d.hold)
       if (c.hasPointerCapture(ev.pointerId)) c.releasePointerCapture(ev.pointerId)
-      if (d.moved) {
-        this.cam.endDrag()
+      if (d.held || d.pan) return
+      if (d.stepping !== undefined) {
+        // lifted, it goes on to its heading, a second swipe turning on from where that one is going
+        this.cam.endLean()
+        const n = ev.type === 'pointercancel' ? 0 : swipeRest(d.g.x - d.g.x0, d.stepping)
+        if (n) this.cam.turn(-n)
+        this.needsRender = true
+      } else if (d.g.moved) {
+        this.cam.endDrag(this.release(d, ev.timeStamp, ev.type === 'pointercancel'))
         this.needsRender = true
       } else if (ev.type === 'pointerup') {
+        // the message pane lets the press through to here (hud.ts dismissesMoreAt): on a pending --more-- it is space
+        if (this.hud.dismissesMoreAt(ev.clientX, ev.clientY)) return this.runner.execute(CONTINUE)
+        if (d.touch && this.tapSteps()) return this.stepForward()
         const rect = this.canvas.getBoundingClientRect()
+        if (d.touch && this.tapMapCursor(ev.clientX - rect.left, ev.clientY - rect.top)) return
         this.onPointer(ev.clientX - rect.left, ev.clientY - rect.top, d.button)
       }
     }
@@ -1576,12 +1996,20 @@ export class GameScreen {
     this.onWindowBlur ??= () => this.cancelDrag()
     window.addEventListener('blur', this.onWindowBlur)
     this.cancelDrag = () => {
+      if (this.pinch) {
+        for (const id of this.pinch.pts.keys()) if (c.hasPointerCapture(id)) c.releasePointerCapture(id)
+        this.pinch = null
+        this.drag = null
+        return
+      }
       const d = this.drag
       if (!d) return
       this.drag = null
+      clearTimeout(d.hold)
       if (c.hasPointerCapture(d.id)) c.releasePointerCapture(d.id)
-      if (!d.moved) return
-      this.cam.endDrag()
+      if (!d.g.moved || d.pan) return
+      if (d.stepping !== undefined) this.cam.endLean()
+      else this.cam.endDrag(this.release(d, performance.now(), true))
       this.needsRender = true
     }
     c.addEventListener('pointerup', end)
@@ -1591,6 +2019,31 @@ export class GameScreen {
       clearTimeout(this.tooltipTimer)
       this.hud.hideTooltip()
     })
+  }
+
+  /**
+   * Android's back (back.ts): B, the way out of whatever is up, but over the
+   * map with nothing up, where crawl ignores Escape, Save and exit as the
+   * Orbrun menu's row sends it. Crawl's S asks first, so a second back is the
+   * B that answers no. The device stays what it was: back is no finger on the
+   * view, nor the pad.
+   */
+  back() {
+    if (this.ctx.mode === 'command' && !this.session.watching && !this.overlays.hasClientOverlay && !this.chat.capturing) {
+      this.runner.send(cm.input('S'))
+      return
+    }
+    const t = performance.now()
+    this.pad({ type: 'press', button: 'B', t, touch: true })
+    this.pad({ type: 'release', button: 'B', t, held: 0, touch: true })
+  }
+
+  /** A finger pressing and releasing one of the pad's buttons at once, as the touch bar's do over time. */
+  private touchPress(button: Button) {
+    this.inputFrom('touch')
+    const now = performance.now()
+    this.hooks.gamepad.virtualDown(button, now, true)
+    this.hooks.gamepad.virtualUp(button, now, true)
   }
 
   /**
@@ -1640,10 +2093,15 @@ export class GameScreen {
     if (!this.session.watching) this.runner.send(cm.setOption('action_panel_show', shown))
   }
 
-  /** A server popup or dialog is up, and the pointer may close it: ui.js registers its handlers on the same condition. */
-  private popupUp(): boolean {
+  /**
+   * A server popup or dialog is up, and the pointer may close it: ui.js
+   * registers its handlers on the same condition. Under a finger (`touch`) a
+   * menu is one too, as menu.js shows it with ui.show_popup: on a phone the
+   * menu covers the view, and a tap beside it is the way out a finger reaches.
+   */
+  private popupUp(touch = false): boolean {
     if (this.session.watching || this.overlays.hasClientOverlay) return false
-    if (this.ctx.mode !== 'popup' && this.ctx.mode !== 'dialog') return false
+    if (this.ctx.mode !== 'popup' && this.ctx.mode !== 'dialog' && !(touch && this.ctx.mode === 'menu')) return false
     return this.session.state.options.tile_web_mouse_control !== false
   }
 
@@ -1655,14 +2113,42 @@ export class GameScreen {
    * (`target_outside_game`) and keeps its clicks. Orbrun adds: a right click
    * closes wherever it lands, inside the popup too, the mirror of the right
    * click that opened a describe, so a look is over as fast as it began.
-   * Orbrun's own overlays are not server popups and handle their own
-   * pointer.
+   * Under a finger, a crawl menu goes the same way (`popupUp`), and so do
+   * Orbrun's own panels: a tap outside them is their Escape, a step back
+   * (B). A mouse leaves those be, as before: it has the view to drag while
+   * a setting is tuned. The touch bar is no outside, buttons or not: its
+   * buttons are the pad's, and its Back already says what it does, so a tap
+   * that misses one between them closes nothing. A finger outside closes
+   * as it lifts rather than as it lands, since a swipe there turns the menu's
+   * tabs as a swipe over it does (`outsideLift`).
    */
   private onDocPointer(ev: PointerEvent) {
     this.wake()
-    if (!this.popupUp()) return
+    this.pointerClosed = false
+    // a finger anywhere (a menu's row, a prompt's chip) is the finger speaking: the touch bar comes up for it
+    const touch = ev.pointerType === 'touch'
+    if (touch) this.inputFrom('touch')
     const t = ev.target instanceof Element ? ev.target : null
-    if (t && this.chat.root.contains(t)) return
+    if (t?.closest('.touchbar')) return
+    if (touch && this.overlays.hasClientOverlay && !this.session.watching) {
+      // inside a panel, on the on-screen keyboard or in the chat, the press is theirs
+      if (t?.closest('.popup, .osk') || (t && this.chat.owns(t))) return
+      ev.preventDefault()
+      ev.stopPropagation()
+      this.pointerClosed = true
+      this.outsideTouch = {
+        id: ev.pointerId, x: ev.clientX, y: ev.clientY, t: ev.timeStamp,
+        close: () => {
+          if (!this.overlays.hasClientOverlay) return
+          this.overlays.clientOverlayInput('cancel')
+          if (!this.overlays.hasClientOverlay) this.overlayOpener = null
+          this.needsRender = true
+        },
+      }
+      return
+    }
+    if (!this.popupUp(touch)) return
+    if (t && this.chat.owns(t)) return
     // the perf pane takes its own taps (it saves the log); a tap on it is not a tap outside the popup
     if (t?.closest('.perf')) return
     const inside = !!t?.closest('.popup')
@@ -1671,13 +2157,59 @@ export class GameScreen {
     ev.stopPropagation()
     clearTimeout(this.tooltipTimer)
     this.hud.hideTooltip()
-    this.runner.send(cm.key(27))
+    this.pointerClosed = true
+    if (touch) this.outsideTouch = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, t: ev.timeStamp, close: () => this.runner.send(cm.key(27)) }
+    else this.runner.send(cm.key(27))
+  }
+
+  /** The finger that came down outside a menu moves: the menu's tabs lean toward the turn it would make (tab-lean.ts). */
+  private outsideMove(ev: PointerEvent) {
+    const o = this.outsideTouch
+    if (o && ev.pointerId === o.id) this.overlays.tabLean.lean(swipeLean(ev.clientX - o.x, ev.clientY - o.y))
+  }
+
+  /**
+   * The finger that came down outside a menu lifts: a sideways swipe is the
+   * d-pad's Left or Right, as over the menu itself (swipe.ts), anything else
+   * the tap that closes it. A gesture the browser took for itself does neither.
+   */
+  private outsideLift(ev: PointerEvent) {
+    const o = this.outsideTouch
+    if (!o || ev.pointerId !== o.id) return
+    this.outsideTouch = null
+    if (ev.type === 'pointercancel') return this.overlays.tabLean.end(0)
+    const step = swipeStep(ev.clientX - o.x, ev.clientY - o.y, ev.timeStamp - o.t)
+    this.overlays.tabLean.end(step)
+    if (step) this.touchPress(step > 0 ? 'DR' : 'DL')
+    else o.close()
+  }
+
+  /**
+   * A tap or click on the minimap opens the level map only from the game
+   * itself. Over a menu it is a tap outside the menu, which closes it and
+   * nothing more: under a finger the press already did (`onDocPointer`), and
+   * a mouse's click closes it here.
+   */
+  private minimapTap() {
+    if (this.pointerClosed) return
+    if (!this.session.watching) {
+      if (this.overlays.hasClientOverlay) {
+        this.overlays.clientOverlayInput('cancel')
+        if (!this.overlays.hasClientOverlay) this.overlayOpener = null
+        this.needsRender = true
+        return
+      }
+      if (MINIMAP_CLOSES.has(this.ctx.mode)) return this.runner.send(cm.key(27))
+      this.touchAttempt('map')
+    }
+    this.runner.execute(LEVEL_MAP)
   }
 
   /** ui.js context_disable: no browser context menu while a popup is up, except on a text input. */
   private onDocContextMenu(ev: MouseEvent) {
     this.wake()
-    if (!this.popupUp()) return
+    // a long press on a menu's row is the finger's (onDocPointer took it as touch first): no callout over the menu
+    if (!this.popupUp(this.lastInput === 'touch')) return
     const t = ev.target instanceof Element ? ev.target : null
     if (t && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement)) return
     ev.preventDefault()
@@ -1697,6 +2229,102 @@ export class GameScreen {
     const key = this.renderer.pick(px, py)
     if (key === null) return
     this.runner.clickCell((key & 1023) - 512, (key >> 10) - 512, button + 1)
+  }
+
+  /**
+   * A finger's tap on the view walks: on the map with nothing up, a tap is a
+   * step the way the view faces, the pad's forward (bindings.ts `resolve`),
+   * a bump attack on whatever stands there. Elsewhere (aiming, the level
+   * map, a popup) it stays crawl's click on the cell, as a mouse's is.
+   */
+  private tapSteps(): boolean {
+    return this.ctx.mode === 'command' && !this.session.watching && !this.overlays.hasClientOverlay
+  }
+
+  /**
+   * A finger's tap on the level map puts its cursor on the cell tapped, as a
+   * click does in local tiles; a WebTiles click there does nothing.
+   */
+  private tapMapCursor(px: number, py: number): boolean {
+    if (this.ctx.mode !== 'levelmap' || this.session.watching) return false
+    const c = this.session.state.cursors[2]
+    const key = this.renderer.pick(px, py)
+    if (!c || key === null) return true
+    this.inputActed()
+    // taps quicker than the server's echo walk on from the last one's cell
+    const t = this.mapTap
+    const from = t && t.from.x === c.x && t.from.y === c.y && performance.now() - t.t < ORBIT_WINDOW_MS ? t.to : c
+    const to = { x: (key & 1023) - 512, y: (key >> 10) - 512 }
+    this.mapTap = { from: { x: c.x, y: c.y }, to, t: performance.now() }
+    this.runner.mapCursorBy(to.x - from.x, to.y - from.y)
+    return true
+  }
+
+  /**
+   * A finger dragging the level map grabs it, as a drag grabs the 3D view:
+   * the map follows the finger, so its cursor, which the map is centred on,
+   * walks the other way a cell for each cell's width dragged.
+   */
+  private panMapBy(d: Drag, dx: number, dy: number): boolean {
+    if (this.ctx.mode !== 'levelmap' || this.session.watching || !(this.renderer instanceof Render2d)) return false
+    const cs = this.renderer.cellSize
+    // the first move counts from where the finger came down: the slop it crossed is part of the drag
+    const p = (d.pan ??= { x: d.g.x - d.g.x0 - dx, y: d.g.y - d.g.y0 - dy })
+    p.x += dx
+    p.y += dy
+    const cx = Math.trunc(p.x / cs)
+    const cy = Math.trunc(p.y / cs)
+    if (!cx && !cy) return true
+    p.x -= cx * cs
+    p.y -= cy * cs
+    this.inputActed()
+    this.mapTap = null
+    this.runner.mapCursorBy(-cx, -cy)
+    return true
+  }
+
+  /**
+   * A second finger down on the level map while the first is on it starts a
+   * pinch. Crawl owns the map's zoom (tileweb.cc `zoom_dungeon`, a tenth of
+   * `tile_map_scale` a step), so the pinch only decides how many steps of
+   * the zoom keys to send.
+   */
+  private startPinch(d: Drag, ev: PointerEvent): boolean {
+    if (!d.touch || ev.pointerType !== 'touch' || d.held || this.ctx.mode !== 'levelmap' || this.session.watching) return false
+    clearTimeout(d.hold)
+    const pts = new Map([
+      [d.id, { x: d.g.x, y: d.g.y }],
+      [ev.pointerId, { x: ev.clientX, y: ev.clientY }],
+    ])
+    const d0 = Math.max(1, Math.hypot(ev.clientX - d.g.x, ev.clientY - d.g.y))
+    const o = this.session.state.options.tile_map_scale
+    this.pinch = { pts, d0, scale0: typeof o === 'number' && o > 0 ? o : 60, sent: 0 }
+    this.inputActed()
+    return true
+  }
+
+  /** The fingers moved apart or together: zoom by as many steps as the spread asks, within crawl's 20%..300%. */
+  private pinchMap(ev: PointerEvent) {
+    const p = this.pinch!
+    p.pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY })
+    const [a, b] = [...p.pts.values()]
+    const want = p.scale0 * (Math.hypot(a.x - b.x, a.y - b.y) / p.d0)
+    const steps = Math.round((Math.min(MAP_SCALE_MAX, Math.max(MAP_SCALE_MIN, want)) - p.scale0) / MAP_SCALE_STEP)
+    while (p.sent < steps) {
+      p.sent++
+      this.runner.sendKeys([{ text: '}' }])
+    }
+    while (p.sent > steps) {
+      p.sent--
+      // `{` as text would open a JSON message (keys.ts)
+      this.runner.sendKeys([{ key: 123 }])
+    }
+  }
+
+  private stepForward() {
+    this.inputActed()
+    this.runner.execute({ kind: 'step', dir: 0, turns: true })
+    this.needsRender = true
   }
 
   /**
@@ -1834,14 +2462,6 @@ export class GameScreen {
     this.runner.execute({ kind: 'keys', label: tab.label, seq: [{ text: tab.key }] })
   }
 
-  /** Y or LT on an empty tab: the frame goes, and crawl's key for the action goes alone (no menu to put away). */
-  private actionKey(key: string) {
-    // a menu still opening would take the key as a row's letter: the frame waits for it
-    if (this.actionTurn) return
-    this.overlays.closeClientOverlay()
-    this.runner.execute({ kind: 'keys', label: key === SHOUT_KEY ? 'Shout' : 'Swap weapons', seq: [{ text: key }] })
-  }
-
   /**
    * A turn of X's tabs, seen through: the tab's menu up (the frame goes,
    * and X will open on it again), or crawl's line refusing it ("You don't
@@ -1958,3 +2578,10 @@ function radians(deg: number): number {
 }
 
 export { keyMessage }
+
+/** How far a phone's keyboard comes up over `host`'s foot: the visual viewport shrinks for it, the layout one does not. */
+function keyboardCover(host: HTMLElement): number {
+  const vv = window.visualViewport
+  if (!vv) return 0
+  return Math.max(0, Math.round(host.getBoundingClientRect().bottom - (vv.offsetTop + vv.height)))
+}

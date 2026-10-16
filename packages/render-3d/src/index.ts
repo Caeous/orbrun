@@ -15,7 +15,7 @@ import {
   type TileSource,
   type Viewmodel,
 } from '@orbrun/scene'
-import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, handsFootprint, type HandPose, type HandRect } from './hands.js'
+import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, handsFootprint, handsScale, scaledPose, type HandPose, type HandRect } from './hands.js'
 import { LevelGrid } from './grid.js'
 import { LevelMesher, MARK_MARGIN, uvFor, type ChunkGeometry, type LevelStats, type MeshContext, type TileDraw } from './level-mesh.js'
 import { Movers, monsterId } from './motion.js'
@@ -31,7 +31,7 @@ import {
   type SpriteInstance,
   type SpritePass,
 } from './sprites.js'
-import { BLIT_FRAG, BLIT_VERT, CURSOR_FRAG, CURSOR_VERT, FLAT_FRAG, LEVEL_FRAG, LEVEL_VERT, SHADOW_VERT, SPRITE_FRAG, SPRITE_VERT, VOID_FRAG } from './shaders.js'
+import { CURSOR_FRAG, CURSOR_VERT, FLAT_FRAG, LEVEL_FRAG, LEVEL_VERT, SHADOW_VERT, SPRITE_FRAG, SPRITE_VERT, VOID_FRAG } from './shaders.js'
 import { bodyRect, sceneClassAt } from './footprint.js'
 
 /**
@@ -76,8 +76,10 @@ const EYE_MAX = 0.9
 export const WALL_INSET = 12 / 32
 /** Texel alpha at or above which a texel is opaque. */
 const OPAQUE_ALPHA = 26
-/** How long one frame may spend building level chunks, in milliseconds; the rest go out over the frames after. */
-const LEVEL_BUDGET_MS = 4
+/** How long one frame may spend building level chunks, in milliseconds; the rest go out over the frames after. At least one is built a frame, and a phone takes about this long for one. */
+const LEVEL_BUDGET_MS = 1
+/** How long a frame leaves out the sprites of an atlas a worker is peeling (`warmAtlases`) before it peels the atlas itself. */
+const PEEL_WAIT_MS = 2000
 /** Ghost fade: full strength until this many cells behind its occluder, then to nothing by the second. */
 const GHOST_FADE_START = 5
 const GHOST_FADE = 14
@@ -150,19 +152,35 @@ function unitBox(): THREE.BufferGeometry {
 
 /**
  * One instanced draw: a mesh over a shared base geometry with its own
- * instance buffers, grown as needed and written in place. `begin`, `push`
+ * instance buffer, grown as needed and written in place. `begin`, `push`
  * each instance, `end`.
+ *
+ * The attributes share one interleaved buffer, and `end` uploads only the
+ * span that differs from what the GPU already holds: a call per batch at
+ * most, none when a frame wrote what the last one did (the fixtures while
+ * the crowd glides, the hands every frame). Each upload is a trip to the
+ * GPU process in Safari, and a call per attribute per batch was some ninety
+ * of them a frame.
  */
 class Batch {
   readonly geometry: THREE.InstancedBufferGeometry
   readonly mesh: THREE.Mesh
   private capacity = 0
   private count = 0
-  private arrays = new Map<string, Float32Array>()
+  private stride = 0
+  private offsets: number[] = []
+  private buffer!: THREE.InstancedInterleavedBuffer
+  /** What the GPU holds, float for float; `fresh` until the buffer's first draw uploads it whole. */
+  private uploaded = new Float32Array(0)
+  private fresh = true
   constructor(base: THREE.BufferGeometry, material: THREE.Material, private attrs: [string, number][], renderOrder = 0) {
     this.geometry = new THREE.InstancedBufferGeometry()
     this.geometry.setIndex(base.getIndex())
     this.geometry.setAttribute('position', base.getAttribute('position'))
+    for (const [, size] of attrs) {
+      this.offsets.push(this.stride)
+      this.stride += size
+    }
     this.mesh = new THREE.Mesh(this.geometry, material)
     this.mesh.frustumCulled = false
     this.mesh.renderOrder = renderOrder
@@ -173,15 +191,14 @@ class Batch {
     if (n <= this.capacity) return
     let cap = Math.max(16, this.capacity)
     while (cap < n) cap *= 2
-    for (const [name, size] of this.attrs) {
-      const next = new Float32Array(cap * size)
-      const old = this.arrays.get(name)
-      if (old) next.set(old.subarray(0, this.count * size))
-      this.arrays.set(name, next)
-      const attr = new THREE.InstancedBufferAttribute(next, size)
-      attr.setUsage(THREE.DynamicDrawUsage)
-      this.geometry.setAttribute(name, attr)
-    }
+    const next = new Float32Array(cap * this.stride)
+    if (this.buffer) next.set(this.buffer.array.subarray(0, this.count * this.stride))
+    this.buffer = new THREE.InstancedInterleavedBuffer(next, this.stride)
+    this.buffer.setUsage(THREE.DynamicDrawUsage)
+    for (let i = 0; i < this.attrs.length; i++) this.geometry.setAttribute(this.attrs[i][0], new THREE.InterleavedBufferAttribute(this.buffer, this.attrs[i][1], this.offsets[i]))
+    // a new buffer is uploaded whole at its first draw
+    this.uploaded = new Float32Array(cap * this.stride)
+    this.fresh = true
     // three caps an instanced draw at the first instance buffer it bound and never looks again: forget it, or a grown batch draws its first 16
     delete (this.geometry as { _maxInstanceCount?: number })._maxInstanceCount
     this.capacity = cap
@@ -192,20 +209,30 @@ class Batch {
   /** Write one instance from `values`, an array per attribute in `attrs` order. */
   push(values: ArrayLike<number>[]) {
     this.reserve(this.count + 1)
-    for (let i = 0; i < this.attrs.length; i++) {
-      const [name, size] = this.attrs[i]
-      this.arrays.get(name)!.set(values[i], this.count * size)
-    }
+    const array = this.buffer.array as Float32Array
+    const at = this.count * this.stride
+    for (let i = 0; i < this.attrs.length; i++) array.set(values[i], at + this.offsets[i])
     this.count++
   }
   end() {
     this.geometry.instanceCount = this.count
     this.mesh.visible = this.count > 0
-    for (const [name, size] of this.attrs) {
-      const attr = this.geometry.getAttribute(name) as THREE.InstancedBufferAttribute
-      attr.needsUpdate = true
-      attr.addUpdateRange(0, this.count * size)
+    const array = this.buffer.array as Float32Array
+    if (this.fresh) {
+      // not yet on the GPU: its first draw uploads the whole array
+      this.uploaded.set(array)
+      this.fresh = false
+      return
     }
+    const n = this.count * this.stride
+    let lo = 0
+    while (lo < n && array[lo] === this.uploaded[lo]) lo++
+    if (lo === n) return
+    let hi = n
+    while (array[hi - 1] === this.uploaded[hi - 1]) hi--
+    this.uploaded.set(array.subarray(lo, hi), lo)
+    this.buffer.addUpdateRange(lo, hi - lo)
+    this.buffer.needsUpdate = true
   }
   get size() {
     return this.count
@@ -233,7 +260,6 @@ export class Render3d implements MapRenderer {
   readonly stats: RenderStats = { levelBuilds: 0, levelChunkBuilds: 0, lvlSetMs: 0, lvlChunkMs: 0, crowdSyncs: 0, spriteWrites: 0, fixtureBuilds: 0, fieldUpdates: 0 }
   private renderer: THREE.WebGLRenderer | null = null
   private three = new THREE.Scene()
-  private blitScene = new THREE.Scene()
   private cam = new THREE.PerspectiveCamera(75, 1, 0.05, 200)
   private tiles: TileSource | null = null
   /** Each way up's art by column (sprites.ts `StairColumns`), read once; null where it cannot be read. */
@@ -244,6 +270,7 @@ export class Render3d implements MapRenderer {
   private opts: Required<Render3dOptions>
   private width = 1
   private height = 1
+  private dpr = 1
   private alive = true
   private atlases = new Map<string, AtlasEntry>()
   private box = unitBox()
@@ -291,10 +318,8 @@ export class Render3d implements MapRenderer {
   private motionRevision = -1
   private ghostCount = 0
   // ---- the frame
-  private target: THREE.WebGLRenderTarget | null = null
   /** The depth of the level and its fixtures, for the ghost pass. */
   private depthTarget: THREE.WebGLRenderTarget | null = null
-  private blitMat: THREE.RawShaderMaterial
   private bufferSize = new THREE.Vector2()
   // ---- the cursor
   private cursorMesh: THREE.Mesh
@@ -310,9 +335,19 @@ export class Render3d implements MapRenderer {
   private handCache = new Map<string, Hand | null>()
   private vmLift = NaN
   private lift = NaN
+  /** the css px along the view's foot the HUD's touch bar stands over (`setFoot`) */
+  private footPx = 0
+  /** the view is a phone's held upright (`setUpright`): the hands shrink with the width (hands.ts `handsScale`) */
+  private upright = false
+  /** the css px along the view's foot the lens looks past (`setLensFoot`) */
+  private lensFootPx = 0
+  /** the css px along the view's top the lens is not fitted to (`setLensTop`) */
+  private lensTopPx = 0
   // ---- the peel
   private peelWorker: Worker | null | undefined = undefined
   private peelId = 0
+  /** The atlases a worker is peeling (`warmAtlases`), and since when: the frame leaves their sprites out rather than peel them again itself. */
+  private peeling = new Map<string, number>()
 
   constructor(opts: Render3dOptions = {}) {
     this.opts = {
@@ -356,18 +391,14 @@ export class Render3d implements MapRenderer {
     this.cursorTileMesh.visible = false
     this.cursorTileMesh.layers.set(LAYER_STANDING)
     this.three.add(this.cursorMesh, this.cursorTileMesh)
-    this.blitMat = new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: BLIT_VERT, fragmentShader: BLIT_FRAG, uniforms: { map: { value: null } }, depthTest: false, depthWrite: false })
-    const tri = new THREE.BufferGeometry()
-    tri.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3))
-    const blit = new THREE.Mesh(tri, this.blitMat)
-    blit.frustumCulled = false
-    this.blitScene.add(blit)
     this.vmCam.position.z = 1 / Math.tan((VM_FOV * Math.PI) / 360)
   }
 
   mount(target: HTMLCanvasElement | OffscreenCanvas): void {
     this.renderer = new THREE.WebGLRenderer({ canvas: target as HTMLCanvasElement, antialias: false, alpha: false })
     this.renderer.autoClear = false
+    // every material is raw and encodes itself: three must hand the canvas its clear colour as given, not encode it again
+    this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace
     this.renderer.setClearColor(0x000000, 1)
   }
 
@@ -375,9 +406,8 @@ export class Render3d implements MapRenderer {
 
   /**
    * A material on the renderer's own shaders. Every one encodes to sRGB as it
-   * writes (`OUT_SRGB`): the frame's target holds encoded values like the
-   * canvas, so the blended things — shadows, decals, clouds, ghosts — blend
-   * exactly as they blend on the canvas, and the blit is a copy.
+   * writes (`OUT_SRGB`), straight onto the canvas, so the blended things —
+   * shadows, decals, clouds, ghosts — blend on encoded values.
    */
   private raw(vert: string, frag: string, uniforms: Record<string, THREE.IUniform>, extra: THREE.ShaderMaterialParameters = {}, defines: Record<string, string> = {}): THREE.RawShaderMaterial {
     return new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: vert, fragmentShader: frag, uniforms, defines: { OUT_SRGB: '', ...defines }, ...extra })
@@ -498,15 +528,40 @@ export class Render3d implements MapRenderer {
   async warmAtlases(): Promise<void> {
     const tiles = this.tiles
     if (!tiles || !this.alive) return
-    for (const name of tiles.spriteAtlases?.() ?? []) {
-      const a = this.atlas(name)
-      if (!a || a.peeled) continue
-      const img = a.texture.image as TexImageSource | undefined
-      if (!img) continue
-      const done = await this.peelInWorker(a, img).catch(() => false)
-      if (this.tiles !== tiles || !this.alive) return
-      if (!done) this.peelNow(a)
+    const sprites = new Set(tiles.spriteAtlases?.() ?? [])
+    // the atlases the level is drawn from on the GPU now, not in the frame that first draws them; the sprites' once peeled
+    for (const name of tiles.atlasNames()) {
+      const a = sprites.has(name) ? null : this.atlas(name)
+      if (a) this.renderer?.initTexture(a.texture)
     }
+    const names = [...sprites].filter((name) => this.atlas(name)?.peeled === false)
+    const since = nowSeconds() * 1000
+    for (const name of names) this.peeling.set(name, since)
+    try {
+      for (const name of names) {
+        const a = this.atlas(name)
+        const img = a?.texture.image as TexImageSource | undefined
+        if (!a || a.peeled || !img) continue
+        const done = await this.peelInWorker(a, img).catch(() => false)
+        if (this.tiles !== tiles || !this.alive) return
+        if (!done) this.peelNow(a)
+        if ((a.peeled as AtlasEntry['peeled']) === true) {
+          this.renderer?.initTexture(a.texture)
+          if (a.dist) this.renderer?.initTexture(a.dist)
+        }
+        this.peeling.delete(name)
+        // the sprites the frames left out stand now
+        this.crowdRevision = -1
+      }
+    } finally {
+      for (const name of names) this.peeling.delete(name)
+    }
+  }
+
+  /** Whether a worker is still peeling the atlas, and not for so long that the frame should give up waiting and peel it itself. */
+  private waitingOnPeel(name: string): boolean {
+    const since = this.peeling.get(name)
+    return since !== undefined && nowSeconds() * 1000 - since < PEEL_WAIT_MS
   }
 
   private async peelInWorker(a: AtlasEntry, img: TexImageSource): Promise<boolean> {
@@ -551,7 +606,7 @@ export class Render3d implements MapRenderer {
     if (!r || !this.alive) return
     const first = this.atlases.values().next().value ?? this.atlas(this.tiles?.atlasNames()[0] ?? '')
     const warm = new THREE.Scene()
-    const mats: THREE.Material[] = [this.voidMat, this.shadowMat, this.cursorMat, this.cursorTileMat, this.blitMat]
+    const mats: THREE.Material[] = [this.voidMat, this.shadowMat, this.cursorMat, this.cursorTileMat]
     if (first) mats.push(first.level, first.decal, first.marks, ...Object.values(first.sprite))
     const plain = new THREE.BufferGeometry()
     plain.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3))
@@ -578,7 +633,7 @@ export class Render3d implements MapRenderer {
     }
     Object.assign(this.opts, opts)
     this.cam.fov = this.opts.fov
-    this.cam.updateProjectionMatrix()
+    this.applyLens()
     this.mesher.invalidate()
     this.builtRevision = -1
     this.builtLayout = -1
@@ -630,6 +685,75 @@ export class Render3d implements MapRenderer {
     this.cursor = cursor
   }
 
+  /**
+   * Orbrun's own, for a phone: the view's bottom `px` lie under the HUD's
+   * touch bar, which stands over the dungeon there, so the hands stand on
+   * the bar rather than at the view's own bottom edge, out of sight.
+   */
+  setFoot(px: number): void {
+    this.footPx = Math.max(0, px)
+  }
+
+  /** Orbrun's own: the view is a phone's held upright, where the hands shrink with the width (hands.ts `handsScale`). */
+  setUpright(on: boolean): void {
+    this.upright = on
+  }
+
+  /**
+   * Orbrun's own, for a phone held upright: the view's bottom `px` lie under
+   * the HUD's log and touch bar, so the lens is shifted up (the walls stay
+   * upright, as a shift lens keeps them) to put straight ahead in the middle
+   * of what is left in sight; centred on the whole view, a wide lens looked
+   * at the ceiling.
+   */
+  setLensFoot(px: number): void {
+    const foot = Math.max(0, Math.min(px, this.lensHeight / 2))
+    if (foot === this.lensFootPx) return
+    this.lensFootPx = foot
+    this.applyLens()
+  }
+
+  /**
+   * Orbrun's own, for a phone held upright: the view's top `px` run on up
+   * under the HUD's minimap band, as its foot runs on under the log and the
+   * touch bar. The lens, the hands and what the HUD reads of them
+   * (`projector`, `handsFootprint`) stay fitted to the part below, which
+   * looks the same as it did with the view starting there; the top `px`
+   * show what lies further up the same lens.
+   */
+  setLensTop(px: number): void {
+    const top = Math.max(0, Math.min(px, this.height - 1))
+    if (top === this.lensTopPx) return
+    this.lensTopPx = top
+    this.resize(this.width, this.height, this.dpr)
+  }
+
+  /** The height the lens is fitted to: the view's, less `lensTopPx`. */
+  private get lensHeight(): number {
+    return Math.max(1, this.height - this.lensTopPx)
+  }
+
+  /**
+   * The cameras' projections: centred on the view, or the lens's shifted up
+   * by `lensFootPx`; with `lensTopPx`, both are fitted to the part below it
+   * and run on up over it (a view offset may reach past the frame it is
+   * fitted to).
+   */
+  private applyLens(): void {
+    const h = this.lensHeight
+    if (this.lensFootPx || this.lensTopPx) this.cam.setViewOffset(this.width, h, 0, this.lensFootPx / 2 - this.lensTopPx, this.width, this.height)
+    else this.cam.clearViewOffset()
+    this.cam.updateProjectionMatrix()
+    if (this.lensTopPx) this.vmCam.setViewOffset(this.width, h, 0, -this.lensTopPx, this.width, this.height)
+    else this.vmCam.clearViewOffset()
+    this.vmCam.updateProjectionMatrix()
+  }
+
+  /** `footPx` as a share of the lens's height, never above half of it. */
+  private get footShare(): number {
+    return Math.min(0.5, this.footPx / this.lensHeight)
+  }
+
   setViewmodel(vm: Viewmodel | null): void {
     this.viewmodel = vm
     const key = vm ? JSON.stringify([vm.weapon?.layers, vm.offhand?.layers]) : ''
@@ -646,7 +770,7 @@ export class Render3d implements MapRenderer {
 
   /** True while something is still moving, so the host keeps rendering frames. */
   get animating(): boolean {
-    return !Number.isNaN(this.vmLift) || this.movers.active || this.mesher.hasPending
+    return !Number.isNaN(this.vmLift) || this.movers.active || this.mesher.hasPending || [...this.peeling.keys()].some((n) => this.waitingOnPeel(n))
   }
 
   resize(width: number, height: number, dpr: number): void {
@@ -656,10 +780,10 @@ export class Render3d implements MapRenderer {
       this.renderer.setPixelRatio(dpr)
       this.renderer.setSize(this.width, this.height, false)
     }
-    this.cam.aspect = this.width / this.height
-    this.cam.updateProjectionMatrix()
+    this.dpr = dpr
+    this.cam.aspect = this.width / this.lensHeight
     this.vmCam.aspect = this.cam.aspect
-    this.vmCam.updateProjectionMatrix()
+    this.applyLens()
   }
 
   destroy(): void {
@@ -677,11 +801,7 @@ export class Render3d implements MapRenderer {
     this.cursorMat.dispose()
     this.cursorTileMat.dispose()
     this.voidMat.dispose()
-    this.blitMat.dispose()
-    ;(this.blitScene.children[0] as THREE.Mesh).geometry.dispose()
     this.box.dispose()
-    this.target?.dispose()
-    this.target = null
     this.depthTarget?.dispose()
     this.depthTarget = null
     this.ghostUniforms.sceneDepth.value = null
@@ -701,7 +821,7 @@ export class Render3d implements MapRenderer {
   }
 
   /** The lens after the last frame, for the HUD's edge pips. */
-  projector(): { tanHalfY: number; aspect: number; height: number; toCamera(x: number, y: number, h: number): { x: number; y: number; z: number } } {
+  projector(): { tanHalfY: number; aspect: number; shiftY: number; height: number; toCamera(x: number, y: number, h: number): { x: number; y: number; z: number } } {
     const cam = this.cam
     cam.updateMatrixWorld()
     const inv = cam.matrixWorld.clone().invert()
@@ -709,7 +829,8 @@ export class Render3d implements MapRenderer {
     return {
       tanHalfY: Math.tan((cam.fov * Math.PI) / 360),
       aspect: cam.aspect,
-      height: this.height,
+      shiftY: this.lensFootPx / this.lensHeight,
+      height: this.lensHeight,
       toCamera: (x, y, h) => {
         v.set(x + 0.5, h, y + 0.5).applyMatrix4(inv)
         return { x: v.x, y: v.y, z: v.z }
@@ -819,13 +940,21 @@ export class Render3d implements MapRenderer {
   }
 
   private chunkMesh(g: ChunkGeometry): THREE.Mesh | null {
+    // one interleaved vertex buffer and the index: two GL buffers a mesh where an array apiece was six, and a step builds dozens of meshes
+    const parts: [string, Float32Array, number][] = [['position', g.position, 3], ['uv', g.uv, 2], ['color', g.color, 3], ['cell', g.cell, 2], ['cut', g.cut, 1]]
+    if (g.rect) parts.push(['rect', g.rect, 4])
+    const count = g.position.length / 3
+    let stride = 0
+    for (const [, , size] of parts) stride += size
+    const data = new Float32Array(count * stride)
+    const buffer = new THREE.InterleavedBuffer(data, stride)
     const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(g.position, 3))
-    geo.setAttribute('uv', new THREE.BufferAttribute(g.uv, 2))
-    geo.setAttribute('color', new THREE.BufferAttribute(g.color, 3))
-    geo.setAttribute('cell', new THREE.BufferAttribute(g.cell, 2))
-    geo.setAttribute('cut', new THREE.BufferAttribute(g.cut, 1))
-    if (g.rect) geo.setAttribute('rect', new THREE.BufferAttribute(g.rect, 4))
+    let offset = 0
+    for (const [name, array, size] of parts) {
+      for (let v = 0; v < count; v++) for (let k = 0; k < size; k++) data[v * stride + offset + k] = array[v * size + k]
+      geo.setAttribute(name, new THREE.InterleavedBufferAttribute(buffer, size, offset))
+      offset += size
+    }
     geo.setIndex(new THREE.BufferAttribute(g.index, 1))
     geo.computeBoundingSphere()
     let mat: THREE.Material
@@ -1007,7 +1136,11 @@ export class Render3d implements MapRenderer {
     const write = (inst: SpriteInstance) => {
       const a = this.atlas(inst.atlas)
       if (!a) return
-      if (!a.peeled) this.peelNow(a)
+      if (!a.peeled) {
+        // a worker is on it: the sprite stands a few frames later rather than the frame stalling to peel the atlas again
+        if (this.waitingOnPeel(a.name)) return
+        this.peelNow(a)
+      }
       if (a.peeled !== true) return
       const o = offsetOf(inst.moverId)
       const anchor = o ? [inst.anchor[0] + o.x, inst.anchor[1], inst.anchor[2] + o.y] : inst.anchor
@@ -1067,26 +1200,25 @@ export class Render3d implements MapRenderer {
   // -------------------------------------------------------------- the frame
 
   /**
-   * The frame's target and the ghosts' depth image (II.4: the level and its
-   * fixtures), made at the frame's size or remade when that changes.
+   * The ghosts' depth image (II.4: the level and its fixtures), made at the
+   * canvas's size or remade when that changes.
+   *
+   * The frame itself goes straight onto the canvas. It used to be drawn into a
+   * target of its own and copied over, which cost a phone's tiled GPU a whole
+   * frame stored out, read back in and drawn again, every frame.
    */
-  private targetsFor(r: THREE.WebGLRenderer): { frame: THREE.WebGLRenderTarget; depth: THREE.WebGLRenderTarget } {
+  private depthTargetFor(r: THREE.WebGLRenderer): THREE.WebGLRenderTarget {
     const size = r.getDrawingBufferSize(this.bufferSize)
     const w = Math.max(1, size.x), h = Math.max(1, size.y)
-    let rt = this.target
     let dt = this.depthTarget
-    if (!rt || !dt || rt.width !== w || rt.height !== h) {
-      rt?.dispose()
+    if (!dt || dt.width !== w || dt.height !== h) {
       dt?.dispose()
-      const opts = { depthBuffer: true, stencilBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false }
-      rt = this.target = new THREE.WebGLRenderTarget(w, h, opts)
       const depthTexture = new THREE.DepthTexture(w, h, THREE.UnsignedIntType)
-      dt = this.depthTarget = new THREE.WebGLRenderTarget(w, h, { ...opts, depthTexture })
+      dt = this.depthTarget = new THREE.WebGLRenderTarget(w, h, { depthBuffer: true, stencilBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false, depthTexture })
       this.ghostUniforms.sceneDepth.value = depthTexture
       this.ghostUniforms.resolution.value.set(w, h)
-      this.blitMat.uniforms.map.value = rt.texture
     }
-    return { frame: rt, depth: dt }
+    return dt
   }
 
   render(now = nowSeconds()): void {
@@ -1142,8 +1274,7 @@ export class Render3d implements MapRenderer {
     this.mark?.('place')
     this.lidUniforms.lidded.value = scene.level.sky === 'none' ? 1 : 0
     const bg = scene.level.sky === 'open' ? 0x0b1220 : scene.level.sky === 'dark' ? 0x120818 : 0x000000
-    const { frame, depth } = this.targetsFor(r)
-    // the target holds encoded values, and three would clear it in linear: hand it the encoded colour as if linear
+    // the frame holds encoded values, and three would clear it in linear: hand it the encoded colour as if linear
     r.setClearColor(new THREE.Color().setRGB(((bg >> 16) & 255) / 255, ((bg >> 8) & 255) / 255, (bg & 255) / 255, THREE.LinearSRGBColorSpace), 1)
     if (this.ghostCount > 0) {
       // the level and its fixtures alone, for their depth: what the ghosts show through
@@ -1151,27 +1282,28 @@ export class Render3d implements MapRenderer {
       this.ghostUniforms.cameraFar.value = this.cam.far
       const layers = this.cam.layers.mask
       this.cam.layers.set(0)
-      r.setRenderTarget(depth)
+      r.setRenderTarget(this.depthTargetFor(r))
       r.clear(true, true, false)
       r.render(this.three, this.cam)
+      // only the depth is read: a tiled GPU need not write the colour back out
+      const gl = r.getContext() as WebGL2RenderingContext
+      gl.invalidateFramebuffer?.(gl.FRAMEBUFFER, [gl.COLOR_ATTACHMENT0])
       this.cam.layers.mask = layers
     }
-    r.setRenderTarget(frame)
+    r.setRenderTarget(null)
     r.clear(true, true, false)
     r.render(this.three, this.cam)
-    r.setRenderTarget(null)
-    r.render(this.blitScene, this.cam)
     this.mark?.('draw')
     this.renderViewmodel(r, scene)
   }
 
   // ------------------------------------------------------------- viewmodel
 
-  /** Where the hands are drawn, as fractions of the canvas, so the HUD keeps its corner clear of them. */
+  /** Where the hands are drawn, as fractions of the canvas (of its height below `lensTopPx`), so the HUD keeps its corner clear of them. */
   handsFootprint(): HandRect[] {
     if (!this.vmVisible) return []
     const vm = this.viewmodel!
-    return handsFootprint({ weapon: !!vm.weapon, offhand: !vm.offhand ? 'none' : vm.offhand.name?.startsWith('HAND2_') ? 'shield' : 'weapon' }, this.cam.aspect)
+    return handsFootprint({ weapon: !!vm.weapon, offhand: !vm.offhand ? 'none' : vm.offhand.name?.startsWith('HAND2_') ? 'shield' : 'weapon' }, this.cam.aspect, this.footShare, this.upright)
   }
 
   private get vmVisible(): boolean {
@@ -1297,12 +1429,16 @@ export class Render3d implements MapRenderer {
     const lift = this.lift
     const tint = scene.level.tint
     const flash = flashOf(getCell(scene, scene.player.x, scene.player.y))
-    const pose = (h: Hand | null, p: HandPose, push = 0) => {
+    const k = handsScale(asp, this.upright)
+    const foot = this.footShare
+    const pose = (h: Hand | null, rest: HandPose, push = 0) => {
       if (!h) return
       const m = h.batch.mesh
       m.visible = true
+      const p = scaledPose(rest, k)
       const len = Math.hypot(p.x * asp, p.y) || 1
-      m.position.set(p.x * asp * (1 - push / len), p.y * (1 - push / len), 0)
+      m.position.set(p.x * asp * (1 - push / len), p.y * (1 - push / len) + 2 * foot, 0)
+      m.scale.setScalar(k)
       m.rotation.set(p.pitch, p.yaw, p.roll, 'YXZ')
       m.updateMatrixWorld()
       ;(h.material.uniforms.modelInverse.value as THREE.Matrix4).copy(m.matrixWorld).invert()

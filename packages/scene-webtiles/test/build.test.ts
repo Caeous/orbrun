@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { initialState, reduce, type Monster, type ServerMessage } from '@orbrun/webtiles'
 import { loadGamedata, type Gamedata } from '@orbrun/gamedata'
 import { cellKey, emptyScene, monstersInView, type Scene } from '@orbrun/scene'
-import { buildScene, missingTileNames, CEILING_REACH, classifyFeature, stanceFor, standsFree, levelPresentation, gateFaces, isScenery, isVegetation, isExcludedFromList, monsterGroups, monsterSort, viewmodelFor, itemTileName } from '../src/index.js'
+import { buildScene, enumMismatches, missingTileNames, CEILING_REACH, classifyFeature, stanceFor, standsFree, levelPresentation, gateFaces, isScenery, isVegetation, isExcludedFromList, monsterGroups, monsterSort, viewmodelFor, itemTileName } from '../src/index.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const gdRoot = join(here, 'fixtures', 'gamedata')
@@ -411,6 +411,13 @@ describe('buildScene on a recorded level', () => {
     // the guard that would have caught SOMETHING_UNDER: a renamed tile stops
     // being drawn silently, so every name in the tables is checked at load
     expect(missingTileNames(gd)).toEqual([])
+  })
+
+  it('finds the client constants in step with a real enums.js', () => {
+    // enums.js lists no PAGED_INVENTORY, which menu.h has: no warning for that
+    expect(enumMismatches(gd)).toEqual([])
+    const menu_flag = { ...(gd.enums.menu_flag as Record<string, number>), PAGED_INVENTORY: 0x100000 }
+    expect(enumMismatches({ ...gd, enums: { ...gd.enums, menu_flag } } as Gamedata)).toEqual(['enums.js menu_flag.PAGED_INVENTORY = 1048576, client assumes 2097152'])
   })
 
   it('badges the "something under" flag with the icon the server has, whatever it is called', () => {

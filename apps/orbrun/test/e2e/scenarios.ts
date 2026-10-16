@@ -202,7 +202,20 @@ export const SCENARIOS: Scenario[] = [
     surface: 'popup:describe-item',
   },
   { id: 'help', about: 'help, `?`: a scroller whose section keys are its rows', setup: (g) => g.key('?'), surface: 'popup:formatted-scroller' },
-  { id: 'dungeon-overview', about: 'the dungeon overview, Ctrl-O: its keys travel', setup: (g) => g.key('o', { ctrl: true }), surface: 'popup:formatted-scroller' },
+  { id: 'dungeon-overview', about: 'the dungeon overview, Ctrl-O: its keys travel, to a branch, an altar or a shop', setup: (g) => g.key('o', { ctrl: true }), surface: 'popup:formatted-scroller' },
+  {
+    id: 'travel-altars',
+    about: "travel's altars, `G` then `_` once one is seen: Y lists the branches again",
+    async setup(g) {
+      await wiz(g)
+      await toFloor(g)
+      await wizard(g, '(', 'altar_okawaru\r')
+      await mores(g)
+      await g.key('G')
+      await g.key('_')
+    },
+    surface: 'menu:travel',
+  },
   { id: 'character', about: 'the character overview, `%`', setup: (g) => g.key('%'), surface: 'popup:formatted-scroller' },
   { id: 'message-log', about: 'the message log, Ctrl-P', setup: (g) => g.key('p', { ctrl: true }), surface: 'popup:formatted-scroller' },
   {

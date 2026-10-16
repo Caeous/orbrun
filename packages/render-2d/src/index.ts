@@ -105,10 +105,47 @@ export interface Render2dOptions {
    * draws none.
    */
   facing?: { yaw: number; fov: number } | null
+  /**
+   * Orbrun: css px along the canvas's foot that something stands over (a
+   * phone's touch bar). The map runs on under them but is centred on what
+   * is above, so the cell the view is centred on is never under the bar.
+   */
+  foot?: number
+  /**
+   * Orbrun: where on the canvas, in css px, the centre of the cell the view
+   * is centred on stands, in place of the canvas's middle: a map wider than
+   * the part of it that is its own, the rest under a pane laid over it
+   * (a phone's stats pane over its minimap). The cells keep to whole css
+   * px. Null (the default) centres the view.
+   */
+  anchor?: { x: number; y: number } | null
 }
 
 /** How far the facing cone reaches, in cells. */
-const FACING_REACH = 3.5
+export const FACING_REACH = 3.5
+
+/**
+ * The facing cone about the player's cell centre `mx`, `my`: a wedge of
+ * light as wide as the view that fades out over FACING_REACH cells, on
+ * the ground's axes so it keeps its heading on a turned map. The HUD's
+ * minimap stands it on a canvas of its own, turned by css (hud.ts `placeCone`).
+ */
+export function drawFacing(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, mx: number, my: number, cs: number, { yaw, fov }: { yaw: number; fov: number }) {
+  const r = cs * FACING_REACH
+  // canvas angles start east and run clockwise; yaw starts north
+  const a = yaw - Math.PI / 2
+  const g = ctx.createRadialGradient(mx, my, cs * 0.3, mx, my, r)
+  g.addColorStop(0, 'rgba(255,240,200,0.25)')
+  g.addColorStop(1, 'rgba(255,240,200,0)')
+  ctx.save()
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(mx, my)
+  ctx.arc(mx, my, r, a - fov / 2, a + fov / 2)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+}
 
 /** Default terminal palette, as the official stylesheet. */
 const TERM_COLOURS = [
@@ -188,6 +225,8 @@ export class Render2d implements MapRenderer {
   private dpr = 1
   private opts: Required<Omit<Render2dOptions, 'minimapColours'>> & { minimapColours: typeof DEFAULT_MINIMAP }
   private origin = { x: 0, y: 0 }
+  /** the whole css px the cells are drawn right and down of the origin's own place, under an `anchor` */
+  private shift = { x: 0, y: 0 }
   /**
    * How far past its square, in css px, a cell's opaque ground is drawn this
    * frame: nothing on a grid-aligned map, one device pixel on a map turned
@@ -213,7 +252,14 @@ export class Render2d implements MapRenderer {
       upYaw: opts.upYaw ?? null,
       uprightYaw: opts.uprightYaw ?? null,
       facing: opts.facing ?? null,
+      foot: opts.foot ?? 0,
+      anchor: opts.anchor ?? null,
     }
+  }
+
+  /** css px of one cell on the canvas */
+  get cellSize(): number {
+    return this.opts.cellSize
   }
 
   setOptions(opts: Render2dOptions) {
@@ -232,6 +278,8 @@ export class Render2d implements MapRenderer {
     if (opts.upYaw !== undefined) this.opts.upYaw = opts.upYaw
     if (opts.uprightYaw !== undefined) this.opts.uprightYaw = opts.uprightYaw
     if (opts.facing !== undefined) this.opts.facing = opts.facing
+    if (opts.foot !== undefined) this.opts.foot = opts.foot
+    if (opts.anchor !== undefined) this.opts.anchor = opts.anchor
   }
 
   mount(target: HTMLCanvasElement | OffscreenCanvas): void {
@@ -371,10 +419,16 @@ export class Render2d implements MapRenderer {
     ctx.restore()
   }
 
+  /** Where the centre of cell `x`, `y` was drawn in the last render, in css px, before any turn of the map. */
+  cellCentre(x: number, y: number): { x: number; y: number } {
+    const cs = this.opts.cellSize
+    return { x: this.shift.x + (x - this.origin.x + 0.5) * cs, y: this.shift.y + (y - this.origin.y + 0.5) * cs }
+  }
+
   pick(px: number, py: number): CellKey | null {
     const cs = this.opts.cellSize
-    const x = Math.floor(px / cs) + this.origin.x
-    const y = Math.floor(py / cs) + this.origin.y
+    const x = Math.floor((px - this.shift.x) / cs) + this.origin.x
+    const y = Math.floor((py - this.shift.y) / cs) + this.origin.y
     if (!this.scene) return null
     const k = cellKey(x, y)
     return this.scene.cells.has(k) ? k : null
@@ -394,7 +448,8 @@ export class Render2d implements MapRenderer {
     ctx.fillRect(0, 0, this.width, this.height)
     ctx.imageSmoothingEnabled = this.opts.filterScaling
     const cols = Math.ceil(this.width / cs)
-    const rows = Math.ceil(this.height / cs)
+    // the rows the view is centred in: those above the foot (`foot`)
+    const rows = Math.ceil(Math.max(cs, this.height - this.opts.foot) / cs)
     const cam = this.camera
     let ox: number
     let oy: number
@@ -413,7 +468,22 @@ export class Render2d implements MapRenderer {
       ox = b.left - Math.floor((cols - bw) / 2)
       oy = b.top - Math.floor((rows - bh) / 2)
     }
+    // the centred cell's top-left corner on the anchor less half a cell, on a whole css px: the origin a whole cell, and
+    // what is left of the way there a shift of the whole drawing
+    const anchored = this.opts.anchor ? (centre ?? (this.opts.follow && cam ? cam : null)) : null
+    let shiftX = 0
+    let shiftY = 0
+    if (anchored && this.opts.anchor) {
+      const kx = Math.round(this.opts.anchor.x - cs / 2)
+      const ky = Math.round(this.opts.anchor.y - cs / 2)
+      ox = anchored.x - Math.floor(kx / cs)
+      oy = anchored.y - Math.floor(ky / cs)
+      shiftX = kx - Math.floor(kx / cs) * cs
+      shiftY = ky - Math.floor(ky / cs) * cs
+    }
     this.origin = { x: ox, y: oy }
+    this.shift = { x: shiftX, y: shiftY }
+    if (shiftX || shiftY) ctx.translate(shiftX, shiftY)
     // the map turned so `up` (or the easing `upYaw`) is at the top: about the
     // cell the view is centred on, which is where the player stands when following
     const rot = -(this.opts.upYaw ?? dirToYaw(this.opts.up))
@@ -459,7 +529,7 @@ export class Render2d implements MapRenderer {
         sx = pvx + dx * cosR - dy * sinR - cs / 2
         sy = pvy + dx * sinR + dy * cosR - cs / 2
       }
-      return !(sx < -cs || sy < -cs || sx > this.width || sy > this.height)
+      return !(sx + shiftX < -cs || sy + shiftY < -cs || sx + shiftX > this.width || sy + shiftY > this.height)
     }
     if (glyphs || hybrid) ctx.font = `${Math.floor(cs * 0.8)}px ${this.opts.glyphFont}`
     /**
@@ -475,7 +545,7 @@ export class Render2d implements MapRenderer {
      */
     const minimapCells = (): Iterable<SceneCell> => {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-      for (const [cx, cy] of [[-cs / 2, -cs / 2], [this.width + cs / 2, -cs / 2], [this.width + cs / 2, this.height + cs / 2], [-cs / 2, this.height + cs / 2]]) {
+      for (const [cx, cy] of [[-cs / 2 - shiftX, -cs / 2 - shiftY], [this.width + cs / 2 - shiftX, -cs / 2 - shiftY], [this.width + cs / 2 - shiftX, this.height + cs / 2 - shiftY], [-cs / 2 - shiftX, this.height + cs / 2 - shiftY]]) {
         const dx = cx - pvx
         const dy = cy - pvy
         const x = pvx + dx * cosR + dy * sinR
@@ -511,7 +581,7 @@ export class Render2d implements MapRenderer {
       else this.drawTileCell(ctx, cell, sx, sy, cs, cell.freestanding ? upright : lean)
     }
     // on the floor, under what stands on it
-    if (scene.playerOnLevel && this.opts.facing != null) this.drawFacing(ctx, (scene.player.x - ox + 0.5) * cs, (scene.player.y - oy + 0.5) * cs, cs, this.opts.facing)
+    if (scene.playerOnLevel && this.opts.facing != null) drawFacing(ctx, (scene.player.x - ox + 0.5) * cs, (scene.player.y - oy + 0.5) * cs, cs, this.opts.facing)
     if (!minimap && !glyphs) {
       // things standing in cells, in scene order, then their badges
       for (const b of scene.billboards) {
@@ -631,28 +701,6 @@ export class Render2d implements MapRenderer {
     }
     ctx.restore()
     this.seam = 0
-  }
-
-  /**
-   * The facing cone about the player's cell centre `mx`, `my`: a wedge of
-   * light as wide as the view that fades out over FACING_REACH cells, on
-   * the ground's axes so it keeps its heading on a turned map.
-   */
-  private drawFacing(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, mx: number, my: number, cs: number, { yaw, fov }: { yaw: number; fov: number }) {
-    const r = cs * FACING_REACH
-    // canvas angles start east and run clockwise; yaw starts north
-    const a = yaw - Math.PI / 2
-    const g = ctx.createRadialGradient(mx, my, cs * 0.3, mx, my, r)
-    g.addColorStop(0, 'rgba(255,240,200,0.25)')
-    g.addColorStop(1, 'rgba(255,240,200,0)')
-    ctx.save()
-    ctx.fillStyle = g
-    ctx.beginPath()
-    ctx.moveTo(mx, my)
-    ctx.arc(mx, my, r, a - fov / 2, a + fov / 2)
-    ctx.closePath()
-    ctx.fill()
-    ctx.restore()
   }
 
   private drawMinimapCell(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, cell: SceneCell, sx: number, sy: number, cs: number) {

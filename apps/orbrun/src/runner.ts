@@ -116,11 +116,13 @@ export class Runner {
 
   send(msg: ClientMessage) {
     if (this.session.watching) return
+    const ctx = this.hooks.context()
+    if (ctx.mode === 'targeting' && !ctx.examining) this.faceAim(msg)
     // anything but the walk's own key may move the cursor itself (a click, a
     // grid direction, the key that ends the aim): the walk's unechoed path is
     // no longer what the cursor is doing. `step` re-records it after its send.
     this.orbit = null
-    if (this.hooks.context().mode === 'command') {
+    if (ctx.mode === 'command') {
       // autofight swings at the nearest hostile: face it, whichever path sent
       // the key. Only swing when the press actually attacks: with the target
       // out of reach autofight walks toward it, and the camera closes on that
@@ -158,6 +160,27 @@ export class Runner {
       return
     }
     this.session.send(msg)
+  }
+
+  /**
+   * An aim went off (a spell, a throw, a wand): face where it went, as a
+   * step into a monster faces what it swings at. The keys that fire are
+   * crawl's (cmd-keys.h): a select (Enter, `.`, `5`, `f`, `!`, `@`) at the
+   * cursor, which is the end of a walk round the player whose keys the
+   * server has not echoed yet (`orbit`), else the server's own; a
+   * Shift-direction (CMD_TARGET_DIR_*), or in a direction-only chooser
+   * (MOUSE_MODE_TARGET_DIR) a plain one, along that heading. A click is a
+   * select too, but a mouse never turns the view (`clickCell`). This is the
+   * turn the held view (`hold`) put off: the aim's own lock does not swing
+   * the view, firing at it does.
+   */
+  private faceAim(msg: ClientMessage) {
+    if (this.cam.steering || !this.session.scene.playerOnLevel) return
+    const dir = aimDirection(msg, this.session.state.inputMode === MouseMode.TARGET_DIR)
+    if (dir !== null) return this.cam.setFacing(dir)
+    if (!isAimSelect(msg)) return
+    const at = this.orbit?.path.at(-1) ?? this.session.state.cursors[0]
+    if (at) this.cam.faceCell(this.session.scene, at.x, at.y)
   }
 
   /**
@@ -483,6 +506,23 @@ export class Runner {
     this.send(cm.clickCell(x, y, button))
   }
 
+  /**
+   * The level map's cursor moved `dx, dy` cells. WebTiles' map takes no click
+   * (local tiles' moves the cursor to the clicked cell, viewmap.cc), so the
+   * cursor walks there with the map's own one-cell keys, diagonals first,
+   * which keeps every cell on the way inside the box the two ends span.
+   */
+  mapCursorBy(dx: number, dy: number) {
+    if (this.hooks.context().mode !== 'levelmap') return
+    while (dx || dy) {
+      const sx = Math.sign(dx)
+      const sy = Math.sign(dy)
+      this.send(dirMessage(dirFromDelta(sx, sy)!, {}))
+      dx -= sx
+      dy -= sy
+    }
+  }
+
   /** A monster a step into `abs` would hit: anything but a friendly, which is swapped with instead. */
   private targetIsMonster(abs: Dir8): boolean {
     const scene = this.session.scene
@@ -701,6 +741,26 @@ function isLookAround(msg: ClientMessage): boolean {
 function isFire(msg: ClientMessage): boolean {
   if (msg.msg === 'input') return msg.text === 'f'
   return msg.msg === 'key' && msg.keycode === 'f'.charCodeAt(0)
+}
+
+/** CMD_TARGET_SELECT and its kin (cmd-keys.h), however typed; space is left out, as it may cancel instead. */
+function isAimSelect(msg: ClientMessage): boolean {
+  const k = typedChar(msg)
+  return k === '\r' || k === '.' || k === '5' || k === 'f' || k === '!' || k === '@' || (msg.msg === 'key' && msg.keycode === Keys.CK_CLEAR)
+}
+
+/** The one character a message types, as text or as a keycode; '' for anything else. */
+function typedChar(msg: ClientMessage): string {
+  if (msg.msg === 'input') return typeof msg.text === 'string' && msg.text.length === 1 ? msg.text : ''
+  return msg.msg === 'key' && typeof msg.keycode === 'number' && msg.keycode > 0 && msg.keycode < 128 ? String.fromCharCode(msg.keycode) : ''
+}
+
+/** The heading an aim fires along: CMD_TARGET_DIR_* (Shift and a direction), or a plain direction in a direction-only chooser. */
+function aimDirection(msg: ClientMessage, dirOnly: boolean): Dir8 | null {
+  const t = typedChar(msg)
+  const i = MOVE_KEYS.indexOf(t.toLowerCase() as (typeof MOVE_KEYS)[number])
+  if (i < 0) return null
+  return t !== t.toLowerCase() || dirOnly ? (i as Dir8) : null
 }
 
 /** CMD_WAIT, however it was typed: `.` or `s`, as text or as a keycode. */

@@ -7,10 +7,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { formattedStringToText } from '@orbrun/webtiles'
 import { builtChannels } from './engine'
+import { startLive } from './client'
 import { atSurface } from './matrix'
 import { screen } from './screen'
 import { keysOf } from './rules'
-import { SCENARIOS } from './scenarios'
+import { FIGHTER, SCENARIOS } from './scenarios'
 import type { E2e } from './client'
 
 const open: E2e[] = []
@@ -87,7 +88,7 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     const empty = () => frame()?.querySelector('.action-empty')?.textContent
     expect(screen(g).title).toMatch(/^Your spells \(cast\)/)
     expect(tab()).toBe('Spells')
-    expect(screen(g).bar).toMatchObject({ LB: 'Quiver', RB: 'Abilities', Y: 'Swap weapons', LT: 'Shout' })
+    expect(screen(g).bar).toMatchObject({ LB: 'Quiver', RB: 'Abilities' })
     // a Conjurer has no abilities and no wands: crawl's own line stands where its menu would
     await g.press('RB')
     expect(tab()).toBe('Abilities')
@@ -126,18 +127,18 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     expect(bare).toBe(false)
   })
 
-  it("the actions' Y swaps weapons and LT shouts, from crawl's menu or an empty tab", async () => {
-    let g = await at('actions-empty')
-    expect(g.root.querySelector('.action-tabs .action-empty')?.textContent).toBe("You don't know any spells.")
-    g.clearSent()
-    await g.press('LT')
-    expect(screen(g).title).toBe('What are your orders?')
-    expect(g.root.querySelector('.action-tabs')).toBeNull()
-    g = await at('actions-quiver')
+  it("the pack's Y swaps weapons, and the Start menu's Character tab shouts", async () => {
+    const g = await at('gear')
     g.clearSent()
     await g.press('Y')
     expect(keysOf(g.sent)).toBe(JSON.stringify([27, 39]))
     expect(screen(g).mode).toBe('command')
+    await g.press('START')
+    const focused = () => g.root.querySelector('.sysmenu .focused .label')?.textContent
+    for (let i = 0; i < 20 && focused() !== 'Shout / order allies'; i++) await g.dpad(4)
+    expect(focused()).toBe('Shout / order allies')
+    await g.press('A')
+    expect(screen(g).title).toBe('What are your orders?')
   })
 
   it("the actions keep up with a quick player: presses ahead of crawl move the tab, and no key lands in a menu still opening", async () => {
@@ -326,5 +327,93 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     g = await at('level-map')
     await g.press('R3')
     expect(screen(g).surface).toBe('popup:formatted-scroller')
+  })
+
+  it('a finger on the level map: Descend goes down a level and Ascend back up (G > and G <), In view on the map lists what is in view', async () => {
+    const g = await startLive({ args: FIGHTER, device: 'touch' })
+    open.push(g)
+    for (let i = 0; i < 5 && g.ctx().mode !== 'command'; i++) await g.raw('a')
+    // the level mapped, so its way down is known: wizard mode's magic mapping
+    await g.raw('&')
+    await g.raw('wiz\r')
+    await g.raw('\x1b')
+    await g.raw('&{')
+    for (let i = 0; i < 5 && g.ctx().mode === 'more'; i++) await g.raw(' ')
+    const tap = async (id: string) => {
+      const el = g.root.querySelector(`[data-b="do:${id}"]`)
+      expect(el, id).not.toBeNull()
+      el!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }))
+      el!.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }))
+      await g.settle()
+      for (let i = 0; i < 40 && g.ctx().mode !== 'command'; i++) await g.settle()
+    }
+    expect(g.state().player.depth).toBe(1)
+    await g.raw('X')
+    expect(screen(g).surface).toBe('levelmap')
+    await tap('descend')
+    expect(g.state().player.depth).toBe(2)
+    // crawl travels with nothing hostile in view: D:2's welcome is a ball python, sent away
+    await g.raw('&G')
+    await g.raw('\r')
+    await g.raw('X')
+    await tap('ascend')
+    expect(g.state().player.depth).toBe(1)
+    await tap('inview')
+    expect(screen(g).surface).toMatch(/^menu:/)
+    await g.raw('\x1b')
+    await tap('skills')
+    expect(screen(g).surface).toBe('menu:skills')
+  })
+
+  it('stairs with a pile on them: A asks which, and A again takes the stairs, or picks up from the row below', async () => {
+    const onPile = async () => {
+      const g = await startLive({ args: FIGHTER })
+      open.push(g)
+      for (let i = 0; i < 5 && g.ctx().mode !== 'command'; i++) await g.raw('a')
+      await g.raw('&')
+      await g.raw('wiz\r')
+      await g.raw('\x1b')
+      // off D:1's way out, onto a staircase down of wizard mode's making, with a dagger on it
+      for (let n = 0; n < 12 && g.ctx().under.kind !== 'none'; n++) {
+        for (const k of ['l', 'j', 'h', 'k', 'u', 'n', 'b', 'y']) {
+          const before = g.state().player.pos
+          await g.raw(k)
+          const after = g.state().player.pos
+          if (after && before && (after.x !== before.x || after.y !== before.y)) break
+        }
+      }
+      await g.raw('&(')
+      await g.raw('stone_stairs_down_i\r')
+      await g.raw('&%')
+      await g.raw('dagger\r')
+      // off and back on, so crawl tells of the pile underfoot as a player arriving there would hear it
+      await g.raw('l')
+      await g.raw('h')
+      await g.press('A')
+      expect(g.root.querySelector('[data-client] .title')?.textContent).toBe('Interact')
+      g.clearSent()
+      return g
+    }
+    let g = await onPile()
+    await g.press('A')
+    expect(g.sent).toContainEqual({ msg: 'input', text: '>' })
+    g = await onPile()
+    await g.dpad(4)
+    await g.press('A')
+    expect(g.sent).toContainEqual({ msg: 'input', text: ',' })
+  })
+
+  it("Android's back is B on a screen, and over the map asks to save and exit, which a second back declines", async () => {
+    const g = await at('inventory')
+    await g.back()
+    expect(screen(g).surface).toBe('command')
+    g.clearSent()
+    await g.back()
+    expect(g.sent).toContainEqual({ msg: 'input', text: 'S' })
+    expect(screen(g).surface).toBe('yesno')
+    expect(screen(g).title).toBe('Save game and exit?')
+    await g.back()
+    expect(screen(g).surface).toBe('command')
+    expect(log(g)).toMatch(/Okay, then\.$/)
   })
 })

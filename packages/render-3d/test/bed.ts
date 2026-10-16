@@ -75,7 +75,7 @@ export interface Guts {
   writeInstances(eye: { x: number; y: number }, now: number): void
 }
 
-/** How many times the stub was asked to draw: the depth pass, the frame, the blit, the hands. */
+/** How many times the stub was asked to draw: the depth pass, the frame, the hands. */
 export interface Bed {
   r: Render3d
   g: Guts
@@ -101,6 +101,7 @@ export function stubbed(opts: Render3dOptions = {}, tiles?: TileSource): Bed {
     setPixelRatio: () => {},
     setSize: () => {},
     compileAsync: async () => {},
+    getContext: () => ({}),
   }
   if (tiles) {
     r.setTiles(tiles)
@@ -135,8 +136,8 @@ export function written(g: Guts, atlas: string, pass: SpritePass): WrittenInstan
   const b = g.batches.get(`${atlas}|${pass}`)
   if (!b) return []
   const read = (name: string, i: number) => {
-    const a = b.geometry.getAttribute(name) as THREE.InstancedBufferAttribute
-    return Array.from(a.array.slice(i * a.itemSize, (i + 1) * a.itemSize))
+    const a = b.geometry.getAttribute(name) as THREE.InterleavedBufferAttribute
+    return Array.from({ length: a.itemSize }, (_, k) => a.getComponent(i, k))
   }
   const out: WrittenInstance[] = []
   for (let i = 0; i < b.geometry.instanceCount; i++)
@@ -147,8 +148,8 @@ export function written(g: Guts, atlas: string, pass: SpritePass): WrittenInstan
 /** The shadow discs written this frame, as [x, z, radius]. */
 export function shadowsWritten(g: Guts): number[][] {
   const b = g.shadowBatch
-  const anchor = b.geometry.getAttribute('iAnchor') as THREE.InstancedBufferAttribute
-  const scale = b.geometry.getAttribute('iScale') as THREE.InstancedBufferAttribute
+  const anchor = b.geometry.getAttribute('iAnchor') as THREE.InterleavedBufferAttribute
+  const scale = b.geometry.getAttribute('iScale') as THREE.InterleavedBufferAttribute
   const out: number[][] = []
   for (let i = 0; i < b.geometry.instanceCount; i++) out.push([anchor.getX(i), anchor.getZ(i), scale.getX(i)])
   return out

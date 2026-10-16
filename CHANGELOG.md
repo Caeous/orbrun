@@ -2,6 +2,13 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.3.0 — 2026-10-16
+
+- Play Orbrun on a phone or tablet, in portrait or landscape.
+- Field of view and minimap size now default to Auto, fitted to your screen.
+- Choose how many lines the message log shows (Settings › Interface).
+- The minimap now always stays north up, with you turning on it, to suit every device.
+
 ## 0.2.13 — 2026-10-02
 
 - In-game menus are redone, with tabs for your pack and your actions.

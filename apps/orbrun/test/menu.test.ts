@@ -204,6 +204,53 @@ describe('the front end: the home screen', () => {
     expect(Array.from(reserve.children, (el) => el.textContent)).toEqual(hints)
   })
 
+  it('brings its words down until the title screen holds them, as a phone on its side needs, and keeps them there on every screen', () => {
+    // happy-dom lays nothing out: the title screen stands `tall` px at the page's whole font in a 390px screen (an
+    // iPhone on its side), and comes down with the font
+    const shrink = () => document.documentElement.style.getPropertyValue('--front-shrink')
+    let tall = 421
+    const proto = HTMLElement.prototype
+    const saved = { scrollHeight: Object.getOwnPropertyDescriptor(proto, 'scrollHeight'), clientHeight: Object.getOwnPropertyDescriptor(proto, 'clientHeight') }
+    const getter = (k: string) => {
+      let p: object | null = proto
+      while (p && !Object.getOwnPropertyDescriptor(p, k)) p = Object.getPrototypeOf(p)
+      return p ? Object.getOwnPropertyDescriptor(p, k)!.get! : () => 0
+    }
+    const was = { scrollHeight: getter('scrollHeight'), clientHeight: getter('clientHeight') }
+    const home = (el: HTMLElement) => el.classList.contains('home-list')
+    Object.defineProperty(proto, 'scrollHeight', { configurable: true, get(this: HTMLElement) { return home(this) ? Math.round(tall * Number(shrink() || 1)) : was.scrollHeight.call(this) } })
+    Object.defineProperty(proto, 'clientHeight', { configurable: true, get(this: HTMLElement) { return home(this) ? 390 : was.clientHeight.call(this) } })
+    try {
+      const { screen } = make()
+      expect(shrink()).toBe('0.92')
+      // every other screen stands at the title screen's size, so the words keep one size from screen to screen
+      pick(screen, 'Settings')
+      expect(screen.view).toBe('settings')
+      expect(shrink()).toBe('0.92')
+      // the screen changes size under Settings (the room says so): the title screen is measured out of sight, and
+      // never under the least, where a title screen that still cannot be held scrolls instead
+      tall = 2000
+      ;(screen as unknown as { roomView: { onfit: () => void } }).roomView.onfit()
+      expect(shrink()).toBe('0.75')
+      expect(screen.view).toBe('settings')
+      expect(screen.root.querySelector('.frame.home-list')).toBeNull()
+      tall = 421
+      pad(screen, 'B')
+      expect(screen.view).toBe('home')
+      expect(shrink()).toBe('0.92')
+      pick(screen, 'Watch')
+      expect(shrink()).toBe('0.92')
+      // and the game comes up at the whole size
+      screen.destroy()
+      expect(shrink()).toBe('')
+    } finally {
+      for (const [k, d] of Object.entries(saved)) {
+        if (d) Object.defineProperty(proto, k, d)
+        else delete (proto as unknown as Record<string, unknown>)[k]
+      }
+    }
+  })
+
   it('with an account: the way in first, the utilities under it, and Log in in Play’s place before the login', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
@@ -1105,6 +1152,37 @@ describe('the front end: accounts and servers', () => {
     }
   })
 
+  it('tells an iPhone or iPad, where no browser runs the engine yet, to play on a server rather than to update', () => {
+    vi.stubEnv('MODE', 'development')
+    vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: undefined }))
+    // Chrome on iOS is WebKit underneath; iPadOS asks for desktop pages as a Mac with a touch screen
+    const uas = [
+      ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.0.0 Mobile/15E148 Safari/604.1', 0],
+      ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15', 5],
+    ] as const
+    try {
+      for (const [ua, touch] of uas) {
+        vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(ua)
+        vi.spyOn(navigator, 'maxTouchPoints', 'get').mockReturnValue(touch)
+        const marc: Account = { serverId: 'offline', username: 'Marc' }
+        localStorage.setItem('orbrun.accounts', JSON.stringify([marc, orbrun]))
+        const { screen } = make()
+        screen.showAccounts()
+        expect(sub(screen, 'Add an offline account')).toBe('not on iPhone or iPad yet')
+        localStorage.setItem('orbrun.account', JSON.stringify(marc))
+        const home = make((sv, u) => fakeSession(sv, u, { username: 'Marc', complete: true, games: [{ id: 'dcss-0.34', label: 'DCSS 0.34' }] }))
+        const notice = home.screen.root.querySelector('.notice')?.textContent
+        expect(notice).toMatch(/iPhone or iPad yet/)
+        expect(notice).not.toMatch(/Update/)
+        expect(sub(home.screen, 'Play DCSS 0.34')).toBe('not on iPhone or iPad yet')
+      }
+    } finally {
+      vi.restoreAllMocks()
+      vi.unstubAllEnvs()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('says a saved game’s new build in its small print as soon as it is in, with nothing else on the screen changed', () => {
     vi.stubEnv('MODE', 'development')
     vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: function Suspending() {} }))
@@ -1173,6 +1251,20 @@ describe('the front end: accounts and servers', () => {
     expect(screen.view).toBe('home')
     expect(labels(screen)[0]).toBe('Log in')
     expect(conn(screen)).toBe('orbrun · CKO · Not logged in')
+  })
+
+  it('a tap on a row chooses it at once: only the game’s own lists light a row first', () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
+    const { screen, connect } = make()
+    screen.showAccounts()
+    const row = screen.root.querySelector<HTMLElement>('[data-focus="account:cko/orbrun"]')!
+    expect(focused(screen)).not.toBe('account:cko/orbrun')
+    row.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true } as PointerEventInit))
+    row.click()
+    expect(connect).toHaveBeenCalledWith(cko, 'orbrun', undefined)
+    expect(screen.view).toBe('home')
   })
 
   it('(log in) beside an account whose login is forgotten chooses it and asks for its password', () => {
@@ -1799,15 +1891,15 @@ describe('the front end: settings and marks', () => {
     pick(screen, 'Camera')
     expect(screen.view).toBe('settings-group')
     const value = (label: string) => (Array.from(screen.root.querySelectorAll('li.row')).find((r) => r.querySelector('.label')?.textContent === label)?.querySelector('.val') as HTMLElement).textContent
-    expect(value('Field of view')).toBe('85°')
+    expect(value('Field of view')).toBe('Auto (85°)')
     while (focused(screen) !== 'setting:Field of view') press(screen, 'j')
     press(screen, 'l')
-    expect(value('Field of view')).toBe('95°')
+    expect(value('Field of view')).toBe('50°')
     press(screen, 'h')
-    expect(value('Field of view')).toBe('85°')
+    expect(value('Field of view')).toBe('Auto (85°)')
     // back at the default, so it is not written down at all: a default we move later moves for this player too
     expect('fov' in JSON.parse(localStorage.getItem('orbrun.settings')!)).toBe(false)
-    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('How wide the first-person view opens.')
+    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('How wide the first-person view opens. Auto is 85°, or 100° on a phone held upright.')
     // the page's Back is the settings again, on the group it was opened from
     pad(screen, 'B')
     expect(screen.view).toBe('settings')

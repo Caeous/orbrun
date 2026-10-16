@@ -1,0 +1,2167 @@
+{
+ "spells": {
+  "Abjuration": [
+   "MASS_ABJURATION"
+  ],
+  "Acid Ball": [
+   "ACID_BALL"
+  ],
+  "Acid Splash": [
+   "SPIT_ACID"
+  ],
+  "Agonising Touch": [
+   "AGONY"
+  ],
+  "Agonizing Touch": [
+   "AGONY"
+  ],
+  "Agony": [
+   "AGONY"
+  ],
+  "Agony Range": [
+   "AGONY"
+  ],
+  "Airstrike": [
+   "AIRSTRIKE"
+  ],
+  "Alistair's Intoxication": [
+   "ALISTAIRS_INTOXICATION"
+  ],
+  "Alistair's Walking Alembic": [
+   "WALKING_ALEMBIC"
+  ],
+  "Anguish": [
+   "ANGUISH"
+  ],
+  "Animate Armour": [
+   "ANIMATE_ARMOUR"
+  ],
+  "Animate Dead": [
+   "ANIMATE_DEAD"
+  ],
+  "Animate Skeleton": [
+   "ANIMATE_SKELETON"
+  ],
+  "Antimagic Gaze": [
+   "ANTIMAGIC_GAZE"
+  ],
+  "Apportation": [
+   "APPORTATION"
+  ],
+  "Arcjolt": [
+   "ARCJOLT"
+  ],
+  "Aura of Brilliance": [
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Avatar Song": [
+   "AVATAR_SONG",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Awaken Armour": [
+   "AWAKEN_ARMOUR"
+  ],
+  "Awaken Earth": [
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Awaken Flesh": [
+   "AWAKEN_FLESH"
+  ],
+  "Awaken Forest": [
+   "AWAKEN_FOREST",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Awaken Vines": [
+   "AWAKEN_VINES"
+  ],
+  "Banishment": [
+   "BANISHMENT"
+  ],
+  "Battlecry": [
+   "BATTLECRY",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Beastly Appendage": [
+   "BEASTLY_APPENDAGE"
+  ],
+  "Beckoning Gale": [
+   "BECKONING_GALE"
+  ],
+  "Berserk Other": [
+   "BERSERK_OTHER",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Berserker Rage": [
+   "BERSERKER_RAGE"
+  ],
+  "Bestow Arms": [
+   "BESTOW_ARMS"
+  ],
+  "Bind Souls": [
+   "DEATH_CHANNEL"
+  ],
+  "Black Mark": [
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Blade Hands": [
+   "BLADE_HANDS"
+  ],
+  "Blink": [
+   "BLINK"
+  ],
+  "Blink Allies Away": [
+   "BLINK_ALLIES_AWAY",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Blink Allies Encircling": [
+   "BLINK_ALLIES_ENCIRCLING",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Blink Away": [
+   "BLINK"
+  ],
+  "Blink Close": [
+   "BLINK"
+  ],
+  "Blink Other": [
+   "BLINK_OTHER"
+  ],
+  "Blink Other Close": [
+   "BLINK_OTHER"
+  ],
+  "Blink Range": [
+   "BLINK"
+  ],
+  "Blinkbolt": [
+   "BLINKBOLT",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Bolster": [
+   "BOLSTER"
+  ],
+  "Bolt of Antimagic": [
+   "BOLT_OF_ANTIMAGIC"
+  ],
+  "Bolt of Cold": [
+   "BOLT_OF_COLD"
+  ],
+  "Bolt of Devastation": [
+   "ENERGY_BOLT"
+  ],
+  "Bolt of Draining": [
+   "BOLT_OF_DRAINING"
+  ],
+  "Bolt of Fire": [
+   "BOLT_OF_FIRE"
+  ],
+  "Bolt of Flesh": [
+   "BOLT_OF_FLESH"
+  ],
+  "Bolt of Light": [
+   "BOLT_OF_LIGHT",
+   "LIGHTNING_BOLT"
+  ],
+  "Bolt of Magma": [
+   "BOLT_OF_MAGMA"
+  ],
+  "Bombard": [
+   "IRON_SHOT"
+  ],
+  "Borgnjor's Revivification": [
+   "BORGNJORS_REVIVIFICATION"
+  ],
+  "Borgnjor's Vile Clutch": [
+   "BORGNJORS_VILE_CLUTCH"
+  ],
+  "Brain Bite": [
+   "BRAIN_BITE"
+  ],
+  "Brain Feed": [
+   "BRAIN_FEED"
+  ],
+  "Brom's Barrelling Boulder": [
+   "BOULDER"
+  ],
+  "Brothers in Arms": [
+   "BROTHERS_IN_ARMS"
+  ],
+  "Cage of Brambles": [
+   "WALL_OF_BRAMBLES"
+  ],
+  "Call Canine Familiar": [
+   "CALL_CANINE_FAMILIAR"
+  ],
+  "Call Down Damnation": [
+   "CALL_DOWN_DAMNATION"
+  ],
+  "Call Down Lightning": [
+   "CALL_DOWN_LIGHTNING",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Call Imp": [
+   "CALL_IMP"
+  ],
+  "Call Lost Soul": [
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Call Lost Souls": [
+   "CALL_LOST_SOULS",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Call Tide": [
+   "CALL_TIDE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Call of Chaos": [
+   "CALL_OF_CHAOS",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Cantrip": [
+   "CANTRIP"
+  ],
+  "Cause Fear": [
+   "CAUSE_FEAR"
+  ],
+  "Caustic Breath": [
+   "SPIT_ACID"
+  ],
+  "Chain Lightning": [
+   "CHAIN_LIGHTNING"
+  ],
+  "Chain of Chaos": [
+   "CHAIN_OF_CHAOS",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Chaos Breath": [
+   "CHAOS_BREATH",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Charm": [
+   "CHARMING"
+  ],
+  "Chilling Breath": [
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Cigotuvi's Dreadful Rot": [
+   "CORPSE_ROT"
+  ],
+  "Cigotuvi's Putrefaction": [
+   "CORPSE_ROT"
+  ],
+  "Cleansing Flame": [
+   "CLEANSING_FLAME",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Cold Breath": [
+   "COLD_BREATH"
+  ],
+  "Combustion Breath": [
+   "FIRE_BREATH"
+  ],
+  "Concentrate Venom": [
+   "CONCENTRATE_VENOM",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Confuse": [
+   "CONFUSE"
+  ],
+  "Confusing Touch": [
+   "CONFUSING_TOUCH"
+  ],
+  "Confusion Gaze": [
+   "CONFUSION_GAZE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Conjure Ball Lightning": [
+   "CONJURE_BALL_LIGHTNING"
+  ],
+  "Conjure Flame": [
+   "CONJURE_FLAME"
+  ],
+  "Conjure Living Spells": [
+   "CONJURE_LIVING_SPELLS",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Construct Spike Launcher": [
+   "SPIKE_LAUNCHER"
+  ],
+  "Corona": [
+   "CORONA"
+  ],
+  "Corpse Rot": [
+   "CORPSE_ROT"
+  ],
+  "Corrosive Bolt": [
+   "CORROSIVE_BOLT"
+  ],
+  "Corrupt": [
+   "CORRUPT",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Corrupting Pulse": [
+   "CORRUPTING_PULSE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Creeping Frost": [
+   "CREEPING_FROST",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Creeping Shadow": [
+   "CREEPING_SHADOW"
+  ],
+  "Crystal Bolt": [
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Crystallising Shot": [
+   "CRYSTALLISING_SHOT"
+  ],
+  "Crystallizing Shot": [
+   "CRYSTALLIZING_SHOT"
+  ],
+  "Curse of Agony": [
+   "AGONY"
+  ],
+  "Dazzling Flash": [
+   "DAZZLING_FLASH",
+   "DAZZLING_SPRAY"
+  ],
+  "Death Channel": [
+   "DEATH_CHANNEL"
+  ],
+  "Death Rattle": [
+   "DEATH_RATTLE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Death's Door": [
+   "DEATHS_DOOR"
+  ],
+  "Debugging Ray": [
+   "DEBUGGING_RAY",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Deflect Missiles": [
+   "DEFLECT_MISSILES"
+  ],
+  "Detonation Catalyst": [
+   "DETONATION_CATALYST"
+  ],
+  "Diamond Sawblades": [
+   "DIAMOND_SAWBLADES"
+  ],
+  "Dig": [
+   "DIG"
+  ],
+  "Dimension Anchor": [
+   "DIMENSIONAL_ANCHOR",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Dimensional Bullseye": [
+   "PORTAL_PROJECTILE"
+  ],
+  "Diminish Spells": [
+   "DIMINISH_SPELLS"
+  ],
+  "Discord": [
+   "DISCORD"
+  ],
+  "Disjunction": [
+   "DISJUNCTION"
+  ],
+  "Dispel Undead": [
+   "DISPEL_UNDEAD"
+  ],
+  "Dispel Undead Range": [
+   "DISPEL_UNDEAD"
+  ],
+  "Dispersal": [
+   "DISPERSAL"
+  ],
+  "Divine Armament": [
+   "DIVINE_ARMAMENT"
+  ],
+  "Dominate Undead": [
+   "DOMINATE_UNDEAD"
+  ],
+  "Doom Bolt": [
+   "DOOM_BOLT"
+  ],
+  "Doom Howl": [
+   "DOOM_HOWL",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Doomsaying": [
+   "ILL_OMEN"
+  ],
+  "Dragon Form": [
+   "DRAGON_FORM"
+  ],
+  "Dragon Vein (Air)": [
+   "DRAGON_VEINS"
+  ],
+  "Dragon Vein (Earth)": [
+   "DRAGON_VEINS"
+  ],
+  "Dragon Vein (Fire)": [
+   "DRAGON_VEINS"
+  ],
+  "Dragon Vein (Ice)": [
+   "DRAGON_VEINS"
+  ],
+  "Dragon Veins": [
+   "DRAGON_VEINS"
+  ],
+  "Dragon's Call": [
+   "SUMMON_DRAGON"
+  ],
+  "Drain Life": [
+   "DRAIN_LIFE"
+  ],
+  "Drain Magic": [
+   "DRAIN_MAGIC",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Draining Gaze": [
+   "DRAINING_GAZE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Dream Dust": [
+   "DREAM_DUST",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Druid's Call": [
+   "DRUIDS_CALL",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Electrical Bolt": [
+   "LIGHTNING_BOLT"
+  ],
+  "Energy Bolt": [
+   "ENERGY_BOLT"
+  ],
+  "Enfeeble": [
+   "ENFEEBLE"
+  ],
+  "Ensnare": [
+   "ENSNARE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Ensorcelled Hibernation": [
+   "ENSORCELLED_HIBERNATION"
+  ],
+  "Entropic Weave": [
+   "ENTROPIC_WEAVE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Eringya's Noxious Bog": [
+   "NOXIOUS_BOG"
+  ],
+  "Eringya's Surprising Crocodile": [
+   "SURPRISING_CROCODILE"
+  ],
+  "Eruption": [
+   "ERUPTION",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Excruciating Wounds": [
+   "EXCRUCIATING_WOUNDS"
+  ],
+  "Fastroot": [
+   "GRASPING_ROOTS",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Fire Breath": [
+   "FIRE_BREATH"
+  ],
+  "Fire Storm": [
+   "FIRE_STORM"
+  ],
+  "Fire Summon": [
+   "FIRE_SUMMON",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Fireball": [
+   "FIREBALL"
+  ],
+  "Flame Tongue": [
+   "FLAME_TONGUE"
+  ],
+  "Flame Wave": [
+   "FLAME_WAVE"
+  ],
+  "Flaming Cloud": [
+   "FLAMING_CLOUD",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Flash Freeze": [
+   "FLASH_FREEZE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Flashing Balestra": [
+   "TUKIMAS_DANCE"
+  ],
+  "Flay": [
+   "FLAY",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Fleetfoot": [
+   "SWIFTNESS"
+  ],
+  "Force Lance": [
+   "FORCE_LANCE"
+  ],
+  "Forceful Invitation": [
+   "FORCEFUL_INVITATION",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Forge Blazeheart Golem": [
+   "FORGE_BLAZEHEART_GOLEM"
+  ],
+  "Forge Lightning Spire": [
+   "FORGE_LIGHTNING_SPIRE"
+  ],
+  "Forge Monarch Bomb": [
+   "MONARCH_BOMB"
+  ],
+  "Forge Phalanx Beetle": [
+   "PHALANX_BEETLE"
+  ],
+  "Fortress Blast": [
+   "FORTRESS_BLAST"
+  ],
+  "Foxfire": [
+   "FOXFIRE"
+  ],
+  "Freeze": [
+   "FREEZE"
+  ],
+  "Freezing Cloud": [
+   "FREEZING_CLOUD"
+  ],
+  "Freezing Gust": [
+   "FREEZING_CLOUD"
+  ],
+  "Frozen Ramparts": [
+   "FROZEN_RAMPARTS"
+  ],
+  "Fugue of the Fallen": [
+   "FUGUE_OF_THE_FALLEN"
+  ],
+  "Fulminant Prism": [
+   "FULMINANT_PRISM"
+  ],
+  "Fulsome Fusillade": [
+   "FULSOME_FUSILLADE"
+  ],
+  "Funeral Dirge": [
+   "FUNERAL_DIRGE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Galvanic Breath": [
+   "ARCJOLT"
+  ],
+  "Gell's Gavotte": [
+   "GAVOTTE"
+  ],
+  "Gell's Gravitas": [
+   "GRAVITAS"
+  ],
+  "Ghostly Fireball": [
+   "GHOSTLY_FIREBALL"
+  ],
+  "Ghostly Sacrifice": [
+   "GHOSTLY_FIREBALL",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Glacial Breath": [
+   "COLD_BREATH"
+  ],
+  "Glaciate": [
+   "ICE_STORM"
+  ],
+  "Gloom": [
+   "GLOOM"
+  ],
+  "Goad Beasts": [
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Golden Breath": [
+   "FIRE_BREATH"
+  ],
+  "Grasping Roots": [
+   "GRASPING_ROOTS"
+  ],
+  "Grave Claw": [
+   "GRAVE_CLAW"
+  ],
+  "Greater Ensnare": [
+   "ENSNARE"
+  ],
+  "Greater Servant of Makhleb": [
+   "ABILITY_MAKHLEB_GREATER_SERVANT"
+  ],
+  "Hailstorm": [
+   "HAILSTORM"
+  ],
+  "Harpoon Shot": [
+   "HARPOON_SHOT",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Haste": [
+   "HASTE"
+  ],
+  "Haste Other": [
+   "HASTE_OTHER"
+  ],
+  "Haunt": [
+   "HAUNT"
+  ],
+  "Heal Other": [
+   "HEAL_OTHER"
+  ],
+  "Hellfire Court": [
+   "HELLFIRE_COURT"
+  ],
+  "Hellfire Mortar": [
+   "HELLFIRE_MORTAR"
+  ],
+  "Hoarfrost Bullet": [
+   "HOARFROST_BULLET",
+   "THROW_ICICLE"
+  ],
+  "Hoarfrost Cannonade": [
+   "HOARFROST_CANNONADE"
+  ],
+  "Holy Breath": [
+   "HOLY_BREATH",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Holy Flames": [
+   "HOLY_FLAMES",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Hunting Call": [
+   "HUNTING_CALL",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Hurl Damnation": [
+   "HURL_DAMNATION"
+  ],
+  "Hurl Sludge": [
+   "HURL_SLUDGE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Hurl Torchlight": [
+   "ABILITY_YRED_HURL_TORCHLIGHT",
+   "ERROR"
+  ],
+  "Ice Form": [
+   "ICE_FORM"
+  ],
+  "Ice Thorns": [
+   "ICE_THORNS"
+  ],
+  "Iceblast": [
+   "ICEBLAST"
+  ],
+  "Ignite Poison": [
+   "IGNITE_POISON"
+  ],
+  "Ignition": [
+   "IGNITION"
+  ],
+  "Ill Omen": [
+   "ILL_OMEN"
+  ],
+  "Infernal Servant": [
+   "ABILITY_MAKHLEB_GREATER_SERVANT"
+  ],
+  "Infestation": [
+   "INFESTATION"
+  ],
+  "Injury Bond": [
+   "INJURY_BOND",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Injury Mirror": [
+   "INJURY_MIRROR"
+  ],
+  "Ink Cloud": [
+   "INK_CLOUD"
+  ],
+  "Inner Flame": [
+   "INNER_FLAME"
+  ],
+  "Invisibility": [
+   "INVISIBILITY"
+  ],
+  "Invisibility Other": [
+   "INVISIBILITY"
+  ],
+  "Iron Shot": [
+   "IRON_SHOT"
+  ],
+  "Irradiate": [
+   "IRRADIATE"
+  ],
+  "Iskenderun's Battlesphere": [
+   "BATTLESPHERE"
+  ],
+  "Iskenderun's Mystic Blast": [
+   "ISKENDERUNS_MYSTIC_BLAST"
+  ],
+  "Jinxbite": [
+   "JINXBITE"
+  ],
+  "Kinetic Grapnel": [
+   "KINETIC_GRAPNEL"
+  ],
+  "Kiss of Death": [
+   "KISS_OF_DEATH"
+  ],
+  "Landbreaker": [
+   "SEISMIC_STOMP"
+  ],
+  "Launch Bomblet": [
+   "LAUNCH_BOMBLET"
+  ],
+  "Launch Clockwork Bee": [
+   "CLOCKWORK_BEE"
+  ],
+  "Launch Sporangium": [
+   "LAUNCH_SPORANGIUM"
+  ],
+  "Leda's Liquefaction": [
+   "LEDAS_LIQUEFACTION"
+  ],
+  "Lee's Rapid Deconstruction": [
+   "LEES_RAPID_DECONSTRUCTION"
+  ],
+  "Legendary Destruction": [
+   "LEGENDARY_DESTRUCTION",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Lehudib's Crystal Spear": [
+   "LEHUDIBS_CRYSTAL_SPEAR"
+  ],
+  "Lesser Beckoning": [
+   "BECKONING"
+  ],
+  "Lightning Bolt": [
+   "LIGHTNING_BOLT"
+  ],
+  "Magic Dart": [
+   "MAGIC_DART"
+  ],
+  "Magma Barrage": [
+   "MAGMA_BARRAGE"
+  ],
+  "Magnavolt": [
+   "MAGNAVOLT"
+  ],
+  "Major Destruction": [
+   "MAJOR_DESTRUCTION"
+  ],
+  "Major Healing": [
+   "MAJOR_HEALING"
+  ],
+  "Malign Gateway": [
+   "MALIGN_GATEWAY"
+  ],
+  "Malign Offering": [
+   "MALIGN_OFFERING",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Malmutate": [
+   "MALMUTATE"
+  ],
+  "Manifold Assault": [
+   "MANIFOLD_ASSAULT"
+  ],
+  "Mara Summon": [
+   "FAKE_MARA_SUMMON"
+  ],
+  "March of Sorrows": [
+   "MARCH_OF_SORROWS",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Marshlight": [
+   "FOXFIRE"
+  ],
+  "Martyr's Knell": [
+   "MARTYRS_KNELL"
+  ],
+  "Mass Confusion": [
+   "MASS_CONFUSION"
+  ],
+  "Mass Regeneration": [
+   "MASS_REGENERATION",
+   "REGENERATION"
+  ],
+  "Maxwell's Capacitive Coupling": [
+   "MAXWELLS_COUPLING"
+  ],
+  "Maxwell's Portable Piledriver": [
+   "PILEDRIVER"
+  ],
+  "Mephitic Breath": [
+   "ERROR"
+  ],
+  "Mephitic Cloud": [
+   "MEPHITIC_CLOUD"
+  ],
+  "Mercury Arrow": [
+   "STING"
+  ],
+  "Mercury Vapours": [
+   "MERCURY_VAPOURS",
+   "POISONOUS_VAPOURS"
+  ],
+  "Mesmerise": [
+   "MESMERISE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Metabolic Englaciation": [
+   "METABOLIC_ENGLACIATION"
+  ],
+  "Metal Splinters": [
+   "METAL_SPLINTERS"
+  ],
+  "Miasma Breath": [
+   "MIASMA_BREATH"
+  ],
+  "Might": [
+   "MIGHT"
+  ],
+  "Might Other": [
+   "MIGHT"
+  ],
+  "Mindburst": [
+   "MINDBURST",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Minor Destruction": [
+   "ERROR"
+  ],
+  "Minor Healing": [
+   "MINOR_HEALING"
+  ],
+  "Momentum Strike": [
+   "MOMENTUM_STRIKE"
+  ],
+  "Monstrous Menagerie": [
+   "MONSTROUS_MENAGERIE"
+  ],
+  "Mourning Wail": [
+   "MOURNING_WAIL",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Mud Breath": [
+   "LEDAS_LIQUEFACTION"
+  ],
+  "Murky Legion": [
+   "MURKY_LEGION"
+  ],
+  "Mutagenic Gaze": [
+   "MUTAGENIC_GAZE"
+  ],
+  "Nazja's All-Purpose Tempering": [
+   "PERCUSSIVE_TEMPERING"
+  ],
+  "Nazja's Percussive Tempering": [
+   "PERCUSSIVE_TEMPERING"
+  ],
+  "Necromutation": [
+   "NECROMUTATION"
+  ],
+  "Necrotise": [
+   "NECROTISE"
+  ],
+  "Noxious Breath": [
+   "NOXIOUS_CLOUD"
+  ],
+  "Noxious Cloud": [
+   "NOXIOUS_CLOUD"
+  ],
+  "Nullifying Breath": [
+   "QUICKSILVER_BOLT"
+  ],
+  "Oblivion Howl": [
+   "OBLIVION_HOWL"
+  ],
+  "Olgreb's Toxic Radiance": [
+   "OLGREBS_TOXIC_RADIANCE"
+  ],
+  "Orb of Destruction": [
+   "IOOD"
+  ],
+  "Orb of Electricity": [
+   "ORB_OF_ELECTRICITY"
+  ],
+  "Ostracise": [
+   "OSTRACISE"
+  ],
+  "Ozocubu's Armour": [
+   "OZOCUBUS_ARMOUR"
+  ],
+  "Ozocubu's Refrigeration": [
+   "OZOCUBUS_REFRIGERATION"
+  ],
+  "Pain": [
+   "PAIN"
+  ],
+  "Paralyse": [
+   "PARALYSE"
+  ],
+  "Paralysis Gaze": [
+   "PARALYSIS_GAZE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Passage of Golubria": [
+   "PASSAGE_OF_GOLUBRIA"
+  ],
+  "Passwall": [
+   "PASSWALL"
+  ],
+  "Permafrost Eruption": [
+   "PERMAFROST_ERUPTION"
+  ],
+  "Petrify": [
+   "PETRIFY"
+  ],
+  "Petrifying Cloud": [
+   "PETRIFYING_CLOUD"
+  ],
+  "Phantom Blitz": [
+   "PHANTOM_BLITZ"
+  ],
+  "Phantom Mirror": [
+   "PHANTOM_MIRROR"
+  ],
+  "Phase Shift": [
+   "PHASE_SHIFT"
+  ],
+  "Planar Overlay": [
+   "PLANAR_OVERLAY"
+  ],
+  "Plane Rend": [
+   "PLANE_REND",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Plasma Beam": [
+   "PLASMA_BEAM"
+  ],
+  "Platinum Paragon": [
+   "PLATINUM_PARAGON"
+  ],
+  "Poison Arrow": [
+   "POISON_ARROW"
+  ],
+  "Poisonous Cloud": [
+   "POISONOUS_CLOUD"
+  ],
+  "Poisonous Vapours": [
+   "POISONOUS_CLOUD",
+   "POISONOUS_VAPOURS"
+  ],
+  "Polar Vortex": [
+   "POLAR_VORTEX"
+  ],
+  "Polymorph": [
+   "POLYMORPH"
+  ],
+  "Porkalator": [
+   "PORKALATOR"
+  ],
+  "Portal Projectile": [
+   "PORTAL_PROJECTILE"
+  ],
+  "Prayer of Brilliance": [
+   "PRAYER_OF_BRILLIANCE"
+  ],
+  "Primal Wave": [
+   "PRIMAL_WAVE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Pyre Arrow": [
+   "STICKY_FLAME_RANGE"
+  ],
+  "Pyroclastic Surge": [
+   "PYROCLASTIC_SURGE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Pyrrhic Recollection": [
+   "ABILITY_ENKINDLE"
+  ],
+  "Quicksilver Bolt": [
+   "QUICKSILVER_BOLT"
+  ],
+  "Ravenous Swarm": [
+   "RAVENOUS_SWARM"
+  ],
+  "Rebounding Blaze": [
+   "REBOUNDING_BLAZE"
+  ],
+  "Rebounding Chill": [
+   "REBOUNDING_CHILL"
+  ],
+  "Regenerate Other": [
+   "REGENERATION"
+  ],
+  "Rending Blade": [
+   "RENDING_BLADE"
+  ],
+  "Repel Missiles": [
+   "REPEL_MISSILES"
+  ],
+  "Resonance Strike": [
+   "RESONANCE_STRIKE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Rimeblight": [
+   "RIMEBLIGHT"
+  ],
+  "Roll": [
+   "ROLL",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Rust Breath": [
+   "MEPHITIC_CLOUD"
+  ],
+  "Sandblast": [
+   "SANDBLAST"
+  ],
+  "Sap Magic": [
+   "SAP_MAGIC",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Scorch": [
+   "SCORCH"
+  ],
+  "Sculpt Simulacrum": [
+   "SIMULACRUM"
+  ],
+  "Seal Doors": [
+   "SEAL_DOORS"
+  ],
+  "Searing Breath": [
+   "FIRE_BREATH"
+  ],
+  "Searing Ray": [
+   "SEARING_RAY"
+  ],
+  "Seismic Shockwave": [
+   "SUMMON_LIGHTNING_SPIRE"
+  ],
+  "Seismic Stomp": [
+   "SEISMIC_STOMP"
+  ],
+  "Sentinel's Mark": [
+   "SENTINEL_MARK"
+  ],
+  "Seracfall": [
+   "ICEBLAST"
+  ],
+  "Shadow Beam": [
+   "SHADOW_BEAM"
+  ],
+  "Shadow Bind": [
+   "SHADOW_BIND"
+  ],
+  "Shadow Bolt": [
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Shadow Creatures": [
+   "SUMMON_SHADOW_CREATURES"
+  ],
+  "Shadow Draining": [
+   "SHADOW_DRAINING"
+  ],
+  "Shadow Prism": [
+   "SHADOW_PRISM"
+  ],
+  "Shadow Puppet": [
+   "SHADOW_PUPPET"
+  ],
+  "Shadow Shard": [
+   "SHADOW_SHARD",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Shadow Shot": [
+   "SHADOW_SHARD"
+  ],
+  "Shadow Tempest": [
+   "SHADOW_TEMPEST"
+  ],
+  "Shadow Torpor": [
+   "SHADOW_TORPOR"
+  ],
+  "Shadow Turret": [
+   "SHADOW_TURRET"
+  ],
+  "Shadowball": [
+   "SHADOWBALL"
+  ],
+  "Shatter": [
+   "SHATTER"
+  ],
+  "Sheza's Dance": [
+   "SHEZAS_DANCE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Shock": [
+   "SHOCK"
+  ],
+  "Shred": [
+   "DIAMOND_SAWBLADES"
+  ],
+  "Sigil of Binding": [
+   "SIGIL_OF_BINDING"
+  ],
+  "Sign of Ruin": [
+   "ABILITY_KIKU_SIGN_OF_RUIN"
+  ],
+  "Silence": [
+   "SILENCE"
+  ],
+  "Simulacrum": [
+   "SIMULACRUM"
+  ],
+  "Siphon Essence": [
+   "SIPHON_ESSENCE"
+  ],
+  "Siren Song": [
+   "SIREN_SONG",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Sirocco": [
+   "SIROCCO"
+  ],
+  "Sleep": [
+   "SLEEP"
+  ],
+  "Sleetstrike": [
+   "SLEETSTRIKE"
+  ],
+  "Slow": [
+   "SLOW"
+  ],
+  "Slug Dart": [
+   "SLUG_DART",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Smiting": [
+   "SMITING"
+  ],
+  "Sojourning Bolt": [
+   "SOJOURNING_BOLT"
+  ],
+  "Soul Splinter": [
+   "NECROTISE"
+  ],
+  "Spawn Tentacles": [
+   "CREATE_TENTACLES"
+  ],
+  "Spectral Cloud": [
+   "SPECTRAL_CLOUD"
+  ],
+  "Spellforged Servitor": [
+   "SPELLFORGED_SERVITOR"
+  ],
+  "Spellspark Servitor": [
+   "SPELLSPARK_SERVITOR"
+  ],
+  "Sphinx Sisters": [
+   "SPHINX_SISTERS"
+  ],
+  "Spider Form": [
+   "SPIDER_FORM"
+  ],
+  "Spit Acid": [
+   "SPIT_ACID"
+  ],
+  "Spit Lava": [
+   "SPIT_LAVA",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Spit Poison": [
+   "SPIT_POISON"
+  ],
+  "Splinterfrost Shell": [
+   "SPLINTERFROST_SHELL"
+  ],
+  "Splinterspray": [
+   "METAL_SPLINTERS"
+  ],
+  "Sporulate": [
+   "SPORULATE"
+  ],
+  "Sprint": [
+   "SPRINT"
+  ],
+  "Stampede": [
+   "STAMPEDE"
+  ],
+  "Starburst": [
+   "STARBURST"
+  ],
+  "Static Discharge": [
+   "STATIC_DISCHARGE"
+  ],
+  "Statue Form": [
+   "STATUE_FORM"
+  ],
+  "Steam Ball": [
+   "STEAM_BALL"
+  ],
+  "Steam Breath": [
+   "STEAM_BALL"
+  ],
+  "Sticks to Snakes": [
+   "STICKS_TO_SNAKES"
+  ],
+  "Sticky Flame": [
+   "STICKY_FLAME"
+  ],
+  "Sticky Flame Range": [
+   "STICKY_FLAME_RANGE"
+  ],
+  "Still Winds": [
+   "STILL_WINDS",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Sting": [
+   "STING"
+  ],
+  "Stoke Flames": [
+   "STOKE_FLAMES",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Stone Arrow": [
+   "STONE_ARROW"
+  ],
+  "Storm Form": [
+   "STORM_FORM"
+  ],
+  "Strip Willpower": [
+   "STRIP_WILLPOWER"
+  ],
+  "Stunning Burst": [
+   "STUNNING_BURST",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Sublimation of Blood": [
+   "SUBLIMATION_OF_BLOOD"
+  ],
+  "Summon Air Elementals": [
+   "AIR_ELEMENTALS"
+  ],
+  "Summon Blazeheart Golem": [
+   "SUMMON_BLAZEHEART_GOLEM"
+  ],
+  "Summon Cactus Giant": [
+   "SUMMON_CACTUS_GIANT"
+  ],
+  "Summon Demon": [
+   "SUMMON_DEMON"
+  ],
+  "Summon Dragon": [
+   "SUMMON_DRAGON"
+  ],
+  "Summon Drakes": [
+   "SUMMON_DRAKES"
+  ],
+  "Summon Earth Elementals": [
+   "EARTH_ELEMENTALS"
+  ],
+  "Summon Emperor Scorpions": [
+   "SUMMON_EMPEROR_SCORPIONS",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Summon Executioners": [
+   "SUMMON_EXECUTIONERS",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Summon Eyeballs": [
+   "SUMMON_EYEBALLS"
+  ],
+  "Summon Fire Elementals": [
+   "FIRE_ELEMENTALS"
+  ],
+  "Summon Forest": [
+   "SUMMON_FOREST"
+  ],
+  "Summon Greater Demon": [
+   "SUMMON_GREATER_DEMON"
+  ],
+  "Summon Guardian Golem": [
+   "SUMMON_GUARDIAN_GOLEM"
+  ],
+  "Summon Hell Beast": [
+   "SUMMON_HELL_BEAST"
+  ],
+  "Summon Hell Sentinel": [
+   "SUMMON_HELL_SENTINEL",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Summon Holies": [
+   "SUMMON_HOLIES",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Summon Horrible Things": [
+   "SUMMON_HORRIBLE_THINGS"
+  ],
+  "Summon Hydra": [
+   "SUMMON_HYDRA"
+  ],
+  "Summon Ice Beast": [
+   "SUMMON_ICE_BEAST"
+  ],
+  "Summon Illusion": [
+   "SUMMON_ILLUSION",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Summon Lightning Spire": [
+   "SUMMON_LIGHTNING_SPIRE"
+  ],
+  "Summon Mana Viper": [
+   "SUMMON_MANA_VIPER"
+  ],
+  "Summon Minor Demon": [
+   "SUMMON_MINOR_DEMON"
+  ],
+  "Summon Mortal Champion": [
+   "SUMMON_MORTAL_CHAMPION"
+  ],
+  "Summon Mushrooms": [
+   "SUMMON_MUSHROOMS"
+  ],
+  "Summon Scarabs": [
+   "SUMMON_SCARABS",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Summon Scorpions": [
+   "SUMMON_SCORPIONS"
+  ],
+  "Summon Seismosaurus Egg": [
+   "SUMMON_SEISMOSAURUS_EGG"
+  ],
+  "Summon Sin Beast": [
+   "SUMMON_SIN_BEAST"
+  ],
+  "Summon Small Mammal": [
+   "SUMMON_SMALL_MAMMAL"
+  ],
+  "Summon Spectral Orcs": [
+   "SUMMON_SPECTRAL_ORCS"
+  ],
+  "Summon Spiders": [
+   "SUMMON_SPIDERS",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Summon Tzitzimitl": [
+   "SUMMON_TZITZIMITL",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Summon Ufetubus": [
+   "SUMMON_UFETUBUS"
+  ],
+  "Summon Undead": [
+   "SUMMON_UNDEAD"
+  ],
+  "Summon Vermin": [
+   "SUMMON_VERMIN"
+  ],
+  "Summon Water Elementals": [
+   "WATER_ELEMENTALS"
+  ],
+  "Swiftness": [
+   "SWIFTNESS"
+  ],
+  "Symbol of Torment": [
+   "SYMBOL_OF_TORMENT"
+  ],
+  "Teleport Other": [
+   "TELEPORT_OTHER"
+  ],
+  "Teleport Self": [
+   "TELEPORT"
+  ],
+  "Throw Ally": [
+   "THROW_ALLY",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Throw Barbs": [
+   "THROW_BARBS",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Throw Bolas": [
+   "THROW_BOLAS"
+  ],
+  "Throw Flame": [
+   "THROW_FLAME"
+  ],
+  "Throw Frost": [
+   "THROW_FROST"
+  ],
+  "Throw Icicle": [
+   "THROW_ICICLE"
+  ],
+  "Throw Klown Pie": [
+   "THROW_KLOWN_PIE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Thunderbolt": [
+   "THUNDERBOLT"
+  ],
+  "Tomb of Doroklohe": [
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Touch of Paradox": [
+   "TOUCH_OF_PARADOX"
+  ],
+  "Tremorstone": [
+   "LEES_RAPID_DECONSTRUCTION"
+  ],
+  "Trog's Hand": [
+   "TROGS_HAND"
+  ],
+  "Tukima's Dance": [
+   "TUKIMAS_DANCE"
+  ],
+  "Ufetubi Swarm": [
+   "UFETUBI_SWARM"
+  ],
+  "Unleash Destruction": [
+   "ERROR"
+  ],
+  "Upheaval": [
+   "ABILITY_QAZLAL_UPHEAVAL"
+  ],
+  "Vampiric Draining": [
+   "VAMPIRIC_DRAINING"
+  ],
+  "Vanquished Vanguard": [
+   "SUMMON_SPECTRAL_ORCS"
+  ],
+  "Venom Bolt": [
+   "VENOM_BOLT"
+  ],
+  "Vex": [
+   "VEX"
+  ],
+  "Vhi's Electric Charge": [
+   "ELECTRIC_CHARGE"
+  ],
+  "Vhi's Electrolunge": [
+   "ELECTRIC_CHARGE"
+  ],
+  "Virulence": [
+   "VIRULENCE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Vitrify": [
+   "VITRIFY",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Vitrifying Gaze": [
+   "VITRIFYING_GAZE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Volatile Blastmotes": [
+   "BLASTMOTE"
+  ],
+  "Volley of Thorns": [
+   "THORN_VOLLEY",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Wall of Brambles": [
+   "WALL_OF_BRAMBLES"
+  ],
+  "Warning Cry": [
+   "WARNING_CRY",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Warp Body": [
+   "WARP_BODY"
+  ],
+  "Warp Space": [
+   "WARP_SPACE"
+  ],
+  "Waterstrike": [
+   "WATERSTRIKE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Weakening Gaze": [
+   "WEAKENING_GAZE",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Wereblood": [
+   "WEREBLOOD"
+  ],
+  "Wind Blast": [
+   "WIND_BLAST",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Woodweal": [
+   "WOODWEAL",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "Word of Recall": [
+   "RECALL"
+  ],
+  "Yara's Violent Unravelling": [
+   "VIOLENT_UNRAVELLING"
+  ],
+  "cocytus serpent of hell breath": [
+   "COLD_BREATH",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "dis serpent of hell breath": [
+   "LEHUDIBS_CRYSTAL_SPEAR",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "gehenna serpent of hell breath": [
+   "FIRE_BREATH",
+   "GENERIC_MONSTER_SPELL"
+  ],
+  "nonexistent spell": [
+   "ERROR"
+  ],
+  "tartarus serpent of hell breath": [
+   "MIASMA_BREATH",
+   "GENERIC_MONSTER_SPELL"
+  ]
+ },
+ "abilities": {
+  "Ancestor Identity": [
+   "ABILITY_HEP_IDENTITY"
+  ],
+  "Ancestor Life: Battlemage": [
+   "ABILITY_HEP_BATTLEMAGE"
+  ],
+  "Ancestor Life: Elementalist": [
+   "ABILITY_HEP_ELEMENTALIST"
+  ],
+  "Ancestor Life: Hexer": [
+   "ABILITY_HEP_HEXER"
+  ],
+  "Ancestor Life: Knight": [
+   "ABILITY_HEP_KNIGHT"
+  ],
+  "Animate Dead": [
+   "ABILITY_YRED_ANIMATE_DEAD"
+  ],
+  "Animate Remains": [
+   "ABILITY_YRED_ANIMATE_REMAINS"
+  ],
+  "Aphotic Marionette": [
+   "ABILITY_DITHMENOS_PANTOMIME"
+  ],
+  "Apocalypse": [
+   "ABILITY_RU_APOCALYPSE"
+  ],
+  "Aura of Vigour": [
+   "ABILITY_ELYVILON_AURA_OF_VIGOUR"
+  ],
+  "Banish": [
+   "ABILITY_LUGONU_BANISH"
+  ],
+  "Bat Form": [
+   "ABILITY_BAT_FORM"
+  ],
+  "Bat Swarm": [
+   "ABILITY_BAT_SWARM"
+  ],
+  "Begin Untransformation": [
+   "ABILITY_END_TRANSFORMATION"
+  ],
+  "Bend Space": [
+   "ABILITY_LUGONU_BEND_SPACE"
+  ],
+  "Bend Time": [
+   "ABILITY_CHEIBRIADOS_BEND_TIME"
+  ],
+  "Berserk": [
+   "ABILITY_TROG_BERSERK"
+  ],
+  "Bestial Takedown": [
+   "ABILITY_BESTIAL_TAKEDOWN"
+  ],
+  "Bind Soul": [
+   "ABILITY_YRED_BIND_SOUL"
+  ],
+  "Blinkbolt": [
+   "ABILITY_BLINKBOLT"
+  ],
+  "Blood for Blood": [
+   "ABILITY_BEOGH_BLOOD_FOR_BLOOD"
+  ],
+  "Brand Self #1": [
+   "ABILITY_MAKHLEB_MARK_OF_HAEMOCLASM"
+  ],
+  "Brand Self #2": [
+   "ABILITY_MAKHLEB_MARK_OF_HAEMOCLASM"
+  ],
+  "Brand Self #3": [
+   "ABILITY_MAKHLEB_MARK_OF_HAEMOCLASM"
+  ],
+  "Brand Weapon With Distortion": [
+   "ABILITY_LUGONU_BLESS_WEAPON"
+  ],
+  "Brand Weapon With Holy Wrath": [
+   "ABILITY_TSO_BLESS_WEAPON"
+  ],
+  "Brand Weapon With Pain": [
+   "ABILITY_KIKU_BLESS_WEAPON"
+  ],
+  "Breathe Acid": [
+   "ABILITY_BREATHE_ACID"
+  ],
+  "Breathe Dispelling Energy": [
+   "ABILITY_BREATHE_ENERGY"
+  ],
+  "Breathe Fire": [
+   "ABILITY_BREATHE_FIRE"
+  ],
+  "Breathe Frost": [
+   "ABILITY_BREATHE_FROST"
+  ],
+  "Breathe Lightning": [
+   "ABILITY_BREATHE_LIGHTNING"
+  ],
+  "Breathe Noxious Fumes": [
+   "ABILITY_BREATHE_MEPHITIC"
+  ],
+  "Breathe Poison Gas": [
+   "ABILITY_BREATHE_POISON"
+  ],
+  "Breathe Rust": [
+   "ABILITY_BREATHE_RUST"
+  ],
+  "Breathe Steam": [
+   "ABILITY_BREATHE_STEAM"
+  ],
+  "Bribe Branch": [
+   "ABILITY_GOZAG_BRIBE_BRANCH"
+  ],
+  "Brothers in Arms": [
+   "ABILITY_TROG_BROTHERS_IN_ARMS"
+  ],
+  "Build terrain": [
+   "ABILITY_WIZ_BUILD_TERRAIN"
+  ],
+  "Cacophony": [
+   "ABILITY_CACOPHONY"
+  ],
+  "Call Merchant": [
+   "ABILITY_GOZAG_CALL_MERCHANT"
+  ],
+  "Caustic Breath": [
+   "ABILITY_BREATHE_ACID"
+  ],
+  "Channel Magic": [
+   "ABILITY_SIF_MUNA_CHANNEL"
+  ],
+  "Cleansing Flame": [
+   "ABILITY_TSO_CLEANSING_FLAME"
+  ],
+  "Clear terrain to floor": [
+   "ABILITY_WIZ_CLEAR_TERRAIN"
+  ],
+  "Combustion Breath": [
+   "ABILITY_BREATHE_FIRE"
+  ],
+  "Convert to Beogh": [
+   "ABILITY_CONVERT_TO_BEOGH"
+  ],
+  "Corrupt": [
+   "ABILITY_LUGONU_CORRUPT"
+  ],
+  "Cure Bad Mutation": [
+   "ABILITY_JIYVA_CURE_BAD_MUTATIONS"
+  ],
+  "Curse Item": [
+   "ABILITY_ASHENZARI_CURSE"
+  ],
+  "Dark Bargain": [
+   "ABILITY_YRED_DARK_BARGAIN"
+  ],
+  "Deal Four": [
+   "ABILITY_NEMELEX_DEAL_FOUR"
+  ],
+  "Depart the Abyss": [
+   "ABILITY_LUGONU_EXIT_ABYSS"
+  ],
+  "Dig": [
+   "ABILITY_DIG"
+  ],
+  "Disaster Area": [
+   "ABILITY_QAZLAL_DISASTER_AREA"
+  ],
+  "Dismiss Apostle #1": [
+   "ABILITY_BEOGH_DISMISS_APOSTLE_DEAD"
+  ],
+  "Dismiss Apostle #2": [
+   "ABILITY_BEOGH_DISMISS_APOSTLE_DEAD"
+  ],
+  "Dismiss Apostle #3": [
+   "ABILITY_BEOGH_DISMISS_APOSTLE_DEAD"
+  ],
+  "Divine Alms": [
+   "ABILITY_ELYVILON_DIVINE_ALMS"
+  ],
+  "Divine Exegesis": [
+   "ABILITY_SIF_MUNA_EXEGESIS"
+  ],
+  "Divine Protection": [
+   "ABILITY_ELYVILON_DIVINE_PROTECTION"
+  ],
+  "Divine Shield": [
+   "ABILITY_TSO_DIVINE_SHIELD"
+  ],
+  "Divine Vigour": [
+   "ABILITY_ELYVILON_DIVINE_VIGOUR"
+  ],
+  "Donate Gold": [
+   "ABILITY_ZIN_DONATE_GOLD"
+  ],
+  "Drain Life": [
+   "ABILITY_YRED_DRAIN_LIFE"
+  ],
+  "Draw Destruction": [
+   "ABILITY_NEMELEX_DRAW_DESTRUCTION"
+  ],
+  "Draw Escape": [
+   "ABILITY_NEMELEX_DRAW_ESCAPE"
+  ],
+  "Draw Out Power": [
+   "ABILITY_RU_DRAW_OUT_POWER"
+  ],
+  "Draw Stack": [
+   "ABILITY_NEMELEX_DRAW_STACK"
+  ],
+  "Draw Summoning": [
+   "ABILITY_NEMELEX_DRAW_SUMMONING"
+  ],
+  "Duel": [
+   "ABILITY_OKAWARU_DUEL"
+  ],
+  "Elemental Force": [
+   "ABILITY_QAZLAL_ELEMENTAL_FORCE"
+  ],
+  "End Transformation": [
+   "ABILITY_END_TRANSFORMATION"
+  ],
+  "Enkindle": [
+   "ABILITY_ENKINDLE"
+  ],
+  "Enslave Soul": [
+   "ABILITY_YRED_ENSLAVE_SOUL"
+  ],
+  "Enter the Abyss": [
+   "ABILITY_LUGONU_ENTER_ABYSS"
+  ],
+  "Evoke Berserk Rage": [
+   "ABILITY_EVOKE_BERSERK"
+  ],
+  "Evoke Blink": [
+   "ABILITY_BLINK"
+  ],
+  "Evoke Damnation": [
+   "ABILITY_EVOKE_DISPATER"
+  ],
+  "Evoke Invisibility": [
+   "ABILITY_EVOKE_INVISIBILITY"
+  ],
+  "Evoke Thunderclouds": [
+   "ABILITY_EVOKE_THUNDER"
+  ],
+  "Evoke the Sceptre of Asmodeus": [
+   "ABILITY_EVOKE_ASMODEUS"
+  ],
+  "Evoke the Staff of Dispater": [
+   "ABILITY_EVOKE_DISPATER"
+  ],
+  "Evoke the Staff of Olgreb": [
+   "ABILITY_EVOKE_OLGREB"
+  ],
+  "Exsanguinate": [
+   "ABILITY_EXSANGUINATE"
+  ],
+  "Fathomless Shackles": [
+   "ABILITY_YRED_FATHOMLESS_SHACKLES"
+  ],
+  "Fiery Armour": [
+   "ABILITY_IGNIS_FIERY_ARMOUR"
+  ],
+  "Finesse": [
+   "ABILITY_OKAWARU_FINESSE"
+  ],
+  "Forget Spell": [
+   "ABILITY_SIF_MUNA_AMNESIA"
+  ],
+  "Foxfire Swarm": [
+   "ABILITY_IGNIS_FOXFIRE"
+  ],
+  "Galvanic Breath": [
+   "ABILITY_BREATHE_LIGHTNING"
+  ],
+  "Give Item to Named Follower": [
+   "ABILITY_BEOGH_GIFT_ITEM"
+  ],
+  "Glacial Breath": [
+   "ABILITY_BREATHE_FROST"
+  ],
+  "Globe of Annihilation": [
+   "ABILITY_MAKHLEB_GLOBE_OF_ANNIHILATION"
+  ],
+  "Golden Breath": [
+   "ABILITY_GOLDEN_BREATH"
+  ],
+  "Grand Finale": [
+   "ABILITY_USKAYAW_GRAND_FINALE"
+  ],
+  "Greater Healing": [
+   "ABILITY_ELYVILON_GREATER_HEALING"
+  ],
+  "Greater Servant of Makhleb": [
+   "ABILITY_MAKHLEB_GREATER_SERVANT"
+  ],
+  "Grow Ballistomycete": [
+   "ABILITY_FEDHAS_GROW_BALLISTOMYCETE"
+  ],
+  "Grow Oklob": [
+   "ABILITY_FEDHAS_GROW_OKLOB"
+  ],
+  "Heal Other": [
+   "ABILITY_ELYVILON_HEAL_OTHER"
+  ],
+  "Heal Self": [
+   "ABILITY_ELYVILON_HEAL_SELF"
+  ],
+  "Heal Wounds": [
+   "ABILITY_HEAL_WOUNDS"
+  ],
+  "Heavenly Storm": [
+   "ABILITY_WU_JIAN_HEAVENLY_STORM"
+  ],
+  "Heroism": [
+   "ABILITY_OKAWARU_HEROISM"
+  ],
+  "Hop": [
+   "ABILITY_HOP"
+  ],
+  "Hurl Damnation": [
+   "ABILITY_HURL_DAMNATION"
+  ],
+  "Hurl Torchlight": [
+   "ABILITY_YRED_HURL_TORCHLIGHT"
+  ],
+  "Idealise": [
+   "ABILITY_HEP_IDEALISE"
+  ],
+  "Imbue Servitor": [
+   "ABILITY_IMBUE_SERVITOR"
+  ],
+  "Imprint Weapon": [
+   "ABILITY_IMPRINT_WEAPON"
+  ],
+  "Imprison": [
+   "ABILITY_ZIN_IMPRISON"
+  ],
+  "Infernal Legion": [
+   "ABILITY_MAKHLEB_LESSER_SERVANT"
+  ],
+  "Infernal Servant": [
+   "ABILITY_MAKHLEB_LESSER_SERVANT"
+  ],
+  "Injury Mirror": [
+   "ABILITY_YRED_INJURY_MIRROR"
+  ],
+  "Invent Gizmo": [
+   "ABILITY_INVENT_GIZMO"
+  ],
+  "Jump": [
+   "ABILITY_JUMP"
+  ],
+  "Lesser Healing": [
+   "ABILITY_ELYVILON_LESSER_HEALING"
+  ],
+  "Lesser Servant of Makhleb": [
+   "ABILITY_MAKHLEB_LESSER_SERVANT"
+  ],
+  "Light the Black Torch": [
+   "ABILITY_YRED_LIGHT_THE_TORCH"
+  ],
+  "Line Pass": [
+   "ABILITY_USKAYAW_LINE_PASS"
+  ],
+  "Major Destruction": [
+   "ABILITY_MAKHLEB_MAJOR_DESTRUCTION"
+  ],
+  "Minor Destruction": [
+   "ABILITY_MAKHLEB_MINOR_DESTRUCTION"
+  ],
+  "Mud Breath": [
+   "ABILITY_BREATHE_MUD"
+  ],
+  "Noxious Breath": [
+   "ABILITY_BREATHE_MEPHITIC"
+  ],
+  "Nullifying Breath": [
+   "ABILITY_BREATHE_ENERGY"
+  ],
+  "Oozemancy": [
+   "ABILITY_JIYVA_OOZEMANCY"
+  ],
+  "Overgrow": [
+   "ABILITY_FEDHAS_OVERGROW"
+  ],
+  "Pacify": [
+   "ABILITY_ELYVILON_PACIFY"
+  ],
+  "Potion Petition": [
+   "ABILITY_GOZAG_POTION_PETITION"
+  ],
+  "Power Leap": [
+   "ABILITY_RU_POWER_LEAP"
+  ],
+  "Primordial Nightfall": [
+   "ABILITY_DITHMENOS_NIGHTFALL"
+  ],
+  "Purification": [
+   "ABILITY_ELYVILON_PURIFICATION"
+  ],
+  "Recall Ancestor": [
+   "ABILITY_HEP_RECALL"
+  ],
+  "Recall Apostles": [
+   "ABILITY_BEOGH_RECALL"
+  ],
+  "Recall Orcish Followers": [
+   "ABILITY_BEOGH_RECALL"
+  ],
+  "Recall Undead Harvest": [
+   "ABILITY_YRED_RECALL"
+  ],
+  "Recall Undead Slaves": [
+   "ABILITY_YRED_RECALL"
+  ],
+  "Receive Armour": [
+   "ABILITY_OKAWARU_GIFT_ARMOUR"
+  ],
+  "Receive Corpses": [
+   "ABILITY_KIKU_RECEIVE_CORPSES"
+  ],
+  "Receive Forbidden Knowledge": [
+   "ABILITY_KIKU_NECRONOMICON"
+  ],
+  "Receive Weapon": [
+   "ABILITY_OKAWARU_GIFT_WEAPON"
+  ],
+  "Recite": [
+   "ABILITY_ZIN_RECITE"
+  ],
+  "Recruit Apostle": [
+   "ABILITY_BEOGH_RECRUIT_APOSTLE"
+  ],
+  "Reject Sacrifices": [
+   "ABILITY_RU_REJECT_SACRIFICES"
+  ],
+  "Renounce Religion": [
+   "ABILITY_RENOUNCE_RELIGION"
+  ],
+  "Repeat Exegesis": [
+   "ABILITY_SIF_MUNA_EXEGESIS"
+  ],
+  "Request Jelly": [
+   "ABILITY_JIYVA_REQUEST_JELLY"
+  ],
+  "Resurrection": [
+   "ABILITY_BEOGH_RESURRECTION"
+  ],
+  "Revivify": [
+   "ABILITY_REVIVIFY"
+  ],
+  "Rising Flame": [
+   "ABILITY_IGNIS_RISING_FLAME"
+  ],
+  "Rolling Charge": [
+   "ABILITY_ROLL"
+  ],
+  "Sacrifice Arcana": [
+   "ABILITY_RU_SACRIFICE_ARCANA"
+  ],
+  "Sacrifice Artifice": [
+   "ABILITY_RU_SACRIFICE_ARTIFICE"
+  ],
+  "Sacrifice Courage": [
+   "ABILITY_RU_SACRIFICE_COURAGE"
+  ],
+  "Sacrifice Drink": [
+   "ABILITY_RU_SACRIFICE_DRINK"
+  ],
+  "Sacrifice Durability": [
+   "ABILITY_RU_SACRIFICE_DURABILITY"
+  ],
+  "Sacrifice Essence": [
+   "ABILITY_RU_SACRIFICE_ESSENCE"
+  ],
+  "Sacrifice Experience": [
+   "ABILITY_RU_SACRIFICE_EXPERIENCE"
+  ],
+  "Sacrifice Forms": [
+   "ABILITY_RU_SACRIFICE_FORMS"
+  ],
+  "Sacrifice Health": [
+   "ABILITY_RU_SACRIFICE_HEALTH"
+  ],
+  "Sacrifice Love": [
+   "ABILITY_RU_SACRIFICE_LOVE"
+  ],
+  "Sacrifice Nimbleness": [
+   "ABILITY_RU_SACRIFICE_NIMBLENESS"
+  ],
+  "Sacrifice Purity": [
+   "ABILITY_RU_SACRIFICE_PURITY"
+  ],
+  "Sacrifice Resistance": [
+   "ABILITY_RU_SACRIFICE_RESISTANCE"
+  ],
+  "Sacrifice Skill": [
+   "ABILITY_RU_SACRIFICE_SKILL"
+  ],
+  "Sacrifice Stealth": [
+   "ABILITY_RU_SACRIFICE_STEALTH"
+  ],
+  "Sacrifice Words": [
+   "ABILITY_RU_SACRIFICE_WORDS"
+  ],
+  "Sacrifice a Hand": [
+   "ABILITY_RU_SACRIFICE_HAND"
+  ],
+  "Sacrifice an Eye": [
+   "ABILITY_RU_SACRIFICE_EYE"
+  ],
+  "Sanctuary": [
+   "ABILITY_ZIN_SANCTUARY"
+  ],
+  "Serpent's Lash": [
+   "ABILITY_WU_JIAN_SERPENTS_LASH"
+  ],
+  "Set terrain to build": [
+   "ABILITY_WIZ_SET_TERRAIN"
+  ],
+  "Shadow Form": [
+   "ABILITY_DITHMENOS_SHADOW_FORM"
+  ],
+  "Shadow Step": [
+   "ABILITY_DITHMENOS_SHADOW_STEP"
+  ],
+  "Shadowslip": [
+   "ABILITY_DITHMENOS_SHADOWSLIP"
+  ],
+  "Shaft Self": [
+   "ABILITY_SHAFT_SELF"
+  ],
+  "Shatter the Chains": [
+   "ABILITY_ASHENZARI_UNCURSE"
+  ],
+  "Sign of Ruin": [
+   "ABILITY_KIKU_SIGN_OF_RUIN"
+  ],
+  "Siphon Essence": [
+   "ABILITY_SIPHON_ESSENCE"
+  ],
+  "Slimify": [
+   "ABILITY_JIYVA_SLIMIFY"
+  ],
+  "Slouch": [
+   "ABILITY_CHEIBRIADOS_SLOUCH"
+  ],
+  "Smiting": [
+   "ABILITY_BEOGH_SMITE"
+  ],
+  "Spit Poison": [
+   "ABILITY_SPIT_POISON"
+  ],
+  "Stack Five": [
+   "ABILITY_NEMELEX_STACK_FIVE"
+  ],
+  "Steam Breath": [
+   "ABILITY_BREATHE_STEAM"
+  ],
+  "Step From Time": [
+   "ABILITY_CHEIBRIADOS_TIME_STEP"
+  ],
+  "Stomp": [
+   "ABILITY_USKAYAW_STOMP"
+  ],
+  "Stop Recall": [
+   "ABILITY_STOP_RECALL"
+  ],
+  "Summon Divine Warrior": [
+   "ABILITY_TSO_DIVINE_WARRIOR"
+  ],
+  "Temporal Distortion": [
+   "ABILITY_CHEIBRIADOS_TEMPORAL_DISTORTION"
+  ],
+  "Torment": [
+   "ABILITY_KIKU_TORMENT"
+  ],
+  "Transference": [
+   "ABILITY_HEP_TRANSFERENCE"
+  ],
+  "Triple Draw": [
+   "ABILITY_NEMELEX_TRIPLE_DRAW"
+  ],
+  "Trog's Hand": [
+   "ABILITY_TROG_HAND"
+  ],
+  "Unearth Wretches": [
+   "ABILITY_KIKU_UNEARTH_WRETCHES"
+  ],
+  "Unleash Destruction": [
+   "ABILITY_MAKHLEB_MAJOR_DESTRUCTION_COC"
+  ],
+  "Upheaval": [
+   "ABILITY_QAZLAL_UPHEAVAL"
+  ],
+  "Vessel of Slaughter": [
+   "ABILITY_MAKHLEB_VESSEL_OF_SLAUGHTER"
+  ],
+  "Vitalisation": [
+   "ABILITY_ZIN_VITALISATION"
+  ],
+  "Wall Jump": [
+   "ABILITY_WU_JIAN_WALL_JUMP"
+  ],
+  "Wall of Briars": [
+   "ABILITY_FEDHAS_WALL_OF_BRIARS"
+  ],
+  "Watery Grave": [
+   "ABILITY_WATERY_GRAVE"
+  ],
+  "Word of Chaos": [
+   "ABILITY_WORD_OF_CHAOS"
+  ],
+  "You breathe a blast of fire.": [
+   "ABILITY_BREATHE_FIRE"
+  ],
+  "You breathe a bolt of dispelling energy.": [
+   "ABILITY_BREATHE_ENERGY"
+  ],
+  "You exhale a blast of noxious fumes.": [
+   "ABILITY_BREATHE_MEPHITIC"
+  ],
+  "You exhale a blast of poison gas.": [
+   "ABILITY_BREATHE_POISON"
+  ],
+  "You exhale a blast of scalding steam.": [
+   "ABILITY_BREATHE_STEAM"
+  ],
+  "You exhale a wave of freezing cold.": [
+   "ABILITY_BREATHE_FROST"
+  ]
+ }
+}

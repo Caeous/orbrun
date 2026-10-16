@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { REST_PITCH, cellKey, emptyScene, type Billboard, type Scene, type SceneCell } from '@orbrun/scene'
-import { CameraController, MAP_TURNS_DIAGONAL, trailStep } from '../src/camera'
+import { CameraController, trailStep } from '../src/camera'
 
 // These tests advance animation time themselves; arrival cadence has explicit-clock tests.
 beforeEach(() => {
@@ -80,6 +80,14 @@ describe('camera facing while travelling', () => {
     expect(c.facing).toBe(2)
   })
 
+  it('one cell short of a corner keeps facing on rather than back down the corridor', () => {
+    // walking east; the corridor turns north one cell on, the way back runs open behind
+    const s = sceneFrom(['###.#', '###.#', '..@.#', '#####'])
+    const c = cam(2)
+    c.faceAfterMove(s, 1, 0)
+    expect(c.facing).toBe(2)
+  })
+
   it('a diagonal between two wall corners is facing a wall', () => {
     // north-east is floor but north and east are walls; north-west is the nearest open heading
     const s = sceneFrom(['...#.', '...#.', '...@#', '..###', '.....'])
@@ -90,6 +98,14 @@ describe('camera facing while travelling', () => {
 
   it('arriving somewhere new may turn all the way round to leave a wall', () => {
     const s = sceneFrom(['#####', '##@##', '##.##', '##.##'])
+    const c = cam(0)
+    expect(c.faceAfterArrival(s)).toBe(true)
+    expect(c.facing).toBe(4)
+  })
+
+  it('arriving with a wall ahead faces the longer view, behind or not', () => {
+    // the heading left over from the last level is north; east has one cell, south a corridor
+    const s = sceneFrom(['#####', '##@.#', '##.##', '##.##'])
     const c = cam(0)
     expect(c.faceAfterArrival(s)).toBe(true)
     expect(c.facing).toBe(4)
@@ -289,7 +305,7 @@ describe('the right stick', () => {
     return h.camera.yaw
   }
 
-  it('free look stays exactly where it was let go, facing the nearest heading', () => {
+  it('letting go eases the view onto the nearest heading, keeping its tilt', () => {
     const c = cam()
     c.reducedMotion = false
     c.look(1, 0.5)
@@ -297,24 +313,10 @@ describe('the right stick', () => {
     const { yaw, pitch } = c.camera
     c.look(0, 0)
     expect(Math.abs(headingYaw(c) - yaw)).toBeGreaterThan(0.05)
-    c.update(1)
-    expect(c.camera.yaw).toBeCloseTo(yaw)
-    expect(c.camera.pitch).toBeCloseTo(pitch)
-  })
-
-  it('on Turn, tilting up or down leaves a turn easing on its way', () => {
-    const c = cam()
-    c.reducedMotion = false
-    const pitch = c.camera.pitch
-    c.turn(1)
-    c.tilt(-1)
-    c.update(0.05)
-    expect(c.camera.pitch).toBeGreaterThan(pitch)
-    c.tilt(0)
-    c.update(3)
-    c.update(1)
-    expect(c.camera.yaw).toBeCloseTo(headingYaw(c))
+    c.update(2)
     expect(c.facing).toBe(1)
+    expect(c.camera.yaw).toBeCloseTo(headingYaw(c))
+    expect(c.camera.pitch).toBeCloseTo(pitch)
   })
 })
 
@@ -351,6 +353,27 @@ describe('camera facing after a keyboard step', () => {
   })
 })
 
+describe('a swipe leaning the view a heading at a time', () => {
+  it('leans at once, turns under the lean, and eases home on its heading once lifted', () => {
+    const c = cam()
+    c.reducedMotion = false
+    c.lean(0.2)
+    expect(c.camera.yaw).toBeCloseTo(0.2)
+    expect(c.steering).toBe(true)
+    c.turn(1)
+    for (let i = 0; i < 60; i++) c.update(1 / 60)
+    expect(c.camera.yaw).toBeCloseTo(Math.PI / 4 + 0.2)
+    c.lean(0.1)
+    expect(c.camera.yaw).toBeCloseTo(Math.PI / 4 + 0.1)
+    c.endLean()
+    expect(c.steering).toBe(false)
+    expect(c.camera.yaw).toBeCloseTo(Math.PI / 4 + 0.1)
+    for (let i = 0; i < 60; i++) c.update(1 / 60)
+    expect(c.camera.yaw).toBeCloseTo(Math.PI / 4)
+    expect(c.facing).toBe(1)
+  })
+})
+
 describe('steering with a drag', () => {
   it('stays steering until it is released', () => {
     const c = cam()
@@ -359,6 +382,166 @@ describe('steering with a drag', () => {
     expect(c.steering).toBe(true)
     c.endDrag()
     expect(c.steering).toBe(false)
+  })
+
+  it('a mouse drag leaves the view where it points', () => {
+    const c = cam()
+    c.lookBy(0.3, 0)
+    c.endDrag()
+    for (let i = 0; i < 60; i++) c.update(1 / 60)
+    expect(c.camera.yaw).toBeCloseTo(0.3)
+  })
+
+  const lift = (yawSpeed = 0, pitchSpeed = 0) => ({ yawSpeed, pitchSpeed, commit: 0.1 })
+  const settle = (c: CameraController) => {
+    for (let i = 0; i < 120; i++) c.update(1 / 60)
+  }
+  const moving = () => {
+    const c = cam()
+    c.reducedMotion = false
+    return c
+  }
+
+  it('a finger lifting short of halfway still turns on to the next heading, and the tilt springs back', () => {
+    const c = moving()
+    const pitch = c.camera.pitch
+    c.lookBy(0.2, 0.1)
+    c.endDrag(lift())
+    expect(c.steering).toBe(false)
+    settle(c)
+    expect(c.facing).toBe(1)
+    expect(c.camera.yaw).toBeCloseTo(Math.PI / 4)
+    expect(c.camera.pitch).toBeCloseTo(pitch)
+  })
+
+  it('a nudge under the commit distance goes back', () => {
+    const c = cam()
+    c.lookBy(-0.05, 0)
+    c.endDrag(lift())
+    settle(c)
+    expect(c.facing).toBe(0)
+    expect(c.camera.yaw).toBeCloseTo(0)
+  })
+
+  it('a finger pulling back as it lifts lets the turn go back', () => {
+    const c = cam()
+    c.lookBy(0.3, 0)
+    c.endDrag(lift(-4))
+    settle(c)
+    expect(c.facing).toBe(0)
+  })
+
+  it('a flick turns one heading and never swings past it', () => {
+    const c = moving()
+    c.lookBy(0.5, 0)
+    c.endDrag(lift(30))
+    for (let i = 0; i < 120; i++) {
+      c.update(1 / 60)
+      expect(c.camera.yaw).toBeLessThanOrEqual(Math.PI / 4 + 1e-9)
+    }
+    expect(c.facing).toBe(1)
+  })
+
+  it('a quick swipe finishes its turn as an arrow key turns', () => {
+    const swiped = moving()
+    swiped.lookBy(0.2, 0)
+    swiped.endDrag(lift(3))
+    const keyed = moving()
+    keyed.setFacing(0, true)
+    keyed.camera.yaw = 0.2
+    keyed.turn(1)
+    for (let i = 0; i < 30; i++) {
+      swiped.update(1 / 60)
+      keyed.update(1 / 60)
+      expect(swiped.camera.yaw).toBeCloseTo(keyed.camera.yaw, 9)
+    }
+  })
+
+  it('a slow lift springs on from the finger’s own speed', () => {
+    const c = moving()
+    c.lookBy(0.5, 0)
+    c.endDrag(lift(1))
+    c.update(1 / 120)
+    // the ease would leap off at four times the finger's speed
+    expect(c.camera.yaw - 0.5).toBeLessThan(0.02)
+  })
+
+  it('a tilt flicked back toward rest never swings past it', () => {
+    const c = moving()
+    const rest = c.camera.pitch
+    c.lookBy(0, 0.3)
+    c.endDrag(lift(0, -30))
+    for (let i = 0; i < 120; i++) {
+      c.update(1 / 60)
+      expect(c.camera.pitch).toBeGreaterThanOrEqual(rest - 1e-9)
+    }
+  })
+
+  it('a touch the system took away settles on the nearest heading', () => {
+    const c = cam()
+    c.lookBy(0.3, 0)
+    c.endDrag({ yawSpeed: 0, pitchSpeed: 0, commit: Infinity })
+    settle(c)
+    expect(c.facing).toBe(0)
+  })
+
+  it('a second swipe on the heels of the first goes a heading further', () => {
+    const c = moving()
+    c.lookBy(0.2, 0)
+    c.endDrag(lift(3))
+    c.update(1 / 60)
+    expect(c.camera.yaw).toBeLessThan(Math.PI / 8)
+    c.lookBy(0.15, 0)
+    c.endDrag(lift(3))
+    settle(c)
+    expect(c.facing).toBe(2)
+  })
+
+  it('the spring carries on from the finger, never turning back first', () => {
+    const c = moving()
+    c.lookBy(0.2, 0)
+    c.endDrag(lift(3))
+    let last = c.camera.yaw
+    for (let i = 0; i < 60; i++) {
+      c.update(1 / 60)
+      expect(c.camera.yaw).toBeGreaterThanOrEqual(last - 1e-9)
+      last = c.camera.yaw
+    }
+  })
+
+  it('a finger’s turn lingers on the heading it reaches, and a long one rests two headings on', () => {
+    const c = moving()
+    c.lookBy(0.9 * (Math.PI / 4), 0, true)
+    expect(c.camera.yaw).toBeGreaterThan(0.94 * (Math.PI / 4))
+    c.lookBy(0.8 * (Math.PI / 4), 0, true)
+    c.endDrag(lift(3))
+    settle(c)
+    expect(c.facing).toBe(2)
+    expect(c.camera.yaw).toBeCloseTo(Math.PI / 2)
+  })
+
+  it('a finger catching a turn still easing in takes it from where it stands', () => {
+    const c = moving()
+    c.lookBy(0.2, 0, true)
+    c.endDrag(lift(3))
+    c.update(1 / 60)
+    const yaw = c.camera.yaw
+    c.lookBy(0, 0, true)
+    expect(c.camera.yaw).toBeCloseTo(yaw, 9)
+    c.lookBy(0.15, 0, true)
+    c.endDrag(lift(3))
+    settle(c)
+    expect(c.facing).toBe(2)
+  })
+
+  it('a keyed turn mid-spring takes over', () => {
+    const c = moving()
+    c.lookBy(0.2, 0)
+    c.endDrag(lift(3))
+    c.update(1 / 60)
+    c.turn(1)
+    settle(c)
+    expect(c.facing).toBe(2)
   })
 })
 
@@ -463,90 +646,6 @@ describe('facing what stopped the walk (nearby-danger.cc mons_is_safe)', () => {
     const c = cam(0)
     c.faceBlocker(s, named)
     expect(c.facing).toBe(6)
-  })
-})
-
-describe('the minimap heading', () => {
-  it('eases toward the grid heading in step with the view, snapping only under reduced motion', () => {
-    const c = new CameraController()
-    c.setFacing(0, true)
-    expect(c.mapYaw).toBe(0)
-    // a quarter turn east: the map lags the same way the view does
-    c.setFacing(2)
-    expect(c.mapYaw).toBe(0)
-    expect(c.update(0.02)).toBe(true)
-    // the ground and the view make the same turn at the same rate, so they
-    // swing as one; on quarters the map runs a little ahead and settles first
-    if (MAP_TURNS_DIAGONAL) expect(c.mapYaw).toBe(c.camera.yaw)
-    else expect(c.mapYaw).toBeGreaterThan(c.camera.yaw)
-    for (let i = 0; i < 100; i++) c.update(0.02)
-    expect(c.mapYaw).toBeCloseTo(Math.PI / 2)
-    expect(c.update(0.02)).toBe(false)
-    // east to south-east: the view turns 45 degrees, and the map's ground
-    // goes with it only under MAP_TURNS_DIAGONAL — otherwise a diagonal
-    // stands on its left-hand compass heading and the map stays put
-    c.setFacing(3)
-    for (let i = 0; i < 100; i++) c.update(0.02)
-    expect(c.camera.yaw).toBeCloseTo((3 * Math.PI) / 4)
-    expect(c.mapYaw).toBeCloseTo(MAP_TURNS_DIAGONAL ? (3 * Math.PI) / 4 : Math.PI / 2)
-    // a look turns the view to headings between the detents: where the
-    // ground turns with the view it goes there too, at once, so what is
-    // ahead in the scene is up the map on every frame
-    c.lookBy(0.3, 0)
-    expect(c.camera.yaw).toBeCloseTo((3 * Math.PI) / 4 + 0.3)
-    expect(c.mapYaw).toBeCloseTo(MAP_TURNS_DIAGONAL ? (3 * Math.PI) / 4 + 0.3 : Math.PI / 2)
-    c.update(0.02)
-    expect(c.mapYaw).toBeCloseTo(MAP_TURNS_DIAGONAL ? (3 * Math.PI) / 4 + 0.3 : Math.PI / 2)
-    c.endDrag()
-    // reduced motion: straight there
-    const r = cam(0)
-    r.setFacing(4)
-    expect(r.mapYaw).toBeCloseTo(Math.PI)
-    // a restored view starts the map on its heading with no easing: the
-    // view's own yaw where the ground turns with it, its quarter otherwise
-    const b = new CameraController()
-    b.restore({ yaw: 1.9 })
-    expect(b.mapYaw).toBeCloseTo(MAP_TURNS_DIAGONAL ? 1.9 : Math.PI / 2)
-    expect(b.update(0.1)).toBe(false)
-  })
-
-  it('stands what is on the ground against the grid heading, and the lean never passes a half-quarter', () => {
-    /** how far what stands on the ground leans, in radians */
-    const lean = (c: CameraController) => {
-      let d = c.mapYaw - c.mapUprightYaw
-      while (d > Math.PI) d -= 2 * Math.PI
-      while (d < -Math.PI) d += 2 * Math.PI
-      return d
-    }
-    const c = new CameraController()
-    c.setFacing(0, true)
-    expect(lean(c)).toBe(0)
-    // the ground never parts from the view it stands for
-    if (MAP_TURNS_DIAGONAL) {
-      c.setFacing(2)
-      for (let i = 0; i < 6; i++) {
-        c.update(0.02)
-        expect(c.mapYaw).toBe(c.camera.yaw)
-      }
-      for (let i = 0; i < 100; i++) c.update(0.02)
-      c.setFacing(0, true)
-    }
-    // onto a diagonal: the ground turns 45 degrees, the sprites lean with it
-    c.setFacing(1)
-    for (let i = 0; i < 100; i++) c.update(0.02)
-    expect(c.mapYaw).toBeCloseTo(MAP_TURNS_DIAGONAL ? Math.PI / 4 : 0)
-    expect(c.mapUprightYaw).toBeCloseTo(0)
-    // on off the diagonal: both head for east together, so the lean falls
-    // away rather than flipping to the other side on the way
-    let worst = 0
-    c.setFacing(2)
-    for (let i = 0; i < 100; i++) {
-      c.update(0.02)
-      worst = Math.max(worst, Math.abs(lean(c)))
-    }
-    expect(worst).toBeLessThanOrEqual(Math.PI / 4 + 1e-6)
-    expect(c.mapUprightYaw).toBeCloseTo(Math.PI / 2)
-    expect(lean(c)).toBeCloseTo(0)
   })
 })
 
@@ -877,7 +976,7 @@ describe('movement timing', () => {
 })
 
 describe('frame-independent turning', () => {
-  it('matches yaw and minimap rotation at equal elapsed times', () => {
+  it('matches yaw at equal elapsed times', () => {
     const a = new CameraController()
     const b = new CameraController()
     a.turn(2)
@@ -885,8 +984,6 @@ describe('frame-independent turning', () => {
     a.update(0.1)
     for (let i = 0; i < 12; i++) b.update(1 / 120)
     expect(a.camera.yaw).toBeCloseTo(b.camera.yaw, 12)
-    expect(a.mapYaw).toBeCloseTo(b.mapYaw, 12)
-    expect(a.mapUprightYaw).toBeCloseTo(b.mapUprightYaw, 12)
     expect(a.camera.yaw).toBeLessThan(Math.PI / 2) // a 100 ms hitch no longer snaps the turn
   })
 
@@ -949,6 +1046,8 @@ describe('autofight facing without continuous tracking', () => {
       c.look(1, 0.5)
       c.update(0.1, 1.1)
       c.look(0, 0)
+      // a let-go stick settles onto its heading first
+      c.update(2, 1.2)
     } else {
       c.turn(1)
       c.update(1, 2)

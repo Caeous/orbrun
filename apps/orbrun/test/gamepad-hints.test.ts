@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { GamepadHints, gamepadHints, padLesson, type PadHintEvidence } from '../src/gamepad-hints'
 import { bindingTable, type Action } from '../src/bindings'
-import type { Context } from '../src/context'
+import type { Context, MenuContext } from '../src/context'
 import { defaultSettings, getSettings, saveSettings } from '../src/servers'
 import { settingsPanel } from '../src/settings-panel'
 import { isPadActivity } from '../src/gamepad'
@@ -50,7 +50,7 @@ describe('adaptive gamepad teaching', () => {
     h.observe(evidence({ mode: 'targeting' }), 10)
     h.attempt(bindingTable(ctx()).SELECT!, ctx(), evidence(), 20)
     h.observe(evidence({ clientOverlay: true }), 30)
-    expect(teaching(h)).toMatchObject([{ button: 'LB', label: 'Wait one turn', hold: 'Rest' }])
+    expect(teaching(h)).toMatchObject([{ button: 'LB', label: 'Wait', hold: 'Rest' }])
     expect(padLesson(bindingTable(ctx()).B!, ctx())).toBeNull()
   })
 
@@ -92,7 +92,7 @@ describe('adaptive gamepad teaching', () => {
     const h = new GamepadHints()
     const map = ctx({ mode: 'levelmap' })
     expect(h.prompts(map, 'contextual').map((l) => [l.button, l.label])).toEqual([
-      ['X', 'Describe'], ['Y', 'Find you'], ['LB', 'Up stairs'], ['RB', 'Down stairs'], ['LT', 'Zoom out'], ['RT', 'Zoom in'], ['L3', 'Find…'], ['R3', 'Overview'], ['A', 'Travel here'],
+      ['X', 'Describe'], ['Y', 'Find you'], ['LB', 'Find up'], ['RB', 'Find down'], ['LT', 'Zoom out'], ['RT', 'Zoom in'], ['L3', 'Find…'], ['R3', 'Overview'], ['A', 'Travel here'],
     ])
     expect(h.prompts(map, 'off').map((l) => [l.button, l.label])).toEqual([['A', 'Travel here']])
     expect(teaching(h, map).map((l) => l.label)).toEqual(['Move cursor'])
@@ -169,6 +169,34 @@ describe('nothing standing: only the context and the lessons', () => {
     const h = new GamepadHints()
     expect(h.prompts(ctx(), 'contextual')).toEqual([])
     expect(h.prompts(ctx(), 'off')).toEqual([])
+  })
+})
+
+describe('as on the touch bar: what a choice brought', () => {
+  const menu = (over: Partial<MenuContext>, tag = 'pickup'): Context =>
+    ctx({ mode: 'menu', menu: { menu: { tag, items: [], flags: 0 }, hoverable: [], multiselect: true, ...over } as unknown as MenuContext })
+  const shop = (over: object) => menu({ multiselect: false, shop: { canBuy: true, anyMarked: false, anyListed: false, mode: 'buy', sortOrder: 'type', ...over } } as unknown as Partial<MenuContext>, 'shop')
+  const lines = (c: Context, mode: 'adaptive' | 'contextual' | 'off' = 'contextual') =>
+    new GamepadHints().prompts(c, mode).filter((l) => !l.teaching).map((l) => l.button + (l.fresh ? '!' : '')).sort()
+
+  it('a menu’s accept is fresh once something is marked, and absent before', () => {
+    expect(lines(menu({ anyMarked: true }))).toEqual(['A', 'START!'])
+    expect(lines(menu({ anyMarked: false }))).toEqual(['A'])
+    // the same with the hints off: the menu's own navigation still stands under it
+    expect(lines(menu({ anyMarked: false }), 'off')).toEqual(['A'])
+  })
+
+  it('the shop’s buy and list come fresh with a mark, and hold no place without one', () => {
+    const marked = lines(shop({ anyMarked: true }))
+    const bare = lines(shop({}))
+    expect(marked.filter((b) => b.endsWith('!')).sort()).toEqual(['LT!', 'START!'])
+    expect(bare).toEqual(marked.filter((b) => !b.endsWith('!')))
+  })
+
+  it('a screen no choice changes holds nothing and marks nothing', () => {
+    const door = ctx({ ahead: { kind: 'door-closed', label: 'door' } })
+    expect(new GamepadHints().prompts(door, 'contextual').some((l) => l.fresh)).toBe(false)
+    expect(lines(menu({ multiselect: false }))).toEqual(['A'])
   })
 })
 

@@ -1,4 +1,4 @@
-import { barLabels, bindingTable, promptLabels, threatened, type Action, type BindingLabel } from './bindings'
+import { barLabels, bindingTable, choiceBrought, promptLabels, threatened, type Action, type BindingLabel } from './bindings'
 import type { Context } from './context'
 
 /**
@@ -123,8 +123,19 @@ export class GamepadHints {
     if (worked) { this.learn(p.lesson); this.cancel() }
   }
 
-  /** Context first, then the lessons: at most two basic ones, then one discovery. Nothing stands once learned. */
+  /**
+   * Context first, then the lessons: at most two basic ones, then one discovery. Nothing stands once learned.
+   * As on the touch bar, a prompt the player's choice brought (a menu's accept once something is marked) is
+   * `fresh`. Unlike the touch bar's cells, one that comes and goes holds no place: the prompts are a list.
+   */
   prompts(ctx: Context, mode: HintMode): BindingLabel[] {
+    const out = this.shown(ctx, mode)
+    if (!out.length) return out
+    const brought = choiceBrought(ctx)
+    return out.map((l) => (!l.teaching && brought(l) ? { ...l, fresh: true } : l))
+  }
+
+  private shown(ctx: Context, mode: HintMode): BindingLabel[] {
     if (['spectating', 'lobby', 'ended', 'macro', 'text'].includes(ctx.mode)) return []
     const all = barLabels(ctx)
     // Confirmation is navigation, not a tutorial reminder. B is always implicit.

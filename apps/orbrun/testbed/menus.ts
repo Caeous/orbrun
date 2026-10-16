@@ -11,6 +11,7 @@
  */
 import { loadGamedata, browserIo, type Gamedata } from '@orbrun/gamedata'
 import { Overlays } from '../src/overlays'
+import { settingsPanel } from '../src/settings-panel'
 import '../src/styles.css'
 
 const GAMEDATA = { host: 'crawl.dcss.io', version: 'acd3d60e20f899c1c8a546953d6ffa0f6c7fe0c8' }
@@ -23,12 +24,13 @@ const ov = new Overlays(host, {
   watching: () => false,
   onClientOverlayChange: () => {},
   onSystemAction: (op) => console.log('system', op),
-  settingsPanel: () => ({ el: document.createElement('div'), rows: [] }),
+  settingsPanel: (group, back, controls) => settingsPanel(group, { back, controls }),
 })
 const run = (a: unknown) => console.log('run', a)
 const screens: [string, () => void][] = [
   ['Start', () => ov.showSystem({ spectating: false, inGame: true, run })],
   ['Start (spectating)', () => ov.showSystem({ spectating: true, inGame: true, run })],
+  ['Settings', () => ov.showSettings()],
 ]
 let shown = screens[0]
 for (const [label, show] of screens) {

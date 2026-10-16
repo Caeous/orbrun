@@ -15,6 +15,7 @@ import {
   snapHoverTarget,
   SCROLLER_POPUPS,
   type NavKeyLike,
+  printedSwitch,
 } from '../src/menu-nav'
 import useItem from './fixtures/menus/menu-use_item-1.json'
 import pickup from './fixtures/menus/menu-pickup-1.json'
@@ -233,5 +234,18 @@ describe('the switches a more line prints', () => {
     // the label ends at the line, never running into the next one
     expect(shop.slice(parseMoreSwitches(shop)[1].start, parseMoreSwitches(shop)[1].end)).toBe('[!] buy|examine items')
     expect(parseMoreSwitches('[Up|Down] select  [ 42%]').map((s) => s.key)).toEqual([])
+  })
+})
+
+describe('a switch as the screen prints it: the touch button’s caption, and the words its picture goes by', () => {
+  it('keeps a verb’s key where the actions line puts it, and a more line’s in brackets before its words', () => {
+    expect(printedSwitch('q', '(q)uaff')).toEqual({ key: 'q', label: '(q)uaff', word: 'quaff' })
+    // the key in the middle of the word, said once
+    expect(printedSwitch('v', 'qui(v)er')).toEqual({ key: 'v', label: 'qui(v)er', word: 'quiver' })
+    expect(printedSwitch('s', '(s)kill target')).toEqual({ key: 's', label: '(s)kill target', word: 'skill target' })
+    // a sign is only the key, not a letter of the word
+    expect(printedSwitch('=', '(=)adjust')).toEqual({ key: '=', label: '(=)adjust', word: 'adjust' })
+    expect(printedSwitch('G', '(G) Travel')).toEqual({ key: 'G', label: '(G) Travel', word: 'Travel' })
+    expect(printedSwitch('!', 'read|quaff|evoke')).toEqual({ key: '!', label: '[!] read|quaff|evoke', word: 'read|quaff|evoke' })
   })
 })

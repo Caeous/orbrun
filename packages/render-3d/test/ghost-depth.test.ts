@@ -49,17 +49,19 @@ describe('ghost depth pass', () => {
       clearDepth: () => {},
       render: () => void seen.push({ mask: g.cam.layers.mask, target }),
       dispose: () => {},
+      getContext: () => ({}),
     }
     const frameMask = g.cam.layers.mask
     r.setCamera(makeCamera(1, 1))
     r.setScene(room())
     r.render()
     expect(g.ghostCount).toBeGreaterThan(0)
-    // the depth image, then the frame, then the blit on the canvas
-    expect(seen).toHaveLength(3)
+    // the depth image, then the frame, straight on the canvas
+    expect(seen).toHaveLength(2)
     expect(seen[0].mask).toBe(1 << 0)
+    expect(seen[0].target).not.toBeNull()
     expect(seen[1].mask).toBe(frameMask)
-    expect(seen[2].target).toBeNull()
+    expect(seen[1].target).toBeNull()
     expect(g.cam.layers.mask).toBe(frameMask)
     // the frame's camera sees the level and the standing layer alike
     expect(frameMask & (1 << 0)).toBeTruthy()
@@ -103,8 +105,8 @@ describe('ghost depth pass', () => {
     bed.r.setScene(s)
     bed.r.render()
     expect(bed.g.ghostCount).toBe(0)
-    // the frame and the blit, and no depth image before them
-    expect(bed.draws).toBe(2)
+    // the frame alone, and no depth image before it
+    expect(bed.draws).toBe(1)
     bed.r.destroy()
   })
 })

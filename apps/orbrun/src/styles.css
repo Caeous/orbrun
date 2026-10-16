@@ -81,14 +81,42 @@ body {
   background: #000;
   color: #ddd;
   font-family: var(--mono);
-  font-size: calc(15px * var(--ui-scale));
+  /* --phone-shrink: on a phone, in a game, the menus come down as far as the grid's text did (game.ts shrinkText);
+     --front-shrink: the front end's words come down until the title screen holds them, on every screen of it
+     (menu.ts fitHome); --phone-text: a phone's words outside a game, smaller than a desktop's (in a game,
+     --phone-shrink sizes them) */
+  font-size: calc(15px * var(--ui-scale) * var(--phone-shrink, var(--phone-text, 1)) * var(--front-shrink, 1));
   font-weight: var(--text-weight);
   overflow: hidden;
+}
+
+/* a phone (grid/host.ts isPhone): a finger for a pointer on a screen under 600px across its short side */
+@media (pointer: coarse) and (max-width: 599px), (pointer: coarse) and (max-height: 599px) {
+  :root {
+    --phone-text: 0.867;
+  }
 }
 
 #app {
   width: 100%;
   height: 100%;
+}
+
+/* on a touch screen a quick double tap is two presses, not a word to select or a zoom: only the fields take a selection */
+@media (pointer: coarse) {
+  html,
+  body {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
+  }
+  input,
+  textarea,
+  [contenteditable] {
+    user-select: text;
+    -webkit-user-select: text;
+  }
 }
 
 button,
@@ -168,6 +196,10 @@ select {
   background:
     linear-gradient(90deg, rgba(3, 2, 6, 0.9) 0%, rgba(3, 2, 6, 0.8) 40%, rgba(3, 2, 6, 0.45) 56%, rgba(3, 2, 6, 0.12) 74%, rgba(3, 2, 6, 0.06) 100%),
     linear-gradient(180deg, rgba(3, 2, 6, 0.45), transparent 25%, transparent 70%, rgba(3, 2, 6, 0.7));
+}
+/* the title screen has no column: its shade hangs off the menu itself (.home-actions::before) */
+.home:has(> .frame.home-list)::before {
+  content: none;
 }
 
 /* the room behind the screen (room/view.ts): a place of a real game, drawn by the game's renderer; in once its first frame is drawn */
@@ -692,6 +724,11 @@ a.item.beside {
 }
 /* A title screen: unboxed game actions, with identity and information below.
    Keep visual and focus order identical. */
+/* a finger dragged over the title screen looks around the room even where the words cover it (an upright phone's
+   whole screen); the browser would take the drag as a pan and cancel it, and the screen never scrolls (fitHome) */
+.frame.home-list {
+  touch-action: none;
+}
 .frame.home-list .brand {
   width: 38rem;
   min-width: 0;
@@ -701,6 +738,31 @@ a.item.beside {
 /* the title floats in the middle of the air above the menu: as far from the top as from Play */
 .frame.home-list .brand .head {
   margin: auto 0;
+}
+/* the rows' shade, wherever the menu stands: from just over the first row down past the screen's foot and out past
+   its left edge, fading up toward the title and off to the right, so the room shows above the menu on a phone held
+   upright, and above and beside it on a wide screen. Shadows of a line along the rows' top, since a shadow paints
+   without adding to what the frame scrolls: each is `r - S` `S - t` blur `S`, for a shade from `t` over the rows to
+   `r` past their right, with `S` past any screen. Three, each fainter, further out and softer than the last, so the
+   shade has no edge to see: the first keeps to the words, the others reach by the screen's short side, a long
+   fade on a desktop and a short one on a phone */
+.frame.home-list .home-actions {
+  position: relative;
+}
+.frame.home-list .home-actions::before {
+  --far: 100vmax;
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0;
+  z-index: -1;
+  pointer-events: none;
+  box-shadow:
+    calc(-1 * var(--far)) calc(var(--far) - 1rem) 8rem var(--far) rgba(3, 2, 6, 0.4),
+    calc(11vmin - var(--far)) calc(var(--far) - 7vmin) 32vmin var(--far) rgba(3, 2, 6, 0.3),
+    calc(25vmin - var(--far)) calc(var(--far) - 14vmin) 57vmin var(--far) rgba(3, 2, 6, 0.25);
 }
 /* the wordmark's own face, latin range only, self-hosted (public/fonts, from Google Fonts, OFL): Grenze Gotisch Bold.
    Preloaded from index.html so it is usually in hand before the title is laid out; when it is not, `block` keeps the
@@ -744,7 +806,9 @@ a.item.beside {
   font: 400 1.1rem/1.55 var(--mono);
   letter-spacing: 0.02em;
   color: var(--ink-dim);
-  text-shadow: 0 1px 8px #000;
+  /* the title has no shade of its own (the menu's stops short of it): its small words carry a dark cloud wide
+     enough to read on a lit wall and loose enough not to thicken the letters */
+  text-shadow: 0 1px 8px #000, 0 0 1.4rem #000, 0 0 2.8rem rgba(0, 0, 0, 0.7);
 }
 /* a phone balances the lines instead: two even ones, where filling the first would leave three */
 @media (max-width: 600px) {
@@ -762,6 +826,7 @@ a.item.beside {
   line-height: 1.5;
   color: var(--ink-dim);
   opacity: 0.85;
+  text-shadow: 0 1px 8px #000, 0 0 1.4rem #000, 0 0 2.8rem rgba(0, 0, 0, 0.7);
 }
 .frame.home-list .brand .head .splash::before {
   content: '“';
@@ -1352,11 +1417,14 @@ a.item.beside {
     padding-top: 0.5rem;
   }
 }
-@media (max-width: 600px) {
-  /* on a phone the words stand right on the room: dim it so they read */
-  .frame.home-list {
-    background: linear-gradient(180deg, rgba(3, 2, 6, 0.55), rgba(3, 2, 6, 0.75));
+/* a phone held upright: the title keeps its place near the top rather than floating between it and the menu, so
+   a row, a hint or a build number landing under it never moves it */
+@media (pointer: coarse) and (max-width: 600px) and (orientation: portrait) {
+  .frame.home-list .brand .head {
+    margin: max(1rem, 18vh) 0 auto;
   }
+}
+@media (max-width: 600px) {
   .frame.home-list .item.chip {
     flex: 1 1 calc(50% - 0.2rem);
     min-width: 0;
@@ -1404,6 +1472,14 @@ a.item.beside {
   }
   .frame.home-list .menu-msg {
     min-height: 1.5em;
+  }
+}
+/* a phone on its side has no room for the line saying what the lit row does; and a finger takes a row without
+   lighting it first, so the line would only ever speak for the row the screen opened on. It is still there while
+   the words are fitted (menu.ts fitHome, `.fitting`), so they keep the size they would have beside it */
+@media (orientation: landscape) and (max-height: 500px) {
+  .frame.home-list:not(.fitting) .home-menu-help {
+    display: none;
   }
 }
 
@@ -2039,9 +2115,53 @@ a.item.beside {
   pointer-events: auto;
 }
 
-/* the WebTiles stats pane (player.js / game.html) as rows on its cells at the view's top-left corner; the widths are in grid/stats.ts */
+/* the WebTiles stats pane (player.js / game.html) as rows on its cells at the view's top-left corner; the widths are in grid/stats.ts.
+   A press anywhere on it opens the character screen (hud.ts `onStatsClick`), so its text is not for selecting */
 .stats {
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+/* the finger's lessons (hud.ts showTouchHints, touch-hints.ts): a frame round the pane a tap opens something from, in the
+   accent a lit spell's frame wears on the spell bar (.touchbar.spellbar .tb.lit), breathing a little, and under it crawl's
+   help icon and the word, bare and shadowed as the pad's prompts are (.actionbar.contextual .chip). Neither takes the tap:
+   it goes through to the pane under the frame */
+.hud > .touch-ring,
+.hud > .touch-caption {
+  pointer-events: none;
+}
+.touch-ring {
+  box-sizing: border-box;
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  animation: touch-ring 2s ease-in-out infinite;
+}
+.touch-ring.disc {
+  border-radius: 50%;
+}
+.touch-caption {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  white-space: nowrap;
+  color: var(--accent);
+  text-shadow:
+    0 0 3px #000,
+    0 1px 2px rgba(0, 0, 0, 0.85);
+}
+.touch-caption canvas.tile {
+  flex: none;
+  image-rendering: pixelated;
+}
+@keyframes touch-ring {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .touch-ring {
+    animation: none;
+  }
 }
 /* the portrait (hud.md): the player's cell on the pane's first rows, the title and god lines beside it */
 .stats canvas.portrait {
@@ -2087,11 +2207,10 @@ a.item.beside {
 
 /* minimap.js: at the top of the right column, as wide as it or wider by the "Minimap size" setting (hud.ts layout sizes it, its right
    edge on the column's); the renderer paints on a transparent backing, so the map stands bare over the view.
-   The canvas is square and the map is cut to the disc inscribed in it (hud.ts minimapBox, cutMinimapDisc): the map turns under
-   the player, and a disc shows the same reach on every heading where a rectangle would swing its corners in and out of the
-   level. The cut is made in the canvas rather than by a css clip-path so the drop-shadow below follows the rim — a filter is
-   applied before a clip, so a clip would take the shadow with the corners. The rim itself is bare but for the north mark
-   (hud.ts northMark): the drop-shadow is all that sets the map off from the view, as it is for the stats and message panes. */
+   The canvas is square and the map, north up, is cut to the disc inscribed in it (hud.ts minimapBox, cutMinimapDisc), the
+   player at its centre. The cut is made in the canvas rather than by a css clip-path so the drop-shadow below follows the
+   rim — a filter is applied before a clip, so a clip would take the shadow with the corners. The rim itself is bare: the
+   drop-shadow is all that sets the map off from the view, as it is for the stats and message panes. */
 canvas.minimap {
   flex: none;
   align-self: flex-end;
@@ -2105,13 +2224,21 @@ canvas.minimap {
      blocks, not thin strokes, so they need less to sit off the view */
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
 }
-/* the level map is open: the minimap has become it. Keeps its slot so the monster list holds still. */
-canvas.minimap.hidden {
+/* a north-up map's facing cone (hud.ts placeCone), over the map on the player's cell, turned to the view by css */
+canvas.minimap-cone {
+  position: absolute;
+  pointer-events: none;
+  transform-origin: center;
+}
+/* the level map is open: the minimap has become it, and the monster list, which would lie over it, is put away */
+canvas.minimap.hidden,
+.monsters.hidden {
   visibility: hidden;
 }
 
  /* the status strip (hud.ts renderStatuses): the player's own corner badges blown up in rows running leftward from the
-   minimap's left edge, STATUS_BADGE_ROWS of the grid square each (hud.ts layout places it). Bare over the view like the
+   minimap's left edge, or under it when the stats pane leaves no room, STATUS_BADGE_ROWS of the grid square each
+   (hud.ts layout places it). Bare over the view like the
    minimap and shadowed the same way */
 .statuses {
   display: block;
@@ -2244,10 +2371,14 @@ canvas.minimap.hidden {
     0 0 3px #000,
     0 1px 2px #000;
 }
-/* the player can dismiss it: a click on the pane sends space (hud.ts). A spectator cannot, so its pane takes none */
+/* the player can dismiss it: a click on the pane sends space (hud.ts). Under a finger the pane takes no pointer: a drag
+   that starts on the log turns the view under it, and a tap there reaches the view, which sends space on a --more--
+   the player can dismiss (hud.ts dismissesMoreAt); a mouse's click stays on the pane, as on #message_pane */
 .messages.more.dismissable {
-  pointer-events: auto;
   cursor: pointer;
+}
+.hud.touch > .messages {
+  pointer-events: none;
 }
 /* the world stops while the more is pending: everything under the message pane
    and the bar (the map, the stats, the sidebar) goes behind a lighter cousin of the
@@ -2297,6 +2428,259 @@ canvas.minimap.hidden {
 }
 .actionbar[hidden] {
   display: none;
+}
+
+/*
+ * The touch bar (hud.ts renderTouchBar): every button the screen has, by its
+ * word, along the view's foot for a player with only a finger. Big enough to
+ * hit without looking (44px, the platforms' least touch target), five
+ * across, the arrows nearest the thumb; the dungeon shows between the
+ * buttons, each on a backing of its own dark enough that the hands and the
+ * level behind never show through a word.
+ */
+.touchbar {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  /* bindings.ts TOUCH_CELLS: three rows of five, each button in the cell its meaning puts it in; every button one size
+     on every screen and device (console.ts TOUCH_BUTTON_W, hud.ts), the bar standing at the right, under the thumb
+     that has the d-pad, and narrower only where five of them do not fit across */
+  grid-template-columns: repeat(5, minmax(0, var(--tb-w)));
+  justify-content: end;
+  grid-template-rows: repeat(3, var(--tb-h));
+  gap: 6px;
+  padding: 6px 8px max(8px, env(safe-area-inset-bottom, 0px));
+  /* the view runs on under the bar (console.ts gameSplit `foot`), the panes stopping above it. No pan or zoom starts
+     here: a thumb that drifts on a held button would turn into a pan, and the browser cancels the press (Wait fires
+     for Rest, a held arrow stops); two thumbs would pinch the page */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  /* over the popups' dim (.overlay-stack::before), which runs on under it */
+  z-index: 21;
+}
+.touchbar[hidden] {
+  display: none;
+}
+/* a phone held upright: in the middle, under both thumbs (hud.ts layout) */
+.touchbar.upright {
+  justify-content: center;
+}
+/* on its side, at the right column's foot under the minimap (hud.ts layout) */
+.touchbar.beside {
+  right: auto;
+  padding-top: 0;
+  padding-left: 0;
+  /* the column it stands in keeps clear of a cutout already (grid/host.ts insets) */
+  padding-right: 8px;
+  padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
+  /* the rows closer than along the foot, for the minimap over it (hud.ts layout) */
+  row-gap: 4px;
+}
+.touchbar .tb {
+  position: relative;
+  padding: 1px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font: inherit;
+  /* the grid's own text size (host.ts --fs), so a button never reads bigger than the stats beside it; and no bigger
+     than lets "Character" fit a button (about 5.6em of its width less its border and padding), nor under 10px */
+  font-size: max(10px, min(var(--fs, 12px), calc((var(--tb-w) - 4px) / 5.6)));
+  line-height: 1.15;
+  color: var(--color-7);
+  /* the keypad's own: as dark as a popup, its edge quieter than a popup's, so a menu's buttons (.tb.switch) stand out
+     from it by their frame alone */
+  background: rgba(10, 10, 14, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  text-align: center;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+.touchbar .tb .label {
+  max-width: 100%;
+  overflow: hidden;
+  /* two lines before a label is cut */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* under an icon the word is the caption, not the button: smaller, quieter, one line. A long one (Leave dungeon, a
+   tap-or-hold one's Wait [Rest]) is as small as keeps it to the button's width, its --chars (hud.ts renderTouchBar) at
+   the monospace font's 0.6em advance, down to 7px; past that it is cut */
+.touchbar .tb.has-icon {
+  container-type: inline-size;
+}
+.touchbar .tb.has-icon .label {
+  font-size: max(7px, min(0.85em, calc(100cqi / var(--chars, 1) / 0.61)));
+  color: var(--ink-dim);
+  -webkit-line-clamp: 1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  display: block;
+}
+/* words too long for a caption's one line, in place of the picture (hud.ts fillTouchButton): a caption still, on two
+   even lines, as small as keeps the longer one to the button's width (its --chars), down to 7px */
+.touchbar .tb.long {
+  container-type: inline-size;
+}
+.touchbar .tb.long .label {
+  font-size: max(7px, min(0.85em, calc(100cqi / var(--chars, 1) / 0.61)));
+  color: var(--ink-dim);
+  text-wrap: balance;
+}
+/* crawl's own command icon, the quivered item, or a glyph of ours, over the word (hud.ts touchPicture) */
+.touchbar .tb canvas.tile,
+.touchbar .tb svg.arrow,
+.touchbar .tb svg.glyph {
+  flex: none;
+  pointer-events: none;
+}
+/* a switch the screen prints as `[!] words`: its key in its brackets, where the others have a picture (bindings.ts
+   touchLabels), as the screen prints it, so its words have two lines under it */
+.touchbar .tb .keycap {
+  flex: none;
+  display: flex;
+  align-items: center;
+  /* the same text as the words under it, at their size */
+  font-family: var(--mono);
+  font-size: var(--switch-fs);
+  font-weight: 400;
+  line-height: 1;
+  color: var(--color-15);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.touchbar .tb .keycap .bracket {
+  color: var(--ink-dim);
+}
+.touchbar .tb.has-keycap {
+  /* the key and its words, one size: as small as fits nine characters a line, at most a caption's */
+  --switch-fs: max(7px, min(0.85em, calc(100cqi / 9 / 0.61)));
+}
+/* the key alone (bindings.ts TouchLabel `bare`): as tall as the other buttons’ pictures, its brackets kept inside */
+.touchbar .tb.has-keycap.bare {
+  --switch-fs: min(12px, calc(100cqi / 4 / 0.61));
+}
+.touchbar .tb.has-keycap .label {
+  font-size: var(--switch-fs);
+  line-height: 1.1;
+  /* lines break between words and after a `|` (bindings.ts switchColours), a word alone too long for a line anywhere */
+  white-space: normal;
+  overflow-wrap: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* how many of the quivered item there are, in the button's corner as on crawl's item tiles */
+.touchbar .tb .count {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  font-size: 0.85em;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
+  pointer-events: none;
+}
+/* a button for one of the menu's or popup's own options (bindings.ts SwitchButton): there only while it is, so it wears
+   the popup's border and backing (.popup), part of the menu over it rather than of the bar */
+.touchbar .tb.switch {
+  background: rgba(10, 10, 14, 0.96);
+  border-color: #555;
+  border-radius: 6px;
+}
+/* the popup's lit verb, the one Select does too, framed as Select is */
+.touchbar .tb.switch.lit {
+  border-color: rgba(255, 212, 92, 0.55);
+}
+/* a cell this screen has nothing for: held open, so nothing slides into it (hud.ts renderTouchBar) */
+.touchbar .tb.empty {
+  visibility: hidden;
+}
+/* Select: what the screen is for here (Descend, Continue), and the aim's Fire across it */
+.touchbar .tb.at-select {
+  border-color: rgba(255, 212, 92, 0.55);
+}
+/* an anchor this screen gives nothing to do (bindings.ts TOUCH_ANCHORS): there, so the keypad keeps its shape, but out of
+   the way of what lights up */
+.touchbar .tb.idle {
+  background: rgba(10, 10, 14, 0.5);
+  border-color: rgba(255, 255, 255, 0.06);
+  color: var(--ink-dim);
+  opacity: 0.45;
+}
+/* a button the player's own choice brought (bindings.ts TouchLabel `fresh`: the menu's accept once something is marked,
+   the shop's buy, the stat gain's Confirm once an answer is lit): crawl's light green round it, not the lit gold */
+.touchbar .tb.fresh {
+  border-color: var(--color-10);
+}
+/* the press tints the button's own backing, so it stays as solid as it was */
+.touchbar .tb.down {
+  background: linear-gradient(rgba(255, 212, 92, 0.25), rgba(255, 212, 92, 0.25)), rgba(10, 10, 14, 0.92);
+  border-color: var(--accent);
+}
+.touchbar .tb.down .label {
+  color: var(--color-7);
+}
+
+/* held upright, the stats pane's Health and Magic side by side between the log and the spell bar (hud.ts renderStats),
+   bare and shadowed like the pane, and dimmed: it stands in the middle of the view, where the pane's full colours glare */
+.hud > .glance {
+  pointer-events: none;
+  filter: brightness(0.8);
+  text-shadow:
+    0 0 3px #000,
+    0 1px 2px #000;
+}
+/* the spell bar (hud.ts renderSpellBar): one row of crawl's spell art, nothing round it (the art wears its own frame),
+   from the log's last row, centred across its width both ways */
+.touchbar.spellbar {
+  right: auto;
+  justify-content: center;
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: var(--sb);
+  grid-template-rows: var(--sb);
+  gap: var(--sb-gap);
+  bottom: auto;
+  height: var(--sb);
+  padding: 0 8px 0 max(8px, env(safe-area-inset-left, 0px));
+}
+.touchbar.spellbar.beside {
+  padding: 0 0 0 max(8px, env(safe-area-inset-left, 0px));
+}
+.touchbar.spellbar .tb {
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+.touchbar.spellbar .tb canvas.tile {
+  pointer-events: none;
+}
+.touchbar.spellbar .tb.down {
+  background: none;
+  filter: brightness(1.4);
+}
+/* a spell that costs more than is left (spell-bar.ts spellShort): still tappable, crawl has the last word */
+.touchbar.spellbar .tb.short {
+  opacity: 0.4;
+}
+/* the spell its first tap armed, or whose aim is up: the second tap spends it (spell-bar.ts). The art's own frame
+   turns the accent: crawl draws it 1px wide, 2px in from the art's edge, and this lies over it */
+.touchbar.spellbar .tb.lit::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border: 1px solid var(--accent);
+  pointer-events: none;
 }
 
 /* one cluster of the controller: face, shoulders, sticks, system */
@@ -2471,13 +2855,32 @@ canvas.minimap.hidden {
   padding: 0;
   transition: none;
 }
+/* under a menu, the prompts the footer names stand in its cells (hud.ts footerPlaces), each column's glyphs in a line at
+   its right edge; the rest in a line above them */
+.actionbar.contextual.row.grid {
+  display: grid;
+  direction: ltr;
+  justify-content: end;
+  justify-items: end;
+  column-gap: 1.4em;
+  row-gap: 0.2em;
+}
+.actionbar.contextual.row.grid .rest {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  column-gap: 1.4em;
+  row-gap: 0.2em;
+}
+/* a prompt the player's own choice brought (bindings.ts BindingLabel `fresh`), in the touch bar's light green
+   (.touchbar .tb.fresh): with no box round it, its words wear the colour */
+.actionbar.contextual .chip.fresh .label {
+  color: var(--color-10);
+}
 /* the panel's key-help line stands over the dim the panel stands on (.overlay-stack), not under it with the world */
 .hud > .actionbar.under {
   z-index: 21;
-}
-/* but quieter than the panel it serves, so the eye stays on the panel; a held button comes up full as it fills */
-.hud > .actionbar.under .chip:not(.holding) {
-  opacity: 0.7;
 }
 .actionbar.contextual.row .group {
   display: contents;
@@ -2639,7 +3042,9 @@ canvas.minimap.hidden {
 
 .overlay-stack {
   position: absolute;
-  inset: 0;
+  /* short of the touch bar (game.ts relayout): on its side the right column, along the foot its rows, so its buttons
+     stay in reach under any popup and its dim */
+  inset: 0 var(--touch-right, 0px) var(--touch-bottom, 0px) 0;
   pointer-events: none;
   z-index: 20;
 }
@@ -2665,7 +3070,12 @@ canvas.minimap.hidden {
   font-family: var(--mono);
   font-size: 0.95em;
   max-width: min(94vw, 78rem);
-  max-height: calc(95vh - 2 * var(--popup-top));
+  /* the stack's height, not the screen's: it stops short of the touch bar, and of the pad's prompts under it (hud.ts
+     placeBar --bar-room) where they need more than the bottom margin */
+  max-height: min(
+    calc(95vh - var(--popup-top) - max(var(--popup-top), var(--bar-room, 0px))),
+    calc(100% - var(--popup-top) - max(var(--popup-top), var(--bar-room, 0px)))
+  );
   min-width: 24rem;
   display: flex;
   flex-direction: column;
@@ -2684,6 +3094,111 @@ canvas.minimap.hidden {
 }
 
 .popup.hidden {
+  display: none;
+}
+
+/* a line of text the server asks for (overlays.ts renderTextInput) stands low, over the message log */
+.popup.text-input {
+  top: auto;
+  bottom: 9rem;
+  min-width: 20rem;
+}
+.popup.text-input > .body {
+  display: flex;
+  padding: 0.6rem 0.8rem 0.7rem;
+}
+.popup.text-input input.text {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.035);
+  border: 0;
+  border-bottom: 1px solid var(--gold);
+  border-radius: 0;
+  color: #fff;
+  font: inherit;
+  padding: 0.3rem 0.5rem;
+  outline: none;
+  caret-color: var(--accent);
+}
+.popup.text-input input.text:focus {
+  background: rgba(216, 180, 95, 0.08);
+}
+/* a number (a skill target, a depth) is read at a glance: big, in the middle of its line */
+.popup.text-input.number input.text {
+  flex: 0 0 auto;
+  width: 6ch;
+  margin: 0 auto;
+  font-size: 1.6em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* the skill target names its skill in gold under a small caption (overlays.ts renderTextInput) */
+.popup.tag-skill_target {
+  min-width: 16rem;
+}
+.popup.tag-skill_target > .header {
+  flex-direction: column;
+  gap: 0.1rem;
+  border-bottom: 0;
+  padding-top: 0.7rem;
+}
+.popup.tag-skill_target > .header .what {
+  color: var(--ink-dim);
+  font-size: 0.75em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.popup.tag-skill_target > .header .skill {
+  color: var(--gold-bright);
+  font-size: 1.15em;
+  font-weight: bold;
+}
+.popup.text-input .keys-hint {
+  display: flex;
+  justify-content: center;
+  gap: 1.2em;
+  padding: 0.4rem 0.8rem;
+  border-top: 1px solid #333;
+  color: #aaa;
+  font-size: 0.85rem;
+}
+.popup.text-input .keys-hint b {
+  color: var(--accent);
+  font-weight: normal;
+}
+/* a line crawl reads in the message pane (Find…): no card, the log shows the prompt and what is typed (hud.ts
+   renderMessages), as WebTiles types it there, and the field stands unseen over the pane, where a tap or a click
+   gives it the keys again (overlays.ts placeLogInput); while the pane is hidden the card stands as ever. 16px keeps a
+   phone from zooming in on the field */
+.popup.text-input.in-log.placed {
+  opacity: 0;
+  left: var(--log-left);
+  top: var(--log-top);
+  bottom: auto;
+  width: var(--log-w);
+  height: var(--log-h);
+  min-width: 0;
+  max-width: none;
+  max-height: none;
+  transform: none;
+  border: 0;
+  box-shadow: none;
+}
+.popup.text-input.in-log.placed > .header {
+  display: none;
+}
+.popup.text-input.in-log.placed > .body {
+  height: 100%;
+  padding: 0;
+}
+.popup.text-input.in-log.placed input.text {
+  font-size: 16px;
+  caret-color: transparent;
+}
+
+/* the pad's keyboard and a finger's touch bar name their own buttons */
+.popup.text-input:has(.osk) .keys-hint,
+.overlay-stack.device-touch .popup.text-input .keys-hint {
   display: none;
 }
 
@@ -2811,6 +3326,10 @@ canvas.minimap.hidden {
   position: relative;
   min-height: 1.2em;
   line-height: 1.2em;
+}
+/* the skills screen in one column (overlays.ts crtLayout): the prose under its rows wraps, the rows and switches keep their columns */
+.crt .crt-line.wrap {
+  white-space: pre-wrap;
 }
 .crt .crt-hot {
   position: absolute;
@@ -3071,6 +3590,51 @@ canvas.minimap.hidden {
   outline: 1px solid var(--accent);
 }
 
+/* a phone held upright: no keys to type, so the buttons drop their letters (overlays.ts markHotkeyPrefix) and the
+   three columns fit without scrolling sideways, with smaller icons (overlays.ts newgameIconSize) and less air */
+@media (max-width: 600px) {
+  .newgame .key-prefix {
+    display: none;
+  }
+  .newgame .grid {
+    gap: 0.2em 0.25em;
+    padding: 0.4rem 0.2rem;
+  }
+  .newgame .button {
+    gap: 0.3em;
+    padding: 0.1em 0.2em;
+  }
+}
+
+/* a console table on a phone held upright (overlays.ts splitColumns): crawl's eighty-column rows would wrap
+   mid-column, so the first column (the letter and the name) takes a line of its own and the rest stand under it,
+   each as wide as its widest cell (--menu-cols), against the right edge so the heads sit over their values */
+@media (max-width: 600px) {
+  .popup .cols {
+    display: grid;
+    /* an empty track first takes up the slack, so the name has the whole width and the values hug the right */
+    grid-template-columns: minmax(0, 1fr) var(--menu-cols);
+    column-gap: 1.5ch;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .popup .cols > .col {
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .popup .cols > .col:first-child {
+    grid-column: 1 / -1;
+    white-space: pre-wrap;
+  }
+  .popup .cols > .col:nth-child(2) {
+    grid-column-start: 2;
+  }
+  /* the title's right edge in line with the rows' (.popup li's own padding inside the body's) */
+  .popup .title .cols {
+    padding-right: 0.4em;
+  }
+}
+
 .newgame .label {
   color: #fff;
   font-weight: bold;
@@ -3306,6 +3870,10 @@ canvas.minimap.hidden {
   font-size: 0.8em;
   padding: 0.3rem 0.5rem;
   border-radius: 4px;
+  /* shut, under the popups (.overlay-stack), so it never stands over one; opened, over them */
+  z-index: 19;
+}
+.chat.open {
   z-index: 30;
 }
 .chat a {
@@ -3383,6 +3951,55 @@ canvas.minimap.hidden {
 .chat_hidden a {
   color: #9cf;
   text-decoration: none;
+}
+/* a phone's chat (chat.ts compact), over the log: the log is not read through it; no (-), the caption row shuts it */
+.chat.compact {
+  box-sizing: border-box;
+  background: #050505;
+}
+.chat.compact .chat_hide_button {
+  display: none;
+}
+.chat.compact .chat_head {
+  align-items: center;
+  min-height: 32px;
+}
+.chat.compact .chat_history_container {
+  min-height: 6em;
+}
+/* iOS zooms the page into a field under 16px */
+.chat.compact input.chat_input {
+  font-size: 16px;
+  min-height: 36px;
+}
+/* the caption's stand-in on a phone: just over the log's right end (game.ts relayout), who is watching and what is
+   unread; with no log, the grid's bottom-right corner, where the folded + goes */
+.chat_badge {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 0 0.6rem;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: #9cf;
+  font-size: 0.8em;
+  text-decoration: none;
+  z-index: 19;
+}
+.chat_badge svg {
+  width: 1.3em;
+  height: 1.3em;
+}
+.chat_badge.has_new {
+  color: #ff5;
+}
+.chat_badge.corner {
+  right: var(--gx, 0px);
+  bottom: var(--gy, 0px);
 }
 
 @media (max-width: 900px) {
@@ -3553,9 +4170,17 @@ canvas.minimap.hidden {
   font-size: 0.82rem;
 }
 
+/* the dim is a layer of the stack's own that runs on under the touch bar, so the whole screen dims while the stack
+   itself stops short of the bar (the bar stands over the dim, .touchbar) */
+.overlay-stack::before {
+  content: '';
+  position: absolute;
+  inset: 0 calc(-1 * var(--touch-right, 0px)) calc(-1 * var(--touch-bottom, 0px)) 0;
+  z-index: -1;
+}
 /* the pause menu takes the screen: the world dims and blurs behind it (a pending --more-- has a lighter cousin, .more-scrim) */
-.overlay-stack:has(> .popup.sysmenu),
-.overlay-stack.dim {
+.overlay-stack:has(> .popup.sysmenu)::before,
+.overlay-stack.dim::before {
   background: radial-gradient(ellipse at center, rgba(3, 2, 6, 0.5), rgba(3, 2, 6, 0.86));
   backdrop-filter: blur(3px) saturate(0.7);
   -webkit-backdrop-filter: blur(3px) saturate(0.7);
@@ -3569,13 +4194,21 @@ canvas.minimap.hidden {
 /* the pack, X's actions and the character overview stand on the world dimmed, as WebTiles' popups stand on its .ui-popup-overlay:
    flat and unblurred, lighter than the pause menu, and eased rather than animated in, so a turn from one
    tab to the next (crawl's menu gone a moment before the next is up) never flashes the world bright */
-.overlay-stack {
+.overlay-stack::before {
   transition: background-color 160ms ease;
 }
-.overlay-stack:has(> .popup.paged-pack),
-.overlay-stack:has(> .popup.action-tabs),
-.overlay-stack:has(> .popup.type-formatted-scroller[data-tag='resists']) {
+.overlay-stack:has(> .popup.paged-pack)::before,
+.overlay-stack:has(> .popup.action-tabs)::before,
+.overlay-stack:has(> .popup.type-formatted-scroller[data-tag='resists'])::before {
   background-color: rgba(3, 2, 6, 0.55);
+}
+/* a popup with another stacked over it (an item described over the pack) darkens, so the eye goes to the one on top;
+   WebTiles leaves the one under at full strength */
+.overlay-stack > .popup {
+  transition: filter 160ms ease;
+}
+.overlay-stack > .popup:not([data-client]):has(~ .popup:not(.hidden)) {
+  filter: brightness(0.4) saturate(0.6);
 }
 
 /*
@@ -3669,7 +4302,6 @@ canvas.minimap.hidden {
 .popup.settings-groups {
   min-width: 22rem;
 }
-
 /* Command tabs keep the same shell and share a grid cell so their size stays steady. */
 /* wider than a plain game menu (`.popup.menu.game`, 26rem): the rows carry a subline under the label,
    and it should read as a line, not as a column -- so the selector carries that rule's weight too */
@@ -3689,6 +4321,7 @@ canvas.minimap.hidden {
 }
 /* the pack's pages (overlays.ts packTabs): a quiet row of names under crawl's title, the page up in the title's own white, underlined */
 .menu .pack-tabs {
+  position: relative;
   display: flex;
   gap: 1.4em;
   padding: 0 0.8rem;
@@ -3729,6 +4362,25 @@ canvas.minimap.hidden {
   color: var(--color-15);
   border-bottom-color: currentColor;
 }
+/* a finger swiping over the menu (tab-lean.ts): the page's underline stretches a little toward the tab a lift would turn to */
+.menu .pack-tabs.leaning button.current {
+  border-bottom-color: transparent;
+}
+.menu .pack-tabs .tab-lean {
+  position: absolute;
+  height: 2px;
+  background: var(--color-15);
+  pointer-events: none;
+}
+.menu .pack-tabs .tab-lean.settle {
+  /* a touch past and back, as a pulled thing let go does */
+  transition: left 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu .pack-tabs .tab-lean.settle {
+    transition: none;
+  }
+}
 /* X's actions as tabs (overlays.ts actionStrip): one width whichever of crawl's menus is up, so a turn never resizes the frame */
 .popup.menu.action-tabs {
   width: min(48rem, 94vw);
@@ -3742,6 +4394,10 @@ canvas.minimap.hidden {
   margin: 0;
   padding: 1.2rem 0.8rem;
   color: var(--ink-dim);
+}
+/* a row too narrow for every name (overlays.ts fitTabs): the tabs but the page up keep only their icons */
+.menu .pack-tabs.tight button:not(.current) .tab-name {
+  display: none;
 }
 /* a page with nothing on it: there, but not to be turned to */
 .menu .pack-tabs button.empty {
@@ -3822,36 +4478,73 @@ canvas.minimap.hidden {
  * cell, so the block is as tall as the longest one can wrap and the dialog
  * keeps its height as the cursor moves down the list.
  */
-.command-menu .menu-hint,
-.command-menu .menu-hint .reserve {
+.menu-hint,
+.menu-hint .reserve {
   display: grid;
 }
-.command-menu .menu-hint > .line,
-.command-menu .menu-hint .reserve > span {
+.menu-hint > .line,
+.menu-hint .reserve > span {
   grid-area: 1 / 1;
   min-width: 0;
 }
-.command-menu .menu-hint .reserve {
+.menu-hint .reserve {
   visibility: hidden;
   pointer-events: none;
 }
-.command-menu .menu-hint {
+.menu-hint {
   padding: 0.5rem 0.8rem 0.1rem;
   color: var(--ink-dim);
   font-size: 0.85em;
   line-height: 1.4;
   text-wrap: pretty;
 }
-/* the Start menu's own rows keep the game menu's shape (a letter, a dash, the label) next to the command rows of its Character tab */
-.command-menu .sysrows li.row .label {
-  flex: 0 1 auto;
+/*
+ * The settings over the game (overlays.ts showSettingsGroup) in the Start menu's look: a row as tall as one
+ * with a tile, the label, and the value on the right between its arrows; what the row does is on the line
+ * under the list, so the letters go, as they do on the front end's settings.
+ */
+.popup.settings.command-menu li.row {
+  gap: 0.7em;
+  min-height: calc(32px + 0.36em);
 }
-/* the letter leads those rows, so it takes no auto margin and no space before it */
-.menu.game.command-menu .sysrows li.row .hotkey {
-  width: 1.2em;
-  min-width: 0;
-  margin-left: 0;
-  padding-left: 0;
+.popup.settings.command-menu li.row :is(.hotkey, .dash) {
+  display: none;
+}
+.popup.settings.command-menu li.row .value {
+  gap: 0;
+  padding-left: 1.5em;
+}
+.popup.settings.command-menu li.row .arrow {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+/* a finger: every row, and each arrow of a value, is a 44px target. The value gives up its width before the label */
+@media (pointer: coarse) {
+  .command-menu li.row {
+    min-height: 44px;
+  }
+  .popup.settings.command-menu li.row {
+    padding-right: 0;
+  }
+  .popup.settings.command-menu li.row .label {
+    min-width: min-content;
+  }
+  .popup.settings.command-menu li.row .value {
+    flex: 0 20 auto;
+    min-width: 0;
+    padding-left: 0.5em;
+  }
+  .popup.settings.command-menu li.row .value .val {
+    min-width: 0;
+  }
+  .popup.settings.command-menu li.row .arrow {
+    width: 44px;
+    height: 44px;
+  }
 }
 /* the palette and More rows stand apart from the commands, under a rule; the Orbrun menu's runs the same way */
 .command-menu li.row.sep,
@@ -4019,6 +4712,43 @@ canvas.minimap.hidden {
   box-shadow: inset 0 0 0 1px var(--gold), 0 0 12px rgba(216, 180, 95, 0.35);
   color: #fff;
 }
+/* a number prompt's keyboard (osk.ts numpad): a phone's number pad, in the prompt's box under its question and
+   field rather than over them, its keys big enough for a thumb */
+.popup .osk.numpad {
+  position: static;
+  transform: none;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0 0.8rem 0.6rem;
+}
+.osk.numpad .preview {
+  display: none;
+}
+.osk.numpad .keys {
+  width: min(100%, 15rem);
+  margin: 0 auto;
+  gap: 0.3em;
+}
+.osk.numpad .keys .row {
+  gap: 0.3em;
+}
+.osk.numpad .keys .key {
+  flex: 1 1 0;
+  width: auto;
+  height: max(2.4em, 44px);
+  font-size: 1.25em;
+}
+.osk.numpad .keys .key.backspace {
+  font-size: 1.6em;
+}
+.osk .key.gap {
+  visibility: hidden;
+}
+/* a finger has the touch bar, which names the buttons in words */
+.overlay-stack.device-touch .osk .more {
+  display: none;
+}
 /* the hint line, as a dialog's .more: glyphs for the buttons, the keys spelled at the end */
 .osk .more,
 .chat .chat_read_hints {
@@ -4041,15 +4771,22 @@ canvas.minimap.hidden {
   height: 1.2em;
   vertical-align: middle;
 }
+/* the skill target's Done (osk.ts hintLine), in the light green of a button a choice brought (.touchbar .tb.fresh) */
+.osk .osk-prompt.fresh {
+  color: var(--color-10);
+}
 
 @media (prefers-reduced-motion: reduce) {
   .popup.ours,
   .popup.menu.game,
-  .overlay-stack:has(> .popup.sysmenu),
-  .overlay-stack.dim {
+  .overlay-stack:has(> .popup.sysmenu)::before,
+  .overlay-stack.dim::before {
     animation: none;
   }
-  .overlay-stack {
+  .overlay-stack::before {
+    transition: none;
+  }
+  .overlay-stack > .popup {
     transition: none;
   }
 }
@@ -4108,4 +4845,16 @@ canvas.minimap.hidden {
 /* a server's ping, written in after the row: it breaks onto a new line whole or not at all */
 .frame.menu-frame .item .sub .ping {
   white-space: nowrap;
+}
+
+/* on a phone (game.ts shrinkText) a popup spans the screen, a gutter either side: centred from its middle, a box
+   that fits its content wraps in half the screen and leaves the other half bare, and a wide one runs off the edge.
+   Last, and as specific as the widest popup's own width (.popup.menu.game.command-menu.tabbed), so it wins over each */
+.screen.game.phone .overlay-stack > .popup {
+  left: max(8px, env(safe-area-inset-left, 0px));
+  right: max(8px, env(safe-area-inset-right, 0px));
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  transform: translateY(var(--popup-y));
 }
