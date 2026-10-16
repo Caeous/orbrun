@@ -2639,7 +2639,7 @@ canvas.minimap.hidden,
     0 1px 2px #000;
 }
 /* the spell bar (hud.ts renderSpellBar): one row of crawl's spell art, nothing round it (the art wears its own frame),
-   from the log's last row, centred across its width both ways */
+   from the log's last row, centred across its width both ways; on its side, beside the column, from the left like the log */
 .touchbar.spellbar {
   right: auto;
   justify-content: center;
@@ -2653,6 +2653,7 @@ canvas.minimap.hidden,
   padding: 0 8px 0 max(8px, env(safe-area-inset-left, 0px));
 }
 .touchbar.spellbar.beside {
+  justify-content: start;
   padding: 0 0 0 max(8px, env(safe-area-inset-left, 0px));
 }
 .touchbar.spellbar .tb {

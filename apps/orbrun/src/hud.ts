@@ -714,7 +714,7 @@ export class Hud {
     const barTop = Math.max(sidePx.top + size + TOUCH_MAP_GAP, bottom - this.touchbarSpan())
     this.touchbar.style.top = barBeside ? barTop + 'px' : ''
     // the spell bar: from the log's last row, the --more-- line's (bare whenever the bar shows), across the screen upright
-    // and down to the touch bar, left of the column on its side and down to the screen's foot, the row centred in it
+    // and down to the touch bar, left of the column on its side and down to the screen's foot, the row centred in it upright and from its left on its side
     // (renderSpellBar)
     // the icons stand a button's gap over the touch bar upright, or that gap over the screen's foot; the rows are whole
     // cells and the art is not, so the log is let down onto the icons by what is left over, in px, rather than leaving
