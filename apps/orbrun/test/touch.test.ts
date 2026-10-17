@@ -227,12 +227,17 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     // a picture of what it does over its words, as every other button, the bracketed key left to the keyboard
     expect(drawn(use, (l) => l.keycap ?? l.glyph ?? l.icon ?? '·')[0].slice(0, 2)).toEqual(['swap', 'CMD_LOOKUP_HELP'])
     expect(words(use)[0].slice(0, 2)).toEqual(['Read|quaff|evoke', 'Describe selected'])
-    // between choices, the one the screen draws white is the one that is on, and the button says only that
+    // between choices the button says them all, the one the screen draws white (the one that is on) bright
     const lit = { ...use, switches: [{ ...sw('!', 'read|quaff|evoke'), wordHtml: '<span class="fg7">read|<wbr>quaff|<wbr></span><span class="fg15">evoke</span>' }, sw('?', 'describe selected')] }
-    expect(words(lit)[0][0]).toBe('Evoke')
-    // the skills screen's white runs on into the gap after it ("manual ")
+    const choices = (c: typeof use) => touchLabels(barLabels(c), c).find((l) => l.button === 'key:' + c.switches[0].key)
+    expect(words(lit)[0][0]).toBe('Read|quaff|evoke')
+    expect(choices(lit)).toMatchObject({ choices: true, labelHtml: 'Read|<wbr>quaff|<wbr><span class="fg15">evoke</span>' })
+    // the skills screen's white runs on into the gap after it ("manual "); the words after the choices are left out
     const skill = { ...use, switches: [{ ...sw('/', 'auto|manual mode'), wordHtml: '<span class="fg8">auto</span><span class="fg7">|<wbr></span><span class="fg15">manual </span><span class="fg7">mode</span>' }] }
-    expect(words(skill)[0][0]).toBe('Manual')
+    expect(words(skill)[0][0]).toBe('Auto|manual')
+    expect(choices(skill)?.labelHtml).toBe('Auto|<wbr><span class="fg15">manual</span>')
+    // none drawn white: the words as printed
+    expect(choices({ ...use, switches: [sw('!', 'read|quaff|evoke')] })).not.toHaveProperty('choices')
     // the shop's flip and sort were X and R3: the footer's own switches stand for them, where its footer has them (SHOP_HOME),
     // Esc and Enter stay the anchors'
     const shop = { ...menu({ shop: { canBuy: true, anyMarked: true, anyListed: false, mode: 'buy', sortOrder: 'type' } } as unknown as Partial<MenuContext>, 'shop'), switches: [sw('Esc', 'exit'), sw('!', 'buy|examine items'), sw('/', 'sort (type)'), sw('Enter', 'buy marked items')] }

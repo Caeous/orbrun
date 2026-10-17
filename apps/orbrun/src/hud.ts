@@ -2087,16 +2087,16 @@ export class Hud {
     // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
     const words = l.hold ? l.label + ' [' + l.hold + ']' : l.label
     const text = formattedStringToText(words)
-    // words too long for a caption's one line (a thing crawl names, "+2 short sword") take two in place of the picture,
-    // which leaves no room for two under it
-    const long = arrow === undefined && l.keycap === undefined && text.length > TOUCH_CAPTION_CHARS && text.includes(' ')
+    // words too long for a caption's one line (a thing crawl names, "+2 short sword", a switch's choices
+    // "Training|cost|targets") take two in place of the picture, which leaves no room for two under it
+    const long = arrow === undefined && l.keycap === undefined && text.length > TOUCH_CAPTION_CHARS && (text.includes(' ') || (!!l.choices && text.includes('|')))
     const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : long ? null : touchPicture(gd, l, l.item)
     btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (l.bare ? ' bare' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (l.fresh ? ' fresh' : '') + (l.refused ? ' refused' : '') + (btn.classList.contains('down') ? ' down' : '')
     btn.setAttribute('aria-label', formattedStringToText(l.label))
     const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, arrow !== undefined || l.bare ? null : l.labelHtml ? h('span', { class: 'label', html: l.labelHtml }) : label(words)]
     btn.replaceChildren(...parts.filter((n): n is Element => n !== null))
     // sized by its length to keep to its one line, or by its longer line of two (styles.css .tb.has-icon .label, .tb.long .label)
-    btn.style.setProperty('--chars', String(long ? longerHalf(text) : text.length))
+    btn.style.setProperty('--chars', String(long ? longerHalf(text, l.choices ? '|' : ' ') : text.length))
   }
 
   /**
@@ -2413,9 +2413,11 @@ const TOUCH_ART_INSET = 3
 const TOUCH_CAPTION_CHARS = 13
 
 /** the longer line of `text` broken at the space that splits it most evenly, as `text-wrap: balance` breaks it */
-function longerHalf(text: string): number {
+function longerHalf(text: string, at = ' '): number {
   let best = text.length
-  for (let i = text.indexOf(' '); i >= 0; i = text.indexOf(' ', i + 1)) best = Math.min(best, Math.max(i, text.length - i - 1))
+  // a line broken at a space loses the space; one broken after a `|` keeps it
+  const kept = at === ' ' ? 0 : 1
+  for (let i = text.indexOf(at); i >= 0; i = text.indexOf(at, i + 1)) best = Math.min(best, Math.max(i + kept, text.length - i - 1))
   return best
 }
 

@@ -2,6 +2,7 @@ import { Keys, MenuFlag, colouredText, formattedStringToText, type InvItem } fro
 import type { Dir8 } from '@orbrun/scene'
 import type { Button, PadEvent } from './gamepad'
 import { DEFAULT_YESNO, LOG_DEFAULT_COLOUR, isFocusMode, type Context, type MenuContext, type ParsedPrompt, type ShopContext, type Switch } from './context'
+import { escapeHtml } from './dom'
 import type { FocusOp } from './focus'
 import { menuHasSections, moreSwitchKeycode } from './menu-nav'
 import { SWAP_WEAPONS, SWAP_WEAPONS_KEY } from './pack-tabs'
@@ -696,6 +697,8 @@ export type TouchLabel = Omit<BindingLabel, 'button'> &
     /** a switch's bracketed key and its words in the screen's colours (Switch `keyHtml`, `wordHtml`) */
     keycapHtml?: string
     labelHtml?: string
+    /** a switch's caption that is its choices (`labelHtml`, the one on bright), broken after a `|` where it is too long for one line (hud.ts fillTouchButton) */
+    choices?: boolean
     /** the bracketed key alone, its words only for a screen reader: the skills screen's and the shop's switches, too long to read on a button */
     bare?: boolean
   }
@@ -894,8 +897,8 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
     taken.add(cell)
     const code = moreSwitchKeycode(sw.key)
     // a switch is a picture of what it does over its words (`touchCaption`), whether the screen prints its key in
-    // brackets beside them ("[!] read|quaff|evoke") or inside them ("(q)uaff"); one between choices says only the one
-    // that is on ("Evoke"). A key in brackets with no picture for its words is the picture, the words in the screen's
+    // brackets beside them ("[!] read|quaff|evoke") or inside them ("(q)uaff"); one between choices says them all, the
+    // one that is on bright ("Read|quaff|evoke"). A key in brackets with no picture for its words is the picture, the words in the screen's
     // colours its caption. A trailing full stop is the sentence's, not the button's
     const bracketed = sw.label === `[${sw.key}] ${sw.word}`
     const words = (bracketed ? sw.word : sw.label).replace(/\.$/, '')
@@ -906,8 +909,9 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
     const lit = !bracketed && !!ctx.focus?.label && formattedStringToText(ctx.focus.label) === sw.label
     const bare = keyed && BARE_SWITCH_MENUS.has(ctx.menu?.menu.tag ?? '')
     const idle = !!sw.idle
-    const caption = keyed ? words : touchCaption(bracketed ? (switchOn(sw) ?? words) : words)
-    out.push({ button: `key:${sw.key}`, label: caption, action: { kind: 'keys', label: words, seq: [code ? { key: code } : { text: sw.key }] }, contextual: true, ...picture, ...(lit ? { lit } : {}), ...(bare ? { bare } : {}), ...(idle ? { idle } : {}), cell })
+    const choices = !keyed && bracketed ? switchChoices(sw) : null
+    const caption = keyed ? words : (choices?.text ?? touchCaption(words))
+    out.push({ button: `key:${sw.key}`, label: caption, action: { kind: 'keys', label: words, seq: [code ? { key: code } : { text: sw.key }] }, contextual: true, ...picture, ...(choices ? { labelHtml: choices.html, choices: true } : {}), ...(lit ? { lit } : {}), ...(bare ? { bare } : {}), ...(idle ? { idle } : {}), cell })
   }
   // a screen laid out as its footer is (SHOP_HOME) has its switches and buttons where the footer puts them
   const screenHome = ctx.menu?.shop ? SHOP_HOME : {}
@@ -983,10 +987,12 @@ function skillsSwitches(printed: Switch[]): (Switch & { idle?: boolean })[] {
  */
 /**
  * Of a switch between choices (`auto|manual mode`, `read|quaff|evoke`), the
- * one that is on, which the screen tells apart only by drawing it white
- * (Switch `wordHtml`); null where it draws none so.
+ * choices alone as a caption, every one of them, the one that is on (which
+ * the screen tells apart only by drawing it white, Switch `wordHtml`) bright
+ * and the rest dim, a line free to break after each `|`; null where it draws
+ * none so.
  */
-function switchOn(sw: Switch): string | null {
+function switchChoices(sw: Switch): { text: string; html: string } | null {
   if (!sw.wordHtml) return null
   // the words a character at a time, each with the colour it is drawn in
   let text = ''
@@ -998,12 +1004,17 @@ function switchOn(sw: Switch): string | null {
   }
   const choice = /[^\s|]+(?:\|[^\s|]+)+/.exec(text)
   if (!choice) return null
+  const alts = choice[0].split('|')
   let at = choice.index
-  for (const alt of choice[0].split('|')) {
-    if (!white.slice(at, at + alt.length).includes('0')) return alt
+  const on = alts.findIndex((alt) => {
+    const lit = !white.slice(at, at + alt.length).includes('0')
     at += alt.length + 1
-  }
-  return null
+    return lit
+  })
+  if (on < 0) return null
+  const caption = touchCaption(choice[0])
+  const shown = caption.split('|')
+  return { text: caption, html: shown.map((alt, i) => (i === on ? `<span class="fg15">${escapeHtml(alt)}</span>` : escapeHtml(alt))).join('|<wbr>') }
 }
 
 function switchPicture(word: string, key: string, item: InvItem['tile'] | undefined): TouchIcon & { item?: InvItem['tile']; keycap?: string } {
