@@ -76,7 +76,7 @@ describe('counts: what the Worker keeps', () => {
     expect(points).toEqual([{
       blobs: ['play-offline', 'offline', 'stable', ...WORD_SETTINGS.map((k) => defaultText[k])],
       // a retired setting's column (minimapTurns) keeps its place, written 0
-      doubles: [1, 1280, 800, ...DOUBLE_COLUMNS.slice(3, -1).map((k) => defaultNumbers[k] ?? 0), 1],
+      doubles: [1, 1280, 800, ...DOUBLE_COLUMNS.slice(3, -2).map((k) => defaultNumbers[k] ?? 0), 1, defaultNumbers.exploreDelay],
       indexes: ['play-offline'],
     }])
     expect(JSON.stringify(points)).not.toMatch(/203\.0\.113|orbrun-test|#orbrun|0\.34/)
@@ -84,7 +84,7 @@ describe('counts: what the Worker keeps', () => {
 
   it('names its columns in the order they are written, within what Analytics Engine keeps (20 of each)', () => {
     expect(BLOB_COLUMNS).toEqual(['event', 'server', 'version', 'leftRightKeys', 'leftRightPad', 'hints', 'nearby'])
-    expect(DOUBLE_COLUMNS).toEqual(['pad', 'width', 'height', 'eyeHeight', 'restPitch', 'fov', 'viewmodel', 'lookSensitivity', 'invertLook', 'uiScale', 'minimapTiles', 'minimapCell', 'minimapTurns', 'messageLines', 'touch'])
+    expect(DOUBLE_COLUMNS).toEqual(['pad', 'width', 'height', 'eyeHeight', 'restPitch', 'fov', 'viewmodel', 'lookSensitivity', 'invertLook', 'uiScale', 'minimapTiles', 'minimapCell', 'minimapTurns', 'messageLines', 'touch', 'exploreDelay'])
     // the numbers are written out: a number setting added later needs a column of its own, after touch
     for (const k of NUMBER_SETTINGS) expect(DOUBLE_COLUMNS, k).toContain(k)
     expect(BLOB_COLUMNS.length).toBeLessThanOrEqual(20)
@@ -166,7 +166,7 @@ describe('counts: the settings a game starts on', () => {
 
   it('keeps words as text and numbers and yes-or-no as numbers', () => {
     expect(WORD_SETTINGS).toEqual(['leftRightKeys', 'leftRightPad', 'hints', 'nearby'])
-    expect(NUMBER_SETTINGS).toEqual(['eyeHeight', 'restPitch', 'fov', 'viewmodel', 'lookSensitivity', 'invertLook', 'uiScale', 'minimapTiles', 'minimapCell', 'messageLines'])
+    expect(NUMBER_SETTINGS).toEqual(['eyeHeight', 'restPitch', 'fov', 'viewmodel', 'lookSensitivity', 'invertLook', 'uiScale', 'minimapTiles', 'minimapCell', 'messageLines', 'exploreDelay'])
   })
 
   it("counts every default as one of its row's stops", () => {

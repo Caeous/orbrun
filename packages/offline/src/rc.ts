@@ -48,3 +48,20 @@ export function forgetRc(profile: string, storage: Storage | undefined = globalT
     storage?.removeItem(keyOf(profile))
   } catch {}
 }
+
+/**
+ * What `contents` sets option `name` to, or null when it does not: the last
+ * plain `name = value` line, as crawl reads them in order (initfile.cc
+ * `read_options`), names in any case and `#` lines skipped. Lines inside
+ * Lua or behind a `:` condition are not read, so an option set only there
+ * is not seen.
+ */
+export function rcOption(contents: string, name: string): string | null {
+  let value: string | null = null
+  const re = new RegExp(`^\\s*${name}\\s*=\\s*(.*?)\\s*$`, 'i')
+  for (const line of contents.split('\n')) {
+    const m = re.exec(line)
+    if (m) value = m[1]
+  }
+  return value
+}

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { CHAMFER, defaultSettings, getSavedView, getSettings, leftRightTurns, saveSettings, saveView, VIEW_OPTIONS, WALL_INSET, type DirSource } from '../src/servers'
 import { REST_PITCH } from '@orbrun/scene'
 import { settingsPanel } from '../src/settings-panel'
-import { adjustSetting, ALL_SETTING_ROWS, groupAtDefaults, resetGroup, settingGroups, CAM_ANGLES, EYE_HEIGHTS, MESSAGE_LINES, MESSAGE_LINES_AUTO, MINIMAP_AUTO, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowOff, SETTING_ROWS, settingValue, FOV_AUTO, FOVS, fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap } from '../src/settings-rows'
+import { adjustSetting, ALL_SETTING_ROWS, groupAtDefaults, resetGroup, settingGroups, CAM_ANGLES, EYE_HEIGHTS, MESSAGE_LINES, MESSAGE_LINES_AUTO, MINIMAP_AUTO, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowOff, SETTING_ROWS, settingValue, FOV_AUTO, FOVS, fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap, exploreOptions, setExploreGame } from '../src/settings-rows'
 
 // happy-dom's localStorage has no working methods; give servers.ts a plain one
 const store = new Map<string, string>()
@@ -86,10 +86,10 @@ describe('camera rows', () => {
 describe('2D is temporarily out (VIEW_OPTIONS)', () => {
   beforeEach(() => saveSettings({ ...defaultSettings }))
 
-  it('the flag is off, so the View row is not offered', () => {
+  it('the flag is off, so the Projection row is not offered', () => {
     expect(VIEW_OPTIONS).toBe(false)
-    expect(row('View')).toBeDefined()
-    expect(SETTING_ROWS.find((r) => r.label === 'View')).toBeUndefined()
+    expect(row('Projection')).toBeDefined()
+    expect(SETTING_ROWS.find((r) => r.label === 'Projection')).toBeUndefined()
   })
 
   it('a session saved in 2D comes back in 3D', () => {
@@ -417,7 +417,7 @@ describe('what left and right do', () => {
    */
   it('lays every offered row out in one of the groups, each with its own line', () => {
     const groups = settingGroups()
-    expect(groups.map((g) => g.group)).toEqual(['Camera', 'Controls', 'Interface'])
+    expect(groups.map((g) => g.group)).toEqual(['View', 'Controls', 'Interface'])
     for (const g of groups) {
       expect(g.hint.length).toBeGreaterThan(0)
       expect(g.rows.length).toBeGreaterThan(0)
@@ -431,12 +431,12 @@ describe('settings: reset a page to its defaults', () => {
 
   it("puts back only the page's own settings, and leaves the rest as they were", () => {
     saveSettings({ ...defaultSettings, fov: 60, eyeHeight: 0.3, uiScale: 1.3, messageLines: 8 })
-    expect(groupAtDefaults('Camera')).toBe(false)
-    resetGroup('Camera')
+    expect(groupAtDefaults('View')).toBe(false)
+    resetGroup('View')
     const s = getSettings()
     expect(s.fov).toBe(defaultSettings.fov)
     expect(s.eyeHeight).toBe(defaultSettings.eyeHeight)
-    expect(groupAtDefaults('Camera')).toBe(true)
+    expect(groupAtDefaults('View')).toBe(true)
     expect(s.uiScale).toBe(1.3)
     expect(s.messageLines).toBe(8)
     resetGroup('Interface')
@@ -464,5 +464,35 @@ describe('settings: reset a page to its defaults', () => {
     expect(getSettings().invertLook).toBe(false)
     expect(changes).toBe(1)
     expect(reset.classList.contains('off')).toBe(true)
+  })
+})
+
+describe('Explore delay', () => {
+  afterEach(() => setExploreGame(null))
+  const at = (exploreDelay: number) => ({ ...defaultSettings, exploreDelay })
+
+  it('gives a game on this device 90 ms a step by default, and nothing on Instant', () => {
+    expect(defaultSettings.exploreDelay).toBe(90)
+    expect(exploreOptions(at(90), '')).toEqual(['explore_delay=90'])
+    expect(exploreOptions(at(-1), '')).toEqual([])
+  })
+
+  it('leaves it to an rc file that sets explore_delay or travel_delay, which an explore follows', () => {
+    expect(exploreOptions(at(90), '# explore_delay = 10\nshow_more = false\n')).toEqual(['explore_delay=90'])
+    expect(exploreOptions(at(90), 'Explore_Delay=10\n')).toEqual([])
+    expect(exploreOptions(at(90), '  travel_delay = 20\n')).toEqual([])
+  })
+
+  it('is off in an online game and under an rc that paces explore, and says why', () => {
+    const r = row('Explore delay (per step)')
+    expect(rowOff(r)).toBe(false)
+    setExploreGame({ online: false, rc: '' })
+    expect(rowOff(r)).toBe(false)
+    setExploreGame({ online: false, rc: 'explore_delay = 40\n' })
+    expect(rowOff(r)).toBe(true)
+    expect(rowHint(r)).toContain('explore_delay = 40')
+    setExploreGame({ online: true })
+    expect(rowOff(r)).toBe(true)
+    expect(rowHint(r)).toContain('Online')
   })
 })

@@ -631,7 +631,7 @@ function showLobbyFor(s: Session) {
   frontEnd().attach(s)
 }
 
-/** A front-end screen by its address (`/settings/camera`, `/login/cdi`), over this device's warm connection. */
+/** A front-end screen by its address (`/settings/view`, `/login/cdi`), over this device's warm connection. */
 function showMenu(r: MenuRoute) {
   updateTitle(null)
   const l = frontEnd()

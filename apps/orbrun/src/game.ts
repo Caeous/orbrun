@@ -24,7 +24,7 @@ import { touchHints, type TouchHintEvidence, type TouchLesson } from './touch-hi
 import { isPack, openPackKeys } from './pack-tabs'
 import { OKAY_THEN, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
 import { CHAMFER, getSavedView, leftRightTurns, saveSettings, saveView, WALL_INSET, type Settings } from './servers'
-import { fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap, type SettingGroup } from './settings-rows'
+import { fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap, setExploreGame, type SettingGroup } from './settings-rows'
 import { PerfOverlay, type LogContext } from './perf'
 import { MapHold } from './map-hold'
 import { swipeLean, swipeStep } from './swipe'
@@ -322,6 +322,9 @@ export class GameScreen {
     this.root.append(this.canvas, this.loading)
     const st = hooks.settings()
     this.is3d = st.renderer === '3d'
+    // the settings' Explore delay row says whether it reaches this game
+    const rc = session.deviceRc()
+    setExploreGame(rc === null ? { online: true } : { online: false, rc })
     this.perf = new PerfOverlay(this.root, () => this.perfContext())
     this.unsub.push(this.perf.watch(session))
     this.grid = new GridHost(this.root, this.textPx())
@@ -513,6 +516,7 @@ export class GameScreen {
   destroy() {
     setAutoMessageLines(null)
     setAutoMinimap(null)
+    setExploreGame(null)
     this.destroyed = true
     // a finger on the touch bar as it goes (a reconnect, the screen torn down under it) never lifts where the page
     // can hear it: let go here, or a held arrow walks on into the next game. The releases land on nothing (`pad`)

@@ -564,6 +564,8 @@ export interface Settings {
    * on a phone, until one is chosen.
    */
   swipeTurn: 'step' | 'drag'
+  /** Milliseconds between the steps of an explore in a game on this device, -1 for crawl's own (settings-rows.ts `exploreOptions`). */
+  exploreDelay: number
 }
 
 const HINT_MODES: readonly string[] = ['adaptive', 'contextual', 'off']
@@ -635,6 +637,7 @@ export const defaultSettings: Settings = {
   leftRightKeys: 'turn',
   leftRightPad: 'turn',
   swipeTurn: 'step',
+  exploreDelay: 90,
 }
 
 export function getSettings(): Settings {
@@ -712,7 +715,7 @@ export function findServer(idOrHost: string): ServerInfo | null {
  * chosen account's when that is on the same server. Games on this device are
  * named as CDI names its own (`/play/offline/dcss-0.34#Marc`, `dcss-git` for
  * trunk), so a game reads the same played here or there. The front end's own
- * screens have addresses too (`/settings/camera`, `/accounts/add`); the bare
+ * screens have addresses too (`/settings/view`, `/accounts/add`); the bare
  * root is the home screen. The About pages are the site's, not the app's
  * (site.ts): `openPage` goes to them.
  * (`watch`'s `username` is the player being watched, not the account's own.)

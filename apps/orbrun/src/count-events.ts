@@ -59,6 +59,7 @@ export const COUNTED_SETTINGS = {
   minimapTiles: [0, ...Array.from({ length: 24 }, (_, i) => 15 + 2 * i)],
   minimapCell: [0, 8, 10, 12, 14, 16, 20, 24, 28, 32],
   messageLines: [0, ...Array.from({ length: 19 }, (_, i) => 2 + i)],
+  exploreDelay: [-1, 30, 60, 90, 120, 200],
 } as const satisfies Record<string, readonly (number | boolean | string)[]>
 export type CountedSetting = keyof typeof COUNTED_SETTINGS
 export const SETTING_KEYS = Object.keys(COUNTED_SETTINGS) as CountedSetting[]
@@ -128,7 +129,7 @@ export const DOUBLE_COLUMNS: readonly string[] = [
   'pad', 'width', 'height',
   // minimapTurns: retired with its setting (the minimap is north up), kept so the columns after it stay where they were
   'eyeHeight', 'restPitch', 'fov', 'viewmodel', 'lookSensitivity', 'invertLook', 'uiScale', 'minimapTiles', 'minimapCell', 'minimapTurns', 'messageLines',
-  'touch',
+  'touch', 'exploreDelay',
 ]
 
 /** A row as the Worker writes it: every column by name, empty or 0 where the beacon did not say. */

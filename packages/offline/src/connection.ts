@@ -17,6 +17,8 @@ export interface LocalWasmConnectionOptions {
   saves?: SaveBook
   /** Each profile's rc file (OfflineServer `rcs`). */
   rcs?: RcBook
+  /** Options the player chose in the client (OfflineServer `options`). */
+  options?(rc: string): string[]
   /** Runs an engine; a Web Worker per game by default. */
   launch?: EngineLauncher
   onDiagnostic?: (text: string, detail?: unknown) => void
@@ -119,6 +121,7 @@ export class LocalWasmConnection implements Connection {
       username: this.o.username,
       saves: this.o.saves,
       rcs: this.o.rcs,
+      options: this.o.options,
       emit: (msgs) => this.deliver(msgs),
       onDiagnostic: this.o.onDiagnostic,
     })

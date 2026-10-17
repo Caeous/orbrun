@@ -75,6 +75,12 @@ export interface OfflineServerOptions {
   saves?: SaveBook
   /** Each profile's rc file; none, and every profile has an empty one. */
   rcs?: RcBook
+  /**
+   * Options the player chose in the client, asked at each Play with the
+   * profile's rc file (empty when none). Given after SERVER_DEFAULTS and
+   * before the rc file, so the rc still wins.
+   */
+  options?(rc: string): string[]
   emit(msgs: ServerMessage[]): void
   onDiagnostic?(text: string, detail?: unknown): void
 }
@@ -242,8 +248,8 @@ export class OfflineServer {
     this.game = game
     const args = ['-headless', '-webtiles-socket', 'bridge', '-name', this.user]
     // read before the rc file, so the player's own options win
-    for (const opt of SERVER_DEFAULTS) args.push('-extra-opt-first', opt)
     const rc = this.o.rcs?.read(this.user)
+    for (const opt of [...SERVER_DEFAULTS, ...(this.o.options?.(rc ?? '') ?? [])]) args.push('-extra-opt-first', opt)
     if (rc) args.push('-rc', RC_PATH)
     game.engine = this.o.launch({ ...channel, saveDir: game.saveDir }, args, {
       output: (text) => this.output(game, text),

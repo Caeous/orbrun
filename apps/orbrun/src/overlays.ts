@@ -69,7 +69,7 @@ const GAME_MENU_ROW_KEY = 'o'
 const GAME_MENU_ROW_TEXT = ` ${GAME_MENU_ROW_KEY} - Orbrun settings`
 
 /** crawl's tile for each settings group's row, as the Start menu's rows carry theirs */
-const SETTING_GROUP_TILES: Record<SettingGroup, string> = { Camera: 'CMD_DISPLAY_MAP', Controls: 'CMD_KEYBOARD', Interface: 'CMD_DISPLAY_CHARACTER_STATUS' }
+const SETTING_GROUP_TILES: Record<SettingGroup, string> = { View: 'CMD_DISPLAY_MAP', Controls: 'CMD_KEYBOARD', Interface: 'CMD_DISPLAY_CHARACTER_STATUS' }
 
 export interface OverlayHooks {
   /** the connected controller's family, for the glyphs on the controls sheet */

@@ -776,7 +776,9 @@ export class FrontEnd {
       return account ? this.showRc(account, r.gameId ?? null) : this.showHome()
     }
     if (root === 'settings') {
-      const group = settingGroups().find((g) => g.group.toLowerCase() === sub)?.group
+      // `camera` is the View tab's address from before it was named so (2026-10-17)
+      const named = sub === 'camera' ? 'view' : sub
+      const group = settingGroups().find((g) => g.group.toLowerCase() === named)?.group
       if (group === 'Controls' && leaf === 'gamepad') this.showControls()
       else if (group) this.showSettingsGroup(group)
       else this.showSettings(() => this.showHome())

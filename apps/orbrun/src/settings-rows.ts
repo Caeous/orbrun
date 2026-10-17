@@ -1,5 +1,6 @@
 import { defaultSettings, getSettings, saveSettings, VIEW_OPTIONS, type LeftRight, type Settings } from './servers'
 import { isPhone } from './grid/host'
+import { rcOption } from '@orbrun/offline'
 import { MINIMAP_CELL_DEFAULT, MINIMAP_TILES_DEFAULT, MINIMAP_TILES_LEAST } from './hud'
 
 /**
@@ -21,7 +22,7 @@ import { MINIMAP_CELL_DEFAULT, MINIMAP_TILES_DEFAULT, MINIMAP_TILES_LEAST } from
  * has a tab per kind of setting, so no group is ever a scroll long.
  */
 const SETTING_GROUPS = [
-  ['Camera', 'Where the view stands, how wide it opens and what it draws.'],
+  ['View', 'Where the view stands, how wide it opens, what it draws and how it moves.'],
   ['Controls', 'What the keys, the d-pad and the sticks do.'],
   ['Interface', 'What the HUD shows around the view, and how big it is.'],
 ] as const
@@ -138,6 +139,38 @@ export function setAutoMessageLines(n: number | null): void {
 }
 
 /**
+ * Explore delay: the milliseconds between an explore's steps, as the rc's
+ * `explore_delay`. A server build makes travel and explore arrive in one
+ * update (`travel_delay -1`, which an explore follows at crawl's own -1), so
+ * the view jumps to where it stopped; a delay sends every step and the view
+ * walks there. Only a game on this device can be given it, ahead of the rc
+ * (@orbrun/offline `options`): a server takes options from the rc alone.
+ */
+const EXPLORE_DELAYS: readonly number[] = [-1, 30, 60, 90, 120, 200]
+/** Whether `rc` says how an explore goes: `explore_delay`, or `travel_delay`, which an explore follows. */
+export function rcPacesExplore(rc: string): boolean {
+  return rcOption(rc, 'explore_delay') !== null || rcOption(rc, 'travel_delay') !== null
+}
+/** The crawl options `s` gives a game on this device whose rc file is `rc`: none when the rc says. */
+export function exploreOptions(s: Settings, rc: string): string[] {
+  if (s.exploreDelay < 0 || rcPacesExplore(rc)) return []
+  return ['explore_delay=' + s.exploreDelay]
+}
+/** the game being played, which the row reads: online, or this device's with its rc file; null with none */
+let exploreGame: { online: true } | { online: false; rc: string } | null = null
+export function setExploreGame(g: typeof exploreGame): void {
+  exploreGame = g
+}
+function exploreHint(): string {
+  if (exploreGame?.online) return 'Online, the server takes explore_delay from your rc file.'
+  if (exploreGame && rcPacesExplore(exploreGame.rc)) {
+    const v = rcOption(exploreGame.rc, 'explore_delay')
+    return v !== null ? `Set by your rc file: explore_delay = ${v}.` : 'Set by your rc file: explore follows its travel_delay.'
+  }
+  return 'How long explore pauses between steps, so you see the walk. Offline games only; your rc file wins.'
+}
+
+/**
  * Minimap size (hud.md "Minimap"), in tiles across: how much of the level
  * the map shows. Auto, then every odd count from MINIMAP_TILES_MIN (crawl's
  * line of sight, hud.ts MINIMAP_TILES_LEAST) to MINIMAP_TILES_MAX,
@@ -185,7 +218,7 @@ export const MESSAGE_LINES: readonly number[] = [MESSAGE_LINES_AUTO, ...Array.fr
  * servers.ts): the one that chooses it. It stays written here so bringing the
  * mode back is one flag.
  */
-const VIEW_MODE_ROWS = ['View']
+const VIEW_MODE_ROWS = ['Projection']
 
 
 /**
@@ -206,12 +239,13 @@ const leftRightRows: SettingRow[] = ([
 
 /** Every row, whatever is offered; `SETTING_ROWS` is what the player sees. */
 export const ALL_SETTING_ROWS: readonly SettingRow[] = [
-  // Camera
-  row('Camera', 'View', 'renderer', ['3d', '2d'], 'In the dungeon in 3D, or from above as the console shows it.', (v) => (v === '3d' ? '3D' : 'Top down (2D)')),
-  row('Camera', 'Camera height', 'eyeHeight', EYE_HEIGHTS, 'How high your eyes stand, from the floor to the ceiling.', (v) => (v as number).toFixed(2) + ' cells'),
-  row('Camera', 'Camera angle', 'restPitch', CAM_ANGLES, 'Where the view points at rest: level with the horizon, or tipped down toward the floor ahead.', (v) => ((v as number) === 0 ? 'Level' : Math.abs(v as number) + '° ' + ((v as number) < 0 ? 'down' : 'up'))),
-  row('Camera', 'Field of view', 'fov', FOVS, `How wide the first-person view opens. Auto is ${FOV_DESKTOP}°, or ${FOV_UPRIGHT}° on a phone held upright.`, autoOr((v) => v + '°', () => fovOf(defaultSettings))),
-  row('Camera', 'Hands', 'viewmodel', [true, false], 'The wielded weapon and off-hand item, drawn in view.', (v) => (v ? 'Weapon and shield shown' : 'Hidden')),
+  // View
+  row('View', 'Projection', 'renderer', ['3d', '2d'], 'In the dungeon in 3D, or from above as the console shows it.', (v) => (v === '3d' ? '3D' : 'Top down (2D)')),
+  row('View', 'Camera height', 'eyeHeight', EYE_HEIGHTS, 'How high your eyes stand, from the floor to the ceiling.', (v) => (v as number).toFixed(2) + ' cells'),
+  row('View', 'Camera angle', 'restPitch', CAM_ANGLES, 'Where the view points at rest: level with the horizon, or tipped down toward the floor ahead.', (v) => ((v as number) === 0 ? 'Level' : Math.abs(v as number) + '° ' + ((v as number) < 0 ? 'down' : 'up'))),
+  row('View', 'Field of view', 'fov', FOVS, `How wide the first-person view opens. Auto is ${FOV_DESKTOP}°, or ${FOV_UPRIGHT}° on a phone held upright.`, autoOr((v) => v + '°', () => fovOf(defaultSettings))),
+  row('View', 'Hands', 'viewmodel', [true, false], 'The wielded weapon and off-hand item, drawn in view.', (v) => (v ? 'Weapon and shield shown' : 'Hidden')),
+  row('View', 'Explore delay (per step)', 'exploreDelay', EXPLORE_DELAYS, exploreHint, (v) => (v < 0 ? 'Instant' : v + ' ms'), () => !!exploreGame && (exploreGame.online || rcPacesExplore(exploreGame.rc))),
   // Controls
   ...leftRightRows,
   row('Controls', 'Swipe to turn', 'swipeTurn', ['step', 'drag'], 'A finger swiped across the view: the view turns with it and goes on to the next heading as it lifts, so a short swipe turns 45° and a long drag turns about; or the earlier turn, which springs on with the speed it lifts at.', (v) => (v === 'step' ? 'On to the next heading' : 'Earlier turn')),

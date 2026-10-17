@@ -6,7 +6,7 @@ const STABLE = channelOf({ channel: 'stable', commit: 'aa', version: '0.34.1-4-g
 const TRUNK = channelOf({ channel: 'trunk', commit: 'bb', version: '0.35-a0-1079-ga0251cc2b5', stamp: '2', gamedata: 'bb22', files: [] })
 
 /** A server with a fake engine: what it was sent, and a hand on its output. */
-function setup(channels: OfflineChannel[] | (() => Promise<OfflineChannel[]>) = [STABLE, TRUNK], saves?: SaveBook, rcs?: RcBook) {
+function setup(channels: OfflineChannel[] | (() => Promise<OfflineChannel[]>) = [STABLE, TRUNK], saves?: SaveBook, rcs?: RcBook, options?: (rc: string) => string[]) {
   const out: ServerMessage[][] = []
   const sent: { control: string[]; keys: string[]; terminated: boolean; args: string[]; channel: OfflineChannel; files?: Record<string, string> } = {
     control: [],
@@ -21,6 +21,7 @@ function setup(channels: OfflineChannel[] | (() => Promise<OfflineChannel[]>) = 
     username: 'Kai',
     saves,
     rcs,
+    options,
     emit: (msgs) => out.push(msgs),
     launch: (channel, args, ev, files) => {
       events = ev
@@ -174,6 +175,17 @@ describe('OfflineServer rc file', () => {
     // an emptied file is no file
     rcs.write('Kai', '')
     expect(rcs.read('Kai')).toBe('')
+  })
+
+  it('gives the client’s options after the server’s and before the rc file, asking with the file', async () => {
+    const rcs = browserRcBook(memoryStorage())
+    rcs.write('Kai', 'travel_delay = 20\n')
+    const asked: string[] = []
+    const s = setup(undefined, undefined, rcs, (rc) => (asked.push(rc), ['explore_delay=90']))
+    s.server.receive({ msg: 'play', game_id: 'offline-0.34' })
+    await tick()
+    expect(asked).toEqual(['travel_delay = 20\n'])
+    expect(s.sent.args).toEqual(['-headless', '-webtiles-socket', 'bridge', '-name', 'Kai', ...SERVER_DEFAULT_ARGS, '-extra-opt-first', 'explore_delay=90', '-rc', RC_PATH])
   })
 
   it('goes with its profile', async () => {
