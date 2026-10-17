@@ -5,10 +5,13 @@
 // below in place of `null`; under the dev server nothing of the app is kept.
 // They are kept at install, all or none, in a cache named after their
 // version, copied from an older version where they have not changed. A
-// page load of any of the app's addresses is answered with the kept page
-// at once, connection or not; a new deploy installs in the background and
-// is what the next page load gets. The site's pages and the
-// build's other files go to the network as they are.
+// page load of any of the app's addresses, and its files kept under a fixed
+// name, go to the network first, so a connected device always runs the
+// version just deployed; what is kept answers only when the network
+// cannot. The hashed bundles and the fonts never change under their names,
+// and come from what is kept. A new deploy installs in the background
+// meanwhile. The site's pages and the build's other files go to the
+// network as they are.
 //
 // Answers requests for an engine build or its gamedata from the engine cache,
 // and keeps what it had to fetch: a first game played online installs its
@@ -32,6 +35,9 @@ const network = new Set(SHELL ? SHELL.network : [])
 // where a kept version records its files' sums (SHELL.sums), once it is whole
 const SUMS = '/.orbrun-sums'
 
+/** the hashed bundles and the fonts never change under their names */
+const immutable = (path) => path.startsWith('/assets/') || path.startsWith('/fonts/')
+
 /**
  * Keep this version of the app, unless it is kept already. A file an older
  * version kept with the same sum is copied from it, so a deploy downloads
@@ -51,9 +57,8 @@ async function keepApp() {
     if (hit) await cache.put(f, hit)
     else fetched.push(f)
   }
-  // the hashed bundles and the fonts never change under their names; the rest is asked of the server again
-  const fresh = (f) => !f.startsWith('/assets/') && !f.startsWith('/fonts/')
-  await cache.addAll(fetched.map((f) => new Request(f, { cache: fresh(f) ? 'no-cache' : 'default' })))
+  // the rest is asked of the server again
+  await cache.addAll(fetched.map((f) => new Request(f, { cache: immutable(f) ? 'default' : 'no-cache' })))
   await cache.put(SUMS, new Response(JSON.stringify(SHELL.sums)))
 }
 
@@ -79,6 +84,13 @@ async function keptPage() {
   return undefined
 }
 
+/** `req` as deployed now, unless there is no connection. */
+async function deployed(req) {
+  if (self.navigator?.onLine === false) return undefined
+  const res = await fetch(req).catch(() => undefined)
+  return res?.ok ? res : undefined
+}
+
 /**
  * One of the app's files: this version's, else an older version's, where an
  * older page's bundles are. Not caches.match alone: it looks in the oldest
@@ -99,12 +111,17 @@ function isApp(url) {
 self.addEventListener('install', (e) => e.waitUntil(keepApp().catch(() => {}).then(() => self.skipWaiting())))
 self.addEventListener('activate', (e) => e.waitUntil(Promise.all([self.clients.claim(), pruneApps()])))
 
+// the page asks whether its bundle is this version's: one loaded from the network already is, and need not reload when this version takes over
+self.addEventListener('message', (e) => {
+  if (e.data?.type === 'keeps') e.ports[0]?.postMessage(appFiles.has(e.data.url))
+})
+
 self.addEventListener('fetch', (e) => {
   const req = e.request
   if (req.method !== 'GET') return
   const url = new URL(req.url)
   if (appCache && req.mode === 'navigate' && url.origin === self.location.origin && isApp(url)) {
-    const page = keptPage()
+    const page = deployed(req).then(async (p) => p || (await keptPage()))
     e.respondWith(page.then((p) => p || fetch(req)))
     // an install that failed (no connection, a file that would not come) tries again with this load, even
     // while an older version's page stands in for it: otherwise that older page is what every load gets
@@ -112,7 +129,9 @@ self.addEventListener('fetch', (e) => {
     return
   }
   if (appFiles.has(url.origin + url.pathname) || (appCache && url.origin === self.location.origin && url.pathname.startsWith('/assets/'))) {
-    e.respondWith(appFile(url.origin + url.pathname).then((hit) => hit || fetch(req)))
+    const href = url.origin + url.pathname
+    if (immutable(url.pathname)) e.respondWith(appFile(href).then((hit) => hit || fetch(req)))
+    else e.respondWith(deployed(req).then(async (res) => res || (await appFile(href)) || fetch(req)))
     return
   }
   if (!kept.some((p) => req.url.startsWith(p))) return

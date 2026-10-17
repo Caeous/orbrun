@@ -78,7 +78,10 @@ describe('the app kept on the device', () => {
   })
 })
 
-/** A device's CacheStorage, shared by every version of sw.js run on it; `addAll` fails while `failing` holds, and lists in `fetched` what it got. */
+/**
+ * A device's CacheStorage, shared by every version of sw.js run on it; `addAll` fails while `failing` holds, and lists in
+ * `fetched` what it got. Its connection (`network`) is down unless set otherwise.
+ */
 function device() {
   const stores = new Map<string, Map<string, unknown>>()
   // a Cache takes an address relative to the worker's
@@ -86,6 +89,7 @@ function device() {
   const dev = {
     failing: false,
     fetched: [] as string[],
+    network: 'down' as 'down' | 'up',
     caches: {
       open: async (name: string) => {
         if (!stores.has(name)) stores.set(name, new Map())
@@ -128,7 +132,9 @@ function serviceWorker(dev: ReturnType<typeof device>, version: string, files = 
   class Request {
     constructor(readonly url: string) {}
   }
-  new Function('self', 'caches', 'Request', 'fetch', withShell(sw, { version, files, sums, network: [] }))(self, dev.caches, Request, async () => 'network page')
+  const fetch = (req: { mode?: string }) =>
+    dev.network === 'up' ? Promise.resolve({ ok: true, page: req.mode === 'navigate' ? 'deployed page' : 'deployed' }) : Promise.reject(new TypeError('offline'))
+  new Function('self', 'caches', 'Request', 'fetch', withShell(sw, { version, files, sums, network: [] }))(self, dev.caches, Request, fetch)
   const settle = async (type: string, event: object) => {
     const waits: Promise<unknown>[] = []
     let answer: Promise<unknown> = Promise.resolve()
@@ -141,8 +147,45 @@ function serviceWorker(dev: ReturnType<typeof device>, version: string, files = 
     install: () => settle('install', {}),
     load: () => settle('fetch', { request: { method: 'GET', url: 'https://orbrun.app/', mode: 'navigate' } }),
     get: (path: string) => settle('fetch', { request: { method: 'GET', url: 'https://orbrun.app' + path, mode: 'cors' } }),
+    /** what it answers a page asking whether it keeps `url` */
+    keeps: (url: string) =>
+      new Promise((done) => on.message({ data: { type: 'keeps', url }, ports: [{ postMessage: done }] })),
   }
 }
+
+describe('a page load', () => {
+  it('is the version deployed now wherever there is a connection, not the one kept', async () => {
+    const dev = device()
+    const v1 = serviceWorker(dev, 'v1')
+    await v1.install()
+    dev.network = 'up'
+    expect(await v1.load()).toEqual({ ok: true, page: 'deployed page' })
+  })
+
+  it('is the kept page with no connection', async () => {
+    const dev = device()
+    const v1 = serviceWorker(dev, 'v1')
+    await v1.install()
+    expect(await v1.load()).toBe('orbrun-app-v1 page')
+  })
+
+  it('gets the files kept under a fixed name as deployed now too, and the hashed bundles from what is kept', async () => {
+    const dev = device()
+    const v1 = serviceWorker(dev, 'v1', ['/', '/manifest.webmanifest', '/assets/v1.js'])
+    await v1.install()
+    dev.network = 'up'
+    expect(await v1.get('/manifest.webmanifest')).toEqual({ ok: true, page: 'deployed' })
+    expect(await v1.get('/assets/v1.js')).toBe('orbrun-app-v1 /assets/v1.js')
+    dev.network = 'down'
+    expect(await v1.get('/manifest.webmanifest')).toBe('orbrun-app-v1 /manifest.webmanifest')
+  })
+
+  it('tells a page whether its bundle is this version’s, so one loaded from the network does not reload for it', async () => {
+    const v2 = serviceWorker(device(), 'v2', ['/', '/assets/v2.js'])
+    expect(await v2.keeps('https://orbrun.app/assets/v2.js')).toBe(true)
+    expect(await v2.keeps('https://orbrun.app/assets/v1.js')).toBe(false)
+  })
+})
 
 describe('a new version of the app', () => {
   it('is kept on a later page load when keeping it failed at install, rather than the older one standing in for good', async () => {

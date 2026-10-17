@@ -2,16 +2,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../src/servers', async (orig) => ({ ...(await orig<object>()), offlineOffered: () => true, offlineRuns: () => true }))
 
-/** a page with a service worker (`controlled` when one already answers it), and how often it reloaded */
-async function page(controlled: boolean) {
+/**
+ * a page with a service worker (`controlled` when one already answers it), and how often it reloaded; `fresh`
+ * when it came from the network, so its bundle is the one the next version keeps
+ */
+async function page(controlled: boolean, fresh = false) {
   vi.resetModules()
   const listeners: (() => void)[] = []
   const update = vi.fn(async () => {})
   // the version a look found, installing until `installed`
   const found = { state: 'installing', on: [] as (() => void)[], addEventListener: (_: string, f: () => void) => found.on.push(f) }
   const reg = { update, installing: null as typeof found | null, waiting: null }
+  const bundle = 'https://orbrun.app/assets/index-AbC123.js'
+  const controller = {
+    postMessage: (m: { url: string }, [port]: { postMessage: (v: unknown) => void }[]) => port.postMessage(fresh && m.url === bundle),
+  }
+  // a channel that answers at once
+  class Channel {
+    port1 = { onmessage: (_: { data: unknown }) => {} }
+    port2 = { postMessage: (data: unknown) => this.port1.onmessage({ data }) }
+  }
+  vi.stubGlobal('MessageChannel', Channel)
   const sw = {
-    controller: controlled ? {} : null,
+    controller: controlled ? controller : null,
     register: async () => reg,
     getRegistration: async () => ({ update }),
     addEventListener: (_: string, f: () => void) => listeners.push(f),
@@ -19,6 +32,7 @@ async function page(controlled: boolean) {
   const reload = vi.fn()
   vi.stubGlobal('navigator', { serviceWorker: sw })
   vi.stubGlobal('location', { href: 'https://orbrun.app/', reload })
+  vi.stubGlobal('document', { querySelector: () => ({ src: bundle }) })
   const { appSettled, keepEngines, updateApp } = await import('../src/engines')
   const p = { busy: false, resting: true }
   // a look that finds a new version (`found`), as the next deploy is
@@ -28,7 +42,12 @@ async function page(controlled: boolean) {
     found.state = 'activated'
     found.on.forEach((f) => f())
   }
-  return Object.assign(p, { appSettled, updateApp, reload, update, installed, takeOver: () => listeners.forEach((f) => f()) })
+  // the switch waits on the new version's answer whether it keeps this page
+  const takeOver = async () => {
+    listeners.forEach((f) => f())
+    await vi.advanceTimersByTimeAsync(0)
+  }
+  return Object.assign(p, { appSettled, updateApp, reload, update, installed, takeOver })
 }
 
 describe('switching to a new version of the app', () => {
@@ -40,22 +59,29 @@ describe('switching to a new version of the app', () => {
 
   it('reloads when a new version takes over while the player rests on the home screen', async () => {
     const p = await page(true)
-    p.takeOver()
+    await p.takeOver()
     expect(p.reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not reload a page loaded from the network, which is already the new version', async () => {
+    const p = await page(true, true)
+    await p.takeOver()
+    p.updateApp()
+    expect(p.reload).not.toHaveBeenCalled()
   })
 
   it('does not reload for the first install, which runs the version already on the page', async () => {
     const p = await page(false)
-    p.takeOver()
+    await p.takeOver()
     expect(p.reload).not.toHaveBeenCalled()
-    p.takeOver()
+    await p.takeOver()
     expect(p.reload).toHaveBeenCalledTimes(1)
   })
 
   it('waits for the home screen when the player is busy, in a game or anywhere else', async () => {
     const p = await page(true)
     p.busy = true
-    p.takeOver()
+    await p.takeOver()
     p.busy = false
     p.resting = false
     p.updateApp()

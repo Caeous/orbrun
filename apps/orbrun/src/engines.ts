@@ -42,10 +42,10 @@ export const engines = new EngineStore({
  * way, which downloads wait for. Only where the engine runs: elsewhere the
  * app is no use offline.
  *
- * A new deploy installs in the background and would otherwise wait for the
- * load after next; instead the page switches to it as soon as it takes over,
- * if the player is resting on the home screen (`resting`), else the next
- * time they are (`updateApp`).
+ * A page load is the deployed version wherever there is a connection
+ * (sw.js); a page the kept one stood in for, with none, switches to a new
+ * deploy as soon as it takes over, if the player is resting on the home
+ * screen (`resting`), else the next time they are (`updateApp`).
  */
 export function keepEngines(gameUnderWay: () => boolean, resting: () => boolean) {
   busy = gameUnderWay
@@ -71,8 +71,24 @@ export function keepEngines(gameUnderWay: () => boolean, resting: () => boolean)
       controlled = true
       return
     }
-    arrived = true
-    updateApp()
+    void keepsThisPage(sw.controller).then((same) => {
+      if (same) return
+      arrived = true
+      updateApp()
+    })
+  })
+}
+
+/** Whether `w` keeps this page's own bundle: so it does for a page loaded from the network, which is already the version just deployed. */
+function keepsThisPage(w: ServiceWorker | null): Promise<boolean> {
+  const src = typeof document === 'undefined' ? undefined : document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src
+  if (!w || !src) return Promise.resolve(false)
+  return new Promise((done) => {
+    const ch = new MessageChannel()
+    ch.port1.onmessage = (e) => done(e.data === true)
+    w.postMessage({ type: 'keeps', url: src }, [ch.port2])
+    // a worker that does not answer is taken for a new version
+    setTimeout(() => done(false), 2000)
   })
 }
 
