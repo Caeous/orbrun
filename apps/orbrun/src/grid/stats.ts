@@ -360,7 +360,7 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
   // weapon, off-hand weapon (Coglins), quiver
   const weapon: Row = [cap(indexToLetter(p.weapon_index) + ')'), { text: ' ' }, wieldedWeapon(p, false)]
   const offhand: Row | null = p.offhand_weapon ? [cap(indexToLetter(p.offhand_index) + ')'), { text: ' ' }, wieldedWeapon(p, true)] : null
-  const quiver = fromFormatted(p.quiver_desc || '')
+  const quiver = fromFormatted(quiverLine(p.quiver_desc))
 
   // status lights: only entries with a light, in the server's colour and order, wrapped
   const lights: Row = []
@@ -395,6 +395,14 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
   for (const l of wrapRow(lights, width)) rows.push(l)
 
   return { rows, prev: next, bars: { hp: hpBar, mp: mpValue ? mpBar : null } }
+}
+
+/**
+ * The server's quiver line without the fail rate crawl adds to a spell
+ * (quiver.cc: "Cast: Magic Dart (5%)"), wherever Orbrun shows the line.
+ */
+export function quiverLine(desc: string | undefined): string {
+  return (desc ?? '').replace(/ \(\d+%\)(?=(?:<[^>]*>)*\s*$)/, '')
 }
 
 /** The pane's Health and Magic rows, each its bar and value/max in `room` cells; no Magic for a Djinni. */

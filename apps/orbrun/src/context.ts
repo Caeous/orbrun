@@ -1,6 +1,7 @@
 import { MouseMode, UiState, floorItemsLabel, formattedStringToSpans, formattedStringToText, isStationaryItemName, topMenu, topPopup, type GameState, type InvItem, type MenuState, type Monster } from '@orbrun/webtiles'
 import { cellAhead, cellUnder, billboardsAt, getCell, isThreat, monstersInView, type Camera, type Feature, type Scene, type SceneCell } from '@orbrun/scene'
 import type { FocusInfo } from './focus'
+import { quiverLine } from './grid/stats'
 import { neighbour, packStrip } from './pack-tabs'
 import { actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
 
@@ -688,7 +689,7 @@ export function shopContext(menu: MenuState): ShopContext {
  * `quiver_description` prints `<darkgrey>Nothing quivered</darkgrey>`.
  */
 export function readiedAction(quiverDesc: string | undefined): string | undefined {
-  const text = formattedStringToText(quiverDesc ?? '').trim()
+  const text = formattedStringToText(quiverLine(quiverDesc)).trim()
   return text && text !== 'Nothing quivered' ? text : undefined
 }
 

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { initialState, reduce, type ServerMessage } from '@orbrun/webtiles'
-import { HP_BAR, MP_BAR, PORTRAIT_ROWS, glanceRow, statsRows } from '../src/grid/stats'
+import { HP_BAR, MP_BAR, PORTRAIT_ROWS, glanceRow, quiverLine, statsRows } from '../src/grid/stats'
 import { rowLength, type Row } from '../src/grid/rows'
 import { STAT_WIDTH } from '../src/grid/console'
 
@@ -301,6 +301,12 @@ describe('stats pane beside the minimap', () => {
     const rows = statsRows({ ...st.player, quiver_desc: 'Zap: wand of paralysis (10) and more besides' }, st.options, {}, width, lead, true).rows
     expect(rowLength(rows[12])).toBe(width)
     expect(text(rows[12]).endsWith('…')).toBe(true)
+  })
+
+  it('leaves the fail rate off a quivered spell', () => {
+    const rows = statsRows({ ...st.player, quiver_desc: '<brown>Cast: <lightgreen>Magic Dart (5%)</lightgreen>' }, st.options, {}, width, lead, true).rows
+    expect(text(rows[12]).trimEnd()).toBe('Cast: Magic Dart')
+    expect(quiverLine('Cast: Grave Claw (2/3) (12%)')).toBe('Cast: Grave Claw (2/3)')
   })
 
   it('keeps the piety stars when the species line is too long, dropping the species, then cutting the god', () => {

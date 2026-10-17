@@ -367,6 +367,7 @@ describe('direct command controls', () => {
   })
   it('reads the readied action from the formatted quiver line; an empty quiver is no action', () => {
     expect(readiedAction('<brown>Throw: <lightgreen>23 darts (poison)')).toBe('Throw: 23 darts (poison)')
+    expect(readiedAction('<brown>Cast: <lightgreen>Magic Dart (5%)')).toBe('Cast: Magic Dart')
     // quiver.cc quiver_description: the empty quiver is spelled out, not blank
     expect(readiedAction('<darkgrey>Nothing quivered</darkgrey>')).toBeUndefined()
     expect(readiedAction('')).toBeUndefined()
