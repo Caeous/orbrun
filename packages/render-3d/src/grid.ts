@@ -133,9 +133,11 @@ export class LevelGrid {
  * A door is a hole in a wall run, and the run tells the door which way it
  * faces: walls east and west of it and the doorway faces north/south (yaw 0,
  * the heading a billboard stands at when the camera looks down -z), walls
- * north and south and it faces east/west. A door with no run to read — a
- * corner, an opening broken through on both axes — has no plane to stand in
- * and is left to face the eye like any other fixture.
+ * north and south and it faces east/west. A door with neither reads on past
+ * the open doors beside it, the other leaves of a double door or a gate, to
+ * the walls that end the opening. A door with no run to read — a corner, an
+ * opening broken through on both axes — has no plane to stand in and is left
+ * to face the eye like any other fixture.
  *
  * A closed door is a solid cell and is built as one; only the open ones are
  * here, as their cell is floor with the door tile standing on it.
@@ -145,11 +147,24 @@ export function framedDoors(scene: Scene): Map<CellKey, number> {
     const c = scene.cells.get(cellKey(x, y))
     return !c || c.kind === 'unknown' || c.occluder
   }
+  const open = (c: SceneCell | undefined) => c?.feature?.type === 'door' && c.kind !== 'unknown' && !c.occluder
+  // past the open doors beside it, which are leaves of the same gate, to the cell that ends the run
+  const end = (x: number, y: number, dx: number, dy: number) => {
+    do {
+      x += dx
+      y += dy
+    } while (open(scene.cells.get(cellKey(x, y))))
+    return solid(x, y)
+  }
   const out = new Map<CellKey, number>()
   for (const c of scene.cells.values()) {
-    if (c.feature?.type !== 'door' || c.kind === 'unknown' || c.occluder) continue
-    const alongX = solid(c.x - 1, c.y) && solid(c.x + 1, c.y)
-    const alongZ = solid(c.x, c.y - 1) && solid(c.x, c.y + 1)
+    if (!open(c)) continue
+    let alongX = solid(c.x - 1, c.y) && solid(c.x + 1, c.y)
+    let alongZ = solid(c.x, c.y - 1) && solid(c.x, c.y + 1)
+    if (!alongX && !alongZ) {
+      alongX = end(c.x, c.y, -1, 0) && end(c.x, c.y, 1, 0)
+      alongZ = end(c.x, c.y, 0, -1) && end(c.x, c.y, 0, 1)
+    }
     if (alongX === alongZ) continue
     out.set(cellKey(c.x, c.y), alongX ? 0 : Math.PI / 2)
   }

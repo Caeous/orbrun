@@ -212,6 +212,91 @@ describe('an open door', () => {
     }
   })
 
+  /**
+   * The leaves of a double door or a gate stand side by side, each with the
+   * other beside it rather than a wall. They are one opening in one wall run,
+   * and every leaf stands squared to it.
+   */
+  it('stands in its wall run beside the other leaves of a gate', () => {
+    for (const leaves of [2, 3]) {
+      for (const along of ['x', 'z'] as const) {
+        // a wall run across a room, open on both sides, with the leaves in a row from (2, 2)
+        const s = emptyScene()
+        s.playerOnLevel = true
+        s.bounds = { left: 0, top: 0, right: 6, bottom: 6 }
+        const doors = new Set<number>()
+        for (let i = 0; i < leaves; i++) doors.add(along === 'x' ? cellKey(2 + i, 2) : cellKey(2, 2 + i))
+        s.player = along === 'x' ? { x: 2, y: 4 } : { x: 4, y: 2 }
+        for (let y = 0; y <= 6; y++) {
+          for (let x = 0; x <= 6; x++) {
+            const k = cellKey(x, y)
+            const isDoor = doors.has(k)
+            const wall = !isDoor && (along === 'x' ? y === 2 : x === 2)
+            s.cells.set(k, {
+              x,
+              y,
+              kind: wall ? 'wall' : 'floor',
+              visibility: 'visible',
+              occluder: wall,
+              floorTile: 0,
+              wallTile: wall ? 1 : undefined,
+              featureTile: isDoor ? 5 : undefined,
+              stance: isDoor ? 'upright' : undefined,
+              feature: isDoor ? { type: 'door', state: 'open' } : undefined,
+            })
+          }
+        }
+        const grid = new LevelGrid(s)
+        expect(grid.framed.size).toBe(leaves)
+        for (const k of doors) expect(grid.framed.get(k)).toBeCloseTo(along === 'x' ? 0 : Math.PI / 2)
+        const insts = fixtureInstances(s, () => RECT, grid.framed, grid.occupied)
+        expect(insts).toHaveLength(leaves)
+        for (const inst of insts) expect(inst.misc[0] & MODE_BILLBOARD).toBe(0)
+      }
+    }
+  })
+
+  /**
+   * A door with walls either side of it stands in their run, whatever doors
+   * are in line with it: the walls beside a door outrank the run read past
+   * other doors. Here a row of doors meets one in a north–south corridor end
+   * on, and runs on into the unknown either side.
+   */
+  it('keeps to the walls beside it before reading past other doors', () => {
+    // #.#
+    // #'#    the corridor's door, walled east and west
+    // '''    the row; its ends walled north and south, its middle open north and south
+    // #.#
+    const rows = ['#.#', "#'#", "'''", '#.#']
+    const s = emptyScene()
+    s.playerOnLevel = true
+    s.player = { x: 1, y: 3 }
+    s.bounds = { left: 0, top: 0, right: 2, bottom: 3 }
+    rows.forEach((row, y) =>
+      [...row].forEach((ch, x) => {
+        const wall = ch === '#', isDoor = ch === "'"
+        s.cells.set(cellKey(x, y), {
+          x,
+          y,
+          kind: wall ? 'wall' : 'floor',
+          visibility: 'visible',
+          occluder: wall,
+          floorTile: 0,
+          wallTile: wall ? 1 : undefined,
+          featureTile: isDoor ? 5 : undefined,
+          stance: isDoor ? 'upright' : undefined,
+          feature: isDoor ? { type: 'door', state: 'open' } : undefined,
+        })
+      }),
+    )
+    const grid = new LevelGrid(s)
+    expect(grid.framed.get(cellKey(1, 1))).toBe(0)
+    expect(grid.framed.get(cellKey(0, 2))).toBeCloseTo(Math.PI / 2)
+    expect(grid.framed.get(cellKey(2, 2))).toBeCloseTo(Math.PI / 2)
+    // the middle of the row has a door north and floor south, and reads past its neighbours to the row's ends
+    expect(grid.framed.get(cellKey(1, 2))).toBe(0)
+  })
+
   /** With no wall run to read, there is no plane to stand in: the board faces the eye as any fixture does. */
   it('faces the camera where there is no doorway', () => {
     const { inst, yaw } = door(corridor('none'))
