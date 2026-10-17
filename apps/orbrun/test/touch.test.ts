@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { TOUCH_ANCHORS, TOUCH_CELLS, barLabels, isExtraButton, NO_ACTION, touchExtraAction, touchLabels, touchShot, type BindingLabel, type TouchCell, type TouchLabel } from '../src/bindings'
 import { TOUCH_GLYPHS } from '../src/touch-glyphs'
 import { PHONE_COLS, PHONE_ROWS, fitPx } from '../src/grid/host'
-import type { Context, MenuContext } from '../src/context'
+import { autofightRefused, type Context, type MenuContext } from '../src/context'
 import { STAT_WIDTH, TOUCH_SIDE_PX, fitGrid, gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from '../src/grid/console'
 import { GamepadInput, isPadActivity, type PadEvent } from '../src/gamepad'
 
@@ -413,6 +413,15 @@ describe('every touch button has a picture: crawl’s art where it has one, a gl
     expect(touchLabels(barLabels(c), c).find((l) => l.button === 'RB')?.idle).toBeUndefined()
     // an aim that is no quiver's fires at the cursor's target
     expect(icons(ctx({ mode: 'targeting', hostilesInView: 2 }))).toMatchObject({ RB: 'target', LB: 'cycle', X: 'CMD_LOOKUP_HELP' })
+  })
+  it('Fight dims while autofight would refuse, and still presses: half health or under, Conf, Held', () => {
+    const p = (hp: number, ...lights: string[]) => ({ hp, hp_max: 40, status: lights.map((light) => ({ light })) })
+    expect([autofightRefused(p(21)), autofightRefused(p(20)), autofightRefused(p(40, 'Conf')), autofightRefused(p(40, 'Held')), autofightRefused(p(40, 'Slow'))]).toEqual([false, true, true, true, false])
+    expect(autofightRefused({ hp: 0, hp_max: 0, status: [] })).toBe(false)
+    const fight = (c: Context) => touchLabels(barLabels(c), c).find((l) => l.action.kind === 'fight')!
+    expect(fight(ctx({ fightRefused: true }))).toMatchObject({ refused: true })
+    expect(fight(ctx({ fightRefused: true })).idle).toBeUndefined()
+    expect(fight(ctx({})).refused).toBeUndefined()
   })
   it('on the level map: the stairs, finding yourself, travel, search and zoom', () => {
     expect(icons(ctx({ mode: 'levelmap', mapCursorHome: true }))).toMatchObject({ LB: 'CMD_MAP_FIND_UPSTAIR', RB: 'CMD_MAP_FIND_DOWNSTAIR', R3: 'CMD_DISPLAY_OVERMAP', L3: 'CMD_SEARCH_STASHES', LT: 'zoom-out', RT: 'zoom-in' })

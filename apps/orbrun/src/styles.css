@@ -2670,6 +2670,10 @@ canvas.minimap.hidden,
   background: none;
   filter: brightness(1.4);
 }
+/* Fight while autofight would refuse (context.ts autofightRefused): still tappable, crawl has the last word */
+.touchbar .tb.refused {
+  opacity: 0.4;
+}
 /* a spell that costs more than is left (spell-bar.ts spellShort): still tappable, crawl has the last word */
 .touchbar.spellbar .tb.short {
   opacity: 0.4;

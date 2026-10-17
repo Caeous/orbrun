@@ -164,6 +164,8 @@ export interface Context {
   hostilesInView: number
   /** HP or MP below its maximum: resting would do something, so the bar offers wait/rest when nothing is in view. */
   injured?: boolean
+  /** Autofight would only say why not (`autofightRefused`), so the touch bar dims Fight. */
+  fightRefused?: boolean
   /**
    * Targeting: what the server's cursor rests on (`cursors[0]`, the cell it
    * named in its last `cursor` message), so the bar can say what A will
@@ -700,6 +702,22 @@ function newgameBack(d: Record<string, unknown> | undefined): number | undefined
   return undefined
 }
 
+/** autofight.lua's AUTOFIGHT_STOP as it ships: the rc's `autofight_stop` moves it, and the server never says to what */
+const AUTOFIGHT_STOP = 50
+
+/**
+ * Whether Tab would only print why it will not fight (autofight.lua
+ * `autofight_check_preconditions`): health at or under AUTOFIGHT_STOP percent
+ * ("too injured to fight recklessly"), confused (the Conf light), or caught
+ * in a net or web (the Held light; `autofight_caught` in the rc lets Tab
+ * struggle free instead). A guess past the rc, so the button is dimmed, not
+ * taken away: the tap still goes to crawl, which has the last word.
+ */
+export function autofightRefused(p: { hp: number; hp_max: number; status: { light?: string }[] }): boolean {
+  if (p.hp_max > 0 && 100 * p.hp <= AUTOFIGHT_STOP * p.hp_max) return true
+  return p.status.some((s) => s.light === 'Conf' || s.light === 'Held')
+}
+
 export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer: Layer): Context {
   const mode = deriveMode(state)
   const ahead = targetFor(scene, cellAhead(scene, cam.facing), false)
@@ -712,6 +730,7 @@ export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer
   const quivered = p.quiver_item >= 0 ? p.inv[p.quiver_item]?.tile : undefined
   if (ctx.readiedAction && quivered !== undefined) ctx.readiedTile = quivered
   if (p.hp < p.hp_max || p.mp < p.mp_max) ctx.injured = true
+  if (autofightRefused(p)) ctx.fightRefused = true
   if (mode === 'yesno' || mode === 'prompt') ctx.prompt = parsePrompt(state)
   if (mode === 'more') ctx.moreText = state.messages.moreText || '--more--'
   if (mode === 'menu') {
