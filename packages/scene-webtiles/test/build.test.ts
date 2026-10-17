@@ -90,6 +90,25 @@ describe('classification', () => {
     expect(classifyFeature('DNGN_ALTAR_ZIN', '_', 15)).toEqual({ type: 'altar', god: 'zin' })
     expect(classifyFeature('DNGN_ENTER_LAIR', '>', 14)).toEqual({ type: 'portal' })
   })
+  /**
+   * Doors side by side wear crawl's gate art, and a spell aimed through them
+   * draws its path over their glyph (`*`), leaving the name and the minimap's
+   * door to say what they are. A gate is no portal.
+   */
+  it('reads the pieces of a gate as doors, on a spell\'s path too', () => {
+    for (const [name, state] of [
+      ['DNGN_GATE_OPEN_LEFT', 'open'],
+      ['DNGN_VGATE_OPEN_MIDDLE_CRYPT', 'open'],
+      ['DNGN_GATE_BROKEN_CLEAR_RIGHT', 'open'],
+      ['DNGN_BROKEN_DOOR', 'open'],
+      ['DNGN_GATE_CLOSED_MIDDLE', 'closed'],
+      ['DNGN_VGATE_RUNED_UP', 'runed'],
+      ['DNGN_GATE_SEALED_CLEAR_LEFT', 'sealed'],
+    ] as const) {
+      expect(classifyFeature(name, '*', 5)).toEqual({ type: 'door', state })
+      expect(classifyFeature(name, state === 'open' ? "'" : '+', 5)?.type).toBe('door')
+    }
+  })
   it('the D:1 start square is the dungeon exit, an up stair, not a portal', () => {
     // under the player the glyph is `@`, so only the name and the minimap category vote (tileweb.cc _send_cell)
     const fx = JSON.parse(readFileSync(join(here, 'fixtures', 'cdi-git-newgame-d1-cell.json'), 'utf8'))

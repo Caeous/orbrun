@@ -153,8 +153,11 @@ export function classifyFeature(name: string | undefined, glyph: string | undefi
   else if (/^DNGN_TRAP_/.test(n)) votes.push({ feature: { type: 'trap', kind: n.replace(/^DNGN_TRAP_/, '').toLowerCase() }, from: 'name' })
   else if (/^DNGN_(CLOSED|RUNED|SEALED)_.*DOOR|^DNGN_.*CLOSED_DOOR|_DOOR_CLOSED/.test(n))
     votes.push({ feature: { type: 'door', state: /RUNED/.test(n) ? 'runed' : /SEALED/.test(n) ? 'sealed' : 'closed' }, from: 'name' })
-  else if (/^DNGN_OPEN_.*DOOR|_DOOR_OPEN|^DNGN_.*OPEN_DOOR/.test(n)) votes.push({ feature: { type: 'door', state: 'open' }, from: 'name' })
-  else if (/^DNGN_ENTER_|^DNGN_RETURN_|^DNGN_EXIT_|^DNGN_PORTAL|^DNGN_ABYSSAL_STAIR|^DNGN_.*GATE|^DNGN_TRANSIT|^DNGN_ENTRANCE/.test(n))
+  else if (/^DNGN_OPEN_.*DOOR|_DOOR_OPEN|^DNGN_.*OPEN_DOOR|^DNGN_BROKEN_.*DOOR/.test(n)) votes.push({ feature: { type: 'door', state: 'open' }, from: 'name' })
+  // a door in a row of doors wears a piece of gate art (tilepick.cc `door_connect`); a broken one hangs open
+  else if (/^DNGN_V?GATE_/.test(n))
+    votes.push({ feature: { type: 'door', state: /_CLOSED_/.test(n) ? 'closed' : /_RUNED_/.test(n) ? 'runed' : /_SEALED_/.test(n) ? 'sealed' : 'open' }, from: 'name' })
+  else if (/^DNGN_ENTER_|^DNGN_RETURN_|^DNGN_EXIT_|^DNGN_PORTAL|^DNGN_ABYSSAL_STAIR|^DNGN_TRANSIT|^DNGN_ENTRANCE/.test(n))
     votes.push({ feature: { type: 'portal' }, from: 'name' })
   else if (n) votes.push({ feature: { type: 'other', name: n.replace(/^DNGN_/, '').toLowerCase() }, from: 'name' })
   // glyph
