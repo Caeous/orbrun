@@ -637,7 +637,7 @@ export const defaultSettings: Settings = {
   leftRightKeys: 'turn',
   leftRightPad: 'turn',
   swipeTurn: 'step',
-  exploreDelay: 120,
+  exploreDelay: 90,
 }
 
 export function getSettings(): Settings {

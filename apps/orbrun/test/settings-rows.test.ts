@@ -472,7 +472,7 @@ describe('Explore delay', () => {
   const at = (exploreDelay: number) => ({ ...defaultSettings, exploreDelay })
 
   it('gives a game on this device 90 ms a step by default, and nothing on Instant', () => {
-    expect(defaultSettings.exploreDelay).toBe(120)
+    expect(defaultSettings.exploreDelay).toBe(90)
     expect(exploreOptions(at(90), '')).toEqual(['explore_delay=90'])
     expect(exploreOptions(at(-1), '')).toEqual([])
   })
