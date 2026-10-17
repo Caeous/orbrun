@@ -2255,13 +2255,19 @@ export class Hud {
 
   /**
    * What the touch bar takes of the screen, in css px from the HUD's right
-   * and bottom edges, for the overlays to stop short of it: on its side,
-   * everything right of its column's left edge; along the foot, its height.
+   * and bottom edges, for the overlays to stop short of it: along the foot,
+   * its height; on its side, everything right of its column's left edge, or
+   * everything under its top edge where the room left of the column is
+   * narrower than the room above the bar is tall (a tablet or an unfolded
+   * phone, whose column leaves a popup too narrow, but not a phone on its
+   * side, whose screen is too short).
    */
   get touchbarInset(): { right: number; bottom: number } {
     if (this.touchbar.hidden) return { right: 0, bottom: 0 }
     if (!this.touchBeside) return { right: 0, bottom: this.touchbar.offsetHeight }
-    return { right: Math.max(0, this.root.clientWidth - this.touchbar.offsetLeft), bottom: 0 }
+    const right = Math.max(0, this.root.clientWidth - this.touchbar.offsetLeft)
+    const bottom = Math.max(0, this.root.clientHeight - this.touchbar.offsetTop)
+    return this.root.clientWidth - right < this.root.clientHeight - bottom ? { right: 0, bottom } : { right, bottom: 0 }
   }
 
   /** One prompt: the button's glyph, the label, and the hold's label under it when there is one. Inert to a press: the view answers, not the prompt. */
