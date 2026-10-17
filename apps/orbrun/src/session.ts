@@ -193,6 +193,11 @@ export class Session {
     this.emit({ type: 'sent', msg })
   }
 
+  /** Set a crawl option in the game running on this device (tileweb.cc `set_option`); a server's takes them from the rc. */
+  deviceOption(name: string, value: string | number) {
+    if (this.conn instanceof LocalWasmConnection && this.playing) this.conn.send(cm.setOption(name, value))
+  }
+
   /** A game on this device saves where it stands, as a server's would were its socket to go now (@orbrun/offline). */
   checkpoint() {
     if (this.conn instanceof LocalWasmConnection && this.playing) this.conn.checkpoint()

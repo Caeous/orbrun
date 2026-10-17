@@ -4,7 +4,7 @@ Notable changes to Orbrun, newest first.
 
 ## 0.3.1 — 2026-10-17
 
-- Explore now walks you at 90ms per step (Settings › View).
+- Explore now walks you at 120ms per step (Settings › View).
 - Fixes for phones, tablets, the touch bar, doors and spell aiming.
 
 ## 0.3.0 — 2026-10-16
