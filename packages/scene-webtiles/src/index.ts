@@ -763,6 +763,7 @@ const DNGN_NAMES = [
   'THREAT_GHOST_NASTY',
   'TRAVEL_EXCLUSION_BG',
   'TRAVEL_EXCLUSION_CENTRE_BG',
+  'LANDING',
   'REMEMBERED_INVIS',
 ] as const
 const ICON_NAMES = [
@@ -932,7 +933,7 @@ function decorate(cell: SceneCell, t: CellTiles, bgw: FlagWord, gd: Gamedata) {
       ;(onWall ? wall : over).push(id)
       if (!onWall && ids.isWallShadow(id)) shadows.push(id)
       if (!onWall && ids.isShoreline(id)) shores.push(id)
-      if (id === D.TRAVEL_EXCLUSION_BG || id === D.TRAVEL_EXCLUSION_CENTRE_BG) translucent.push(id)
+      if (id === D.TRAVEL_EXCLUSION_BG || id === D.TRAVEL_EXCLUSION_CENTRE_BG || id === D.LANDING) translucent.push(id)
     }
   }
   const ov = t.ov || []

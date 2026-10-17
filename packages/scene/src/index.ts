@@ -171,7 +171,10 @@ export interface SceneCell {
    * travel-exclusion X, a tile whose every texel is see-through (a black body
    * at two-thirds alpha, red edges at under half). 2D blends it. 3D draws it
    * blended too, over its floor or wall face: under the level's opaque alpha
-   * test the red edges vanish and the body prints as solid black.
+   * test the red edges vanish and the body prints as solid black. Also the
+   * green LANDING wash a targeter lays on the cells a spell reaches round its
+   * aim (Airstrike's open neighbours), under half alpha all over, which the
+   * alpha test would drop entirely.
    */
   translucent?: TileId[]
   /**

@@ -247,6 +247,16 @@ describe('buildScene on a recorded level', () => {
     expect(w.wallOverlays).toContain(excl)
     expect(w.translucent).toEqual([excl])
   })
+  it('names the targeter landing wash as translucent, so 3D blends it instead of alpha-testing it away', () => {
+    const st = initialState()
+    for (const m of fixtureMessages()) reduce(st, m)
+    const landing = gd.dngn.id('LANDING')!
+    const floor = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value < gd.ranges.floorMax)!
+    st.map.cells.set(cellKey(floor.x, floor.y), { ...floor, t: { ...floor.t, ov: [...(floor.t!.ov ?? []), landing] } })
+    const f = buildScene(st, gd).cells.get(cellKey(floor.x, floor.y))!
+    expect(f.overlays).toContain(landing)
+    expect(f.translucent).toEqual([landing])
+  })
   it('names a shop by its wares, the only thing the tile says about it (tilepick.cc tileidx_shop)', () => {
     const st = initialState()
     for (const m of fixtureMessages()) reduce(st, m)
