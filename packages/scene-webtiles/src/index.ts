@@ -595,6 +595,7 @@ function buildCell(mc: MapCell, gd: Gamedata): SceneCell | undefined {
     water: !!bgw.WATER || mc.mf === MF.WATER || mc.mf === MF.DEEP_WATER,
     lava: mc.mf === MF.LAVA,
     excluded: !!bgw.TRAV_EXCL || !!bgw.EXCL_CTR || mc.mf === MF.EXCL || mc.mf === MF.EXCL_ROOT,
+    excludeRoot: !!bgw.EXCL_CTR || mc.mf === MF.EXCL_ROOT,
     travelTrail: !!(t?.travel_trail && t.travel_trail & 0xff),
     newStair: !!bgw.NEW_STAIR,
     cursor: !!(bgw.TUT_CURSOR || bgw.CURSOR1 || bgw.CURSOR2 || bgw.CURSOR3),

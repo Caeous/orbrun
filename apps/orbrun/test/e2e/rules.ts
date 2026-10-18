@@ -210,7 +210,7 @@ export async function check(scenario: string, r: Awaited<ReturnType<typeof tryAl
     if (!t.button.startsWith('D') && !t.picture) add('touch has pictures', `${t.button} (${JSON.stringify(t.label)}) has none`)
     if (t.button === 'B' && t.label !== 'Esc') add('touch has pictures', `B is ${JSON.stringify(t.label)}, not Esc`)
     // a menu's more-line switch sends the key crawl printed beside it, which no pad button was pressed for; the bar's
-    // own buttons (In view, Descend, Ascend) are no pad button either, and outcomes.test.ts taps them
+    // own buttons (In view, Descend, Exclude) are no pad button either, and outcomes.test.ts taps them
     if (t.button.startsWith('D') || isSwitchButton(t.button) || isExtraButton(t.button) || idle[t.button] || (await does(t.button))) continue
     if (pair[t.button] && shown.has(pair[t.button]) && (await does(pair[t.button]))) continue
     add('touch tells the truth', `${t.button} (${JSON.stringify(t.label)}) does nothing`)

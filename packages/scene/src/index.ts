@@ -194,6 +194,8 @@ export interface SceneCell {
     water: boolean
     lava: boolean
     excluded: boolean
+    /** The centre of a travel exclusion, where crawl's level map `e` takes it off again (tileview.cc EXCL_CTR, MF_EXCL_ROOT). */
+    excludeRoot?: boolean
     travelTrail: boolean
     newStair: boolean
     cursor: boolean

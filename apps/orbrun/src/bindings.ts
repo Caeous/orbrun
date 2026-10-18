@@ -721,7 +721,7 @@ export function isSwitchButton(b: string): b is SwitchButton {
  * own where a finger wants it at once (`TOUCH_EXTRAS`). The bar runs its
  * action as it goes down (hud.ts, game.ts `touchExtra`).
  */
-export type TouchExtra = 'inview' | 'descend' | 'ascend' | 'skills'
+export type TouchExtra = 'inview' | 'descend' | 'exclude' | 'skills'
 export type ExtraButton = `do:${TouchExtra}`
 
 export function isExtraButton(b: string): b is ExtraButton {
@@ -731,20 +731,39 @@ export function isExtraButton(b: string): b is ExtraButton {
 /** `G` then `<` or `>`: travel to the level above or below and arrive there (travel.cc `prompt_translevel_target`, ID_UP/ID_DOWN) */
 const travelLevel = (dir: '<' | '>'): KeyOrText[] => [{ text: 'G' }, { text: dir, await: 'prompt' }]
 
-/** each extra's word, picture and keys; the level map's leave the map first, as its other main-map commands do (`offMap`) */
-const TOUCH_EXTRAS: Record<TouchExtra, TouchIcon & { label: string; seq: KeyOrText[] }> = {
+/**
+ * Unmark a travel exclusion in one tap: crawl's `e` on its centre only
+ * shrinks a wide one to its cell and takes it off at the second press
+ * (exclude.cc `cycle_exclude_radius`), so `R` `0` shrinks it first
+ * (CMD_MAP_EXCLUDE_RADIUS) and the `e` takes it off, a gate's every door with it.
+ */
+const UNEXCLUDE: KeyOrText[] = [{ text: 'R' }, { text: '0' }, { text: 'e' }]
+
+/**
+ * Each extra's word, picture and keys; the level map's leave the map first,
+ * as its other main-map commands do (`offMap`), but for `inMap`, a command
+ * of the map's own.
+ */
+const TOUCH_EXTRAS: Record<TouchExtra, TouchIcon & { label: string; seq: KeyOrText[]; inMap?: boolean }> = {
   // Ctrl-X, crawl's list of the monsters, items and features in view (CMD_FULL_VIEW), under an eye of crawl's
   inview: { label: 'In view', icon: 'MONS_GLASS_EYE', seq: [{ key: 24 }] },
   descend: { label: 'Descend', icon: 'CMD_MAP_NEXT_LEVEL', seq: travelLevel('>') },
-  ascend: { label: 'Ascend', icon: 'CMD_MAP_PREV_LEVEL', seq: travelLevel('<') },
+  // `e` at the map's cursor, an exclusion as wide as sight (CMD_MAP_EXCLUDE_AREA); `touchExtraFace` turns it to Unexclude on one's centre
+  exclude: { label: 'Exclude', icon: 'CMD_MAP_EXCLUDE_AREA', seq: [{ text: 'e' }], inMap: true },
   // `m`, the skills screen, which a pad reaches from the Start menu's Character tab
   skills: { label: 'Skills', icon: 'CMD_DISPLAY_SKILLS', seq: [{ text: 'm' }] },
 }
 
+/** An extra's word, picture and keys here (`TouchExtra`). */
+function touchExtraFace(id: TouchExtra, ctx: Context): TouchIcon & { label: string; seq: KeyOrText[]; inMap?: boolean } {
+  const extra = TOUCH_EXTRAS[id]
+  return id === 'exclude' && ctx.mapCursorExcluded ? { ...extra, label: 'Unexclude', seq: UNEXCLUDE } : extra
+}
+
 /** What an extra does here (`TouchExtra`). */
 export function touchExtraAction(id: TouchExtra, ctx: Context): Action {
-  const { label, seq } = TOUCH_EXTRAS[id]
-  return ctx.mode === 'levelmap' ? offMap(label, ...seq) : { kind: 'keys', seq, label }
+  const { label, seq, inMap } = touchExtraFace(id, ctx)
+  return ctx.mode === 'levelmap' && !inMap ? offMap(label, ...seq) : { kind: 'keys', seq, label }
 }
 
 type TouchLayout = readonly (readonly (Button | TouchExtra | null)[])[]
@@ -787,10 +806,10 @@ const LOOK_LAYOUT: TouchLayout = [
 /**
  * The level map, as the user drew it: zoom down the left, the stairs found
  * down the right, the search and travel at the edge, and at the left edge
- * the level above and below, gone to.
+ * a travel exclusion marked or unmarked at the cursor, and the level below, gone to.
  */
 const LEVELMAP_LAYOUT: TouchLayout = [
-  ['ascend', 'RT', 'X', 'LB', 'L3'],
+  ['exclude', 'RT', 'X', 'LB', 'L3'],
   ['descend', 'LT', 'DU', 'RB', 'Y'],
   ['B', 'DL', 'DD', 'DR', 'A'],
 ]
@@ -872,7 +891,7 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
     layout.forEach((row, r) =>
       row.forEach((b, c) => {
         if (b && b in TOUCH_EXTRAS) {
-          const { label, icon } = TOUCH_EXTRAS[b as TouchExtra]
+          const { label, icon } = touchExtraFace(b as TouchExtra, ctx)
           out.push({ button: `do:${b as TouchExtra}`, label, action: touchExtraAction(b as TouchExtra, ctx), contextual: false, icon, cell: TOUCH_CELLS[r][c] })
           return
         }

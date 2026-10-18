@@ -329,7 +329,7 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     expect(screen(g).surface).toBe('popup:formatted-scroller')
   })
 
-  it('a finger on the level map: Descend goes down a level and Ascend back up (G > and G <), In view on the map lists what is in view', async () => {
+  it('a finger on the level map: Exclude marks the cell under the cursor and Unexclude takes it off again (e, R 0 e), Descend goes down a level (G >), In view on the map lists what is in view', async () => {
     const g = await startLive({ args: FIGHTER, device: 'touch' })
     open.push(g)
     for (let i = 0; i < 5 && g.ctx().mode !== 'command'; i++) await g.raw('a')
@@ -339,25 +339,33 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     await g.raw('\x1b')
     await g.raw('&{')
     for (let i = 0; i < 5 && g.ctx().mode === 'more'; i++) await g.raw(' ')
-    const tap = async (id: string) => {
+    const press = async (id: string) => {
       const el = g.root.querySelector(`[data-b="do:${id}"]`)
       expect(el, id).not.toBeNull()
       el!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }))
       el!.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }))
       await g.settle()
+    }
+    const tap = async (id: string) => {
+      await press(id)
       for (let i = 0; i < 40 && g.ctx().mode !== 'command'; i++) await g.settle()
     }
     expect(g.state().player.depth).toBe(1)
     await g.raw('X')
     expect(screen(g).surface).toBe('levelmap')
+    // the cursor a step off the player, so the exclusion's centre is no cell they stand on
+    await g.raw('l')
+    await press('exclude')
+    for (let i = 0; i < 20 && !g.ctx().mapCursorExcluded; i++) await g.settle()
+    expect(screen(g).surface).toBe('levelmap')
+    expect(g.ctx().mapCursorExcluded).toBe(true)
+    expect(g.root.querySelector('[data-b="do:exclude"]')!.textContent).toContain('Unexclude')
+    await press('exclude')
+    for (let i = 0; i < 20 && g.ctx().mapCursorExcluded; i++) await g.settle()
+    expect(g.ctx().mapCursorExcluded).toBe(false)
+    expect(screen(g).surface).toBe('levelmap')
     await tap('descend')
     expect(g.state().player.depth).toBe(2)
-    // crawl travels with nothing hostile in view: D:2's welcome is a ball python, sent away
-    await g.raw('&G')
-    await g.raw('\r')
-    await g.raw('X')
-    await tap('ascend')
-    expect(g.state().player.depth).toBe(1)
     await tap('inview')
     expect(screen(g).surface).toMatch(/^menu:/)
     await g.raw('\x1b')

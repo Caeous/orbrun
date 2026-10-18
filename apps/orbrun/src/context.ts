@@ -197,6 +197,8 @@ export interface Context {
   aimQuiver?: boolean
   /** the level map's cursor stands where the player does: travelling there, or finding them, is nowhere to go */
   mapCursorHome?: boolean
+  /** the level map's cursor stands on the centre of a travel exclusion: the map's Exclude takes it off */
+  mapCursorExcluded?: boolean
   /**
    * Character creation's way back, as the screen offers it (newgame.cc): the
    * weapon screen's "return to character choice" on Backspace, or a species or
@@ -744,6 +746,7 @@ export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer
     // the map's own cursor (tileweb.cc load_dungeon: CURSOR_MAP), not the mouse's
     const c = state.cursors[2] ?? state.cursors[0]
     ctx.mapCursorHome = !c || (c.x === scene.player.x && c.y === scene.player.y)
+    ctx.mapCursorExcluded = !!c && !!getCell(scene, c.x, c.y)?.flags.excludeRoot
   }
   if (mode === 'targeting') {
     // directn.cc: a fire's aim prints "Q - select action" in its hint; a spell's does not, and cycles nothing

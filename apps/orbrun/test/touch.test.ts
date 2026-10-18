@@ -115,14 +115,14 @@ describe('the screens drawn cell by cell', () => {
     ])
     expect(cellOf(look, 'A')).toBe(cellOf(ctx({}), 'L3'))
   })
-  it('the level map, as the user drew it: zoom down the left, the stairs found down the right, the search and travel at the edge, the levels above and below at the left edge', () => {
+  it('the level map, as the user drew it: zoom down the left, the stairs found down the right, the search and travel at the edge, an exclusion and the level below at the left edge', () => {
     const map = ctx({ mode: 'levelmap' })
     expect(drawn(map)).toEqual([
-      ['do:ascend', 'RT', 'X', 'LB', 'L3'],
+      ['do:exclude', 'RT', 'X', 'LB', 'L3'],
       ['do:descend', 'LT', 'DU', 'RB', 'Y'],
       ['B', 'DL', 'DD', 'DR', 'A'],
     ])
-    expect(words(map)[0].slice(0, 4)).toEqual(['Ascend', 'Zoom in', 'Describe', 'Find up'])
+    expect(words(map)[0].slice(0, 4)).toEqual(['Exclude', 'Zoom in', 'Describe', 'Find up'])
     expect(words(map)[2][4]).toBe('Travel here')
     expect(words(map)[1]).toEqual(['Descend', 'Zoom out', '↑', 'Find down', 'Find you'])
     // on you there is nowhere to travel to here, and the overview, which travels further, stands where Y would
@@ -141,13 +141,18 @@ describe("the bar's own buttons, which no pad button stands for", () => {
   it('Skills opens the skills screen (m)', () => {
     expect(extra(ctx({}), 'skills')).toMatchObject({ label: 'Skills', icon: 'CMD_DISPLAY_SKILLS', action: { kind: 'keys', seq: [{ text: 'm' }] } })
   })
-  it('Descend and Ascend travel to the level below and above (G > and G <), the second key held for the travel prompt; on the level map they leave it first', () => {
+  it('Descend travels to the level below (G >), the second key held for the travel prompt; on the level map it leaves it first', () => {
     const map = ctx({ mode: 'levelmap' })
     expect(extra(map, 'descend')).toMatchObject({ label: 'Descend', icon: 'CMD_MAP_NEXT_LEVEL' })
-    expect(extra(map, 'ascend')).toMatchObject({ label: 'Ascend', icon: 'CMD_MAP_PREV_LEVEL' })
     expect(extra(map, 'descend').action).toMatchObject({ kind: 'keys', keepsMap: true, seq: [{ key: 27 }, { text: 'G' }, { text: '>', await: 'prompt' }] })
-    expect(extra(map, 'ascend').action).toMatchObject({ kind: 'keys', keepsMap: true, seq: [{ key: 27 }, { text: 'G' }, { text: '<', await: 'prompt' }] })
     expect(touchExtraAction('descend', ctx({}))).toEqual({ kind: 'keys', label: 'Descend', seq: [{ text: 'G' }, { text: '>', await: 'prompt' }] })
+  })
+  it("Exclude marks a travel exclusion at the level map's cursor (e), staying on the map; on an exclusion's centre it is Unexclude, which takes it off in one tap (R 0 e)", () => {
+    const map = ctx({ mode: 'levelmap' })
+    expect(extra(map, 'exclude')).toMatchObject({ label: 'Exclude', icon: 'CMD_MAP_EXCLUDE_AREA', action: { kind: 'keys', label: 'Exclude', seq: [{ text: 'e' }] } })
+    expect(extra(map, 'exclude').action).not.toHaveProperty('keepsMap')
+    const on = ctx({ mode: 'levelmap', mapCursorExcluded: true })
+    expect(extra(on, 'exclude')).toMatchObject({ label: 'Unexclude', icon: 'CMD_MAP_EXCLUDE_AREA', action: { kind: 'keys', label: 'Unexclude', seq: [{ text: 'R' }, { text: '0' }, { text: 'e' }] } })
   })
   it('only the map and the level map have them', () => {
     for (const c of [ctx({ mode: 'more', moreText: '--more--' }), ctx({ mode: 'targeting', hostilesInView: 1 }), menu({})]) expect(touchLabels(barLabels(c), c).some((l) => isExtraButton(l.button))).toBe(false)
