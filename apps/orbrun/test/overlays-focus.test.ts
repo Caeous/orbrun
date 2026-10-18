@@ -724,6 +724,43 @@ describe('prompt card', () => {
     reduce(st, { msg: 'ui-pop' })
     expect(frame().mode).toBe('prompt')
   })
+  it("Gozag's potion petition: the offers listed before the prompt are its answers, no Cancel", () => {
+    const { ov, st, frame, sent } = setup()
+    reduce(st, { msg: 'input_mode', mode: MouseMode.COMMAND })
+    // god-abil.cc gozag_potion_petition: the offers on plain lines, then the prompt, read with get_ch
+    reduce(st, {
+      msg: 'msgs',
+      messages: [
+        { text: '  [a] - 400 gold - heal wounds, haste', channel: 0, turn: 40 },
+        { text: '  [b] - 287 gold - might', channel: 0, turn: 40 },
+        { text: '  [c] - 512 gold - brilliance, magic, berserk rage', channel: 0, turn: 40 },
+        { text: 'Purchase which effect?', channel: 2, turn: 40 },
+      ],
+    })
+    reduce(st, { msg: 'input_mode', mode: MouseMode.PROMPT })
+    let ctx = frame()
+    expect(ctx.mode).toBe('prompt')
+    expect(ctx.prompt).toMatchObject({
+      text: 'Purchase which effect?',
+      cancel: false,
+      options: [
+        { hotkey: 'a', label: '400 gold - heal wounds, haste' },
+        { hotkey: 'b', label: '287 gold - might' },
+        { hotkey: 'c', label: '512 gold - brilliance, magic, berserk rage' },
+      ],
+    })
+    // Escape only prints the offers again, so B offers nothing; nothing lit until the cursor moves
+    let t = bindingTable(ctx)
+    expect(t.B).toBeUndefined()
+    expect(t.A).toBeUndefined()
+    ov.focusOp(st, ctx, 'right')
+    ov.focusOp(st, frame(), 'right')
+    ctx = frame()
+    t = bindingTable(ctx)
+    expect(actionLabel(t.A!, ctx)).toContain('287 gold - might')
+    ov.focusOp(st, ctx, 'select')
+    expect(sent).toEqual([{ msg: 'input', text: 'b' }])
+  })
   it('the stat-gain prompt: only the prompt line on the card, the cursor picks, no Cancel', () => {
     const { ov, st, frame, host } = setup()
     // an earlier command's messages end at the return to command mode

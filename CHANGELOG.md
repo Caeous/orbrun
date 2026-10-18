@@ -2,6 +2,11 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.3.2 — 2026-10-18
+
+- Gozag's Potion Petition now lets you pick which potions to buy.
+- Add mark travel exclusion to level map.
+
 ## 0.3.1 — 2026-10-17
 
 - Explore now walks you at 90ms per step (Settings › View).

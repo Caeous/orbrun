@@ -382,6 +382,15 @@ const listsChoices = (text: string) => {
 }
 /** god-prayer.cc `_prompt_ecu_worship`: the faded altar's prompt, whose gods are listed on its own line */
 const ECU_ALTAR_RE = /^This altar belongs to /
+/**
+ * A choice spelled `  [k] - what it is` on a plain line of its own, printed
+ * just before the prompt: god-abil.cc `gozag_potion_petition` lists its
+ * three offers so ("  [a] - 400 gold - heal wounds, haste") over "Purchase
+ * which effect?".
+ */
+const BRACKETED_RE = /^\s*\[([A-Za-z0-9])\] - (.+)$/
+/** god-abil.cc `gozag_potion_petition`: reads a key until it gets an offer's letter; Esc only prints the offers again */
+const PETITION_RE = /^Purchase which effect\?/
 
 /**
  * A prompt whose choices are not on its line as `(k)ey` words: they are
@@ -433,6 +442,13 @@ function listedPrompt(lines: { text: string; channel?: number }[]): ParsedPrompt
   let first = at
   while (first > 0 && lines[first - 1].channel === CH_PROMPT && listsChoices(formattedStringToText(lines[first - 1].text))) first--
   for (let i = first; i < at; i++) listed(lines[i].text)
+  // or on the plain lines just before it, one `[k] - ` choice each
+  let bracketed = at
+  while (bracketed > 0 && BRACKETED_RE.test(formattedStringToText(lines[bracketed - 1].text))) bracketed--
+  for (let i = bracketed; i < at; i++) {
+    const m = BRACKETED_RE.exec(formattedStringToText(lines[i].text))!
+    add(m[1], m[2])
+  }
   // or on the prompt line itself: the faded altar's "(a) Trog, (b) Okawaru or (c) Yredelemnul"
   listed(lines[at].text)
   // god-prayer.cc `_prompt_ecu_worship`: "press enter to convert or escape to cancel"; the letters describe
@@ -445,7 +461,7 @@ function listedPrompt(lines: { text: string; channel?: number }[]): ParsedPrompt
     listed(lines[i].text)
   }
   if (!options.length) return undefined
-  return { text, options, yesno: false, cancel: true }
+  return { text, options, yesno: false, cancel: !PETITION_RE.test(text) }
 }
 
 /** Every inventory letter in slot order (invent.h `index_to_letter`): a-z, then A-Z. */
