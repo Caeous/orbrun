@@ -1,0 +1,36 @@
+Makes delay() suspend instead of busy-waiting, so a key pressed during a
+delayed travel or explore reaches the engine and stops it.
+
+Modified for the WebAssembly build of the webtiles binary (engine/README.md).
+GPLv2+, as the file it patches.
+
+--- a/crawl-ref/source/libunix.cc
++++ b/crawl-ref/source/libunix.cc
+@@ -50,6 +50,11 @@
+ #endif
+ 
+ #include <time.h>
++
++#ifdef __EMSCRIPTEN__
++// wasm/bridge.h (definition emitted via tileweb.cc's single include).
++extern "C" void wasm_bridge_sleep(int ms);
++#endif
+ 
+ // replace definitions from curses.h; not needed outside this file
+ #define HEADLESS_LINES 24
+@@ -1846,7 +1851,15 @@
+ 
+     refresh();
+     if (time)
++#ifdef __EMSCRIPTEN__
++        // usleep is a busy wait in wasm: it holds the worker, so a key
++        // pressed meanwhile never reaches the bridge's queue, and kbhit()
++        // cannot stop a delayed travel or explore (travel.cc) until it stops
++        // by itself. Suspending lets the key in.
++        wasm_bridge_sleep(time);
++#else
+         usleep(time * 1000);
++#endif
+ }
+ 
+ static bool _headless_kbhit()

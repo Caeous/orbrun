@@ -14,8 +14,9 @@
 #  - the Unix-socket IPC is replaced by wasm/bridge.h + wasm/pre.js
 #  - curses satisfied by wasm/fake-curses.h via upstream CURSES_INCLUDE_FILE
 #  - zlib + sqlite from Emscripten ports; interpreted C-Lua from contrib
-#  - JSPI for the blocking sites: tileweb.cc await_input and the IDBFS
-#    persist (wasm/bridge.h). Needs 'Suspending' in WebAssembly (Chrome 137).
+#  - JSPI for the blocking sites: tileweb.cc await_input, libunix.cc delay
+#    and the IDBFS persist (wasm/bridge.h). Needs 'Suspending' in
+#    WebAssembly (Chrome 137).
 
 CXX := em++
 CC := emcc
