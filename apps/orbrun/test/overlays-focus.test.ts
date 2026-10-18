@@ -761,6 +761,57 @@ describe('prompt card', () => {
     ov.focusOp(st, ctx, 'select')
     expect(sent).toEqual([{ msg: 'input', text: 'b' }])
   })
+  it('message-pane choices spelled other ways: Call Merchant, Draw Three, the ancestor gender', () => {
+    const { st, frame } = setup()
+    const ask = (messages: { text: string; channel: number }[]) => {
+      reduce(st, { msg: 'input_mode', mode: MouseMode.COMMAND })
+      reduce(st, { msg: 'msgs', messages: messages.map((m) => ({ ...m, turn: 40 })) })
+      reduce(st, { msg: 'input_mode', mode: MouseMode.PROMPT })
+      return frame().prompt
+    }
+    // god-abil.cc _gozag_choose_shop: like the petition, no way out but a merchant
+    expect(
+      ask([
+        { text: "  [a]   973 gold - Cranius' Magic Scroll Boutique", channel: 0 },
+        { text: "  [b]  1203 gold - Bob's Armour Shop", channel: 0 },
+        { text: 'Fund which merchant?', channel: 2 },
+      ]),
+    ).toMatchObject({
+      text: 'Fund which merchant?',
+      cancel: false,
+      options: [
+        { hotkey: 'a', label: "973 gold - Cranius' Magic Scroll Boutique" },
+        { hotkey: 'b', label: "1203 gold - Bob's Armour Shop" },
+      ],
+    })
+    // decks.cc draw_three: the cards are prompt-channel rows under the question; Esc is only "Huh?"
+    expect(
+      ask([
+        { text: 'You draw... (choose one card, ? for their descriptions)', channel: 0 },
+        { text: 'a - Velocity', channel: 2 },
+        { text: 'b - Elixir', channel: 2 },
+        { text: 'c - Storm', channel: 2 },
+      ]),
+    ).toMatchObject({
+      text: 'You draw... (choose one card, ? for their descriptions)',
+      cancel: false,
+      options: [
+        { hotkey: 'a', label: 'Velocity' },
+        { hotkey: 'b', label: 'Elixir' },
+        { hotkey: 'c', label: 'Storm' },
+        { hotkey: '?', label: 'Descriptions' },
+      ],
+    })
+    // god-abil.cc _hepliaklqana_choose_gender: any other key leaves it as it was
+    expect(ask([{ text: 'Was Ancestor a) male, b) female, or c) neither? (Currently neither.)', channel: 2 }])).toMatchObject({
+      cancel: true,
+      options: [
+        { hotkey: 'a', label: 'Male' },
+        { hotkey: 'b', label: 'Female' },
+        { hotkey: 'c', label: 'Neither' },
+      ],
+    })
+  })
   it('the stat-gain prompt: only the prompt line on the card, the cursor picks, no Cancel', () => {
     const { ov, st, frame, host } = setup()
     // an earlier command's messages end at the return to command mode

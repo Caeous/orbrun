@@ -383,14 +383,29 @@ const listsChoices = (text: string) => {
 /** god-prayer.cc `_prompt_ecu_worship`: the faded altar's prompt, whose gods are listed on its own line */
 const ECU_ALTAR_RE = /^This altar belongs to /
 /**
- * A choice spelled `  [k] - what it is` on a plain line of its own, printed
+ * A choice spelled `  [k] what it is` on a plain line of its own, printed
  * just before the prompt: god-abil.cc `gozag_potion_petition` lists its
  * three offers so ("  [a] - 400 gold - heal wounds, haste") over "Purchase
- * which effect?".
+ * which effect?", `_gozag_choose_shop` its merchants ("  [a]   973 gold -
+ * Cranius' Magic Scroll Boutique") over "Fund which merchant?".
  */
-const BRACKETED_RE = /^\s*\[([A-Za-z0-9])\] - (.+)$/
-/** god-abil.cc `gozag_potion_petition`: reads a key until it gets an offer's letter; Esc only prints the offers again */
-const PETITION_RE = /^Purchase which effect\?/
+const BRACKETED_RE = /^\s*\[([A-Za-z0-9])\]\s+(?:-\s+)?(.+)$/
+/**
+ * A message-pane menu whose rows are whole prompt-channel lines `k - label`,
+ * under a question on the line above them: decks.cc `draw_three` ("You
+ * draw... (choose one card, ? for their descriptions)", "a - Velocity").
+ */
+const ROW_RE = /^\s*([A-Za-z0-9]) - (.+)$/
+/** `draw_three`'s question: `?` describes the cards */
+const DRAW_THREE_RE = /^You draw\.\.\. \(choose one card, \? for their descriptions\)/
+/** A choice spelled `k) label` on the prompt line: god-abil.cc `_hepliaklqana_choose_gender` "Was Ancestor a) male, b) female, or c) neither?" */
+const PAREN_KEY_RE = /(?:^|\s)([a-z])\) ([^\s,?]+)/g
+/**
+ * Prompts that read a key until it is one of their choices, Esc only
+ * printing them again: god-abil.cc `gozag_potion_petition` and
+ * `_gozag_choose_shop`, decks.cc `draw_three` (whose Esc is "Huh?").
+ */
+const NO_CANCEL_RE = /^(Purchase which effect\?|Fund which merchant\?|You draw\.\.\. )/
 
 /**
  * A prompt whose choices are not on its line as `(k)ey` words: they are
@@ -408,7 +423,10 @@ function listedPrompt(lines: { text: string; channel?: number }[]): ParsedPrompt
     }
   }
   if (at < 0) return undefined
-  let text = formattedStringToText(lines[at].text)
+  // a menu of whole `k - label` prompt-channel rows: the question is the line above them
+  let rows = at + 1
+  while (rows > 0 && lines[rows - 1].channel === CH_PROMPT && ROW_RE.test(formattedStringToText(lines[rows - 1].text))) rows--
+  let text = formattedStringToText(lines[rows <= at && rows > 0 ? rows - 1 : at].text)
   // a prompt line that is only its hint ("(? for menu, Esc to cancel)") asks nothing: the question is the line above
   if (/^\(.*\)$/.test(text.trim()) && lines[at - 1]?.channel === CH_PROMPT) text = formattedStringToText(lines[at - 1].text)
   const options: ParsedPrompt['options'] = []
@@ -442,7 +460,12 @@ function listedPrompt(lines: { text: string; channel?: number }[]): ParsedPrompt
   let first = at
   while (first > 0 && lines[first - 1].channel === CH_PROMPT && listsChoices(formattedStringToText(lines[first - 1].text))) first--
   for (let i = first; i < at; i++) listed(lines[i].text)
-  // or on the plain lines just before it, one `[k] - ` choice each
+  for (let i = rows; i <= at; i++) {
+    const m = ROW_RE.exec(formattedStringToText(lines[i].text))!
+    add(m[1], m[2], logColourAt(lines[i].text, formattedStringToText(lines[i].text).length - m[2].length))
+  }
+  if (DRAW_THREE_RE.test(text)) add('?', 'Descriptions')
+  // or on the plain lines just before it, one `[k]` choice each
   let bracketed = at
   while (bracketed > 0 && BRACKETED_RE.test(formattedStringToText(lines[bracketed - 1].text))) bracketed--
   for (let i = bracketed; i < at; i++) {
@@ -451,6 +474,8 @@ function listedPrompt(lines: { text: string; channel?: number }[]): ParsedPrompt
   }
   // or on the prompt line itself: the faded altar's "(a) Trog, (b) Okawaru or (c) Yredelemnul"
   listed(lines[at].text)
+  PAREN_KEY_RE.lastIndex = 0
+  for (let m: RegExpExecArray | null; (m = PAREN_KEY_RE.exec(formattedStringToText(lines[at].text))); ) add(m[1], m[2])
   // god-prayer.cc `_prompt_ecu_worship`: "press enter to convert or escape to cancel"; the letters describe
   if (ECU_ALTAR_RE.test(text)) add('Enter', 'Convert')
   const d = DIGITS_RE.exec(text)
@@ -461,7 +486,7 @@ function listedPrompt(lines: { text: string; channel?: number }[]): ParsedPrompt
     listed(lines[i].text)
   }
   if (!options.length) return undefined
-  return { text, options, yesno: false, cancel: !PETITION_RE.test(text) }
+  return { text, options, yesno: false, cancel: !NO_CANCEL_RE.test(text) }
 }
 
 /** Every inventory letter in slot order (invent.h `index_to_letter`): a-z, then A-Z. */
