@@ -23,7 +23,7 @@ function harness(is3d: boolean) {
   const screen = Object.assign(Object.create(GameScreen.prototype), {
     canvas, is3d, renderer: old, park, hud: undefined, lastCursor: null, lastOptKey: 'x', needsRender: false,
     session: { state: initialState(), scene: emptyScene(), gamedata: undefined },
-    attachPointer: vi.fn(), wake: vi.fn(), makeRenderer: () => fresh, revive: () => revived,
+    attachPointer: vi.fn(), cancelDrag: vi.fn(), wake: vi.fn(), makeRenderer: () => fresh, revive: () => revived,
   }) as { toggleRenderer(): unknown; lastCursor: SceneCursor | null; renderer: unknown }
   return { screen, old, fresh, revived, park }
 }

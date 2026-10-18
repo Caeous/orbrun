@@ -24,7 +24,7 @@ function harness(swipeTurn: 'step' | 'drag' = 'drag') {
     cam: { lookBy, endDrag, turn, lean, endLean: vi.fn() }, hud: { hideTooltip: vi.fn() }, session: { state: initialState() },
     hooks: { settings: () => ({ lookSensitivity: 1, invertLook: false, swipeTurn }) },
     inputFrom: vi.fn(), wake: vi.fn(), armCellTooltip: vi.fn(), onPointer,
-  }) as { attachPointer(c: HTMLCanvasElement): void; cancelDrag(): void; drag: unknown }
+  }) as { attachPointer(c: HTMLCanvasElement): void; cancelDrag(): void; toggleRenderer(): void; drag: unknown; canvas: HTMLCanvasElement }
   screen.attachPointer(canvas)
   const at = (type: string, x: number, y: number, buttons: number) => {
     canvas.dispatchEvent(Object.assign(new Event(type), { pointerId: 1, pointerType: 'mouse', button: 0, buttons, clientX: x, clientY: y, pageX: x, pageY: y }))
@@ -176,5 +176,21 @@ describe('a drag whose release the page never saw', () => {
     expect(blurs.length).toBe(2)
     expect(new Set(blurs).size).toBe(1)
     add.mockRestore()
+  })
+
+  it('a finger on the view as the level map swaps it out lets go, so the view springs back level and the next press is a fresh one', () => {
+    const h = harness()
+    document.body.append(h.screen.canvas)
+    const swapped = { setCursor: vi.fn(), destroy: vi.fn() }
+    Object.assign(h.screen, {
+      renderer: { setCursor: vi.fn(), destroy: vi.fn() }, park: { take: () => null }, lastCursor: null,
+      makeRenderer: () => swapped, relayout: vi.fn(), mapBorrowed2d: false,
+    })
+    h.touch('pointerdown', 300, 300, 0)
+    for (let t = 8; t <= 40; t += 8) h.touch('pointermove', 300, 300 + 4 * t, t)
+    h.screen.toggleRenderer()
+    expect(h.screen.drag).toBe(null)
+    // the system's let-go: no fling, the pitch springs back to rest (camera.ts endDrag)
+    expect(h.endDrag).toHaveBeenCalledExactlyOnceWith({ yawSpeed: 0, pitchSpeed: 0, commit: Infinity })
   })
 })

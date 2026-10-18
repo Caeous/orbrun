@@ -861,6 +861,9 @@ export class GameScreen {
    * (park.ts).
    */
   private toggleRenderer() {
+    // a press on the outgoing canvas would never hear its release once the canvas leaves the page: the view
+    // stayed tipped where the finger left it, and every press after was ignored as a second finger
+    this.cancelDrag()
     const old = { canvas: this.canvas, renderer: this.renderer }
     this.is3d = !this.is3d
     // the 3D view parked while the map was open comes back with its own canvas (park.ts); otherwise a fresh
