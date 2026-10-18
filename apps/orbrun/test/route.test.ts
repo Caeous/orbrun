@@ -23,7 +23,7 @@ Object.defineProperty(globalThis, 'localStorage', {
  */
 describe('routes', () => {
   const orbrun: Account = { serverId: 'cdi', username: 'orbrun' }
-  const someone: Account = { serverId: 'cko', username: 'someone' }
+  const someone: Account = { serverId: 'crg', username: 'someone' }
   beforeEach(() => {
     store.clear()
     // an account list, so the chosen one is one of them
@@ -48,7 +48,7 @@ describe('routes', () => {
     // as the chosen account, when it is on that server
     setChosenAccount(orbrun)
     expect(parseRoute(base + 'watch/cdi#bob')).toEqual({ kind: 'watch', serverId: 'cdi', account: orbrun, username: 'bob' })
-    expect(parseRoute(base + 'watch/cko')).toEqual({ kind: 'lobby', serverId: 'cko', account: null })
+    expect(parseRoute(base + 'watch/crg')).toEqual({ kind: 'lobby', serverId: 'crg', account: null })
   })
 
   it('plays as the account it names, or asks for a login there', () => {
@@ -154,7 +154,7 @@ describe('routes', () => {
     expect(formatRoute({ kind: 'play', account: orbrun, gameId: 'seeded-web-trunk' })).toBe('/play/cdi/seeded-web-trunk#orbrun')
     expect(formatRoute({ kind: 'watch', serverId: 'cdi', account: null, username: 'a b' })).toBe('/watch/cdi#a%20b')
     expect(formatRoute({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'orbrun' })).toBe('/login/cdi#orbrun')
-    expect(formatRoute({ kind: 'lobby', serverId: 'cko', account: someone })).toBe('/watch/cko')
+    expect(formatRoute({ kind: 'lobby', serverId: 'crg', account: someone })).toBe('/watch/crg')
     setChosenAccount(orbrun)
     // names with what a path or a URL would otherwise take apart: spaces, slashes, a query, a fragment, escapes, pluses
     const odd = ['a b', 'a/b', 'a?b', 'a#b', '100%', 'a+b', 'a%20b', 'ünï cödé', 'a@b', 'a.b', '..b']
@@ -163,10 +163,10 @@ describe('routes', () => {
     const routes: Route[] = [
       { kind: 'play', account: orbrun, gameId: 'seeded-web-trunk' },
       { kind: 'watch', serverId: 'cdi', account: orbrun, username: 'someone' },
-      { kind: 'lobby', serverId: 'cko', account: null },
+      { kind: 'lobby', serverId: 'crg', account: null },
       { kind: 'lobby', serverId: 'cdi', account: orbrun },
       { kind: 'menu', path: 'settings/interface' },
-      { kind: 'menu', path: 'login', serverId: 'cko', username: 'someone' },
+      { kind: 'menu', path: 'login', serverId: 'crg', username: 'someone' },
       { kind: 'play', account: custom, gameId: 'dcss-0.34' },
       { kind: 'watch', serverId: custom.serverId, account: null, username: 'bob' },
       ...odd.flatMap((name): Route[] => [
@@ -185,7 +185,7 @@ describe('routes', () => {
     const routes: Route[] = [
       { kind: 'play', account: orbrun, gameId: 'dcss-0.34' },
       { kind: 'watch', serverId: 'cdi', account: orbrun, username: 'someone' },
-      { kind: 'menu', path: 'login', serverId: 'cko', username: 'someone' },
+      { kind: 'menu', path: 'login', serverId: 'crg', username: 'someone' },
     ]
     for (const r of routes) {
       const { pathname, search } = new URL(formatRoute(r), base)

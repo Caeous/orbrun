@@ -21,9 +21,9 @@ Object.defineProperty(globalThis, 'localStorage', {
 })
 
 const cdi = findServer('cdi')!
-const cko = findServer('cko')!
+const crg = findServer('crg')!
 const orbrun: Account = { serverId: 'cdi', username: 'orbrun' }
-const kelbi: Account = { serverId: 'cko', username: 'orbrun' }
+const roguelikes: Account = { serverId: 'crg', username: 'orbrun' }
 
 /** A connection that says what a lobby says, without a socket. */
 function fakeSession(server: ServerInfo, username: string | null, lobby: Partial<GameState['lobby']> = {}, open = true): Session {
@@ -875,9 +875,9 @@ describe('the front end: accounts and servers', () => {
     const { screen } = make()
     pick(screen, 'Play')
     expect(screen.view).toBe('servers')
-    expect(labels(screen)).toEqual(['Back', ...['CDI', 'CBR2', 'CKO', 'CAO', 'CUE', 'CXC', 'CWZ'].flatMap((n) => [n, '(site ↗)']), 'Add a server'])
+    expect(labels(screen)).toEqual(['Back', ...['CDI', 'CAO', 'CBR2', 'CRG', 'CBRG', 'CXC', 'CUE', 'CNC', 'CPO'].flatMap((n) => [n, '(site ↗)']), 'Add a server'])
     expect(screen.root.querySelector('.head .place')?.textContent).toBe('Add an account')
-    pick(screen, 'CKO')
+    pick(screen, 'CRG')
     expect(screen.view).toBe('login')
     expect(labels(screen)).toEqual(['Back', 'Name', 'Password', 'Log in', 'Register'])
     expect((screen.root.querySelector('input[name=username]') as HTMLInputElement).value).toBe('')
@@ -892,17 +892,17 @@ describe('the front end: accounts and servers', () => {
   it('the server list writes each ping in when it lands, and leaves a server that did not answer blank', async () => {
     const host = document.createElement('div')
     document.body.append(host)
-    const ping = vi.fn(async (sv: ServerInfo) => (sv.id === 'cko' ? null : 42))
+    const ping = vi.fn(async (sv: ServerInfo) => (sv.id === 'crg' ? null : 42))
     const screen = new FrontEnd(host, { connect: (sv, u) => fakeSession(sv, u), logout: () => {}, play: () => {}, watch: () => {}, at: () => {}, ping })
     made.push(screen)
     pick(screen, 'Watch')
     const sub = (id: string) => screen.root.querySelector(`[data-focus="server:${id}"] .sub`)?.textContent
-    expect(sub('cdi')).toBe('us · crawl.dcss.io')
+    expect(sub('cdi')).toBe('New York, USA · crawl.dcss.io')
     await Promise.resolve()
     await Promise.resolve()
-    expect(sub('cdi')).toBe('us · crawl.dcss.io · 42 ms')
-    expect(sub('cko')).toBe('us-west · crawl.kelbi.org')
-    expect(ping).toHaveBeenCalledTimes(7)
+    expect(sub('cdi')).toBe('New York, USA · crawl.dcss.io · 42 ms')
+    expect(sub('crg')).toBe('Oregon, USA · crawl.roguelikes.gg')
+    expect(ping).toHaveBeenCalledTimes(9)
   })
 
   it('Add a server is a screen of its own: an address, then the list with the cursor on it', () => {
@@ -962,7 +962,7 @@ describe('the front end: accounts and servers', () => {
     screen.showHome()
     pick(screen, 'orbrun · CDI')
     pick(screen, 'Add an account')
-    pick(screen, 'CKO')
+    pick(screen, 'CRG')
     expect(screen.view).toBe('login')
     warm.mockClear()
     press(screen, 'Escape')
@@ -1000,7 +1000,7 @@ describe('the front end: accounts and servers', () => {
     const { screen } = make()
     pad(screen, 'START')
     expect(screen.view).toBe('servers')
-    pick(screen, 'CKO')
+    pick(screen, 'CRG')
     const name = screen.root.querySelector<HTMLInputElement>('input[name=username]')!
     name.value = 'orbrun'
     screen.root.querySelector<HTMLInputElement>('input[name=password]')!.value = 'pw'
@@ -1026,7 +1026,7 @@ describe('the front end: accounts and servers', () => {
   })
 
   it('says which account is in use, and dots it only while its connection is not ready', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, roguelikes]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
     const s = fakeSession(cdi, 'orbrun')
@@ -1035,7 +1035,7 @@ describe('the front end: accounts and servers', () => {
     const dots = () => Array.from(screen.root.querySelectorAll('.menu .item')).filter((el) => el.querySelector('.conn-dot')).map((el) => [el.querySelector('.label')?.textContent, ['wait', 'down'].find((c) => el.querySelector('.conn-dot')!.classList.contains('conn-' + c))])
     expect(dots()).toEqual([['orbrun · CDI', 'wait']])
     expect(sub(screen, 'orbrun · CDI')).toBe('in use')
-    expect(sub(screen, 'orbrun · CKO')).toBeNull()
+    expect(sub(screen, 'orbrun · CRG')).toBeNull()
     // an account not in use is not a row that cannot be taken
     expect(screen.root.querySelectorAll('.menu .item.off').length).toBe(0)
     const before = screen.root.querySelector('.menu')
@@ -1237,47 +1237,47 @@ describe('the front end: accounts and servers', () => {
   })
 
   it('an account picked is chosen, opens its own connection, and the home screen is its', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, roguelikes]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
-    // CKO has forgotten its login: it asks for the password again beside its row
+    // CRG has forgotten its login: it asks for the password again beside its row
     localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
     const { screen, connect } = make()
     pick(screen, 'orbrun · CDI')
     expect(screen.view).toBe('accounts')
-    expect(labels(screen)).toEqual(['Back', 'orbrun · CDI', '(other versions)', '(remove)', 'orbrun · CKO', '(other versions)', '(log in)', '(remove)', 'Add an account'])
-    screen.root.querySelector<HTMLElement>('[data-focus="account:cko/orbrun"]')!.click()
-    expect(connect).toHaveBeenCalledWith(cko, 'orbrun', undefined)
-    expect(JSON.parse(localStorage.getItem('orbrun.account')!)).toEqual(kelbi)
+    expect(labels(screen)).toEqual(['Back', 'orbrun · CDI', '(other versions)', '(remove)', 'orbrun · CRG', '(other versions)', '(log in)', '(remove)', 'Add an account'])
+    screen.root.querySelector<HTMLElement>('[data-focus="account:crg/orbrun"]')!.click()
+    expect(connect).toHaveBeenCalledWith(crg, 'orbrun', undefined)
+    expect(JSON.parse(localStorage.getItem('orbrun.account')!)).toEqual(roguelikes)
     expect(screen.view).toBe('home')
     expect(labels(screen)[0]).toBe('Log in')
-    expect(conn(screen)).toBe('orbrun · CKO · Not logged in')
+    expect(conn(screen)).toBe('orbrun · CRG · Not logged in')
   })
 
   it('a tap on a row chooses it at once: only the game’s own lists light a row first', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, roguelikes]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
     const { screen, connect } = make()
     screen.showAccounts()
-    const row = screen.root.querySelector<HTMLElement>('[data-focus="account:cko/orbrun"]')!
-    expect(focused(screen)).not.toBe('account:cko/orbrun')
+    const row = screen.root.querySelector<HTMLElement>('[data-focus="account:crg/orbrun"]')!
+    expect(focused(screen)).not.toBe('account:crg/orbrun')
     row.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true } as PointerEventInit))
     row.click()
-    expect(connect).toHaveBeenCalledWith(cko, 'orbrun', undefined)
+    expect(connect).toHaveBeenCalledWith(crg, 'orbrun', undefined)
     expect(screen.view).toBe('home')
   })
 
   it('(log in) beside an account whose login is forgotten chooses it and asks for its password', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, roguelikes]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
     const { screen } = make()
     screen.showAccounts()
-    ;(screen.root.querySelector('[data-focus="login:cko/orbrun"]') as HTMLElement).click()
-    expect(JSON.parse(localStorage.getItem('orbrun.account')!)).toEqual(kelbi)
+    ;(screen.root.querySelector('[data-focus="login:crg/orbrun"]') as HTMLElement).click()
+    expect(JSON.parse(localStorage.getItem('orbrun.account')!)).toEqual(roguelikes)
     expect(screen.view).toBe('login')
     expect(screen.root.querySelector<HTMLInputElement>('input[name="username"]')!.value).toBe('orbrun')
-    expect(screen.root.querySelector('.head .lede')?.textContent).toBe('CKO')
+    expect(screen.root.querySelector('.head .lede')?.textContent).toBe('CRG')
   })
 
   it("a server's site stands beside its row when adding an account, a link out in a new tab", () => {
@@ -1306,9 +1306,9 @@ describe('the front end: accounts and servers', () => {
   })
 
   it('removing the account in use closes its connection without calling the close an error', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, kelbi]))
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, roguelikes]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
-    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok', 'cko/orbrun': 'tok' }))
+    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok', 'crg/orbrun': 'tok' }))
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
     const { screen, logout } = make((sv, u) => (sv.id === 'cdi' && u === 'orbrun' ? s : null))
     screen.showAccounts()
@@ -1363,10 +1363,10 @@ describe('the front end: accounts and servers', () => {
   })
 
   it('a login that lands keeps the account, chooses it, and comes home', () => {
-    const s = fakeSession(cko, null)
+    const s = fakeSession(crg, null)
     const { screen } = make()
     pick(screen, 'Play')
-    pick(screen, 'CKO')
+    pick(screen, 'CRG')
     ;(screen.root.querySelector('input[name=username]') as HTMLInputElement).value = 'Orbrun'
     ;(screen.root.querySelector('input[name=password]') as HTMLInputElement).value = 'pw'
     ;(screen.root.querySelector('form') as HTMLFormElement).requestSubmit()
@@ -1375,11 +1375,26 @@ describe('the front end: accounts and servers', () => {
     expect(sess.send).toHaveBeenCalledWith({ msg: 'login', username: 'Orbrun', password: 'pw' })
     sess.state.lobby.username = 'Orbrun'
     ;(sess as unknown as { emit(e: unknown): void }).emit({ type: 'state', msg: { msg: 'login_success' } })
-    expect(JSON.parse(localStorage.getItem('orbrun.accounts')!)).toEqual([{ serverId: 'cko', username: 'Orbrun' }])
+    expect(JSON.parse(localStorage.getItem('orbrun.accounts')!)).toEqual([{ serverId: 'crg', username: 'Orbrun' }])
     expect(screen.view).toBe('home')
     expect(labels(screen)[0]).toBe('Log in')
-    expect(conn(screen)).toBe('Orbrun · CKO')
+    expect(conn(screen)).toBe('Orbrun · CRG')
     void s
+  })
+
+  it('sends the name without the space a phone keyboard leaves after a suggestion, and keeps it from being corrected', () => {
+    fakeSession(crg, null)
+    const { screen } = make()
+    pick(screen, 'Play')
+    pick(screen, 'CRG')
+    const user = screen.root.querySelector('input[name=username]') as HTMLInputElement
+    expect([user.getAttribute('autocapitalize'), user.getAttribute('autocorrect'), user.getAttribute('spellcheck')]).toEqual(['off', 'off', 'false'])
+    user.value = 'Orbrun '
+    ;(screen.root.querySelector('input[name=password]') as HTMLInputElement).value = 'pw '
+    ;(screen.root.querySelector('form') as HTMLFormElement).requestSubmit()
+    const sess = (screen as unknown as { session: Session }).session
+    // a password may end in a space
+    expect(sess.send).toHaveBeenCalledWith({ msg: 'login', username: 'Orbrun', password: 'pw ' })
   })
 })
 
@@ -1465,9 +1480,9 @@ describe('the front end: Play and Watch', () => {
       expect(screen.view).toBe(view)
       expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path })
     }
-    pick(screen, 'CKO')
+    pick(screen, 'CRG')
     expect(screen.view).toBe('login')
-    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'login', serverId: 'cko' })
+    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'login', serverId: 'crg' })
     // and back again: each address opens its screen, and says nothing new
     for (const [path, view] of walk) {
       at.mockClear()
@@ -1482,11 +1497,11 @@ describe('the front end: Play and Watch', () => {
     screen.open({ kind: 'menu', path: 'settings/camera' })
     expect(screen.view).toBe('settings-group')
     expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'settings/view' })
-    screen.open({ kind: 'menu', path: 'login', serverId: 'cko', username: 'someone' })
+    screen.open({ kind: 'menu', path: 'login', serverId: 'crg', username: 'someone' })
     expect(screen.view).toBe('login')
     expect((screen.root.querySelector('input[name=username]') as HTMLInputElement).value).toBe('someone')
-    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'login', serverId: 'cko' })
-    screen.open({ kind: 'menu', path: 'register', serverId: 'cko' })
+    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'login', serverId: 'crg' })
+    screen.open({ kind: 'menu', path: 'register', serverId: 'crg' })
     expect(screen.view).toBe('register')
     // Back from the register form is the login it is a row of
     press(screen, 'Escape')

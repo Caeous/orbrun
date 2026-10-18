@@ -8,7 +8,8 @@ import { DEFAULT_PROFILE } from '@orbrun/offline'
 export interface ServerInfo {
   id: string
   name: string
-  region?: string
+  /** Where it is, as the official server list (crawl.develz.org/servers.json) gives it. */
+  location?: string
   ws: string
   http: string
   host: string

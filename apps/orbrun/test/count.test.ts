@@ -234,7 +234,7 @@ describe('counts: sending', () => {
     vi.stubEnv('DEV', false)
     const { count } = await import('../src/count')
     count('play', { server: 'cdi' })
-    count('play', { server: 'cko' })
+    count('play', { server: 'crg' })
     count('spectate')
     expect(sends).toEqual([`${COUNT_PATH}?e=play&s=cdi&w=1280&h=800`, `${COUNT_PATH}?e=spectate&w=1280&h=800`])
   })

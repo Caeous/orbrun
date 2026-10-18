@@ -1942,7 +1942,7 @@ export class FrontEnd {
   }
 
   /**
-   * The server list: one row per server with its region and host (and the
+   * The server list: one row per server with where it is and its host (and the
    * accounts kept there); picking one leads to its login when adding an
    * account, or straight to its roster when watching without one. Add a
    * server, at the foot, is a screen of its own for one not on the list.
@@ -2210,7 +2210,8 @@ export class FrontEnd {
     if (!this.loginName && chosen) this.loginName = chosen.account.username
     this.setView('login', 'login')
     this.at({ kind: 'menu', path: 'login', serverId: server.id, ...(chosen ? { username: chosen.account.username } : {}) })
-    const user = h('input', { type: 'text', name: 'username', autocomplete: 'username', placeholder: 'name', size: 20, value: this.loginName })
+    // a phone keyboard capitalises, corrects and leaves a space after a suggestion; the server takes the name as sent
+    const user = h('input', { type: 'text', name: 'username', autocomplete: 'username', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', placeholder: 'name', size: 20, value: this.loginName })
     const pass = h('input', { type: 'password', name: 'password', autocomplete: 'current-password', placeholder: 'password', size: 20 })
     let form: HTMLFormElement
     const typing = this.hooks.padConnected?.() ? ' Press X to type.' : ''
@@ -2235,9 +2236,10 @@ export class FrontEnd {
             class: 'form',
             onsubmit: (ev: Event) => {
               ev.preventDefault()
-              this.loginName = user.value
-              s.send(cm.login(user.value, pass.value))
-              setLast({ serverId: s.server.id, username: user.value })
+              const name = user.value.trim()
+              this.loginName = name
+              s.send(cm.login(name, pass.value))
+              setLast({ serverId: s.server.id, username: name })
             },
           },
           list,
@@ -2254,7 +2256,7 @@ export class FrontEnd {
   private showNewProfile() {
     this.setView('login', 'login')
     this.at({ kind: 'menu', path: 'login', serverId: OFFLINE_SERVER.id })
-    const user = h('input', { type: 'text', name: 'username', autocomplete: 'off', placeholder: 'name', size: 20, value: this.loginName })
+    const user = h('input', { type: 'text', name: 'username', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', placeholder: 'name', size: 20, value: this.loginName })
     let form: HTMLFormElement
     const typing = this.hooks.padConnected?.() ? ' Press X to type.' : ''
     const rows: Row[] = [
@@ -2304,7 +2306,7 @@ export class FrontEnd {
     const s = this.ensureSession(server, this.adding ? null : (this.chosen()?.account.username ?? null))
     this.setView('register', 'register-form')
     this.at({ kind: 'menu', path: 'register', serverId: server.id })
-    const user = h('input', { type: 'text', placeholder: 'name', size: 20 })
+    const user = h('input', { type: 'text', autocomplete: 'username', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', placeholder: 'name', size: 20 })
     const pass = h('input', { type: 'password', placeholder: 'password', size: 20 })
     const pass2 = h('input', { type: 'password', placeholder: 'repeat password', size: 20 })
     const email = h('input', { type: 'email', placeholder: 'email (optional)', size: 20 })
@@ -2337,8 +2339,9 @@ export class FrontEnd {
                 this.showRegister()
                 return
               }
-              s.send(cm.register(user.value, pass.value, email.value))
-              setLast({ serverId: s.server.id, username: user.value })
+              const name = user.value.trim()
+              s.send(cm.register(name, pass.value, email.value))
+              setLast({ serverId: s.server.id, username: name })
             },
           },
           list,
@@ -2452,7 +2455,7 @@ function exitTitle(reason: string, watched: string | null): string {
 }
 
 /**
- * Where a server is, as the server list and the accounts both say it: its region and host, or for this device
+ * Where a server is, as the server list and the accounts both say it: where it is and its host, or for this device
  * that no connection is needed. Whether a server is up is the dot's to say, never this line's.
  */
 /**
@@ -2491,7 +2494,7 @@ function modeName(g: GameLink): string {
 
 /** Where a server is, under its name on the server list. */
 function serverWhere(sv: ServerInfo): string {
-  return [sv.region, sv.host].filter(Boolean).join(' · ')
+  return [sv.location, sv.host].filter(Boolean).join(' · ')
 }
 
 /**

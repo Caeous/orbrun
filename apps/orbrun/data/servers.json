@@ -1,9 +1,11 @@
 [
-  { "id": "cdi", "name": "CDI", "region": "us", "ws": "wss://crawl.dcss.io/socket", "http": "https://crawl.dcss.io", "host": "crawl.dcss.io" },
-  { "id": "cbro", "name": "CBR2", "region": "us-east", "ws": "wss://cbro.berotato.org/socket", "http": "https://cbro.berotato.org", "host": "cbro.berotato.org" },
-  { "id": "cko", "name": "CKO", "region": "us-west", "ws": "wss://crawl.kelbi.org/socket", "http": "https://crawl.kelbi.org", "host": "crawl.kelbi.org" },
-  { "id": "cao", "name": "CAO", "region": "us-east", "ws": "wss://crawl.akrasiac.org:8443/socket", "http": "https://crawl.akrasiac.org:8443", "host": "crawl.akrasiac.org:8443" },
-  { "id": "cue", "name": "CUE", "region": "eu", "ws": "wss://underhound.eu:8080/socket", "http": "https://underhound.eu:8080", "host": "underhound.eu:8080" },
-  { "id": "cxc", "name": "CXC", "region": "asia", "ws": "wss://crawl.xtahua.com/socket", "http": "https://crawl.xtahua.com", "host": "crawl.xtahua.com" },
-  { "id": "cwz", "name": "CWZ", "region": "asia", "ws": "wss://webzook.net:8080/socket", "http": "https://webzook.net:8080", "host": "webzook.net:8080" }
+  { "id": "cdi", "name": "CDI", "location": "New York, USA", "ws": "wss://crawl.dcss.io/socket", "http": "https://crawl.dcss.io", "host": "crawl.dcss.io" },
+  { "id": "cao", "name": "CAO", "location": "Arizona, USA", "ws": "wss://crawl.akrasiac.org:8443/socket", "http": "https://crawl.akrasiac.org:8443", "host": "crawl.akrasiac.org:8443" },
+  { "id": "cbro", "name": "CBR2", "location": "Ohio, USA", "ws": "wss://cbro.berotato.org:8443/socket", "http": "https://cbro.berotato.org:8443", "host": "cbro.berotato.org:8443" },
+  { "id": "crg", "name": "CRG", "location": "Oregon, USA", "ws": "wss://crawl.roguelikes.gg/socket", "http": "https://crawl.roguelikes.gg", "host": "crawl.roguelikes.gg" },
+  { "id": "cbrg", "name": "CBRG", "location": "São Paulo, Brazil", "ws": "wss://crawl-br.roguelikes.gg/socket", "http": "https://crawl-br.roguelikes.gg", "host": "crawl-br.roguelikes.gg" },
+  { "id": "cxc", "name": "CXC", "location": "Paris, France", "ws": "wss://crawl.xtahua.com/socket", "http": "https://crawl.xtahua.com", "host": "crawl.xtahua.com" },
+  { "id": "cue", "name": "CUE", "location": "Amsterdam, Netherlands", "ws": "wss://underhound.eu:8080/socket", "http": "https://underhound.eu:8080", "host": "underhound.eu:8080" },
+  { "id": "cnc", "name": "CNC", "location": "Gyeonggi, Korea", "ws": "wss://crawl.nemelex.cards/socket", "http": "https://crawl.nemelex.cards", "host": "crawl.nemelex.cards" },
+  { "id": "cpo", "name": "CPO", "location": "Sydney, Australia", "ws": "wss://crawl.project357.org/socket", "http": "https://crawl.project357.org", "host": "crawl.project357.org" }
 ]
