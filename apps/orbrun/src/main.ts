@@ -13,7 +13,7 @@ import { morgueDirOf } from './whereis'
 import { settingsPanel } from './settings-panel'
 import { appSettled, engines, keepEngines } from './engines'
 import { HOME } from './site'
-import { canQuit } from './quit'
+import { ownWindow } from './quit'
 import { installBack } from './back'
 
 const app = document.getElementById('app')!
@@ -73,7 +73,7 @@ document.documentElement.style.setProperty('--ui-scale', String(getSettings().ui
  * What a character's tab title ends in, so a game in progress reads as "orbrun the Chiller | Vine Stalker - Orbrun".
  * Nothing in a window of its own: an installed app's title bar puts the app's name in front already.
  */
-const shortTitle = () => (canQuit() ? '' : HOME.name)
+const shortTitle = () => (ownWindow() ? '' : HOME.name)
 
 /**
  * The tab says whose game this is (playing or watching), from the game's

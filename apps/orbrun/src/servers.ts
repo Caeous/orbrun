@@ -1,7 +1,7 @@
 import type { HintMode } from './gamepad-hints'
 import type { GameLink } from '@orbrun/webtiles'
 import bundled from '../data/servers.json'
-import { canQuit } from './quit'
+import { ownWindow } from './quit'
 import { HOME, MENU_PATH, pageAt, RC_PATH, titleAt, VERSIONS_PATH } from './site'
 import { DEFAULT_PROFILE } from '@orbrun/offline'
 
@@ -880,7 +880,7 @@ function routeDepth(r: Route): number {
  */
 export function openPage(path: string) {
   const next = path + window.location.search
-  if (canQuit()) window.location.replace(next)
+  if (ownWindow()) window.location.replace(next)
   else window.location.assign(next)
 }
 
@@ -899,7 +899,7 @@ export function setRoute(r: Route) {
   const next = formatRoute(r)
   const cur = window.location.pathname + window.location.search + window.location.hash
   if (cur === next) return
-  if (!canQuit() && routeDepth(r) > routeDepth(parseRoute())) history.pushState(null, '', next)
+  if (!ownWindow() && routeDepth(r) > routeDepth(parseRoute())) history.pushState(null, '', next)
   else history.replaceState(null, '', next)
   // a game names the tab after its character (main.ts updateTitle); every other screen after its page
   if (r.kind !== 'play' && r.kind !== 'watch') document.title = screenTitle(window.location.pathname)
@@ -911,5 +911,5 @@ export function setRoute(r: Route) {
  * tab it is the page's search headline (site.ts).
  */
 export function screenTitle(pathname: string): string {
-  return canQuit() && !pageAt(pathname) ? HOME.name : titleAt(pathname)
+  return ownWindow() && !pageAt(pathname) ? HOME.name : titleAt(pathname)
 }

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { canQuit, quit } from '../src/quit'
+import { canQuit, ownWindow, quit } from '../src/quit'
 
 /** a browser that answers `display-mode` with `mode` and nothing else */
 function displayMode(mode: string) {
@@ -35,6 +35,15 @@ describe('quitting', () => {
     } finally {
       delete nav.standalone
     }
+  })
+
+  it('is not offered in an installed app on Android, where back leaves it and close does not', () => {
+    displayMode('standalone')
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/141.0 Mobile Safari/537.36')
+    expect(ownWindow()).toBe(true)
+    expect(canQuit()).toBe(false)
+    history.replaceState(null, '', '/?fullscreen')
+    expect(canQuit()).toBe(true)
   })
 
   it('is offered in any tab with `?fullscreen`, for trying the row out', () => {

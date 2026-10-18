@@ -7,6 +7,8 @@
  * no chrome at all, and an installed web app in its own window.
  */
 
+import { isAndroid } from './back'
+
 /** the display modes that mean a window of our own, rather than a tab among others */
 const OWN_WINDOW = ['fullscreen', 'standalone', 'minimal-ui', 'window-controls-overlay']
 
@@ -28,17 +30,28 @@ function forced(): boolean {
 }
 
 /**
- * Whether to offer a way out: the page is standing on its own, in a kiosk
- * browser (`--kiosk` reports `display-mode: fullscreen`) or an installed web
- * app (`standalone`, and iOS's own `navigator.standalone`). A page in an
- * ordinary tab says no: the tab's own X is right there, and it is the
- * browser's window, not ours, to close.
+ * Whether the page is standing on its own, in a kiosk browser (`--kiosk`
+ * reports `display-mode: fullscreen`) or an installed web app (`standalone`,
+ * and iOS's own `navigator.standalone`). A page in an ordinary tab says no.
  */
-export function canQuit(): boolean {
+export function ownWindow(): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
   if (forced()) return true
   if ((navigator as { standalone?: boolean }).standalone === true) return true
   return OWN_WINDOW.some((mode) => window.matchMedia(`(display-mode: ${mode})`).matches)
+}
+
+/**
+ * Whether to offer a way out: in a window of our own, since in an ordinary
+ * tab the tab's own X is right there, and it is the browser's window, not
+ * ours, to close. Not on Android: there `window.close()` in the installed app
+ * leaves the app open while the page reads as closed, so a refusal cannot
+ * even be told, and back on the home screen already leaves the app (back.ts).
+ * `?fullscreen` still shows it, for trying the row out.
+ */
+export function canQuit(): boolean {
+  if (!ownWindow()) return false
+  return forced() || !isAndroid()
 }
 
 /** how long to wait for the window to go before deciding the browser refused */

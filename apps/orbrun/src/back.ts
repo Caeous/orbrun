@@ -28,7 +28,7 @@ type CloseWatcherCtor = new () => CloseWatcherLike
 /** a close request this soon after an Escape keydown is that key's own: Android falls back to back for an Esc nothing took */
 const ESC_MS = 200
 
-function isAndroid(): boolean {
+export function isAndroid(): boolean {
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } }
   return nav.userAgentData?.platform === 'Android' || /\bAndroid\b/.test(nav.userAgent)
 }
