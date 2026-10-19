@@ -5,7 +5,7 @@ import { bodyRect, insetFootprint, type BodyRect, type CellClass, type ClassAt, 
  * The level as a dense grid, read off a `Scene` once per build: a class byte
  * per cell over the scene's bounds grown by one (so the void columns bordering
  * known space exist), the cell objects by index, and what the footprint rule
- * needs beside the cells — the framed doors that count as wall for it, and the
+ * needs beside the cells: the doors hanging in a doorway, and the
  * upright features something stands on, which lie flat.
  *
  * The footprints themselves are memoised by neighbourhood (`footprintAt`): a
@@ -19,10 +19,7 @@ import { bodyRect, insetFootprint, type BodyRect, type CellClass, type ClassAt, 
 export const VOID = 0
 export const FLOOR = 1
 export const WALL = 2
-/** A floor cell with an open door standing in a wall run: wall for the footprint rule, floor for everything else. */
-export const FRAMED = 3
-
-const CLASS_NAME: CellClass[] = ['void', 'floor', 'wall', 'wall']
+const CLASS_NAME: CellClass[] = ['void', 'floor', 'wall']
 
 /** The plus-shaped neighbourhood the footprint rule reads, as offsets: the 5x5 less its corners, less the cell itself. */
 const REACH: [number, number][] = []
@@ -43,7 +40,7 @@ export class LevelGrid {
   readonly h: number
   readonly cls: Uint8Array
   readonly cells: (SceneCell | undefined)[]
-  /** The open doors hanging in a doorway, and the heading each stands at (`framedDoors`). */
+  /** The doors hanging in a doorway, open or closed, and the heading each stands at (`framedDoors`). */
   readonly framed: Map<CellKey, number>
   /** The cells whose upright feature something stands on (`occupiedFeatures`). */
   readonly occupied: Set<CellKey>
@@ -63,12 +60,13 @@ export class LevelGrid {
       this.cls[i] = c.kind === 'unknown' ? VOID : c.occluder ? WALL : FLOOR
     }
     this.framed = framedDoors(scene)
+    // a closed door in its doorway is a board as an open one is: the walls either side stand back from an opening
     for (const k of this.framed.keys()) {
       const { x, y } = keyToXY(k)
       const i = this.index(x, y)
-      if (i >= 0) this.cls[i] = FRAMED
+      if (i >= 0) this.cls[i] = FLOOR
     }
-    this.occupied = occupiedFeatures(scene)
+    this.occupied = occupiedFeatures(scene, this.framed)
     this.classAt = (x, z) => {
       const i = this.index(x, z)
       return i < 0 ? 'void' : CLASS_NAME[this.cls[i]]
@@ -128,37 +126,38 @@ export class LevelGrid {
 }
 
 /**
- * The open doors that hang in a doorway, and the heading each stands at.
+ * The doors that hang in a doorway, open or closed, and the heading each
+ * stands at.
  *
  * A door is a hole in a wall run, and the run tells the door which way it
  * faces: walls east and west of it and the doorway faces north/south (yaw 0,
  * the heading a billboard stands at when the camera looks down -z), walls
  * north and south and it faces east/west. A door with neither reads on past
- * the open doors beside it, the other leaves of a double door or a gate, to
+ * the doors beside it, the other leaves of a double door or a gate, to
  * the walls that end the opening. A door with no run to read — a corner, an
  * opening broken through on both axes — has no plane to stand in and is left
  * to face the eye like any other fixture.
  *
- * A closed door is a solid cell and is built as one; only the open ones are
- * here, as their cell is floor with the door tile standing on it.
+ * A closed door counts as wall for its neighbours' runs (it is one, to
+ * crawl), but in its own run it is a door like an open one.
  */
 export function framedDoors(scene: Scene): Map<CellKey, number> {
   const solid = (x: number, y: number) => {
     const c = scene.cells.get(cellKey(x, y))
     return !c || c.kind === 'unknown' || c.occluder
   }
-  const open = (c: SceneCell | undefined) => c?.feature?.type === 'door' && c.kind !== 'unknown' && !c.occluder
-  // past the open doors beside it, which are leaves of the same gate, to the cell that ends the run
+  const door = (c: SceneCell | undefined) => c?.feature?.type === 'door' && c.kind !== 'unknown'
+  // past the doors beside it, which are leaves of the same gate, to the cell that ends the run
   const end = (x: number, y: number, dx: number, dy: number) => {
     do {
       x += dx
       y += dy
-    } while (open(scene.cells.get(cellKey(x, y))))
+    } while (door(scene.cells.get(cellKey(x, y))))
     return solid(x, y)
   }
   const out = new Map<CellKey, number>()
   for (const c of scene.cells.values()) {
-    if (!open(c)) continue
+    if (!door(c)) continue
     let alongX = solid(c.x - 1, c.y) && solid(c.x + 1, c.y)
     let alongZ = solid(c.x, c.y - 1) && solid(c.x, c.y + 1)
     if (!alongX && !alongZ) {
@@ -176,10 +175,12 @@ export function framedDoors(scene: Scene): Map<CellKey, number> {
  * such a cell is a board through whoever stands there, so those features lie
  * back down on the floor instead, and what the player sees is 2D's own order,
  * the feature under the actor. Clouds and things in flight pass over a cell
- * rather than stand on it, and leave its feature standing. The cell underfoot
- * counts too: the camera sits in the middle of that sprite.
+ * rather than stand on it, and leave its feature standing. A door in its
+ * doorway (`framed`) stays up: whoever is on it stands in its open middle,
+ * between the jambs, the player too. The cell underfoot counts for any other
+ * feature: the camera sits in the middle of that sprite.
  */
-export function occupiedFeatures(scene: Scene): Set<CellKey> {
+export function occupiedFeatures(scene: Scene, framed?: ReadonlyMap<CellKey, number>): Set<CellKey> {
   const out = new Set<CellKey>()
   const upright = (k: CellKey) => {
     const c = scene.cells.get(k)
@@ -188,11 +189,11 @@ export function occupiedFeatures(scene: Scene): Set<CellKey> {
   for (const b of scene.billboards) {
     if (b.kind === 'cloud' || b.kind === 'projectile') continue
     const k = cellKey(b.x, b.y)
-    if (upright(k)) out.add(k)
+    if (upright(k) && !framed?.has(k)) out.add(k)
   }
   if (scene.playerOnLevel) {
     const k = cellKey(scene.player.x, scene.player.y)
-    if (upright(k)) out.add(k)
+    if (upright(k) && !framed?.has(k)) out.add(k)
   }
   return out
 }

@@ -21,8 +21,8 @@ export const LEVEL_CHUNK = 16
 /**
  * How far a cell's geometry reaches into its neighbours, in cells: the
  * footprint rule reads a neighbour's own footprint to hide what it covers,
- * which reads one cell further, and what counts as wall for the rule reads
- * one further still (`framedDoors`).
+ * which reads one cell further, and whether a closed door is an opening for
+ * the rule reads one further still (`framedDoors`).
  */
 export const LEVEL_REACH = 3
 /** Faces toward east and west are lit a shade darker than those facing north and south, so a corner reads. */
@@ -491,7 +491,6 @@ export class LevelMesher {
         if (!rect || fp.poly.length === 0) continue
         const wallT = !isVoid && cell?.wallTile !== undefined ? tileOf(cell.wallTile) : null
         const black = isVoid || !wallT
-        const acrossKey: Record<Dir, CellKey> = { n: cellKey(x, y - 1), s: cellKey(x, y + 1), w: cellKey(x - 1, y), e: cellKey(x + 1, y) }
         const facePoints = (d: Dir, t0: number, t1: number, depth: number, y0: number, y1 = 1): [number, number, number][] => {
           switch (d) {
             case 'n': { const z = y + depth; return [[x + t1, y0, z], [x + t0, y0, z], [x + t0, y1, z], [x + t1, y1, z]] }
@@ -506,8 +505,16 @@ export class LevelMesher {
             : { u0: lerp(uv.u0, uv.u1, t0), u1: lerp(uv.u0, uv.u1, t1) }
         const maxNotch = Math.min(rect.x1 - rect.x0, rect.z1 - rect.z0) / 2
         const notch = ctx.chamfer > 0 && maxNotch > 1e-6
-        // a corner between two framed doors is open both ways yet cut away (a door counts as wall for the cut), so there is none to chamfer
-        const cornerOn = [notch && openN && openW, notch && openN && openE, notch && openS && openW, notch && openS && openE].map((on, i) => on && !rect.cut[i])
+        // a corner beside a door in its doorway stays square: the door stands flush with the wall's face, and the
+        // chamfer would open a texel between them
+        const framedAt = (dx: number, dz: number) => grid.framed.has(cellKey(x + dx, y + dz))
+        const doorW = framedAt(-1, 0), doorE = framedAt(1, 0), doorN = framedAt(0, -1), doorS = framedAt(0, 1)
+        const cornerOn = [
+          notch && openN && openW && !doorN && !doorW,
+          notch && openN && openE && !doorN && !doorE,
+          notch && openS && openW && !doorS && !doorW,
+          notch && openS && openE && !doorS && !doorE,
+        ]
         const cornerPt = (i: number): [number, number] => [i & 1 ? rect.x1 : rect.x0, i >> 1 ? rect.z1 : rect.z0]
         const Nv: [number, number, number, number] = [0, 0, 0, 0]
         for (let i = 0; i < 4; i++) if (cornerOn[i]) Nv[i] = Math.min(ctx.chamfer, maxNotch)
@@ -550,8 +557,6 @@ export class LevelMesher {
           let t0 = horizontal ? Math.min(f.a[0], f.b[0]) : Math.min(f.a[1], f.b[1])
           let t1 = horizontal ? Math.max(f.a[0], f.b[0]) : Math.max(f.a[1], f.b[1])
           const depth = d === 'n' ? f.a[1] : d === 's' ? 1 - f.a[1] : d === 'w' ? f.a[0] : 1 - f.a[0]
-          // a boundary the neighbour's body covers shows nothing between two walls; across a framed door it is the reveal
-          if (f.covered && !grid.framed.has(acrossKey[d])) continue
           for (let i = 0; i < 4; i++) {
             if (!cornerOn[i] || Nv[i] === 0) continue
             const [cx, cz] = cornerPt(i)

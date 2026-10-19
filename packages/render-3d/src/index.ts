@@ -851,8 +851,6 @@ export class Render3d implements MapRenderer {
     const o = this.cam.position.clone()
     const d = ndc.unproject(this.cam).sub(o).normalize()
     const classAt = this.grid?.classAt ?? sceneClassAt(scene)
-    // a framed door counts as wall for its neighbours' footprints, but its own cell is open: the ray sees through it
-    const framed = this.grid?.framed
     const fo = { inset: this.opts.wallInset }
     const hasLid = scene.level.sky === 'none'
     let x = Math.floor(o.x), z = Math.floor(o.z)
@@ -864,7 +862,7 @@ export class Render3d implements MapRenderer {
     let tIn = 0
     for (let i = 0; i < 256; i++) {
       const tOut = Math.min(tx, tz)
-      if (classAt(x, z) !== 'floor' && !framed?.has(cellKey(x, z))) {
+      if (classAt(x, z) !== 'floor') {
         // a solid cell: does the ray meet its body's box between entering and leaving the cell?
         const r = bodyRect(classAt, x, z, fo)
         if (r) {
@@ -873,6 +871,14 @@ export class Render3d implements MapRenderer {
           if (enter <= leave) return cellKey(x, z)
         }
       } else {
+        // a closed door in its doorway: its board, as deep as the wall run it is flush with, across the cell
+        const yaw = this.grid?.framed.get(cellKey(x, z))
+        if (yaw !== undefined && this.grid!.cell(x, z)?.occluder) {
+          const i = this.opts.wallInset
+          const t0 = yaw === 0 ? slab(o.z, d.z, z + i, z + 1 - i) : slab(o.x, d.x, x + i, x + 1 - i), t1 = slab(o.y, d.y, 0, 1)
+          const enter = Math.max(t0[0], t1[0], tIn), leave = Math.min(t0[1], t1[1], tOut)
+          if (enter <= leave) return cellKey(x, z)
+        }
         // an open cell: the floor or the lid inside it
         if (d.y < 0) {
           const t = -o.y / d.y
@@ -983,7 +989,7 @@ export class Render3d implements MapRenderer {
     this.mark?.('level')
     this.stats.fixtureBuilds++
     const tiles = this.tiles
-    this.fixtures = fixtureInstances(scene, (id) => tiles.tile(id), grid.framed, grid.occupied, (r) => this.stairColumns(r))
+    this.fixtures = fixtureInstances(scene, (id) => tiles.tile(id), grid.framed, grid.occupied, (r) => this.stairColumns(r), this.opts.wallInset)
     this.crowdRevision = -1
   }
 

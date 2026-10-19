@@ -181,7 +181,6 @@ function rebuild() {
       if (!fp.poly.length) continue
       const sink = cls === 'void' ? voids : walls
       for (const f of fp.faces) {
-        if (f.covered) continue
         faces++
         const ax = x + f.a[0], az = z + f.a[1], bx = x + f.b[0], bz = z + f.b[1]
         // u runs along the face by world position so a run of cells tiles continuously
@@ -239,7 +238,6 @@ function drawMap(at: ClassAt, o: FootprintOptions) {
       }
       g.lineWidth = 2
       for (const f of fp.faces) {
-        if (f.covered) continue
         g.strokeStyle = cls === 'void' ? '#448' : '#9cf'
         g.beginPath(); g.moveTo(ox + (x + f.a[0]) * S, oz + (z + f.a[1]) * S); g.lineTo(ox + (x + f.b[0]) * S, oz + (z + f.b[1]) * S); g.stroke()
       }

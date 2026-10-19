@@ -187,21 +187,27 @@ void main() {
  * atlas texels), stood on a quad `iQuad` (centre and half sizes in the
  * sprite's frame, world units), `iZ.x` forward of the sprite's origin and
  * `iZ.y` deep; `iColor` is the tint and light, with the opacity in alpha;
- * `iMisc` is (mode bits, hull width in texels, texel size in world units,
- * fixed yaw); `iCell` the cell whose light it takes.
+ * `iMisc` is (mode bits, hull width in texels (on a ringed board, which has
+ * no hull, the columns either side its stretch leaves as they are), texel
+ * size in world units, fixed yaw); `iCell` the cell whose light it takes.
  *
  * Mode bits: 1 turn to the eye (else stand at the fixed yaw); 2 thick (a
  * block `iZ.y` deep behind the front, with the rim of every opaque texel that
  * borders a transparent one, else a flat quad); 4 hull both sides (the hands,
  * seen from behind as often as in front); 8 inked with a flat ring on the
  * front face instead of a hull, off the tile's edge columns (a board set into
- * a wall run, whose hull would swing out of its doorway and whose edge
- * columns stand in the masonry); 16 lit by the shade map (else the light is
- * in `iColor`); 32 washed by `flashOverride` instead of the flash map (the
- * hands, which stand in no cell); 64 lying: the frame tipped onto its back,
+ * a wall run, whose hull would swing out of its doorway), and moved to stand
+ * as far in front of its origin as it stands, toward an eye behind it (an open
+ * door, in whichever face of its run the eye is on); 16 lit by the shade
+ * map (else the light is in `iColor`); 32 washed by `flashOverride` instead
+ * of the flash map (the hands, which stand in no cell); 64 lying: the frame tipped onto its back,
  * its y along the floor away from yaw's forward and its z up (a corpse); 128
  * turn to face the eye where it stands, then `iMisc.w` of the way on to the
  * camera's heading (instead of a fixed yaw).
+ *
+ * A quad wider than the tile at the texel size (a door filling its doorway)
+ * stretches the tile across it: the columns either side as they are, those
+ * between them as wide as each other, taking up the difference.
  *
  * The fragment shader marches the view ray through the texel grid of the
  * block: the first body texel it crosses is the hit, coloured by that texel
@@ -255,8 +261,13 @@ void main() {
   float x0 = iQuad.x - iQuad.z, x1 = iQuad.x + iQuad.z;
   float y0 = iQuad.y - iQuad.w, y1 = iQuad.y + iQuad.w;
   float z1 = iZ.x, z0 = thick ? iZ.x - iZ.y : iZ.x;
-  vec3 local = vec3(mix(x0, x1, position.x), mix(y0, y1, position.y), mix(z0, z1, position.z));
   float c = cos(yaw), s = sin(yaw);
+  if ((mode & 8) != 0 && c * e.z + s * e.x < 0.0) {
+    float shift = -(z0 + z1);
+    z0 += shift;
+    z1 += shift;
+  }
+  vec3 local = vec3(mix(x0, x1, position.x), mix(y0, y1, position.y), mix(z0, z1, position.z));
   bool lie = (mode & 64) != 0;
   vec3 up = lie ? vec3(local.x, local.z, -local.y) : local;
   vec3 world = (modelMatrix * vec4(iAnchor + vec3(c * up.x + s * up.z, up.y, c * up.z - s * up.x), 1.0)).xyz;
@@ -307,6 +318,17 @@ const float SHADE_SIDE = 0.7;
 const float SHADE_BOTTOM = 0.5;
 const float FAR = 255.0;
 
+/** The stretch: its band's first and last column, and how wide a column in it is, in texels. */
+float bandA = 0.0, bandB = 0.0, bandS = 1.0;
+/** Where the left edge of column i is across the quad, in texels. */
+float colX(float i) {
+  return i <= bandA ? i : i <= bandB ? bandA + (i - bandA) * bandS : i + (bandB - bandA) * (bandS - 1.0);
+}
+/** The column at x across the quad, in texels. */
+int colAt(float x) {
+  float xa = bandA, xb = colX(bandB);
+  return int(floor(x <= xa ? x : x <= xb ? bandA + (x - xa) / bandS : x - (xb - bandB)));
+}
 /** Whether texel (i, j) of the tile is body: opaque art, inside the tile. */
 bool body(ivec2 t) {
   if (t.x < 0 || t.y < 0 || t.x >= int(fTexel.z) || t.y >= int(fTexel.w)) return false;
@@ -341,8 +363,16 @@ void main() {
   bool hullFront = (mode & 4) != 0;
   bool ring = (mode & 8) != 0;
   float k = fMisc.z;
-  float grow = fMisc.y;
+  float grow = ring ? 0.0 : fMisc.y;
   float W = fTexel.z, H = fTexel.w;
+  // the quad's width in texels, and the stretch that takes up what it has over the tile
+  float Wq = 2.0 * fQuad.z / k;
+  if (Wq - W > 1e-3) {
+    float edge = ring ? min(fMisc.y, floor(W / 2.0)) : 0.0;
+    bandA = edge;
+    bandB = W - edge;
+    bandS = (bandB - bandA + Wq - W) / (bandB - bandA);
+  }
   // texel space: column right, row down from the tile's top-left corner, depth into the block from its front
   vec3 origin = vec3(fQuad.x - fQuad.z, fQuad.y + fQuad.w, fZ.y);
   vec3 toTexel = vec3(1.0, -1.0, -1.0) / k;
@@ -356,7 +386,7 @@ void main() {
   /** Set when the hit is a hull face: the distance of the hull texel it belongs to (1 ink, 2 shell). */
   float hullHit = 0.0;
   if (!thick) {
-    ivec2 t = ivec2(floor(p.xy));
+    ivec2 t = ivec2(colAt(p.x), int(floor(p.y)));
     if (body(t)) {
       vec4 tx = texelAt(t);
       colour = tx.rgb;
@@ -371,11 +401,12 @@ void main() {
     }
   } else {
     // the texel the entry point is in, pulled a hair inside the box so a point on its boundary lands right
-    vec2 q = clamp(p.xy + 1e-4 * sign(dir.xy), vec2(1e-5), vec2(W, H) - 1e-5);
-    ivec2 t = ivec2(floor(q));
+    vec2 q = clamp(p.xy + 1e-4 * sign(dir.xy), vec2(1e-5), vec2(Wq, H) - 1e-5);
+    ivec2 t = ivec2(colAt(q.x), int(floor(q.y)));
     ivec2 stp = ivec2(dir.x >= 0.0 ? 1 : -1, dir.y >= 0.0 ? 1 : -1);
     vec2 tDelta = 1.0 / max(abs(dir.xy), vec2(1e-6));
-    vec2 nextEdge = vec2(t) + vec2(stp.x > 0 ? 1.0 : 0.0, stp.y > 0 ? 1.0 : 0.0);
+    // columns are walked by where their edges lie across the quad, as a stretch widens some of them
+    vec2 nextEdge = vec2(colX(float(t.x + (stp.x > 0 ? 1 : 0))), float(t.y + (stp.y > 0 ? 1 : 0)));
     vec2 tMax = (nextEdge - p.xy) / dir.xy;
     if (abs(dir.x) < 1e-6) tMax.x = 1e9;
     if (abs(dir.y) < 1e-6) tMax.y = 1e9;
@@ -383,7 +414,7 @@ void main() {
     int face;
     if (p.z < 1e-3) face = 0;
     else if (p.z > D - 1e-3) face = 1;
-    else if (p.x < 1e-3 || p.x > W - 1e-3) face = 2;
+    else if (p.x < 1e-3 || p.x > Wq - 1e-3) face = 2;
     else face = dir.y > 0.0 ? 3 : 4;
     float tNow = 0.0;
     // a board's ink: the ring round its body, flat on either face (a door is walked round), off the edge columns
@@ -414,7 +445,7 @@ void main() {
         }
         break;
       }
-      if (tMax.x < tMax.y) { t.x += stp.x; tNow = tMax.x; tMax.x += tDelta.x; face = 2; }
+      if (tMax.x < tMax.y) { t.x += stp.x; tNow = tMax.x; tMax.x = (colX(float(t.x + (stp.x > 0 ? 1 : 0))) - p.x) / dir.x; face = 2; }
       else { t.y += stp.y; tNow = tMax.y; tMax.y += tDelta.y; face = stp.y > 0 ? 3 : 4; }
       if (t.x < 0 || t.y < 0 || t.x >= int(W) || t.y >= int(H)) {
         // out of the tile sideways: the hull's own side face where it ends at the tile's edge

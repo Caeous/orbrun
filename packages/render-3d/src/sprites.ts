@@ -104,6 +104,10 @@ export interface SpriteLayer {
   tint?: Tint
   /** Drawn as a flat quad even on a thick sprite: the status badges and the damage bar are marks on the sprite. */
   flat?: boolean
+  /** Texels wider than the tile, the tile stretched across them (a door filling its doorway). */
+  stretch?: number
+  /** The columns either side the stretch leaves as they are, on a board at a heading. */
+  native?: number
 }
 
 export interface StandOptions {
@@ -153,9 +157,10 @@ export function stand(x: number, y: number, layers: readonly SpriteLayer[], o: S
     if (l.ymax !== undefined && l.ymax < l.r.oy + l.r.h) hTex = Math.max(0, l.ymax - l.r.oy)
     if (hTex <= 0) continue
     const k = scale / cell
-    const wq = l.r.w * k
+    const w = l.r.w + (l.stretch ?? 0)
+    const wq = w * k
     const hq = hTex * k
-    const cx = (l.r.ox + l.ox + l.r.w / 2 - cell / 2) * k
+    const cx = (l.r.ox + l.ox + w / 2 - cell / 2) * k
     const bottom = (cell - (l.r.oy + l.oy + hTex)) * k
     // lying, the frame's y runs along the floor from the cell's middle, and its z up off the floor
     const cy = o.lie ? bottom + hq / 2 - scale / 2 : bottom + hq / 2
@@ -185,7 +190,7 @@ export function stand(x: number, y: number, layers: readonly SpriteLayer[], o: S
       z: o.lie ? [i * 0.002 + depth + LIE_LIFT, depth] : [i * 0.002 - back, depth],
       texel: [l.r.sx, l.r.sy, l.r.w, hTex],
       color: [o.shade * lt.r, o.shade * lt.g, o.shade * lt.b, o.alpha ?? 1],
-      misc: [mode, grow, k, o.faceEye ?? o.yaw ?? 0],
+      misc: [mode, board ? (l.native ?? 0) : grow, k, o.faceEye ?? o.yaw ?? 0],
       cell: [x, y],
       moverId: o.moverId,
       x,
@@ -294,18 +299,21 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
 
 /**
  * The instances of the level's upright features: statues, trees, altars and
- * open doors, lit by the shade map like the masonry. A framed door stands
- * squared to its wall run, full height, at the cell's middle; every other
+ * doors, lit by the shade map like the masonry. A framed door, open or
+ * closed, stands squared to its wall run, full height, flush with it and
+ * stretched to the walls either side; every other
  * fixture turns to the eye and stands `FIXTURE_BACK` back. A way down lies in
  * its cell as a corpse does, a block a texel thick, something standing on it
  * or not.
  */
-export function fixtureInstances(scene: Scene, tile: TileLookup, framed: ReadonlyMap<number, number>, occupied: ReadonlySet<number>, columns?: StairColumns): SpriteInstance[] {
+export function fixtureInstances(scene: Scene, tile: TileLookup, framed: ReadonlyMap<number, number>, occupied: ReadonlySet<number>, columns?: StairColumns, inset = 0): SpriteInstance[] {
   const out: SpriteInstance[] = []
   const tint = scene.level.tint
   const stands = (c: SceneCell) => c.stance === 'upright' && !occupied.has(cellKey(c.x, c.y))
   for (const cell of scene.cells.values()) {
-    if (cell.kind === 'unknown' || cell.occluder) continue
+    if (cell.kind === 'unknown') continue
+    const yaw = framed.get(cellKey(cell.x, cell.y))
+    if (cell.occluder && yaw === undefined) continue
     if (cell.featureTile === undefined) continue
     const lie = cell.stance === 'lying'
     if (!lie && !stands(cell)) continue
@@ -316,9 +324,27 @@ export function fixtureInstances(scene: Scene, tile: TileLookup, framed: Readonl
       out.push(...stand(cell.x, cell.y, [{ r, ox: 0, oy: 0 }], { height: 1, shade: 1, tint, shadeMap: true, thick: true, pass: 'fixture', lie, yaw: 0 }))
       continue
     }
-    const yaw = framed.get(cellKey(cell.x, cell.y))
     if (yaw !== undefined) {
-      out.push(...stand(cell.x, cell.y, [{ r, ox: 0, oy: 0 }], { height: 1, shade: 1, tint, shadeMap: true, thick: true, pass: 'fixture', yaw }))
+      // a gate running north–south wears the horizontal piece its east face shows (`SceneCell.faceTiles`): turned to
+      // stand north–south, the board's art reads the right way round from the east, and seen from the west it is
+      // mirrored, as crawl's west face is
+      const art = (yaw !== 0 && cell.faceTiles?.e !== undefined ? tile(cell.faceTiles.e) : undefined) ?? r
+      // the walls either side stand `inset` back from the doorway as from any opening, and the board is stretched to
+      // reach them; an end facing the next leaf of a gate stays at the cell's edge. The board's west (south, turned
+      // north–south) end is its art's left. Only its middle stretches: open, the leaves either side keep their
+      // size, as they would parting to the walls, and the stretch is the doorway between them; closed, the outer
+      // quarters keep theirs
+      const push = inset * art.cell
+      const [ax, az] = yaw === 0 ? [-1, 0] : [0, 1]
+      const wall = (dx: number, dz: number) => (framed.has(cellKey(cell.x + dx, cell.y + dz)) ? 0 : push)
+      const left = wall(ax, az), right = wall(-ax, -az)
+      const native = Math.floor((art.w * (cell.occluder ? 2 : 3)) / 8)
+      // closed, a block the run's thickness, its faces in the planes of the walls either side; open, a board in the
+      // face of the run on the eye's side (the shader moves it across for an eye behind it), as a slab the leaves
+      // would show their whole depth seen edge-on from the doorway
+      const run = Math.max(0, 1 - 2 * inset)
+      const depth = cell.occluder && run > 0 ? { depth: run } : {}
+      out.push(...stand(cell.x, cell.y, [{ r: art, ox: -left, oy: 0, stretch: left + right, native }], { height: 1, shade: 1, tint, shadeMap: true, thick: true, pass: 'fixture', yaw, ...depth, back: -run / 2 }))
       continue
     }
     const f = cell.feature

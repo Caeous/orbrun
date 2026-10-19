@@ -524,7 +524,8 @@ function assignCeilings(
 const GATE_PIECE = /^DNGN_(V?)GATE_(.+)_(LEFT|MIDDLE|RIGHT|UP|DOWN)(_CRYPT)?$/
 
 /**
- * The faces of a closed door in a row of doors (`SceneCell.faceTiles`).
+ * The faces of a door in a row of doors (`SceneCell.faceTiles`), closed or
+ * open (an open one shows its east face standing in its doorway).
  * crawl picks each door's piece of gate art from the doors beside it
  * (tilepick.cc `apply_variations`, `door_connect`): left, middle and right
  * along a row running east–west, up, middle and down along one running
@@ -707,6 +708,11 @@ function buildCell(mc: MapCell, gd: Gamedata): SceneCell | undefined {
       base.freestanding = standsFree(name, f) || undefined
       base.beacon = beaconFor(f)
       base.label = featureLabel(f, name)
+      // an open gate running north–south stands in its doorway wearing the horizontal pieces, as its closed faces do
+      if (f?.type === 'door') {
+        const faces = gateFaces(gd, name)
+        if (faces) base.faceTiles = faces
+      }
       // trees and statues block movement but not knowledge; treat as passable for rendering.
     }
   }

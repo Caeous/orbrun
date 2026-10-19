@@ -88,43 +88,94 @@ describe('an open door', () => {
     expect(z.inst.misc[3]).toBeCloseTo(Math.PI / 2)
   })
 
-  /** Full height, like the closed door's block, and in the wall plane rather than standing back from it. */
+  /**
+   * Full height, and flush with the wall run it hangs in: its front in the
+   * run's face, a texel deep, as a slab would show its whole depth edge-on
+   * from the doorway. The shader moves it to the other face for an eye on
+   * that side.
+   */
   it('fills its doorway', () => {
-    const { inst } = door(corridor('x'))
-    // the quad runs the whole cell, floor to lid, and its front is the wall's own plane
+    const s = corridor('x')
+    const grid = new LevelGrid(s)
+    const [inst] = fixtureInstances(s, () => RECT, grid.framed, grid.occupied, undefined, WALL_INSET)
+    // the quad runs floor to lid
     expect(inst.quad[1] + inst.quad[3]).toBeCloseTo(1, 6)
     expect(inst.quad[1] - inst.quad[3]).toBeCloseTo(0, 6)
-    expect(inst.z[0]).toBe(0)
+    const run = 1 - 2 * WALL_INSET
+    expect(inst.z[0]).toBeCloseTo(run / 2, 6)
+    expect(inst.z[1]).toBeCloseTo(inst.misc[2], 6)
+    expect(inst.misc[0] & MODE_RING).toBeTruthy()
     expect(inst.misc[0] & MODE_THICK).toBeTruthy()
   })
 
   /**
-   * The wall run keeps its full thickness up to the doorway rather than
-   * stepping back by the inset either side of it: a board one cell wide fills
-   * an opening one cell wide, and the door meets the walls it hangs between.
+   * The walls either side keep the inset they have beside any opening: the
+   * door stands free in the middle of the doorway. Reaching in to meet a
+   * board one cell wide, they would narrow the opening below what crawl sees
+   * through, and hide the cells beside the doorway's far side.
    */
-  it('is met by the wall run it hangs in', () => {
-    expect(jambReach(level(corridor('x')))).toBeCloseTo(1, 5)
+  it('stands clear of the wall run it hangs in', () => {
+    expect(jambReach(level(corridor('x')))).toBeCloseTo(1 - WALL_INSET, 5)
   })
 
   /**
-   * The run's cut ends stand open to the doorway: the face of each flanking
-   * wall on the door cell's boundary, which the footprint rule hides between
-   * two walls (the door's cell counts as one), is drawn here from the floor
-   * up, so that looking through the doorway at an angle meets masonry and
-   * not the inside of the wall.
+   * The wall's corners beside the doorway stay square: the door stands flush
+   * with the wall's face, and a chamfer there would open a texel between
+   * them.
    */
-  it('has a reveal either side, the full height of the wall', () => {
-    // a wall run across a room, open on both sides, with the door at (2, 2): the flanking walls (1, 2) and (3, 2)
-    // are inset north and south, so their faces on the door cell's boundary are wholly the reveals
+  it('meets the walls beside it at square corners', () => {
+    const t = WALL_INSET
+    // a wall run across a room, open both sides, the door at (2, 2)
     const s = emptyScene()
     s.playerOnLevel = true
-    s.player = { x: 2, y: 3 }
+    s.player = { x: 2, y: 4 }
     s.bounds = { left: 0, top: 0, right: 4, bottom: 4 }
-    for (let y = 0; y <= 4; y++) {
+    for (let y = 0; y <= 4; y++)
       for (let x = 0; x <= 4; x++) {
-        const isDoor = x === 2 && y === 2
-        const wall = !isDoor && y === 2
+        const isDoor = x === 2 && y === 2, wall = y === 2 && !isDoor
+        s.cells.set(cellKey(x, y), {
+          x, y,
+          kind: wall ? 'wall' : 'floor',
+          visibility: 'visible',
+          occluder: wall,
+          floorTile: 0,
+          wallTile: wall ? 1 : undefined,
+          featureTile: isDoor ? 5 : undefined,
+          stance: isDoor ? 'upright' : undefined,
+          feature: isDoor ? { type: 'door', state: 'open' } : undefined,
+        })
+      }
+    // the west jamb's corners on the doorway's side, at its north and south faces
+    const corners = [[2 - t, 2 + t], [2 - t, 3 - t]]
+    const found = corners.map(() => false)
+    for (const g of level(s, 1 / 32))
+      for (let i = 0; i < g.position.length; i += 3)
+        corners.forEach(([cx, cz], j) => {
+          if (Math.abs(g.position[i] - cx) < 1e-6 && Math.abs(g.position[i + 2] - cz) < 1e-6 && g.position[i + 1] > 0.5) found[j] = true
+        })
+    expect(found).toEqual([true, true])
+  })
+
+  /**
+   * What crawl sees through a doorway, the 3D view sees: from two cells back
+   * down a corridor, the room's cells beside the doorway's far side are in
+   * line of sight, and no masonry stands between the eye and them.
+   */
+  it('lets the eye see the room cells beside the doorway', () => {
+    //  #####    the room's row (y = 1), the door at (2, 2) in its south wall
+    //  #...#
+    //  ##'##
+    //   #.#     the corridor; the eye two cells back, at (2, 4)
+    //   #.#
+    const rows = ['#####', '#...#', "##'##", ' #.# ', ' #.# ', ' ### ']
+    const s = emptyScene()
+    s.playerOnLevel = true
+    s.player = { x: 2, y: 4 }
+    s.bounds = { left: 0, top: 0, right: 4, bottom: 5 }
+    rows.forEach((row, y) =>
+      [...row].forEach((ch, x) => {
+        if (ch === ' ') return
+        const wall = ch === '#', isDoor = ch === "'"
         s.cells.set(cellKey(x, y), {
           x,
           y,
@@ -137,41 +188,31 @@ describe('an open door', () => {
           stance: isDoor ? 'upright' : undefined,
           feature: isDoor ? { type: 'door', state: 'open' } : undefined,
         })
+      }),
+    )
+    const grid = new LevelGrid(s)
+    const fo = { inset: WALL_INSET }
+    const blocked = (tx: number, tz: number) => {
+      const ex = 2.5, ez = 4.5
+      for (let i = 1; i < 1000; i++) {
+        const u = i / 1000
+        const px = ex + (tx - ex) * u, pz = ez + (tz - ez) * u
+        const cx = Math.floor(px), cz = Math.floor(pz)
+        if (!grid.isSolid(cx, cz)) continue
+        const r = grid.footprintAt(cx, cz, fo, new Map()).rect
+        if (r && px - cx > r.x0 && px - cx < r.x1 && pz - cz > r.z0 && pz - cz < r.z1) return true
       }
+      return false
     }
-    const chamfer = 1 / 32
-    // the standing triangles lying wholly in the plane of each jamb (world x = 2 to the west, x = 3 to the east);
-    // the floor patch that continues under the inset is squeezed to nothing against a doorway and left out
-    const jambs = { 2: { tris: 0, y0: Infinity, y1: -Infinity, z0: Infinity, z1: -Infinity }, 3: { tris: 0, y0: Infinity, y1: -Infinity, z0: Infinity, z1: -Infinity } }
-    for (const g of level(s, chamfer)) {
-      const at = (j: number, c: number) => g.position[j * 3 + c]
-      for (let i = 0; i + 2 < g.index.length; i += 3) {
-        const v = [g.index[i], g.index[i + 1], g.index[i + 2]]
-        const xs = v.map((k) => at(k, 0))
-        const j = jambs[Math.round(xs[0]) as 2 | 3]
-        if (!j || xs.some((x) => Math.abs(x - Math.round(xs[0])) > 1e-6) || v.every((k) => at(k, 1) < 1e-6)) continue
-        j.tris++
-        for (const k of v) {
-          j.y0 = Math.min(j.y0, at(k, 1)); j.y1 = Math.max(j.y1, at(k, 1))
-          j.z0 = Math.min(j.z0, at(k, 2)); j.z1 = Math.max(j.z1, at(k, 2))
-        }
-      }
-    }
-    for (const j of Object.values(jambs)) {
-      expect(j.tris).toBe(2)
-      expect(j.y0).toBeCloseTo(0, 5)
-      expect(j.y1).toBeCloseTo(1, 5)
-      // the run's thickness, inset to inset, less the chamfer that turns each corner of the run into the doorway
-      expect(j.z0).toBeCloseTo(2 + WALL_INSET + chamfer, 5)
-      expect(j.z1).toBeCloseTo(3 - WALL_INSET - chamfer, 5)
-    }
+    // the middles of the room cells either side of the doorway's far side
+    expect(blocked(1.5, 1.5)).toBe(false)
+    expect(blocked(3.5, 1.5)).toBe(false)
   })
 
   /**
-   * Two doorways turning a corner share one wall cell between them. Both doors
-   * count as wall for its footprint, so the diagonal floor cuts its inside
-   * corner away; nothing may stand in that cut, or a sliver of wall shows
-   * between the doors where the corner was.
+   * Two doorways turning a corner share one wall cell between them, and it
+   * stands back from both: nothing of it reaches into the corner between the
+   * doors.
    */
   it('leaves the corner between two doorways open', () => {
     // the corner wall at (2, 1), a door west of it at (1, 1) and one south of it at (2, 2), the player at (1, 2)
@@ -201,7 +242,7 @@ describe('an open door', () => {
     }
     const grid = new LevelGrid(s)
     expect(grid.framed.size).toBe(2)
-    // the cut is the corner cell's south-west inset square; no masonry stands inside it
+    // the corner cell's south-west inset square, beside both doorways: no masonry stands inside it
     const t = WALL_INSET
     for (const g of level(s)) {
       for (let i = 0; i < g.position.length; i += 3) {
@@ -297,6 +338,109 @@ describe('an open door', () => {
     expect(grid.framed.get(cellKey(1, 2))).toBe(0)
   })
 
+  /**
+   * Someone in the doorway stands in its open middle, between the jambs, so
+   * the door stays up rather than lying down under every monster that walks
+   * through, or under the player.
+   */
+  it('stays standing with a monster or the player in the doorway', () => {
+    const s = corridor('x')
+    s.billboards.push({ x: 1, y: 2, tile: 9, kind: 'monster', height: 1 })
+    let grid = new LevelGrid(s)
+    expect(grid.occupied.has(cellKey(1, 2))).toBe(false)
+    expect(fixtureInstances(s, () => RECT, grid.framed, grid.occupied)).toHaveLength(1)
+    s.player = { x: 1, y: 2 }
+    grid = new LevelGrid(s)
+    expect(grid.occupied.has(cellKey(1, 2))).toBe(false)
+    expect(fixtureInstances(s, () => RECT, grid.framed, grid.occupied)).toHaveLength(1)
+  })
+
+  /**
+   * crawl draws a gate running north–south from above; standing in its
+   * doorway a leaf wears the horizontal piece of its east face instead, the
+   * side its board reads the right way round from.
+   */
+  it('wears the east face of a gate running north–south', () => {
+    const s = corridor('z')
+    const cell = s.cells.get(cellKey(1, 2))!
+    cell.faceTiles = { w: 6, e: 7 }
+    const east: TileRect = { ...RECT, sx: 32 }
+    const grid = new LevelGrid(s)
+    const [inst] = fixtureInstances(s, (id) => (id === 7 ? east : RECT), grid.framed, grid.occupied)
+    expect(inst.texel[0]).toBe(32)
+    // an east–west run shows the feature itself, as crawl draws it
+    const x = corridor('x')
+    x.cells.get(cellKey(1, 2))!.faceTiles = { n: 7 }
+    const gx = new LevelGrid(x)
+    expect(fixtureInstances(x, (id) => (id === 7 ? east : RECT), gx.framed, gx.occupied)[0].texel[0]).toBe(0)
+  })
+
+  /**
+   * An open door is one board stretched to the walls either side, which
+   * stand the inset back from the doorway as from any opening: it reaches
+   * the inset out past the cell's edges, as many texels wider than its art.
+   * In a gate only the ends reach; an end facing the next door of the gate
+   * stays at the cell's edge.
+   */
+  it('stretches to the jambs, the ends of a gate only', () => {
+    const t = WALL_INSET
+    // a board's left and right edges in cells from the cell's middle, and how many texels wider than its art it is
+    const edges = (i: { quad: number[]; texel: number[]; misc: number[] }) => [i.quad[0] - i.quad[2], i.quad[0] + i.quad[2], 2 * i.quad[2] / i.misc[2] - i.texel[2]].map((v) => +v.toFixed(6))
+    const one = corridor('x')
+    const g1 = new LevelGrid(one)
+    expect(fixtureInstances(one, () => RECT, g1.framed, g1.occupied, undefined, t).map(edges)).toEqual([[-0.5 - t, 0.5 + t, 2 * t * 32]])
+    // a gate of three across a room, from (2, 2): the west end reaches west, the east end east, the middle neither
+    const s = emptyScene()
+    s.playerOnLevel = true
+    s.player = { x: 3, y: 4 }
+    s.bounds = { left: 0, top: 0, right: 6, bottom: 4 }
+    for (let y = 0; y <= 4; y++)
+      for (let x = 0; x <= 6; x++) {
+        const isDoor = y === 2 && x >= 2 && x <= 4
+        const wall = y === 2 && !isDoor
+        s.cells.set(cellKey(x, y), {
+          x,
+          y,
+          kind: wall ? 'wall' : 'floor',
+          visibility: 'visible',
+          occluder: wall,
+          floorTile: 0,
+          wallTile: wall ? 1 : undefined,
+          featureTile: isDoor ? 5 : undefined,
+          stance: isDoor ? 'upright' : undefined,
+          feature: isDoor ? { type: 'door', state: 'open' } : undefined,
+        })
+      }
+    const g3 = new LevelGrid(s)
+    const byX = new Map(fixtureInstances(s, () => RECT, g3.framed, g3.occupied, undefined, t).map((i) => [i.x, edges(i)]))
+    expect(byX.get(2)).toEqual([-0.5 - t, 0.5, t * 32])
+    expect(byX.get(3)).toEqual([-0.5, 0.5, 0])
+    expect(byX.get(4)).toEqual([-0.5, 0.5 + t, t * 32])
+  })
+
+  /**
+   * Closed, a door in its wall run is the same board in the same opening:
+   * the walls either side stand the inset back as they do from an open one,
+   * and the board is stretched to meet them.
+   */
+  it('is the same stretched board when closed', () => {
+    const t = WALL_INSET
+    const s = corridor('x')
+    const c = s.cells.get(cellKey(1, 2))!
+    Object.assign(c, { kind: 'door', occluder: true, wallTile: 5, feature: { type: 'door', state: 'closed' } })
+    const grid = new LevelGrid(s)
+    expect(grid.framed.get(cellKey(1, 2))).toBe(0)
+    expect(grid.isSolid(1, 2)).toBe(false)
+    expect(jambReach(level(s))).toBeCloseTo(1 - t, 5)
+    const insts = fixtureInstances(s, () => RECT, grid.framed, grid.occupied, undefined, t)
+    expect(insts).toHaveLength(1)
+    expect(insts[0].quad[0] - insts[0].quad[2]).toBeCloseTo(-0.5 - t, 6)
+    expect(insts[0].quad[0] + insts[0].quad[2]).toBeCloseTo(0.5 + t, 6)
+    // a block from one face of the run to the other
+    expect(insts[0].z[0]).toBeCloseTo((1 - 2 * t) / 2, 6)
+    expect(insts[0].z[1]).toBeCloseTo(1 - 2 * t, 6)
+  })
+
   /** With no wall run to read, there is no plane to stand in: the board faces the eye as any fixture does. */
   it('faces the camera where there is no doorway', () => {
     const { inst, yaw } = door(corridor('none'))
@@ -315,8 +459,8 @@ describe('an open door', () => {
   it('wears its ink as a flat ring in its plane, not a hull', () => {
     const { inst } = door(corridor('x'))
     expect(inst.misc[0] & MODE_RING).toBeTruthy()
-    // no hull: the ring is the ink, and `grow` would be the hull's width
-    expect(inst.misc[1]).toBe(0)
+    // no hull: the ring is the ink, and where `grow` would be the hull's width is the columns its stretch keeps
+    expect(inst.misc[1]).toBe(12)
     // every other fixture wears the hull instead
     const plain = door(corridor('none'))
     expect(plain.inst.misc[0] & MODE_RING).toBe(0)

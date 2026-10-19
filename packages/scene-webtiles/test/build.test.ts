@@ -223,6 +223,17 @@ describe('buildScene on a recorded level', () => {
     expect(standard.kind).toBe('feature')
     expect(standard.stance).toBe('upright')
   })
+  it('gives an open door in a north–south gate the horizontal pieces its faces show, as a closed one has', () => {
+    const st = initialState()
+    for (const m of fixtureMessages()) reduce(st, m)
+    const floor = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value < gd.ranges.floorMax)!
+    const up = gd.dngn.id('DNGN_VGATE_OPEN_UP')!
+    st.map.cells.set(cellKey(floor.x, floor.y), { ...floor, g: "'", t: { ...floor.t, bg: up } })
+    const cell = buildScene(st, gd).cells.get(cellKey(floor.x, floor.y))!
+    expect(cell.occluder).toBe(false)
+    expect(cell.featureTile).toBe(up)
+    expect(cell.faceTiles).toEqual({ w: gd.dngn.id('DNGN_GATE_OPEN_LEFT'), e: gd.dngn.id('DNGN_GATE_OPEN_RIGHT') })
+  })
   it('names the water shorelines among the overlays, so 3D can leave the flat wave lines out', () => {
     const st = initialState()
     for (const m of fixtureMessages()) reduce(st, m)

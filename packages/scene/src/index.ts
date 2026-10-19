@@ -116,7 +116,8 @@ export interface SceneCell {
    * seen from above and from the south: seen from the north the left and
    * right pieces trade places, and a gate running north–south has its own
    * top-down pieces that read as nothing upright. Each face here is the
-   * horizontal piece a player standing on that side sees in that place.
+   * horizontal piece a player standing on that side sees in that place. An
+   * open door in such a gate stands in its doorway showing its east face.
    */
   faceTiles?: Partial<Record<'n' | 's' | 'w' | 'e', TileId>>
   /**

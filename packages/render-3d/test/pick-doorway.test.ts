@@ -10,7 +10,7 @@ const tiles: TileSource = {
 }
 
 /** A corridor running north and south, x = 1, with walls either side and an open door at (1, 3) set into the run. */
-function corridor(player: { x: number; y: number }): Scene {
+function corridor(player: { x: number; y: number }, closed = false): Scene {
   const s = emptyScene()
   s.revision = s.layoutRevision = 1
   s.bounds = { left: 0, top: 0, right: 2, bottom: 6 }
@@ -29,18 +29,19 @@ function corridor(player: { x: number; y: number }): Scene {
         wallTile: wall ? 1 : undefined,
         featureTile: isDoor ? 5 : undefined,
         stance: isDoor ? 'upright' : undefined,
-        feature: isDoor ? { type: 'door', state: 'open' } : undefined,
+        feature: isDoor ? { type: 'door', state: closed ? 'closed' : 'open' } : undefined,
       })
+      if (isDoor && closed) Object.assign(s.cells.get(cellKey(x, y))!, { kind: 'door', occluder: true, wallTile: 5 })
     }
   return s
 }
 
 /** The cell under the point (100, py) of a 200×100 view looking north, on the floor a few cells ahead. */
-function pickAhead(player: { x: number; y: number }, py: number) {
+function pickAhead(player: { x: number; y: number }, py: number, closed = false) {
   const bed = stubbed({}, tiles)
   bed.r.resize(200, 100, 1)
   bed.r.setCamera(makeCamera(player.x, player.y, 0))
-  bed.r.setScene(corridor(player))
+  bed.r.setScene(corridor(player, closed))
   bed.r.render()
   const key = bed.r.pick(100, py)
   bed.r.destroy()
@@ -63,5 +64,10 @@ describe('picking through a doorway', () => {
     const hit = pickAhead({ x: 1, y: 3 }, 75)
     expect(hit?.x).toBe(1)
     expect(hit!.y).toBeLessThan(3)
+  })
+
+  it('stops at a closed door', () => {
+    const hit = pickAhead({ x: 1, y: 5 }, 55, true)
+    expect(hit).toEqual({ x: 1, y: 3 })
   })
 })
