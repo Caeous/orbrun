@@ -204,6 +204,25 @@ describe('buildScene on a recorded level', () => {
     expect(cell.stance).toBe('upright')
     expect(cell.label).toBe('tree')
   })
+  it('builds a wall dressed in feature art as a wall, not a picture on the floor', () => {
+    const st = initialState()
+    for (const m of fixtureMessages()) reduce(st, m)
+    const floor = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value < gd.ranges.floorMax)!
+    for (const name of ['STONE_SMOOTH_WALL_BEOGH', 'DNGN_DIMENSION_EDGE']) {
+      const art = gd.dngn.id(name)!
+      st.map.cells.set(cellKey(floor.x, floor.y), { ...floor, g: '#', t: { ...floor.t, bg: art } })
+      const wall = buildScene(st, gd).cells.get(cellKey(floor.x, floor.y))!
+      expect(wall.kind, name).toBe('wall')
+      expect(wall.occluder, name).toBe(true)
+      expect(wall.wallTile, name).toBe(art)
+    }
+    // feature art on a decorative floor (Bailey's orcish standard, sent with the fountain glyph) stands in the room
+    const ensign = gd.dngn.id('DNGN_ENSIGN_BEOGH')!
+    st.map.cells.set(cellKey(floor.x, floor.y), { ...floor, g: '\u2320', t: { ...floor.t, bg: ensign } })
+    const standard = buildScene(st, gd).cells.get(cellKey(floor.x, floor.y))!
+    expect(standard.kind).toBe('feature')
+    expect(standard.stance).toBe('upright')
+  })
   it('names the water shorelines among the overlays, so 3D can leave the flat wave lines out', () => {
     const st = initialState()
     for (const m of fixtureMessages()) reduce(st, m)

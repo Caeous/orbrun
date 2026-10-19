@@ -680,7 +680,9 @@ function buildCell(mc: MapCell, gd: Gamedata): SceneCell | undefined {
     // feature range
     base.floorTile = floorUnder
     const f = classifyFeature(name, glyph, mc.mf, MF)
-    if (glyph === '#' && !hasCloud && !f) {
+    // a vault wall dressed in feature art (the Bailey keeps' `stone_smooth_wall_beogh`, wizlab_golubria's
+    // `dngn_dimension_edge`): the name alone says `other`, and the glyph says wall
+    if (glyph === '#' && !hasCloud && (!f || f.type === 'other')) {
       base.kind = 'wall'
       base.occluder = true
       base.wallTile = bgIdx
