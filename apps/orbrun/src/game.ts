@@ -385,7 +385,8 @@ export class GameScreen {
         this.runner.execute(touchExtraAction(id, this.ctx))
       },
     })
-    this.chat = new Chat(this.root, { send: (m) => this.runner.send(m), padKind: () => this.hooks.gamepad.kind })
+    // straight to the session: the runner drops what a spectator sends, and chat is a spectator's to send
+    this.chat = new Chat(this.root, { send: (m) => this.session.send(m), padKind: () => this.hooks.gamepad.kind })
     this.overlays = new Overlays(this.root, {
       padKind: () => this.hooks.gamepad.kind,
       send: (m) => this.runner.send(m),
