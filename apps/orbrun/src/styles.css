@@ -3572,6 +3572,32 @@ canvas.minimap.hidden,
   overflow-x: auto;
 }
 
+/* crawl's console text in a describe popup or the character overview (console-text.ts): a table at crawl's own
+   column widths, a row to a line, the last column taking what is left; a line hanging what wraps of it under its text */
+.popup .ctable {
+  display: grid;
+  grid-template-columns: var(--cols) minmax(0, 1fr);
+}
+.popup .ccell,
+.popup .hang {
+  display: block;
+}
+.popup .hang {
+  padding-left: var(--hang);
+  text-indent: calc(-1 * var(--hang));
+}
+.popup .keep {
+  white-space: nowrap;
+}
+/* on a phone held upright, too narrow for eighty columns: the columns drawn in to their widest cells, so the last has
+   room to wrap in, under itself (a long piece of gear on the gear side), rather than the rows breaking mid-column */
+@media (max-width: 600px) {
+  .popup .ctable {
+    grid-template-columns: repeat(var(--n), max-content) minmax(0, 1fr);
+    column-gap: 2ch;
+  }
+}
+
 .newgame .grid {
   display: grid;
   gap: 0.2em 0.6em;

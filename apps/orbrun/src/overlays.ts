@@ -27,6 +27,7 @@ import { settingGroups, type SettingGroup } from './settings-rows'
 import { glyph, glyphName } from './glyphs'
 import { packRows, packStrip, turnKeys, type PackStrip } from './pack-tabs'
 import { fits, menuColumns } from './menu-columns'
+import { consoleHtml } from './console-text'
 import { attachSwipe } from './swipe'
 import { TabLean } from './tab-lean'
 import { ACTION_TABS, actionNeighbour, actionTabOf, type ActionTabId } from './action-tabs'
@@ -215,14 +216,13 @@ function fitTabs(tabs: HTMLElement): () => void {
   return refit
 }
 
+/** ui-layouts.js fmt_body_txt: a paragraph to each blank line; each paragraph's lines kept fit for a narrow popup (console-text.ts) */
 function fmtBody(txt: string): string {
   return txt
     .split('\n\n')
-    .map((s) => '<pre>' + formattedStringToHtml(s) + '</pre>')
-    .filter((s) => s !== '<pre></pre>')
+    .filter((s) => s !== '')
+    .map((s) => '<pre>' + consoleHtml(s) + '</pre>')
     .join('')
-    .split('\n')
-    .join('<br>')
 }
 
 /**
@@ -1936,7 +1936,8 @@ export class Overlays {
         if (str('tag')) el.dataset.tag = str('tag')
         header(str('title'))
         const text = typeof p.state.text === 'string' ? (p.state.text as string) : str('text')
-        el.append(h('div', { class: 'body', html: formattedStringToHtml(text) }))
+        // the overview is crawl's eighty-column console screen: its tables and lists kept fit for a narrow popup
+        el.append(h('div', { class: 'body', html: str('tag') === 'resists' ? consoleHtml(text) : formattedStringToHtml(text) }))
         if (str('more')) el.append(h('div', { class: 'more', html: formattedStringToHtml(str('more')) }))
         // the keys a scroller answers to but never prints: a row of them, so the pad has them; they are
         // the reader's to go to, not what the screen is for, so nothing is lit on them at first
