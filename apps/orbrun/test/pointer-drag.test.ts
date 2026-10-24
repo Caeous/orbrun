@@ -16,12 +16,12 @@ function harness(swipeTurn: 'step' | 'drag' = 'drag') {
   })
   const lookBy = vi.fn()
   const endDrag = vi.fn()
-  const turn = vi.fn()
   const lean = vi.fn()
+  const endLean = vi.fn()
   const onPointer = vi.fn()
   const screen = Object.assign(Object.create(GameScreen.prototype), {
     canvas, is3d: true, drag: null, hover: null, pointerLive: false, tooltipTimer: 0, ctx: { mode: 'command' },
-    cam: { lookBy, endDrag, turn, lean, endLean: vi.fn() }, hud: { hideTooltip: vi.fn() }, session: { state: initialState() },
+    cam: { lookBy, endDrag, lean, endLean }, hud: { hideTooltip: vi.fn() }, session: { state: initialState() },
     hooks: { settings: () => ({ lookSensitivity: 1, invertLook: false, swipeTurn }) },
     inputFrom: vi.fn(), wake: vi.fn(), armCellTooltip: vi.fn(), onPointer,
   }) as { attachPointer(c: HTMLCanvasElement): void; cancelDrag(): void; toggleRenderer(): void; drag: unknown; canvas: HTMLCanvasElement }
@@ -35,11 +35,13 @@ function harness(swipeTurn: 'step' | 'drag' = 'drag') {
     Object.defineProperty(ev, 'timeStamp', { value: t })
     canvas.dispatchEvent(ev)
   }
-  return { screen, at, touch, lookBy, endDrag, turn, lean, onPointer }
+  return { screen, at, touch, lookBy, endDrag, lean, endLean, onPointer }
 }
 
 describe('a finger swiping the view, a heading at a time', () => {
   const leaned = (h: ReturnType<typeof harness>) => h.lean.mock.calls.at(-1)![0] / (Math.PI / 4)
+  /** the headings each lift turned the view on (`+ 0`: a swipe that turns nothing may say -0) */
+  const turned = (h: ReturnType<typeof harness>) => h.endLean.mock.calls.map(([n]) => n + 0)
 
   it('takes the view with the finger, the dungeon going its way, and on to the next heading as it lifts', () => {
     const h = harness('step')
@@ -49,9 +51,9 @@ describe('a finger swiping the view, a heading at a time', () => {
     h.touch('pointermove', 270, 302, 16)
     expect(leaned(h)).toBeCloseTo(22 / 70)
     h.touch('pointermove', 255, 302, 24)
-    expect(h.turn).not.toHaveBeenCalled()
+    expect(h.endLean).not.toHaveBeenCalled()
     h.touch('pointerup', 255, 302, 32)
-    expect(h.turn.mock.calls).toEqual([[1]])
+    expect(turned(h)).toEqual([1])
     expect(h.lookBy).not.toHaveBeenCalled()
     expect(h.onPointer).not.toHaveBeenCalled()
   })
@@ -62,7 +64,7 @@ describe('a finger swiping the view, a heading at a time', () => {
     // 192px across: 2.6 headings, so on to the third
     for (let t = 8; t <= 48; t += 8) h.touch('pointermove', 100 + 4 * t, 300, t)
     h.touch('pointerup', 292, 300, 56)
-    expect(h.turn.mock.calls).toEqual([[-3]])
+    expect(turned(h)).toEqual([-3])
   })
 
   it('barely moved, it turns nothing', () => {
@@ -70,7 +72,7 @@ describe('a finger swiping the view, a heading at a time', () => {
     h.touch('pointerdown', 300, 300, 0)
     h.touch('pointermove', 270, 300, 8)
     h.touch('pointerup', 270, 300, 16)
-    expect(h.turn).not.toHaveBeenCalled()
+    expect(turned(h)).toEqual([0])
   })
 
   it('dragged back where it came down, it turns nothing', () => {
@@ -80,7 +82,7 @@ describe('a finger swiping the view, a heading at a time', () => {
     h.touch('pointermove', 302, 300, 16)
     h.touch('pointerup', 302, 300, 24)
     expect(leaned(h)).toBeCloseTo(0)
-    expect(h.turn).not.toHaveBeenCalled()
+    expect(turned(h)).toEqual([0])
   })
 
   it('a drag up or down still tilts, and turns nothing', () => {
@@ -88,7 +90,7 @@ describe('a finger swiping the view, a heading at a time', () => {
     h.touch('pointerdown', 300, 300, 0)
     for (let t = 8; t <= 40; t += 8) h.touch('pointermove', 302, 300 + 3 * t, t)
     h.touch('pointerup', 302, 420, 44)
-    expect(h.turn).not.toHaveBeenCalled()
+    expect(h.endLean).not.toHaveBeenCalled()
     expect(h.lean).not.toHaveBeenCalled()
     for (const [dyaw] of h.lookBy.mock.calls) expect(dyaw).toBeCloseTo(0)
     expect(h.endDrag).toHaveBeenCalledOnce()

@@ -1990,9 +1990,7 @@ export class GameScreen {
       if (d.held || d.pan) return
       if (d.stepping !== undefined) {
         // lifted, it goes on to its heading, a second swipe turning on from where that one is going
-        this.cam.endLean()
-        const n = ev.type === 'pointercancel' ? 0 : swipeRest(d.g.x - d.g.x0, d.stepping)
-        if (n) this.cam.turn(-n)
+        this.cam.endLean(ev.type === 'pointercancel' ? 0 : -swipeRest(d.g.x - d.g.x0, d.stepping))
         this.needsRender = true
       } else if (d.g.moved) {
         this.cam.endDrag(this.release(d, ev.timeStamp, ev.type === 'pointercancel'))

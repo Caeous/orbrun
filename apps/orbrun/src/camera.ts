@@ -66,6 +66,8 @@ export class CameraController {
   private pitchSpring: number | null = null
   /** radians a finger swiping a heading at a time leans the view off its turn (`lean`), already in the yaw */
   private leanNow = 0
+  /** how quickly the yaw eases onto its heading, per second: a swipe's lift is quicker than a keyed turn (`endLean`) */
+  private turnRate = TURN_RATE
   private lookVel = 0
   private pitchVel = 0
   private _steeringRevision = 0
@@ -99,6 +101,7 @@ export class CameraController {
 
   setFacing(d: Dir8, immediate = false) {
     this.yawSpring = null
+    this.turnRate = TURN_RATE
     this.camera.facing = d
     this.goalYaw = dirToYaw(d)
     if (immediate || this.reducedMotion) {
@@ -293,8 +296,8 @@ export class CameraController {
   /**
    * A finger swiping a heading at a time (swipe-turn.ts) turns the view `rad`
    * off its heading, at once, so the dungeon moves as the finger does; a turn
-   * still easing in runs on under it. Call `endLean` when it lifts, then
-   * `turn` to the heading it meant.
+   * still easing in runs on under it. Call `endLean` with the headings it
+   * meant when it lifts.
    */
   lean(rad: number) {
     this._steeringRevision++
@@ -303,10 +306,12 @@ export class CameraController {
     this.dragging = true
   }
 
-  /** The swipe lifted: what it leaned is left to the turn's ease, which takes the view onto its heading. */
-  endLean() {
+  /** The swipe lifted: it turns on `by` headings, and what it leaned is left to the ease, a little quicker than a keyed turn's, which takes the view onto its heading. */
+  endLean(by = 0) {
     this.leanNow = 0
     this.dragging = false
+    if (by) this.turn(by)
+    this.turnRate = SWIPE_TURN_RATE
   }
 
   /** Stick released: the yaw eases onto the nearest heading, the pitch stays. */
@@ -593,7 +598,7 @@ export class CameraController {
       c.yaw = this.yawSpring === null ? this.goalYaw : normalizeYaw(this.goalYaw + x)
       moved = true
     } else {
-      const yaw = normalizeYaw(this.ease(normalizeYaw(c.yaw - this.leanNow), this.goalYaw, dt, TURN_RATE) + this.leanNow)
+      const yaw = normalizeYaw(this.ease(normalizeYaw(c.yaw - this.leanNow), this.goalYaw, dt, this.turnRate) + this.leanNow)
       if (yaw !== c.yaw) {
         c.yaw = yaw
         moved = true
@@ -751,6 +756,8 @@ const SPRING_REST_SPEED = 0.05
 const QUICK_TURN = 2
 /** Exponential turn rates, calibrated to the old 60 Hz feel but independent of frame rate. */
 const TURN_RATE = 16
+/** a swipe's turn as it lifts (`endLean`): a little quicker, the finger having started it */
+const SWIPE_TURN_RATE = 20
 /** The right stick at full push, in radians a second: its yaw about as quick as a 45° turn. */
 const LOOK_YAW_SPEED = 4.2
 const LOOK_PITCH_SPEED = 1.05

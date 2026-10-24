@@ -372,6 +372,27 @@ describe('a swipe leaning the view a heading at a time', () => {
     expect(c.camera.yaw).toBeCloseTo(Math.PI / 4)
     expect(c.facing).toBe(1)
   })
+
+  it('lifted, turns on a little quicker than a keyed turn, and a keyed turn after it keeps its own pace', () => {
+    const keyed = cam()
+    const swiped = cam()
+    keyed.reducedMotion = swiped.reducedMotion = false
+    const frames = (n: number) => {
+      for (let i = 0; i < n; i++) for (const c of [keyed, swiped]) c.update(1 / 60)
+    }
+    keyed.turn(1)
+    swiped.lean(0)
+    swiped.endLean(1)
+    expect(swiped.facing).toBe(1)
+    frames(6)
+    expect(swiped.camera.yaw).toBeGreaterThan(keyed.camera.yaw)
+    expect(swiped.camera.yaw).toBeLessThan(Math.PI / 4)
+    frames(60)
+    keyed.turn(1)
+    swiped.turn(1)
+    frames(6)
+    expect(swiped.camera.yaw).toBeCloseTo(keyed.camera.yaw, 6)
+  })
 })
 
 describe('steering with a drag', () => {
