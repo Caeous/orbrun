@@ -557,13 +557,16 @@ export class CameraController {
 
   /**
    * Cells of open ground along `d` from the player, up to OPEN_DEPTH. A cell
-   * is open unless known and unwalkable; unexplored counts as open. A
-   * diagonal heading squeezing between two known walls counts as blocked at
-   * once: in 3D that is two wall faces filling the view.
+   * is open unless known and unwalkable; unexplored counts as open, and so
+   * does a door that opens (closed or runed, not sealed): the walk opens it
+   * from the cell before, so it is the way on, not a wall to look away from.
+   * A diagonal heading squeezing between two known walls counts as blocked
+   * at once: in 3D that is two wall faces filling the view.
    */
   private openDepth(scene: Scene, d: Dir8): number {
     const blocked = (x: number, y: number) => {
       const c = getCell(scene, x, y)
+      if (c?.feature?.type === 'door' && c.feature.state !== 'sealed') return false
       return c !== undefined && c.kind !== 'unknown' && !isWalkable(c)
     }
     const px = scene.player.x

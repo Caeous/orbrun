@@ -21,7 +21,7 @@ function cell(x: number, y: number, kind: SceneCell['kind']): SceneCell {
   }
 }
 
-/** # wall, . floor, @ player (on floor), space never seen. */
+/** # wall, . floor, @ player (on floor), + closed door, = sealed door, space never seen. */
 function sceneFrom(rows: string[]): Scene {
   const s = emptyScene()
   s.playerOnLevel = true
@@ -29,7 +29,11 @@ function sceneFrom(rows: string[]): Scene {
     for (let x = 0; x < rows[y].length; x++) {
       const ch = rows[y][x]
       if (ch === ' ') continue
-      const c = cell(x, y, ch === '#' ? 'wall' : 'floor')
+      const c = cell(x, y, ch === '#' ? 'wall' : ch === '+' || ch === '=' ? 'door' : 'floor')
+      if (c.kind === 'door') {
+        c.occluder = true
+        c.feature = { type: 'door', state: ch === '+' ? 'closed' : 'sealed' }
+      }
       if (ch === '@') s.player = { x, y }
       s.cells.set(cellKey(c.x, c.y), c)
     }
@@ -85,6 +89,21 @@ describe('camera facing while travelling', () => {
     const s = sceneFrom(['###.#', '###.#', '..@.#', '#####'])
     const c = cam(2)
     c.faceAfterMove(s, 1, 0)
+    expect(c.facing).toBe(2)
+  })
+
+  it('a closed door ahead is the way on, not a wall', () => {
+    // exploring north up a corridor to a door, the room beyond unseen; a side passage runs east
+    const s = sceneFrom(['## ##', '##+##', '##@..', '##.##', '##.##'])
+    const c = cam(0)
+    c.faceAfterMove(s, 0, -1)
+    expect(c.facing).toBe(0)
+  })
+
+  it('a sealed door ahead is a wall', () => {
+    const s = sceneFrom(['## ##', '##=##', '##@..', '##.##', '##.##'])
+    const c = cam(0)
+    c.faceAfterMove(s, 0, -1)
     expect(c.facing).toBe(2)
   })
 
