@@ -167,6 +167,8 @@ export interface Context {
   injured?: boolean
   /** Autofight would only say why not (`autofightRefused`), so the touch bar dims Fight. */
   fightRefused?: boolean
+  /** Explore would only say again that there is nowhere left to go (warnings.ts `ExploreDone`), so the touch bar dims Explore. Filled by the app. */
+  exploreDone?: boolean
   /**
    * Targeting: what the server's cursor rests on (`cursors[0]`, the cell it
    * named in its last `cursor` message), so the bar can say what A will

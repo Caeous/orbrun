@@ -373,6 +373,44 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     expect(screen(g).surface).toBe('menu:skills')
   })
 
+  it("a finger's Explore dims once crawl says the level is done, and lights again for an item where none lay", async () => {
+    const g = await startLive({ args: FIGHTER, device: 'touch' })
+    open.push(g)
+    for (let i = 0; i < 5 && g.ctx().mode !== 'command'; i++) await g.raw('a')
+    // wizard mode, and every monster dismissed, so nothing stops the explore on its way
+    await g.raw('&')
+    await g.raw('wiz\r')
+    await g.raw('\x1b')
+    await g.raw('&G')
+    await g.raw('\r')
+    const explore = () => g.root.querySelector('.touchbar .tb[data-cell="explore"]')!
+    expect(explore().textContent).toContain('Explore')
+    expect(explore().classList.contains('refused')).toBe(false)
+    const said = () => g.state().messages.lines.some((l) => /Done exploring\.|Partly explored, /.test(formattedStringToText(l.text)))
+    for (let i = 0; i < 80 && !said(); i++) {
+      await g.raw('o')
+      for (let j = 0; j < 5 && g.ctx().mode === 'more'; j++) await g.raw(' ')
+    }
+    expect(said(), log(g)).toBe(true)
+    expect(explore().classList.contains('refused')).toBe(true)
+    // a step about the level it knows keeps it dim
+    const step = async () => {
+      for (const k of ['l', 'j', 'h', 'k', 'u', 'n', 'b', 'y']) {
+        const before = g.state().player.pos
+        await g.raw(k)
+        const after = g.state().player.pos
+        if (after && before && (after.x !== before.x || after.y !== before.y)) return
+      }
+    }
+    await step()
+    expect(explore().classList.contains('refused')).toBe(true)
+    // a dagger dropped where the player stood, and the player off it, is something explore could go to
+    await g.raw('&%')
+    await g.raw('dagger\r')
+    await step()
+    expect(explore().classList.contains('refused'), log(g)).toBe(false)
+  })
+
   it('stairs with a pile on them: A asks which, and A again takes the stairs, or picks up from the row below', async () => {
     const onPile = async () => {
       const g = await startLive({ args: FIGHTER })

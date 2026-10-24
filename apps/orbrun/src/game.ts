@@ -1,6 +1,6 @@
 import { cm, mapKey, MouseMode, MSGCH, UiState, formattedStringToText, keyMessage, topMenu, type ClientMessage, type GameMessage, type GameState } from '@orbrun/webtiles'
 import { autofightTarget, cellKey, dirFromDelta, isThreat, type Billboard, type CellKey, type MapRenderer, type Scene, type SceneCursor } from '@orbrun/scene'
-import { linesSince, namedInWarnings, namedMonster } from './warnings'
+import { ExploreDone, linesSince, namedInWarnings, namedMonster } from './warnings'
 import { Render3d } from '@orbrun/render-3d'
 import { viewmodelFor } from '@orbrun/scene-webtiles'
 import { Render2d } from '@orbrun/render-2d'
@@ -161,6 +161,8 @@ export class GameScreen {
   /** the context as last derived, and the key of what it was derived from */
   private ctxBase: Context | null = null
   private ctxKey = ''
+  /** whether crawl last said explore has nowhere to go, and the level has given it nowhere since (warnings.ts) */
+  private exploreDone = new ExploreDone()
   /** the revisions a frame was last drawn for: only a change to what is drawn (the map, the player, the UI stack) asks for a frame */
   private drawnRev = { map: -1, player: -1, ui: -1 }
   /** A game on this device has no one watching and no one to talk to: no chat box, no Chat row, F12 does nothing. */
@@ -1096,6 +1098,7 @@ export class GameScreen {
     if (!this.ctxBase || key !== this.ctxKey) {
       this.ctxKey = key
       this.ctxBase = deriveContext(st, this.session.scene, this.cam.camera, 'micro')
+      if (this.exploreDone.update(st, this.session.scene)) this.ctxBase.exploreDone = true
     }
     return { ...this.ctxBase }
   }

@@ -2670,7 +2670,7 @@ canvas.minimap.hidden,
   background: none;
   filter: brightness(1.4);
 }
-/* Fight while autofight would refuse (context.ts autofightRefused): still tappable, crawl has the last word */
+/* Fight while autofight would refuse (context.ts autofightRefused), Explore once it is done (warnings.ts ExploreDone): still tappable, crawl has the last word */
 .touchbar .tb.refused {
   opacity: 0.4;
 }

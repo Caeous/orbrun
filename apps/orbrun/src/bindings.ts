@@ -689,7 +689,7 @@ export type TouchLabel = Omit<BindingLabel, 'button'> &
     count?: number
     /** a popup's verb that is the one its line has lit, as Select's is (styles.css .tb.switch.lit) */
     lit?: boolean
-    /** dimmed but still pressed: the map's Fight while autofight would refuse (context.ts autofightRefused) */
+    /** dimmed but still pressed: the map's Fight while autofight would refuse (context.ts autofightRefused), its Explore once crawl has said it is done (warnings.ts ExploreDone) */
     refused?: boolean
     /** there, so the keypad keeps its shape, but nothing to press: the map's Fire with nothing quivered, the skills screen's `[-]` outside its targets (hud.ts idleTouchButton) */
     idle?: boolean
@@ -883,7 +883,7 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
   const idle = (l: BindingLabel) => !panel && ctx.mode === 'command' && l.action.kind === 'fire' && !ctx.readiedAction
   // the screen as it was before the player marked or listed anything: a button it lacks, or has doing something else, is the choice's
   const brought = panel ? () => false : choiceBrought(ctx)
-  const refused = (l: BindingLabel) => !panel && ctx.mode === 'command' && l.action.kind === 'fight' && !!ctx.fightRefused
+  const refused = (l: BindingLabel) => !panel && ctx.mode === 'command' && ((l.action.kind === 'fight' && !!ctx.fightRefused) || (lastKey(l.action) === 'o' && !!ctx.exploreDone))
   const fresh = (l: BindingLabel) => !TOUCH_ARROWS.some(([b]) => b === l.button) && brought(l)
   const put = (l: BindingLabel, cell: TouchCell, span = 1) => out.push({ ...touchFace(l, ctx, panel), cell, ...(span > 1 ? { span } : {}), ...(idle(l) ? { idle: true } : {}), ...(fresh(l) ? { fresh: true } : {}), ...(refused(l) ? { refused: true } : {}) })
   const layout = touchLayout(ctx, panel)

@@ -433,6 +433,15 @@ describe('every touch button has a picture: crawl’s art where it has one, a gl
     expect(fight(ctx({ fightRefused: true })).idle).toBeUndefined()
     expect(fight(ctx({})).refused).toBeUndefined()
   })
+  it('Explore dims once crawl has said it is done, and still presses', () => {
+    const explore = (c: Context) => touchLabels(barLabels(c), c).find((l) => l.cell === 'explore')!
+    expect(explore(ctx({ exploreDone: true }))).toMatchObject({ label: 'Explore', refused: true })
+    expect(explore(ctx({ exploreDone: true })).idle).toBeUndefined()
+    expect(explore(ctx({})).refused).toBeUndefined()
+    // the shop's own button in that cell is no explore
+    const shop = menu({ shop: { canBuy: true, anyMarked: true, anyListed: false, mode: 'buy' } } as unknown as Partial<MenuContext>, 'shop')
+    expect(touchLabels(barLabels({ ...shop, exploreDone: true }), { ...shop, exploreDone: true }).some((l) => l.refused)).toBe(false)
+  })
   it('on the level map: the stairs, finding yourself, travel, search and zoom', () => {
     expect(icons(ctx({ mode: 'levelmap', mapCursorHome: true }))).toMatchObject({ LB: 'CMD_MAP_FIND_UPSTAIR', RB: 'CMD_MAP_FIND_DOWNSTAIR', R3: 'CMD_DISPLAY_OVERMAP', L3: 'CMD_SEARCH_STASHES', LT: 'zoom-out', RT: 'zoom-in' })
     expect(icons(ctx({ mode: 'levelmap' }))).toMatchObject({ A: 'CMD_MAP_GOTO_TARGET', Y: 'CMD_MAP_FIND_YOU' })
