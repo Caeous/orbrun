@@ -10,7 +10,7 @@ import {
   type SceneCell,
   type TileId,
 } from '@orbrun/scene'
-import { classifyFeature, isVegetation, stanceFor, standsFree } from '@orbrun/scene-webtiles'
+import { classifyFeature, isVegetation, roofs, stanceFor, standsFree } from '@orbrun/scene-webtiles'
 
 /**
  * @orbrun/vault
@@ -256,6 +256,7 @@ export function vaultScene(v: Vault, names: TileNames): Scene {
   const scene = emptyScene()
   scene.bounds = { left: 0, top: 0, right: v.width - 1, bottom: v.height - 1 }
   const wallBases = new Map<TileId, number>()
+  const fittings = new Set<TileId>()
   for (let y = 0; y < v.height; y++) {
     for (let x = 0; x < v.width; x++) {
       const g = v.map[y][x]
@@ -281,6 +282,7 @@ export function vaultScene(v: Vault, names: TileNames): Scene {
         cell.label = e.tile.replace(/^WALL_/, '').toLowerCase().replace(/_/g, ' ')
         cell.glyph = '#'
         wallBases.set(id, (wallBases.get(id) ?? 0) + 1)
+        if (!roofs(e.tile)) fittings.add(id)
       } else if (e && e.kind === 'feat') {
         const id = names.id(e.tile)!
         const f = classifyFeature(e.tile, undefined, undefined)
@@ -339,14 +341,21 @@ export function vaultScene(v: Vault, names: TileNames): Scene {
     const c = scene.cells.get(cellKey(p.x, p.y))
     if (!c || c.occluder) throw new DesError(`the ${what} at ${p.x},${p.y} does not stand on open floor`, 0)
   }
-  // the lid is the masonry most of the room is built of, as the game's levels take theirs
+  // the lid is the masonry most of the room is built of, as the game's levels take theirs: a bookcase
+  // or a window only roofs a room built of nothing else
   let lid: TileId | null = null
   let most = 0
   for (const [id, n] of wallBases)
-    if (n > most) {
+    if (n > most && !fittings.has(id)) {
       most = n
       lid = id
     }
+  if (lid === null)
+    for (const [id, n] of wallBases)
+      if (n > most) {
+        most = n
+        lid = id
+      }
   scene.level = { ceilingTile: lid, sky: 'none', tint: { r: 1, g: 1, b: 1 } }
   scene.player = { x: v.light.x, y: v.light.y }
   scene.playerOnLevel = true

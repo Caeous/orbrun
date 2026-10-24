@@ -367,6 +367,34 @@ describe('buildScene on a recorded level', () => {
     expect(lids(changed)).toEqual(lids(buildScene(st, gd)))
   })
 
+  it('roofs no cell in bookcases, torches or windows while there is masonry to roof it with', () => {
+    const st = initialState()
+    for (const m of fixtureMessages()) {
+      reduce(st, m)
+      if (st.map.cells.size > 800) break
+    }
+    const isWall = (bg: unknown) => {
+      const v = gd.bg(bg as number).value
+      return v >= gd.ranges.floorMax && v < gd.ranges.wallMax
+    }
+    const walls = [...st.map.cells.values()].filter((c) => c.t?.bg && isWall(c.t.bg))
+    expect(walls.length).toBeGreaterThan(50)
+    for (const name of ['WALL_CRYSTAL_BOOKCASE', 'WALL_STUDIO', 'WALL_STONE_MAGIC_SHELF', 'WALL_BRICK_DARK_2_TORCH', 'DNGN_TRANSPARENT_STONE', 'WALL_BARS_RED']) {
+      const fitting = gd.dngn.id(name)!
+      expect(fitting, name).toBeDefined()
+      // two walls in three: more of the fitting than of the masonry, and whole runs of it
+      const dressed = walls.filter((_, i) => i % 3 !== 0)
+      for (const c of dressed) st.map.cells.set(cellKey(c.x, c.y), { ...c, t: { ...c.t, bg: fitting } })
+      const scene = buildScene(st, gd)
+      expect(scene.level.ceilingTile, name).not.toBe(fitting)
+      expect([...scene.cells.values()].some((c) => c.ceilingTile === fitting), name).toBe(false)
+      // a level built of nothing else is roofed in it all the same
+      for (const c of walls) st.map.cells.set(cellKey(c.x, c.y), { ...c, t: { ...c.t, bg: fitting } })
+      expect(buildScene(st, gd).level.ceilingTile, name).toBe(fitting)
+      for (const c of walls) st.map.cells.set(cellKey(c.x, c.y), c)
+    }
+  })
+
   it('keeps the layout revision while only monsters, light and cursors change', () => {
     const st = initialState()
     let scene: Scene = emptyScene()

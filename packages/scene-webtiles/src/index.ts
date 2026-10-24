@@ -386,21 +386,24 @@ export function buildScene(state: GameState, gd: Gamedata, opts: BuildOptions = 
     // walls gone with their cells
     for (const key of was.cells.keys()) if (!record.cells.has(key) && wallBase.has(key)) { wallBase.delete(key); wallsChanged.push(key) }
   }
-  // dominant wall tile as the ceiling
+  // dominant wall tile as the ceiling: the commonest masonry, a fitting only on a level built of nothing else
   const wallCounts = new Map<number, number>()
   for (const base of wallBase.values()) wallCounts.set(base, (wallCounts.get(base) || 0) + 1)
+  const fittings = new Set<number>()
+  for (const t of wallCounts.keys()) if (!roofs(gd.dngn.name(t))) fittings.add(t)
   let best = -1
   let bestN = 0
-  for (const [t, n] of wallCounts) if (n > bestN) (best = t), (bestN = n)
+  for (const [t, n] of wallCounts) if (n > bestN && !fittings.has(t)) (best = t), (bestN = n)
+  if (best < 0) for (const [t, n] of wallCounts) if (n > bestN) (best = t), (bestN = n)
   scene.level.ceilingTile = best >= 0 ? best : null
   if (rebuild && prev) {
     // the lids depend on the walls alone: cells carried over keep theirs unless a wall within reach changed,
     // and a new dominant wall type is a new lid for every cell out of reach of any wall
-    if (prev.level.ceilingTile !== scene.level.ceilingTile) assignCeilings(scene, wallBase)
-    else assignCeilings(scene, wallBase, prev, near(wallsChanged, CEILING_REACH), rebuild, record)
+    if (prev.level.ceilingTile !== scene.level.ceilingTile) assignCeilings(scene, wallBase, fittings)
+    else assignCeilings(scene, wallBase, fittings, prev, near(wallsChanged, CEILING_REACH), rebuild, record)
   } else {
     const reuse = prev && prevWalls && prev.level.ceilingTile === scene.level.ceilingTile && sameWalls(prevWalls, wallBase) ? prev : undefined
-    assignCeilings(scene, wallBase, reuse)
+    assignCeilings(scene, wallBase, fittings, reuse)
   }
   wallsOf.set(scene, wallBase)
   builtFrom.set(scene, record)
@@ -444,6 +447,21 @@ function near(keys: CellKey[], reach: number): Set<CellKey> {
  * A room this wide or narrower is roofed entirely in its own wall type.
  */
 export const CEILING_REACH = 3
+
+/**
+ * Walls that are fittings rather than masonry: bookcases and shelves, a
+ * torch in its sconce, a spout of water, and the walls you see through —
+ * glass, clear rock, bars and grates. They stand where a wall would, but
+ * nothing is built over them, so no lid is made of them: the masonry beyond
+ * them roofs the floor beside them.
+ */
+const FITTING = /BOOKCASE|^WALL_STUDIO$|MAGIC_SHELF|_TORCH$|_LEAK$|TRANSPARENT|CLEAR|^WALL_BARS|GRATE/
+
+/** Whether a wall of this base tile (by name) can be a ceiling. */
+export function roofs(name: string | undefined): boolean {
+  return !FITTING.test(name || '')
+}
+
 /** How tall a standing item is, in cells: under the smallest monsters' heads, so one behind it shows over it. */
 export const ITEM_HEIGHT = 0.3
 /** How long a corpse or skeleton lies on the floor, in cells. */
@@ -462,8 +480,9 @@ function sameWalls(a: Map<CellKey, number>, b: Map<CellKey, number>): boolean {
  * Roof each open cell in the wall type nearest it. Every wall within
  * `CEILING_REACH` (Chebyshev) votes for its base tile, nearer walls counting
  * more, so a vault of other masonry keeps its own lid up to its doorway and a
- * stray odd block does not recolour a whole corridor. Cells out of reach of
- * any wall, and ties, keep the level ceiling and get no per-cell tile.
+ * stray odd block does not recolour a whole corridor. `fittings` (`roofs`)
+ * have no vote. Cells out of reach of any other wall, and ties, keep the
+ * level ceiling and get no per-cell tile.
  *
  * `reuse` is a scene voted from the same walls under the same level lid: a
  * cell it has keeps the lid it had there, and only cells new since then are
@@ -472,6 +491,8 @@ function sameWalls(a: Map<CellKey, number>, b: Map<CellKey, number>): boolean {
 function assignCeilings(
   scene: Scene,
   wallBase: Map<CellKey, number>,
+  /** Base tiles that never roof a cell, whatever stands round it. */
+  fittings: Set<number>,
   reuse?: Scene,
   /** With `reuse`: the cells to vote on again although `reuse` has them (a wall within reach changed). */
   revote?: Set<CellKey>,
@@ -499,7 +520,7 @@ function assignCeilings(
       for (let dx = -R; dx <= R; dx++) {
         if (!dx && !dy) continue
         const base = wallBase.get(cellKey(cell.x + dx, cell.y + dy))
-        if (base === undefined) continue
+        if (base === undefined || fittings.has(base)) continue
         const w = R + 1 - Math.max(Math.abs(dx), Math.abs(dy))
         votes.set(base, (votes.get(base) || 0) + w)
       }

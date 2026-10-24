@@ -123,7 +123,8 @@ export interface SceneCell {
   /**
    * Ceiling over this open cell when it differs from the level's: the base
    * tile of the walls nearest it, so a vault built of other masonry keeps its
-   * own lid. Unset means `SceneLevel.ceilingTile`.
+   * own lid. Never a bookcase, a torch or a window while there is masonry to
+   * roof with. Unset means `SceneLevel.ceilingTile`.
    */
   ceilingTile?: TileId
   featureTile?: TileId
