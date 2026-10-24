@@ -2,6 +2,13 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.3.3 — 2026-10-24
+
+- Play on more servers: CRG, CBRG, CNC and CPO.
+- Spells and Gear reset after you move.
+- Explore on the touch bar dims once done exploring.
+- Various fixes for walls, doors, ceilings, the camera, and text wrapping.
+
 ## 0.3.2 — 2026-10-18
 
 - Gozag's Potion Petition now lets you pick which potions to buy.
