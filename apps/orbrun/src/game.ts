@@ -284,13 +284,13 @@ export class GameScreen {
   private touchHints = touchHints()
   /** the game (its player, which a new game replaces) in which crawl has asked for a command: before that, as the species are coming, there is no map to teach */
   private commandedIn: object | null = null
-  /** the pack's page last up (pack-tabs.ts), which Y opens it on again */
+  /** the pack's page last up (pack-tabs.ts), which Y opens it on again until the player moves (`forgetTabs`) */
   private packPage: string | null = null
   /** the item the cursor was last on in each of the pack's pages, by its letter: Y puts the cursor back on it */
   private packRow = new Map<string, number>()
   /** Y opened the pack: the page it is turning to, and whether the pack has been up since */
   private packReturn: { page: string; seen: boolean } | null = null
-  /** X's actions as tabs (action-tabs.ts): the one up last, which X opens again */
+  /** X's actions as tabs (action-tabs.ts): the one up last, which X opens again until the player moves (`forgetTabs`) */
   private actionTabUp: ActionTabId = 'spells'
   /**
    * A turn to one of X's tabs under way (`openActionTab`): the menu left
@@ -1401,6 +1401,7 @@ export class GameScreen {
       if (moved || newLevel) {
         // the feet moved on: whatever turn was owed is about the old spot
         this.owedTurn = null
+        this.forgetTabs()
         const dx = p.x - this.lastPos.x
         const dy = p.y - this.lastPos.y
         // Attribute all hops, including replies to older commands still in
@@ -2574,6 +2575,17 @@ export class GameScreen {
     this.packPage = page
     const hovered = m.menu.items[m.menu.last_hovered]?.hotkeys?.[0]
     if (hovered !== undefined) this.packRow.set(page, hovered)
+  }
+
+  /**
+   * The player stepped on (or changed level): X opens on Spells and Y on
+   * Gear's first row again. The tab and row kept are for doing the same
+   * thing again where you stand, a scroll of identify read after another.
+   */
+  private forgetTabs() {
+    this.actionTabUp = 'spells'
+    this.packPage = null
+    this.packRow.clear()
   }
 
   private systemAction(op: string) {

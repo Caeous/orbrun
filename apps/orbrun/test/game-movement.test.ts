@@ -23,7 +23,8 @@ function harness() {
     session, cam, runner, wake: vi.fn(), lastPos: { x: 0, y: 0 }, hopPos: { x: 0, y: 0 },
     hops: [], jumped: false, lastLevel: `${state.player.place}:${state.player.depth}`,
     lastMonsters: new Set(), padStep: null, arrivalPending: false,
-  }) as { trackHop(): void; onScene(): void }
+    actionTabUp: 'spells', packPage: null, packRow: new Map(),
+  }) as { trackHop(): void; onScene(): void; actionTabUp: string; packPage: string | null; packRow: Map<string, number> }
   const position = (x: number, y: number) => {
     state.player.pos = { x, y }
     scene.player = { ...scene.player, x, y }
@@ -33,7 +34,7 @@ function harness() {
     position(x, y)
     screen.onScene()
   }
-  return { cam, runner, state, scene, send, swing, position, echo, flush: () => screen.onScene() }
+  return { screen, cam, runner, state, scene, send, swing, position, echo, flush: () => screen.onScene() }
 }
 
 describe('forward input and confirmed camera motion', () => {
@@ -270,5 +271,28 @@ describe('forward input and confirmed camera motion', () => {
     h.cam.update(1)
     expect(h.cam.camera.eyeX).toBe(11)
     expect(h.cam.camera.eyeY).toBe(11)
+  })
+})
+
+describe("X's and Y's tabs", () => {
+  it('open where they were left while the player stands still, and on Spells and Gear once they move', () => {
+    const h = harness()
+    // a scroll of identify read from the Scrolls page, with an Abilities look before it
+    h.screen.actionTabUp = 'abilities'
+    h.screen.packPage = 'scrolls'
+    h.screen.packRow.set('scrolls', 'e'.charCodeAt(0))
+    h.flush()
+    expect(h.screen.actionTabUp).toBe('abilities')
+    expect(h.screen.packPage).toBe('scrolls')
+    expect(h.screen.packRow.get('scrolls')).toBe('e'.charCodeAt(0))
+    h.echo(1, 0)
+    expect(h.screen.actionTabUp).toBe('spells')
+    expect(h.screen.packPage).toBe(null)
+    expect(h.screen.packRow.size).toBe(0)
+    // a level change is a move too, even onto the same cell
+    h.screen.packPage = 'potions'
+    h.state.player.depth++
+    h.echo(1, 0)
+    expect(h.screen.packPage).toBe(null)
   })
 })
