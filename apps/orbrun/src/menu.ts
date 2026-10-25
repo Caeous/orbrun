@@ -1904,7 +1904,7 @@ export class FrontEnd {
   private profileDelete(a: Account): NonNullable<Row['also']> {
     const id = 'delete:' + a.serverId + '/' + a.username
     if (this.deleting && sameAccount(this.deleting, a))
-      return [{ id, label: '(delete, and its saves?)', title: `Delete ${a.username} and every character saved under it. This cannot be undone.`, fn: () => void this.deleteProfile(a) }]
+      return [{ id, label: '(delete all?)', title: `Delete ${a.username} and every character saved under it. This cannot be undone.`, fn: () => void this.deleteProfile(a) }]
     return [{ id, label: '(delete)', title: `Delete ${a.username} from this device, and its saved characters.`, fn: () => ((this.deleting = a), this.showAccounts(id)) }]
   }
 
