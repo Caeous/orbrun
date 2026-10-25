@@ -28,4 +28,19 @@ describe('a swipe turning the view a heading at a time', () => {
     expect(swipeRest(at(1.4))).toBe(2)
     expect(swipeRest(at(10))).toBe(SWIPE_MAX)
   })
+
+  it('turns as many headings for a flick as for a slow drag as long', () => {
+    const at = (headings: number) => SLOP + headings * SWIPE_HEADING_PX
+    expect(swipeRest(at(1.1), SWIPE_HEADING_PX, 20)).toBe(1)
+    expect(swipeRest(-at(1.1), SWIPE_HEADING_PX, -20)).toBe(-1)
+    expect(swipeRest(at(2), SWIPE_HEADING_PX, -1)).toBe(2)
+  })
+
+  it('turns a heading for a short flick, never for a slow nudge or a tap', () => {
+    expect(swipeRest(20, SWIPE_HEADING_PX, 5)).toBe(1)
+    expect(swipeRest(20, SWIPE_HEADING_PX, -5)).toBe(0)
+    expect(swipeRest(-20, 280, -1)).toBe(-1)
+    expect(swipeRest(20, SWIPE_HEADING_PX, 0.1)).toBe(0)
+    expect(swipeRest(SLOP - 1, SWIPE_HEADING_PX, 5)).toBe(0)
+  })
 })

@@ -414,6 +414,45 @@ describe('a swipe leaning the view a heading at a time', () => {
   })
 })
 
+describe('a swipe lifted at speed', () => {
+  const yawSpeed = (c: ReturnType<typeof cam>) => {
+    const y = c.camera.yaw
+    c.update(1 / 240)
+    return (c.camera.yaw - y) * 240
+  }
+
+  it('leaves at the finger’s own speed when it is quicker than the ease, and slows onto its heading', () => {
+    const c = cam()
+    c.reducedMotion = false
+    c.lean(0.2)
+    c.endLean(1, 12)
+    expect(yawSpeed(c)).toBeCloseTo(12, 0)
+    let last = Infinity
+    for (let i = 0; i < 60; i++) {
+      const v = yawSpeed(c)
+      expect(v).toBeGreaterThanOrEqual(0)
+      expect(v).toBeLessThanOrEqual(last + 1e-9)
+      last = v
+    }
+    for (let i = 0; i < 60; i++) c.update(1 / 60)
+    expect(c.camera.yaw).toBeCloseTo(Math.PI / 4)
+  })
+
+  it('a slow lift, or one going the other way, eases as it always has', () => {
+    const slow = cam()
+    const still = cam()
+    const back = cam()
+    for (const [c, speed] of [[slow, 1], [still, 0], [back, -12]] as const) {
+      c.reducedMotion = false
+      c.lean(0.2)
+      c.endLean(1, speed)
+    }
+    for (let i = 0; i < 6; i++) for (const c of [slow, still, back]) c.update(1 / 60)
+    expect(slow.camera.yaw).toBeCloseTo(still.camera.yaw, 9)
+    expect(back.camera.yaw).toBeCloseTo(still.camera.yaw, 9)
+  })
+})
+
 describe('steering with a drag', () => {
   it('stays steering until it is released', () => {
     const c = cam()

@@ -12,7 +12,7 @@
 /** one heading of the eight, in radians */
 export const HEADING = Math.PI / 4
 /** how long a release's speed carries on, in seconds: where the view would come to rest if it coasted (UIScrollView's fast deceleration, 0.99 a millisecond) */
-const PROJECT_S = 0.099
+export const PROJECT_S = 0.099
 /** a finger moving back faster than this as it lifts (radians a second) is pulling the turn back */
 const PULL_BACK = 0.6
 

@@ -52,7 +52,8 @@ describe('a finger swiping the view, a heading at a time', () => {
     expect(leaned(h)).toBeCloseTo(22 / 70)
     h.touch('pointermove', 255, 302, 24)
     expect(h.endLean).not.toHaveBeenCalled()
-    h.touch('pointerup', 255, 302, 32)
+    // held still a moment before it lifts: no speed to coast on
+    h.touch('pointerup', 255, 302, 80)
     expect(turned(h)).toEqual([1])
     expect(h.lookBy).not.toHaveBeenCalled()
     expect(h.onPointer).not.toHaveBeenCalled()
@@ -63,16 +64,36 @@ describe('a finger swiping the view, a heading at a time', () => {
     h.touch('pointerdown', 100, 300, 0)
     // 192px across: 2.6 headings, so on to the third
     for (let t = 8; t <= 48; t += 8) h.touch('pointermove', 100 + 4 * t, 300, t)
+    h.touch('pointerup', 292, 300, 100)
+    expect(turned(h)).toEqual([-3])
+  })
+
+  it('flicked, it turns as many headings as held still, only quicker', () => {
+    const h = harness('step')
+    h.touch('pointerdown', 100, 300, 0)
+    for (let t = 8; t <= 48; t += 8) h.touch('pointermove', 100 + 4 * t, 300, t)
     h.touch('pointerup', 292, 300, 56)
     expect(turned(h)).toEqual([-3])
+    // and it goes there at the finger’s speed, the way it turns
+    expect(h.endLean.mock.calls[0][1]).toBeLessThan(0)
   })
 
   it('barely moved, it turns nothing', () => {
     const h = harness('step')
     h.touch('pointerdown', 300, 300, 0)
-    h.touch('pointermove', 270, 300, 8)
-    h.touch('pointerup', 270, 300, 16)
+    h.touch('pointermove', 290, 300, 80)
+    h.touch('pointermove', 285, 300, 160)
+    h.touch('pointerup', 285, 300, 170)
     expect(turned(h)).toEqual([0])
+  })
+
+  it('barely moved but flicked, it turns a heading', () => {
+    const h = harness('step')
+    h.touch('pointerdown', 300, 300, 0)
+    h.touch('pointermove', 290, 300, 16)
+    h.touch('pointermove', 280, 300, 32)
+    h.touch('pointerup', 280, 300, 36)
+    expect(turned(h)).toEqual([1])
   })
 
   it('dragged back where it came down, it turns nothing', () => {

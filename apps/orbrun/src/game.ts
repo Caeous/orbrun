@@ -1993,8 +1993,13 @@ export class GameScreen {
       if (c.hasPointerCapture(ev.pointerId)) c.releasePointerCapture(ev.pointerId)
       if (d.held || d.pan) return
       if (d.stepping !== undefined) {
-        // lifted, it goes on to its heading, a second swipe turning on from where that one is going
-        this.cam.endLean(ev.type === 'pointercancel' ? 0 : -swipeRest(d.g.x - d.g.x0, d.stepping))
+        // lifted, it goes on to its heading, a second swipe turning on from where that one is going;
+        // the speed it lifts at makes a short flick count, and takes it there as fast as the finger went
+        if (ev.type === 'pointercancel') this.cam.endLean()
+        else {
+          const { vx } = d.g.speed(ev.timeStamp)
+          this.cam.endLean(-swipeRest(d.g.x - d.g.x0, d.stepping, vx), (-vx * 1000 * HEADING) / d.stepping)
+        }
         this.needsRender = true
       } else if (d.g.moved) {
         this.cam.endDrag(this.release(d, ev.timeStamp, ev.type === 'pointercancel'))

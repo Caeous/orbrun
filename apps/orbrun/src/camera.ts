@@ -306,12 +306,19 @@ export class CameraController {
     this.dragging = true
   }
 
-  /** The swipe lifted: it turns on `by` headings, and what it leaned is left to the ease, a little quicker than a keyed turn's, which takes the view onto its heading. */
-  endLean(by = 0) {
+  /**
+   * The swipe lifted, turning `speed` radians a second: it turns on `by`
+   * headings, and what it leaned is left to the ease, a little quicker than a
+   * keyed turn's, which takes the view onto its heading. A finger quicker
+   * than that ease sets its rate, so the view leaves at the finger's own
+   * speed and slows onto the heading, as a flicked scroll view snaps.
+   */
+  endLean(by = 0, speed = 0) {
     this.leanNow = 0
     this.dragging = false
     if (by) this.turn(by)
-    this.turnRate = SWIPE_TURN_RATE
+    const d = yawDelta(this.camera.yaw, this.goalYaw)
+    this.turnRate = d === 0 ? SWIPE_TURN_RATE : Math.max(SWIPE_TURN_RATE, (speed * Math.sign(d)) / Math.abs(d))
   }
 
   /** Stick released: the yaw eases onto the nearest heading, the pitch stays. */
