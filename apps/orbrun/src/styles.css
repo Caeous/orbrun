@@ -3589,6 +3589,25 @@ canvas.minimap.hidden,
 .popup .keep {
   white-space: nowrap;
 }
+/* a rule as long as crawl drew it, cut short where the popup is narrower; a line crawl set against its right edge,
+   there still, or at the popup's where that comes first; a talisman's table as crawl drew it, slid across if it must */
+.popup .rule,
+.popup .right,
+.popup .grid {
+  display: block;
+}
+.popup .rule {
+  overflow: hidden;
+  white-space: nowrap;
+}
+.popup .right {
+  max-width: 80ch;
+  text-align: right;
+}
+.popup .grid {
+  white-space: pre;
+  overflow-x: auto;
+}
 /* on a phone held upright, too narrow for eighty columns: the columns drawn in to their widest cells, so the last has
    room to wrap in, under itself (a long piece of gear on the gear side), rather than the rows breaking mid-column */
 @media (max-width: 600px) {

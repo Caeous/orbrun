@@ -254,6 +254,19 @@ describe('popup scroll lines from the server', () => {
   })
 })
 
+describe("an item's spells it would change", () => {
+  it('turns the body of its description to them on `!`, and back (ui-layouts.js describe_item_spell_success)', () => {
+    const st = initialState()
+    reduce(st, { msg: 'ui-push', type: 'describe-item', title: 'a plate armour', body: 'A full suit of solid metal plate.', actions: '(w)ear' })
+    const p = st.ui[0]
+    const table = '<lightgrey>If you equipped this item, your spell failure would worsen:\n<magenta>Magic Dart                       10%-> 100%<lightgrey>\n'
+    reduce(st, { msg: 'ui-state', type: 'describe-spell-success', body: table })
+    expect(p.data).toMatchObject({ title: 'a plate armour', body: table, actions: '(w)ear' })
+    reduce(st, { msg: 'ui-state', type: 'describe-spell-success', body: 'A full suit of solid metal plate.' })
+    expect(p.data.body).toBe('A full suit of solid metal plate.')
+  })
+})
+
 /**
  * Items under the player are not on the map: `tileidx_player` (tilepick-p.cc)
  * sets no S_UNDER flag on the player's tile, so the only word the server

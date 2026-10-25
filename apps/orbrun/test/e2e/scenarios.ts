@@ -34,23 +34,23 @@ export interface Scenario {
 const char = (species: string, background: string) => ['-seed', '1', '-species', species, '-background', background, '-wizard']
 export const FIGHTER = char('minotaur', 'fighter')
 const BERSERKER = char('minotaur', 'berserker')
-const CONJURER = char('human', 'conjurer')
+export const CONJURER = char('human', 'conjurer')
 
 /** Into wizard mode, once: `&`, the typed "wiz", and out of the command prompt it opens with. */
-async function wiz(g: E2e) {
+export async function wiz(g: E2e) {
   await g.raw('&')
   await g.raw('wiz\r')
   await g.raw('\x1b')
 }
 
 /** A wizard command and its answers: `&(` then `altar_okawaru\r`. */
-async function wizard(g: E2e, cmd: string, ...answers: string[]) {
+export async function wizard(g: E2e, cmd: string, ...answers: string[]) {
   await g.raw('&' + cmd)
   for (const a of answers) await g.raw(a)
 }
 
 /** Off the stairs the game starts on, onto plain floor (a shop or an altar needs one): step until nothing is underfoot. */
-async function toFloor(g: E2e) {
+export async function toFloor(g: E2e) {
   for (let n = 0; n < 12 && g.ctx().under.kind !== 'none'; n++) {
     for (const k of ['l', 'j', 'h', 'k', 'u', 'n', 'b', 'y']) {
       const before = g.state().player.pos
@@ -62,19 +62,19 @@ async function toFloor(g: E2e) {
 }
 
 /** Dismiss every --more-- that stands. */
-async function mores(g: E2e) {
+export async function mores(g: E2e) {
   for (let i = 0; i < 8 && g.ctx().mode === 'more'; i++) await g.key(' ')
 }
 
 /** A thing in the pack, from nothing: `&%` by name drops it underfoot, and `,` picks it up. */
-async function give(g: E2e, name: string) {
+export async function give(g: E2e, name: string) {
   await wizard(g, '%', name + '\r')
   await g.raw(',')
   await mores(g)
 }
 
 /** The inventory letter of the first item whose name has `part` in it (a-z are slots 0-25, A-Z 26-51). */
-function letterOf(g: E2e, part: string): string {
+export function letterOf(g: E2e, part: string): string {
   const inv = g.state().player.inv as Record<number, { name?: string } | undefined>
   for (const [slot, it] of Object.entries(inv)) {
     if (it?.name?.includes(part)) return 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'[Number(slot)]

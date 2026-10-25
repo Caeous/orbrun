@@ -1630,6 +1630,8 @@ function reduceUnchecked(state: GameState, m: ServerMessage): void {
         Object.assign(top.state, m)
         if (echo) break
         if (m.type === 'formatted-scroller' && typeof m.text === 'string') top.data = { ...top.data, text: m.text }
+        // describe_item_spell_success: `!` on an item's description turns its body to the spells it would change, and back
+        if (m.type === 'describe-spell-success' && typeof m.body === 'string') top.data = { ...top.data, body: m.body }
         // formatted_scroller_update: the scroller's own scroll line rides on its ui-state
         if (m.type === 'formatted-scroller' && typeof m.scroll === 'number') {
           top.scroll = m.scroll

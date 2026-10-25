@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { formattedStringToText, initialState, reduce, type GameState } from '@orbrun/webtiles'
 import { consoleHtml, consoleTable } from '../src/console-text'
 import { Overlays } from '../src/overlays'
+import RECORDED from './fixtures/describes.json'
 
 // the character overview, `%`, from the offline engine (0.34, a Minotaur Gladiator on D:1), coloured as output.cc colours it
 const OVERVIEW = [
@@ -155,6 +156,117 @@ describe('console text', () => {
     expect(consoleHtml("This weapon's minimum attack delay (0.7) is reached at skill level 16.\nDamage rating: 18.")).not.toContain('class')
     // a short line after a long one is no continuation, labelled or not
     expect(render('Flame:     It burns victims.\n           Short.').querySelectorAll('.hang')).toHaveLength(2)
+  })
+})
+
+/** a recorded field as fmtBody lays it out, a <pre> to each paragraph (test/e2e/record-describes.test.ts recorded them) */
+function recorded(id: string, field = 'body', channel = 'trunk'): HTMLElement {
+  const r = (RECORDED as Recorded[]).find((r) => r.id === id && r.channel === channel)
+  if (!r) throw new Error(`nothing recorded as ${channel} ${id}`)
+  const el = document.createElement('div')
+  el.innerHTML = r.fields[field]
+    .split('\n\n')
+    .filter(Boolean)
+    .map((p) => '<pre>' + consoleHtml(p) + '</pre>')
+    .join('')
+  return el
+}
+interface Recorded {
+  channel: string
+  id: string
+  fields: Record<string, string>
+}
+const hangs = (el: HTMLElement) => [...el.querySelectorAll('.hang')] as HTMLElement[]
+const hangOf = (el: HTMLElement) => el.style.getPropertyValue('--hang')
+/** the hanging line that starts with `start` */
+const hangAt = (el: HTMLElement, start: string) => hangs(el).find((h) => h.textContent!.trimStart().startsWith(start))!
+
+describe("crawl's own describes, from the offline engine", () => {
+  it('puts a label and the words crawl broke at eighty columns under it back together, however little room the label left', () => {
+    for (const channel of ['stable', 'trunk']) {
+      // describe.cc _format_prop_desc: an ego's label in quotes and a single space; a brand's padded; an unrand's longer one
+      const mesmerism = hangAt(recorded('ego-mesmerism', 'body', channel), "'Of mesmerism'")
+      expect(hangOf(mesmerism)).toBe('16ch')
+      expect(mesmerism.textContent).toBe(
+        "'Of mesmerism': When you are struck in melee, it briefly dazes all nearby enemies, then must recharge by standing still for a while. Its duration, radius, and recharge speed are improved by your Evocations skill.",
+      )
+      const antimagic = hangAt(recorded('brand-antimagic', 'body', channel), 'Antimagic:')
+      expect(hangOf(antimagic)).toBe('11ch')
+      expect(antimagic.textContent).toContain('disrupts the spells and magical abilities of those it strikes. Natural abilities and divine invocations')
+      const sonic = hangAt(recorded('unrand-dbrand', 'body', channel), 'Sonic Wave:')
+      expect(hangOf(sonic)).toBe('12ch')
+      expect(sonic.textContent).toContain('especially in combat involving dangerous')
+    }
+    // trunk's mesmerism has a second paragraph, under the first's words
+    const dormant = hangAt(recorded('ego-mesmerism'), 'It goes briefly dormant')
+    expect(hangOf(dormant)).toBe('16ch')
+    // a gizmo's label fills crawl's eleven columns, with no space left after it (describe.cc _describe_gizmo)
+    const gizmo = render(
+      'SpellMotor:Your spells cost less MP as you Rev up. Whenever you cast a spell,\n           you make a melee attack against a random enemy in range.',
+    )
+    expect(hangs(gizmo).map(hangOf)).toEqual(['11ch'])
+    // a single space after a label whose next line is not under its words is no label
+    expect(consoleHtml('Mesmerism radius: 2 (max 4)\nYou took it off a kobold on level 1 of the Dungeon.')).not.toContain('class')
+  })
+
+  it("puts a monster's statuses back together under their names, crawl having broken them at seventy-seven columns three in", () => {
+    const status = recorded('monster-corroded', 'status')
+    expect(hangs(status).map(hangOf)).toEqual(['3ch', '3ch', '3ch'])
+    expect(hangAt(status, 'This creature is unable').textContent).toContain('or dodge. Any hostile action will awaken it, though melee attacks')
+  })
+
+  it("puts a quote's prose back together under its mark, wrapped by hand short of eighty, and leaves verse as it was written", () => {
+    // dat/descript/quotes.txt: the ogre's quote breaks at seventy-four, "have" still to come, short of where crawl would
+    const ogre = recorded('monster-corroded', 'quote')
+    const princess = hangAt(ogre, '“The little princess')
+    expect(hangOf(princess)).toBe('1ch')
+    expect(princess.textContent).toContain('When once they have tasted raw human flesh')
+    expect(princess.textContent).toMatch(/half a fairy\.”$/)
+    // the attribution stays a line of its own
+    expect(hangs(ogre).map((h) => h.textContent!.trim().slice(0, 7))).toEqual(['“The li', '-Marie-', '“NO. La', '-Shrek.'])
+    // verse goes on a line at a time: the goblin's short lines, Morris's that run to the edge, Eliot's that go on in lower case
+    expect(hangs(recorded('monster-goblin', 'quote'))).toHaveLength(7)
+    const morris = [
+      ' And the song, and the tinkling of harp-strings to the roof-tree winded up;',
+      ' And Sigmund was dreamy with wine and the wearing of many a year;',
+      ' And the noise and the glee of the people as the sound of the wild woods were',
+      ' And the blossoming boughs of the Branstock were the wild trees waving about;',
+    ]
+    expect(hangs(render(morris.join('\n')))).toHaveLength(4)
+    expect(hangs(render('“I should have been a pair of ragged claws\n scuttling across the floors of silent seas.”'))).toHaveLength(2)
+  })
+
+  it('keeps a line under a table out of it: the speed under an ogre\'s stats', () => {
+    const body = recorded('monster-corroded')
+    const stats = body.querySelector('.ctable') as HTMLElement
+    expect(stats.style.getPropertyValue('--n')).toBe('3')
+    expect(stats.textContent).not.toContain('Speed')
+    expect(body.textContent).toContain('Speed: 100% (attack: 66%)')
+  })
+
+  it("keeps a talisman's table as crawl drew it, its headings over their numbers, and cuts its rules to the popup", () => {
+    for (const channel of ['stable', 'trunk']) {
+      const body = recorded('talisman-maw', 'body', channel)
+      const grid = body.querySelector('.grid')!.textContent!.split('\n')
+      expect(grid.map((l) => l.trim().split(/\s+/)[0])).toEqual(['Skill', '-'.repeat(64), 'Min', 'Max', 'Cur'])
+      expect(grid[0]).toBe('     Skill    HP    Body Armour AC   Bite Dmg   Devour Regen')
+      expect(grid[2]).toBe('Min    12     +0%     -5.2 (-75%)       23          +2.20')
+      expect([...body.querySelectorAll('.rule')].map((r) => r.textContent)).toEqual(['_'.repeat(60), '_'.repeat(60)])
+    }
+  })
+
+  it("sets a mutation's category against the right edge, as crawl does with spaces", () => {
+    const right = recorded('mutation-horns').querySelector('.right')!
+    expect(right.textContent).toBe('Category: [Anatomy]')
+  })
+
+  it("hangs the changelog's points under their words, the points under them under theirs, put back together", () => {
+    const changes = recorded('version', 'changes')
+    const fimbulwinter = hangAt(changes, '* New unrand: "Fimbulwinter"')
+    expect(hangOf(fimbulwinter)).toBe('2ch')
+    expect(fimbulwinter.textContent).toBe('* New unrand: "Fimbulwinter", a +9 athame which inflicts Doom on monsters hurt by the wielder\'s cold damage.')
+    const gulch = hangAt(changes, '- Entering the Gulch')
+    expect(hangOf(gulch)).toBe('4ch')
   })
 })
 

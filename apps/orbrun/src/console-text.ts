@@ -11,17 +11,25 @@
  *   (styles.css `.ctable`): at crawl's own widths where they fit, and on a
  *   phone drawn in close, the last column wrapping in itself (a long piece of
  *   gear on the gear side, beside the resistances);
+ * - a talisman's table, whose headings no column start holds, stays as crawl
+ *   drew it, slid across where it must be;
  * - a line hangs what wraps of it under its text: an indented line under its
  *   first letter, `Flame:     It burns` under `It`, the overview's
- *   `A: horns 2, ...` under `horns`;
+ *   `A: horns 2, ...` under `horns`, a point of the changelog under its
+ *   words, a quote under the words after its mark;
  * - a line crawl broke itself at eighty columns (describe.cc
- *   `_format_prop_desc`, output.cc `_status_mut_rune_list`) is put back
- *   together, so it breaks only where the popup does;
+ *   `_format_prop_desc`, a monster's statuses, output.cc
+ *   `_status_mut_rune_list`) is put back together, so it breaks only where
+ *   the popup does, and so is prose someone wrapped by hand (a quote, the
+ *   changelog), though not verse;
  * - words crawl set against the right edge (the overview's turn count) go
- *   down a line whole, not broken after their first word.
+ *   down a line whole, not broken after their first word, and a line it
+ *   pushed there with spaces alone (a mutation's category) stays there;
+ * - a rule is cut short where the popup is narrower than crawl drew it.
  *
  * Any other line comes out as formattedStringToHtml prints it, with a `<br>`
- * after it.
+ * after it. test/e2e/record-describes.test.ts records crawl's own text for
+ * each of these from the offline engine (test/fixtures/describes.json).
  */
 import { formattedStringToSpans, type FormattedSpan } from '@orbrun/webtiles'
 import { escapeHtml } from './dom'
@@ -39,8 +47,14 @@ const CONSOLE_COLS = 80
  */
 const LABEL_PAD = 3
 
-/** a label padded out to the column its text starts at: describe.cc `_format_prop_desc` (`Flame:     It burns`, `rF+:       It protects`) */
-const LABEL = /^\S[^:]{0,22}: {2,}(?=\S)/
+/** a label and the spaces after it, if it is one: see labelAt */
+const LABEL = /^\S[^:]{0,22}: *(?=\S)/
+/** a quote's first line, its mark hung in the margin: dat/descript/quotes.txt goes on a space in, under the words */
+const QUOTE = /^[“"‘'](?=\S)/
+/** a point of a list and the spaces before it: the version screen's changelog, `* ` and under it `  - ` */
+const BULLET = /^ *[*-] (?=\S)/
+/** a rule across the console: a talisman's `____` (describe.cc `_describe_talisman_form`), a heading's `----` */
+const RULE = /^([-_=])\1{7,}$/
 /** one of the overview's keys before its list: output.cc `_status_mut_rune_list` (`%: `, `@: `, `A: `) */
 const KEY = /^\S: (?=\S)/
 const INDENT = /^ +(?=\S)/
@@ -108,6 +122,9 @@ function cutFits(row: string, c: number): boolean {
 /** a row with text either side of a cut, as a table's rows have and a short line under one does not */
 const crosses = (row: string, c: number) => /\S/.test(row.slice(0, c - 2)) && /\S/.test(row.slice(c))
 
+/** a row whose words run on over a cut rather than stopping two spaces short of it (a cell that is empty there runs over nothing) */
+const runsAcross = (row: string, c: number) => row.length > c && !cutFits(row, c) && /\S/.test(row.slice(c - 2, c))
+
 export interface ConsoleTable {
   /** how many rows it takes, from the first */
   rows: number
@@ -139,6 +156,10 @@ function tableAt(rows: string[]): ConsoleTable | null {
   for (; n < rows.length && rows[n].trim(); n++) {
     const kept = cuts.filter((c) => cutFits(rows[n], c))
     if (!kept.length) break
+    // a row whose words run across a column two rows above it keep, and that stands in no column of its own, is no
+    // row of theirs: the line under a monster's stats (a row with words in another column is one, its first cell long)
+    const above = rows.slice(0, n)
+    if (!kept.some((c) => crosses(rows[n], c)) && cuts.some((c) => runsAcross(rows[n], c) && above.filter((r) => crosses(r, c)).length >= 2)) break
     cuts = kept
   }
   const block = rows.slice(0, n)
@@ -173,31 +194,110 @@ function tableHtml(lines: Line[], rows: string[], starts: number[]): string {
   return `<span class="ctable" style="--cols:${widths};--n:${starts.length}">${cells.join('')}</span>`
 }
 
-/** whether crawl broke `last` before `next` for want of room: the next word would have run past eighty columns */
-const brokeFor = (last: string, next: string) => last.length <= CONSOLE_COLS && last.length + 1 + next.trimStart().split(' ')[0].length > CONSOLE_COLS
+/** how many columns short of `width` `last` stopped with `next`'s first word still to come: below none, it broke there for want of room */
+const gap = (last: string, next: string, width = CONSOLE_COLS) => width - last.length - 1 - next.trimStart().split(' ')[0].length
+
+/** how far short of its widest line a line of prose wrapped by hand may stop: a long word put down whole */
+const SLACK = 12
+/** the narrowest anyone wraps a quote's prose to (Cigotuvi's Monster's, sixty-one): a shorter run is verse, or fits as it is */
+const PROSE_WIDTH = 60
+
+/** a line that starts a line of its own however short the one above it: a speaker's (`• Roy Quixote:`, `— Durkon Pansa:`), a point's */
+const STARTS = /^ *(?:[•—–]|[*-] )/
+
+/**
+ * How the run of lines from `i` that go on at `under` was wrapped, where
+ * someone wrapped it by hand: a quote (database.cc unwrap_desc keeps a line
+ * that starts with a space as it was written), the changelog. Prose runs
+ * near its widest, most of its lines, and goes on in lower case: the width
+ * it was wrapped to. Verse goes on in capitals, three lines of it or more,
+ * however long they run: -1, never put together. Zero where it cannot tell.
+ * `end` is the run's last line, which the verdict holds for.
+ */
+function wrappedBy(rows: string[], i: number, under: number): { by: number; end: number } {
+  const run = [rows[i]]
+  for (let j = i + 1; rows[j]?.trim() && INDENT.exec(rows[j])?.[0].length === under && !STARTS.test(rows[j]); j++) run.push(rows[j])
+  const end = i + run.length - 1
+  if (run.length < 2) return { by: 0, end }
+  const lower = run.slice(1).filter((r) => /^\p{Ll}/u.test(r.trimStart())).length / (run.length - 1)
+  if (lower < 0.3) return { by: run.length >= 3 ? -1 : 0, end }
+  const width = Math.max(...run.map((r) => r.length))
+  const gaps = run.slice(1).map((r, k) => gap(run[k], r, width)).sort((a, b) => a - b)
+  return { by: width >= PROSE_WIDTH && gaps[(gaps.length - 1) >> 1] <= SLACK ? width : 0, end }
+}
+
+/**
+ * The column the words beside a label start at, where describe.cc
+ * `_format_prop_desc` set them there: a label padded out to it (`Flame:     It
+ * burns`, `rF+:       It protects`), or one too long for the padding, a single
+ * space after it, whose words crawl broke under themselves (`'Of mesmerism':
+ * When you are struck`, the next line indented to `When`).
+ */
+function labelAt(rows: string[], i: number): number | undefined {
+  const label = LABEL.exec(rows[i])?.[0]
+  if (!label) return undefined
+  return label.endsWith('  ') || INDENT.exec(rows[i + 1] ?? '')?.[0].length === label.length ? label.length : undefined
+}
+
+/**
+ * How many rows from `i` make a table under a heading and a rule, kept as
+ * crawl drew it: a talisman's, whose headings stand centred over numbers set
+ * right, so no column start holds both. Zero where there is none.
+ */
+function gridAt(rows: string[], i: number): number {
+  if (!/\S {2,}\S.* {2,}\S/.test(rows[i].trim()) || !/^-+$/.test(rows[i + 1] ?? '')) return 0
+  let n = 2
+  while (rows[i + n]?.trim()) n++
+  return n > 2 ? n : 0
+}
+
+/** a line crawl set against its right edge by spaces alone: a mutation's `Category: [Anatomy]` (mutation.cc get_mutation_desc) */
+const pushedRight = (row: string) => row.length === CONSOLE_COLS && (INDENT.exec(row)?.[0].length ?? 0) >= CONSOLE_COLS / 2
 
 /** a formatted string's lines as HTML for a white-space: pre-wrap box: its tables, hanging lines and the rest */
 export function consoleHtml(text: string): string {
   const lines = linesOf(text)
   const rows = lines.map((l) => plain(l).trimEnd())
   const out: { html: string; block: boolean; empty: boolean }[] = []
+  let run = { by: 0, end: -1 }
   for (let i = 0; i < lines.length; i++) {
+    const grid = gridAt(rows, i)
+    if (grid) {
+      const html = lines.slice(i, i + grid).map((l, k) => spansHtml(slice(l, 0, rows[i + k].length)))
+      out.push({ html: `<span class="grid">${html.join('\n')}</span>`, block: true, empty: false })
+      i += grid - 1
+      continue
+    }
     const table = rows[i].trim() ? consoleTable(rows.slice(i)) : null
     if (table) {
       out.push({ html: tableHtml(lines.slice(i, i + table.rows), rows.slice(i, i + table.rows), table.starts), block: true, empty: false })
       i += table.rows - 1
       continue
     }
-    const label = LABEL.exec(rows[i])?.[0].length
-    const key = KEY.test(rows[i])
-    const hang = label ?? (key ? 3 : INDENT.exec(rows[i])?.[0].length)
+    if (RULE.test(rows[i]) || pushedRight(rows[i])) {
+      const html = spansHtml(slice(lines[i], INDENT.exec(rows[i])?.[0].length ?? 0, rows[i].length))
+      out.push({ html: `<span class="${RULE.test(rows[i]) ? 'rule' : 'right'}">${html}</span>`, block: true, empty: false })
+      continue
+    }
+    const indent = INDENT.exec(rows[i])?.[0].length
+    const label = labelAt(rows, i)
+    const key = label === undefined && KEY.test(rows[i])
+    // where what wraps of the line goes: under a label's words, a point's, a quote's (its mark in the margin), an
+    // indented line's first letter; and where crawl went on with it when it broke it at eighty columns itself
+    const hang = label ?? BULLET.exec(rows[i])?.[0].length ?? (QUOTE.test(rows[i]) ? 1 : undefined) ?? (key ? 3 : indent)
+    const under = key ? 0 : hang
     let line = slice(lines[i], 0, rows[i].length)
-    // the lines crawl broke this one into, back on it: a label's indented to its text, the overview's keys' not at all
-    for (let last = rows[i]; (label || key) && i + 1 < lines.length; i++) {
+    // the lines crawl broke this one into for want of room, back on it, or someone wrapping prose by hand (judged on
+    // the whole run, the lines a break in it left to start their own included); a speaker or a point under it is a
+    // line of its own, as is the overview's next key
+    if (under && i > run.end) run = wrappedBy(rows, i, under)
+    const by = under && i <= run.end ? run.by : 0
+    for (let last = rows[i]; under !== undefined && by >= 0 && i + 1 < lines.length; i++) {
       const next = rows[i + 1]
-      const indent = INDENT.exec(next)?.[0].length ?? 0
-      if (!next.trim() || indent !== (label ?? 0) || (key && KEY.test(next)) || !brokeFor(last, next)) break
-      line = [...line, { ...line[line.length - 1], text: ' ' }, ...slice(lines[i + 1], indent, next.length)]
+      const at = INDENT.exec(next)?.[0].length ?? 0
+      const broke = last.length <= CONSOLE_COLS && (gap(last, next) < 0 || (by > 0 && gap(last, next, by) <= SLACK))
+      if (!next.trim() || at !== under || STARTS.test(next) || (key && KEY.test(next)) || !broke) break
+      line = [...line, { ...line[line.length - 1], text: ' ' }, ...slice(lines[i + 1], at, next.length)]
       last = next
     }
     if (hang) {
