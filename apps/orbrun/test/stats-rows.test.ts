@@ -252,7 +252,7 @@ describe('stats pane beside the minimap', () => {
       const rows = statsRows(st.player, st.options, {}, w, lead, true).rows
       for (const row of rows) expect(rowLength(row)).toBeLessThanOrEqual(w)
       for (let i = 0; i < PORTRAIT_ROWS; i++) expect(rows[i][0].text).toBe(' '.repeat(lead))
-      expect(text(rows[0])).toMatch(/^ +Dwarfsong/)
+      expect(text(rows[0])).toMatch(/^ +Kai/)
       expect(text(rows[1])).toMatch(/^ +Mountain Dwarf/)
       expect(rows[2][1].bg).toBeTypeOf('string')
       expect(rows[3][1].bg).toBeTypeOf('string')

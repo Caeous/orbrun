@@ -73,7 +73,7 @@ describe('morgue directories', () => {
 
   it('names the file after the directory, so the server’s own spelling of the account is kept', () => {
     expect(whereisUrl(cdi, '/crawl/morgue/orbrun/')).toBe('/morgue-proxy/crawl.dcss.io/crawl/morgue/orbrun/orbrun.where')
-    expect(whereisUrl(cdi, '/rawdata/Dwarfsong/')).toBe('/morgue-proxy/crawl.dcss.io/rawdata/Dwarfsong/Dwarfsong.where')
+    expect(whereisUrl(cdi, '/rawdata/Kai/')).toBe('/morgue-proxy/crawl.dcss.io/rawdata/Kai/Kai.where')
     expect(whereisUrl(cdi, '/')).toBeNull()
   })
 })

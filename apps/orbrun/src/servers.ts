@@ -2,7 +2,7 @@ import type { HintMode } from './gamepad-hints'
 import type { GameLink } from '@orbrun/webtiles'
 import bundled from '../data/servers.json'
 import { ownWindow } from './quit'
-import { HOME, MENU_PATH, pageAt, RC_PATH, titleAt, VERSIONS_PATH } from './site'
+import { ACCOUNT_PATH, HOME, MENU_PATH, MORGUES_PATH, pageAt, RC_PATH, titleAt, VERSIONS_PATH } from './site'
 import { DEFAULT_PROFILE } from '@orbrun/offline'
 
 export interface ServerInfo {
@@ -387,7 +387,7 @@ export function characterOf(e: { username: string; char?: string; xl?: string; p
 }
 
 /**
- * "Dwarfsong the Severer, Mountain Dwarf XL12": the character in a line, as
+ * "Kai the Severer, Mountain Dwarf XL12": the character in a line, as
  * the lobby roster speaks one. Where they stand is a line of its own
  * (describePlace): the two together run past a handheld's width.
  */
@@ -714,7 +714,7 @@ export function findServer(idOrHost: string): ServerInfo | null {
  * view the site counts (analytics.ts) names nobody, and a copied link still
  * does. Watching needs no account, so its address names none: it is the
  * chosen account's when that is on the same server. Games on this device are
- * named as CDI names its own (`/play/offline/dcss-0.34#Marc`, `dcss-git` for
+ * named as CDI names its own (`/play/offline/dcss-0.34#Ada`, `dcss-git` for
  * trunk), so a game reads the same played here or there. The front end's own
  * screens have addresses too (`/settings/view`, `/accounts/add`); the bare
  * root is the home screen. The About pages are the site's, not the app's
@@ -733,7 +733,9 @@ export type Route =
  * on `serverId` (as `username`, when the address names one), or
  * `accounts/versions`, an account's Other versions (`username` always named),
  * or `accounts/rc`, an account's rc file: the one `gameId` reads on a server,
- * the one every game reads on this device (no `gameId`).
+ * the one every game reads on this device (no `gameId`); `accounts` on
+ * `serverId`, an account's own screen; `accounts/morgues`, its Morgues, or the
+ * one `morgue` names by when it ended (`20260915-155745`).
  */
 export interface MenuRoute {
   kind: 'menu'
@@ -741,6 +743,7 @@ export interface MenuRoute {
   serverId?: string
   username?: string
   gameId?: string
+  morgue?: string
 }
 
 /** what every game id on this device starts with (@orbrun/offline channelOf), which its address says as CDI would */
@@ -801,7 +804,7 @@ export function parseRoute(href: string = window.location.href): Route {
     return { kind: 'menu', path: VERSIONS_PATH, serverId: server.id, username: account.username }
   }
   // an account's rc file (`/accounts/rc/cdi/dcss-0.34#orbrun`): the game names the file on a server; a player on
-  // this device has one for every game (`/accounts/rc/offline#Marc`)
+  // this device has one for every game (`/accounts/rc/offline#Ada`)
   if ((parts.length === 3 || parts.length === 4) && parts.slice(0, 2).join('/').toLowerCase() === RC_PATH) {
     const server = findServer(parts[2].toLowerCase())
     if (!server || (parts.length === 4) === !!server.offline) return { kind: 'home' }
@@ -809,6 +812,25 @@ export function parseRoute(href: string = window.location.href): Route {
     const account = named ? knownAccount(server.id, named) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
     if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
     return { kind: 'menu', path: RC_PATH, serverId: server.id, username: account.username, ...(server.offline ? {} : { gameId: parts[3] }) }
+  }
+  // an account's Morgues (`/accounts/morgues/cdi#orbrun`), and one of them, by when it ended
+  // (`/accounts/morgues/cdi/20260915-155745#orbrun`)
+  if ((parts.length === 3 || parts.length === 4) && parts.slice(0, 2).join('/').toLowerCase() === MORGUES_PATH) {
+    const server = findServer(parts[2].toLowerCase())
+    if (!server || (parts.length === 4 && !/^\d{8}-\d{6}$/.test(parts[3]))) return { kind: 'home' }
+    const named = hash.length > 1 ? decode(hash.slice(1)) : null
+    const account = named ? knownAccount(server.id, named) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
+    if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
+    return { kind: 'menu', path: MORGUES_PATH, serverId: server.id, username: account.username, ...(parts[3] ? { morgue: parts[3] } : {}) }
+  }
+  // an account's own screen (`/accounts/cdi#orbrun`, `/accounts/offline#Ada`)
+  if (parts.length === 2 && parts[0].toLowerCase() === ACCOUNT_PATH) {
+    const server = findServer(parts[1].toLowerCase())
+    if (!server) return { kind: 'home' }
+    const named = hash.length > 1 ? decode(hash.slice(1)) : null
+    const account = named ? knownAccount(server.id, named) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
+    if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
+    return { kind: 'menu', path: ACCOUNT_PATH, serverId: server.id, username: account.username }
   }
   const [verb, where, ...rest] = parts
   const server = where === undefined ? null : findServer(where.toLowerCase())
@@ -855,7 +877,7 @@ function tagOf(name: string | undefined): string {
 export function formatRoute(r: Route): string {
   const q = window.location.search
   if (r.kind === 'home') return '/' + q
-  if (r.kind === 'menu') return (r.serverId ? pathOf(...r.path.split('/'), r.serverId, ...(r.gameId ? [r.gameId] : [])) : '/' + r.path) + q + tagOf(r.serverId ? r.username : undefined)
+  if (r.kind === 'menu') return (r.serverId ? pathOf(...r.path.split('/'), r.serverId, ...(r.gameId ? [r.gameId] : []), ...(r.morgue ? [r.morgue] : [])) : '/' + r.path) + q + tagOf(r.serverId ? r.username : undefined)
   if (r.kind === 'lobby') return pathOf('watch', r.serverId) + q
   if (r.kind === 'watch') return pathOf('watch', r.serverId) + q + tagOf(r.username)
   const { serverId, username } = r.account

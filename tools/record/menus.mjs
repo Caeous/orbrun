@@ -43,7 +43,8 @@ function write(inst) {
   if (n > perTag) return
   counts.set(inst.tag, n)
   const file = path.join(outdir, `${inst.tag}-${n}.json`)
-  fs.writeFileSync(file, JSON.stringify({ server: url, version, player: inst.player, tag: inst.tag, msgs: inst.msgs }, null, 1))
+  // the fixture names no one: the player watched is only who the collector was on at the time
+  fs.writeFileSync(file, JSON.stringify({ server: url, version, tag: inst.tag, msgs: inst.msgs }, null, 1))
   console.log(`wrote ${file} (${inst.msgs.length} msgs, title ${JSON.stringify(inst.msgs[0]?.title?.text || '')})`)
 }
 

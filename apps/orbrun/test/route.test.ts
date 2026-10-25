@@ -110,14 +110,51 @@ describe('routes', () => {
     for (const path of ['rc/cdi', 'accounts/rc', 'accounts/rc/cdi', 'accounts/rc/nowhere/dcss-0.34', 'accounts/rc/cdi/dcss-0.34/more']) expect(parseRoute(base + path), path).toEqual({ kind: 'home' })
     // offline is not offered under test (servers.ts offlineOffered)
     vi.stubEnv('MODE', 'development')
-    const marc: Account = { serverId: 'offline', username: 'Marc' }
-    store.set('orbrun.accounts', JSON.stringify([orbrun, marc]))
-    const device = { kind: 'menu', path: 'accounts/rc', serverId: 'offline', username: 'Marc' } as const
-    expect(formatRoute(device)).toBe('/accounts/rc/offline#Marc')
-    expect(parseRoute(base + 'accounts/rc/offline#marc')).toEqual(device)
+    const ada: Account = { serverId: 'offline', username: 'Ada' }
+    store.set('orbrun.accounts', JSON.stringify([orbrun, ada]))
+    const device = { kind: 'menu', path: 'accounts/rc', serverId: 'offline', username: 'Ada' } as const
+    expect(formatRoute(device)).toBe('/accounts/rc/offline#Ada')
+    expect(parseRoute(base + 'accounts/rc/offline#ada')).toEqual(device)
     expect(parseRoute(base + 'accounts/rc/offline')).toEqual(device)
     // a player on this device has one file for every game: an address naming one is not the file's
-    expect(parseRoute(base + 'accounts/rc/offline/dcss-0.34#Marc')).toEqual({ kind: 'home' })
+    expect(parseRoute(base + 'accounts/rc/offline/dcss-0.34#Ada')).toEqual({ kind: 'home' })
+    vi.unstubAllEnvs()
+  })
+
+  it('gives an account’s own screen an address, named as a play address names who plays', () => {
+    const account = { kind: 'menu', path: 'accounts', serverId: 'cdi', username: 'orbrun' } as const
+    expect(formatRoute(account)).toBe('/accounts/cdi#orbrun')
+    expect(parseRoute(base + 'accounts/cdi#ORBRUN')).toEqual(account)
+    expect(parseRoute(base + 'Accounts/CDI#orbrun')).toEqual(account)
+    // nobody named: the chosen account there, or the only one
+    expect(parseRoute(base + 'accounts/cdi')).toEqual(account)
+    // an account this device does not have is its login, to add it
+    expect(parseRoute(base + 'accounts/cdi#stranger')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
+    expect(parseRoute(base + 'accounts/nowhere#orbrun')).toEqual({ kind: 'home' })
+    // the list itself, and adding to it, are as they were
+    expect(parseRoute(base + 'accounts')).toEqual({ kind: 'menu', path: 'accounts' })
+    expect(parseRoute(base + 'accounts/add')).toEqual({ kind: 'menu', path: 'accounts/add' })
+  })
+
+  it('gives an account’s Morgues an address, and each morgue its own by when its game ended', () => {
+    const morgues = { kind: 'menu', path: 'accounts/morgues', serverId: 'cdi', username: 'orbrun' } as const
+    expect(formatRoute(morgues)).toBe('/accounts/morgues/cdi#orbrun')
+    expect(parseRoute(base + 'accounts/morgues/cdi#orbrun')).toEqual(morgues)
+    expect(parseRoute(base + 'Accounts/Morgues/CDI')).toEqual(morgues)
+    const one = { ...morgues, morgue: '20260916-191307' }
+    expect(formatRoute(one)).toBe('/accounts/morgues/cdi/20260916-191307#orbrun')
+    expect(parseRoute(base + 'accounts/morgues/cdi/20260916-191307#orbrun')).toEqual(one)
+    expect(parseRoute(base + 'accounts/morgues/cdi#stranger')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
+    // a morgue is named by when it ended, nothing else; and nothing goes under it
+    for (const path of ['accounts/morgues', 'accounts/morgues/nowhere', 'accounts/morgues/cdi/morgue-orbrun-20260916-191307.txt', 'accounts/morgues/cdi/20260916-191307/more']) expect(parseRoute(base + path), path).toEqual({ kind: 'home' })
+    vi.stubEnv('MODE', 'development')
+    const ada: Account = { serverId: 'offline', username: 'Ada' }
+    store.set('orbrun.accounts', JSON.stringify([orbrun, ada]))
+    const device = { kind: 'menu', path: 'accounts/morgues', serverId: 'offline', username: 'Ada', morgue: '20261025-160942' } as const
+    expect(formatRoute(device)).toBe('/accounts/morgues/offline/20261025-160942#Ada')
+    expect(parseRoute(base + 'accounts/morgues/offline/20261025-160942#ada')).toEqual(device)
+    expect(formatRoute({ kind: 'menu', path: 'accounts', serverId: 'offline', username: 'Ada' })).toBe('/accounts/offline#Ada')
+    expect(parseRoute(base + 'accounts/offline#Ada')).toEqual({ kind: 'menu', path: 'accounts', serverId: 'offline', username: 'Ada' })
     vi.unstubAllEnvs()
   })
 
@@ -129,19 +166,19 @@ describe('routes', () => {
   it('names the games on this device as CDI names its own', () => {
     // offline is not offered under test (servers.ts offlineOffered)
     vi.stubEnv('MODE', 'development')
-    const marc: Account = { serverId: 'offline', username: 'Marc' }
-    store.set('orbrun.accounts', JSON.stringify([orbrun, marc]))
-    const play: Route = { kind: 'play', account: marc, gameId: 'offline-0.34' }
+    const ada: Account = { serverId: 'offline', username: 'Ada' }
+    store.set('orbrun.accounts', JSON.stringify([orbrun, ada]))
+    const play: Route = { kind: 'play', account: ada, gameId: 'offline-0.34' }
     const trunk: Route = { ...play, gameId: 'offline-trunk' }
-    expect(formatRoute(play)).toBe('/play/offline/dcss-0.34#Marc')
-    expect(formatRoute(trunk)).toBe('/play/offline/dcss-git#Marc')
-    expect(parseRoute(base + 'play/offline/dcss-0.34#marc')).toEqual(play)
-    expect(parseRoute(base + 'play/offline/dcss-git#Marc')).toEqual(trunk)
+    expect(formatRoute(play)).toBe('/play/offline/dcss-0.34#Ada')
+    expect(formatRoute(trunk)).toBe('/play/offline/dcss-git#Ada')
+    expect(parseRoute(base + 'play/offline/dcss-0.34#ada')).toEqual(play)
+    expect(parseRoute(base + 'play/offline/dcss-git#Ada')).toEqual(trunk)
     // the only player on this device
     expect(parseRoute(base + 'play/offline/dcss-0.34')).toEqual(play)
     // addresses from before: the name in the path, the bare slot
-    expect(parseRoute(base + 'play/offline/marc/0.34')).toEqual(play)
-    expect(parseRoute(base + 'play/offline/Marc/trunk')).toEqual(trunk)
+    expect(parseRoute(base + 'play/offline/ada/0.34')).toEqual(play)
+    expect(parseRoute(base + 'play/offline/Ada/trunk')).toEqual(trunk)
     expect(formatRoute({ kind: 'menu', path: 'login', serverId: 'offline' })).toBe('/login/offline')
     // nobody else plays on this device
     expect(parseRoute(base + 'watch/offline')).toEqual({ kind: 'home' })
@@ -186,6 +223,8 @@ describe('routes', () => {
       { kind: 'play', account: orbrun, gameId: 'dcss-0.34' },
       { kind: 'watch', serverId: 'cdi', account: orbrun, username: 'someone' },
       { kind: 'menu', path: 'login', serverId: 'crg', username: 'someone' },
+      { kind: 'menu', path: 'accounts', serverId: 'cdi', username: 'orbrun' },
+      { kind: 'menu', path: 'accounts/morgues', serverId: 'cdi', username: 'orbrun', morgue: '20260916-191307' },
     ]
     for (const r of routes) {
       const { pathname, search } = new URL(formatRoute(r), base)

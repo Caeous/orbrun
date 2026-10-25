@@ -74,6 +74,14 @@ describe('serveGamedata', () => {
   })
 })
 
+/** a morgue directory as CDI lists it (nginx fancyindex): the parent, and each game's morgue beside its .lst */
+const LISTING = [
+  '<title>Index of /crawl/morgue/orbrun/</title>',
+  '<table id="list"><tbody><tr><td class="link"><a href="../">Parent directory/</a></td><td class="size">-</td></tr>',
+  ...['20260914-190808', '20260915-155745'].flatMap((t) => [`morgue-orbrun-${t}.lst`, `morgue-orbrun-${t}.txt`].map((f) => `<tr><td class="link"><a href="${f}" title="${f}">${f}</a></td><td class="size">4.5 KiB</td></tr>`)),
+  '<tr><td class="link"><a href="orbrun.where" title="orbrun.where">orbrun.where</a></td></tr></tbody></table>',
+].join('\n')
+
 describe('morgue proxy route', () => {
   it('maps a proxy path to the server’s own morgue file, wherever the server keeps it', () => {
     expect(morgueUpstream(`${MORGUE_PROXY_PREFIX}crawl.dcss.io/crawl/morgue/orbrun/morgue-orbrun-20260910-120000.txt`)).toBe('https://crawl.dcss.io/crawl/morgue/orbrun/morgue-orbrun-20260910-120000.txt')
@@ -83,10 +91,15 @@ describe('morgue proxy route', () => {
     expect(morgueUpstream(`${MORGUE_PROXY_PREFIX}crawl.dcss.io/crawl/morgue/orbrun/orbrun.where`)).toBe('https://crawl.dcss.io/crawl/morgue/orbrun/orbrun.where')
   })
 
-  it('refuses anything that is not a text file on a plain path', () => {
+  it('maps a morgue directory to the server’s own, for the names of the morgues in it', () => {
+    expect(morgueUpstream(`${MORGUE_PROXY_PREFIX}crawl.dcss.io/crawl/morgue/orbrun/`)).toBe('https://crawl.dcss.io/crawl/morgue/orbrun/')
+  })
+
+  it('refuses anything that is not a text file or a directory on a plain path', () => {
     const bad = [
       '/',
-      `${MORGUE_PROXY_PREFIX}crawl.dcss.io/morgue/orbrun/`,
+      `${MORGUE_PROXY_PREFIX}crawl.dcss.io/`,
+      `${MORGUE_PROXY_PREFIX}crawl.dcss.io/morgue/../`,
       `${MORGUE_PROXY_PREFIX}crawl.dcss.io/morgue/orbrun/morgue.html`,
       `${MORGUE_PROXY_PREFIX}crawl.dcss.io/morgue/orbrun/orbrun.wherever`,
       `${MORGUE_PROXY_PREFIX}crawl.dcss.io/morgue/orbrun/../../secrets.txt`,
@@ -115,5 +128,41 @@ describe('morgue proxy route', () => {
     const missing = await serveMorgue(ok, async () => new Response('<html>404</html>', { status: 404 }))
     expect(missing?.status).toBe(404)
     expect(await serveMorgue('/index.html', async () => new Response(''))).toBeNull()
+  })
+
+  it('lists a morgue directory as the names of the morgues in it, whatever page the server lists it on', async () => {
+    const dir = `${MORGUE_PROXY_PREFIX}crawl.dcss.io/crawl/morgue/orbrun/`
+    // CDI's own listing (fancyindex): the morgues, not their .lst files, the .where or the parent directory
+    const cdi = await serveMorgue(dir, async () => new Response(LISTING, { status: 200 }))
+    expect((await cdi!.text()).split('\n')).toEqual(['morgue-orbrun-20260914-190808.txt', 'morgue-orbrun-20260915-155745.txt'])
+    expect(cdi!.headers.get('Content-Type')).toContain('text/plain')
+    // nginx's plain autoindex, which links each file by its name with its date beside it
+    const autoindex = '<html><head><title>Index of /morgue/orbrun/</title></head><body><pre><a href="../">../</a>\n<a href="morgue-orbrun-20261001-101010.txt">morgue-orbrun-20261001-101010.txt</a>  01-Oct-2026 10:10  4321\n<a href="orbrun.where">orbrun.where</a></pre></body></html>'
+    expect(await (await serveMorgue(dir, async () => new Response(autoindex)))!.text()).toBe('morgue-orbrun-20261001-101010.txt')
+    // an empty directory is a listing too: no morgues yet
+    const empty = await serveMorgue(dir, async () => new Response('<title>Index of /morgue/orbrun/</title>'))
+    expect([empty!.status, await empty!.text()]).toEqual([200, ''])
+  })
+
+  it('lists nothing for a page that is no listing: a server that answers every address with its home page', async () => {
+    const res = await serveMorgue(`${MORGUE_PROXY_PREFIX}crawl.roguelikes.gg/morgue/orbrun/`, async () => new Response('<html><title>Dungeon Crawl Stone Soup</title><a href="/scores/">Scores</a></html>'))
+    expect(res!.status).toBe(404)
+  })
+
+  it('passes a Range on, so a list reads only the head of each morgue, which it may keep for good', async () => {
+    const file = `${MORGUE_PROXY_PREFIX}crawl.dcss.io/crawl/morgue/orbrun/morgue-orbrun-20260915-155745.txt`
+    let asked: RequestInit | undefined
+    const res = await serveMorgue(file, async (_u, init) => {
+      asked = init
+      return new Response('Dungeon Crawl', { status: 206, headers: { 'Content-Range': 'bytes 0-12/10633' } })
+    }, 'bytes=0-2047')
+    expect(new Headers(asked?.headers).get('Range')).toBe('bytes=0-2047')
+    expect(res!.status).toBe(206)
+    expect(res!.headers.get('Content-Range')).toBe('bytes 0-12/10633')
+    // a morgue never changes once written; a character dump does, with every save
+    expect(res!.headers.get('Cache-Control')).toContain('immutable')
+    // a Range that is not a plain one is not passed on
+    await serveMorgue(file, async (_u, init) => ((asked = init), new Response('x')), 'bytes=0-1,5-9')
+    expect(asked).toBeUndefined()
   })
 })

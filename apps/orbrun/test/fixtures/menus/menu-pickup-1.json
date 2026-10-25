@@ -1,7 +1,6 @@
 {
  "server": "wss://crawl.dcss.io/socket",
  "version": "Dungeon Crawl Stone Soup 0.34.1-4-g0e95e087e2",
- "player": "z0id",
  "tag": "menu-pickup",
  "msgs": [
   {

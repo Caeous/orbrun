@@ -53,7 +53,7 @@ export default {
     }
 
     // a morgue is read as it is: a character dump is rewritten on every save
-    if (morgue) return (await serveMorgue(url.pathname)) ?? new Response('not found', { status: 404 })
+    if (morgue) return (await serveMorgue(url.pathname, fetch, request.headers.get('Range'))) ?? new Response('not found', { status: 404 })
 
     // versioned paths are immutable, so the edge cache is the whole story:
     // one fetch per file per colo, however many players are on that version

@@ -344,6 +344,34 @@ describe('OfflineServer game', () => {
     ])
   })
 
+  it('names the morgue crawl wrote as the game ended: a file in the save directory, read on this device', async () => {
+    const s = setup()
+    s.server.receive({ msg: 'token_login', cookie: 'offline:sam' })
+    s.server.receive({ msg: 'play', game_id: 'offline-0.34' })
+    await tick()
+    await tick()
+    s.out.length = 0
+    // a character dump (a save's, a `#`'s) is no game's end
+    s.engine().output('*{"msg":"dump","type":"save","filename":"sam"}\n')
+    s.engine().output('*{"msg":"dump","type":"morgue","filename":"morgue-sam-20261025-160832"}\n')
+    s.engine().output('*{"msg":"exit_reason","type":"quit"}\n')
+    s.engine().exit(0)
+    await tick()
+    expect(s.flat()[1]).toEqual({ msg: 'game_ended', reason: 'quit', dump: '/crawl-0.34~sam/morgue/morgue-sam-20261025-160832' })
+  })
+
+  it('names no file but a plain one in the morgue directory', async () => {
+    const s = setup()
+    s.server.receive({ msg: 'play', game_id: 'offline-0.34' })
+    await tick()
+    await tick()
+    s.out.length = 0
+    s.engine().output('*{"msg":"dump","type":"morgue","filename":"../saves/x"}\n')
+    s.engine().exit(0)
+    await tick()
+    expect(s.flat()[1]).toEqual({ msg: 'game_ended', reason: 'quit' })
+  })
+
   it('reports an engine that fails to load as an error', async () => {
     const s = setup()
     s.server.receive({ msg: 'play', game_id: 'offline-0.34' })

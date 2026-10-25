@@ -86,6 +86,15 @@ export const VERSIONS_PATH = 'accounts/versions'
 /** an account's rc file, under Accounts: `/accounts/rc/cdi/dcss-0.34`, and a player on this device's `/accounts/rc/offline` */
 export const RC_PATH = 'accounts/rc'
 
+/** an account's own screen, under Accounts: `/accounts/cdi`, `/accounts/offline` (who, after the `#`) */
+export const ACCOUNT_PATH = 'accounts'
+
+/** what follows `accounts/` in an address that names an account's screen of some kind, never a server */
+const ACCOUNT_SCREENS = new Set(['versions', 'rc', 'morgues', 'add'])
+
+/** an account's Morgues, `/accounts/morgues/cdi`, and one of them, `/accounts/morgues/cdi/20260915-155745` (when it ended) */
+export const MORGUES_PATH = 'accounts/morgues'
+
 function segments(pathname: string): string[] {
   return pathname.split('/').filter(Boolean)
 }
@@ -114,6 +123,8 @@ export function addressKind(pathname: string): 'page' | 'app' | 'none' {
   if (parts.length >= 2 && SERVER_VERBS.has(parts[0].toLowerCase())) return 'app'
   if (parts.length === 3 && parts.slice(0, 2).join('/').toLowerCase() === VERSIONS_PATH) return 'app'
   if ((parts.length === 3 || parts.length === 4) && parts.slice(0, 2).join('/').toLowerCase() === RC_PATH) return 'app'
+  if ((parts.length === 3 || parts.length === 4) && parts.slice(0, 2).join('/').toLowerCase() === MORGUES_PATH) return 'app'
+  if (parts.length === 2 && parts[0].toLowerCase() === ACCOUNT_PATH && !ACCOUNT_SCREENS.has(parts[1].toLowerCase())) return 'app'
   return 'none'
 }
 

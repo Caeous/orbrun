@@ -12,7 +12,8 @@ import { RC_PATH, type RcBook } from './rc.js'
  * device, so any login succeeds, as the name it gives, and its token lasts
  * ten years; each profile keeps its saves apart (profileSaveDir); nobody else
  * is in the lobby, so there is nothing to watch and no chat; and a game's
- * files never leave the device, so there is no dump URL.
+ * files never leave the device, so the dump a game's end names is a path in
+ * its save directory, read from IndexedDB (morgues.ts readSaveFile), not a URL.
  *
  * Crawl starts with the profile's name, as a server starts it with the
  * account's, which skips crawl's main menu (`name_bypasses_menu`): a profile
@@ -113,6 +114,8 @@ interface Game {
   queueing: boolean
   pending: ServerMessage[]
   exitReason: { type: string; message?: string } | null
+  /** The morgue crawl wrote as the game ended (end.cc `send_dump_info`): its path less `.txt`, as a server's `dump` is its URL less `.txt`. */
+  dump: string | null
   /** A save commit reached IndexedDB since the last stop was asked for. */
   saved: boolean
   onSaved: (() => void) | null
@@ -241,6 +244,7 @@ export class OfflineServer {
       queueing: false,
       pending: [],
       exitReason: null,
+      dump: null,
       saved: false,
       onSaved: null,
       ended: false,
@@ -308,9 +312,13 @@ export class OfflineServer {
       case 'milestone':
         this.o.saves?.note(game.saveDir, m)
         return
+      case 'dump':
+        // the morgue's name, in crawl's morgue directory under the save directory (initfile.cc `reset_paths`); the
+        // character dump a save or a `#` writes is no game's end
+        if (m.type === 'morgue' && typeof m.filename === 'string' && /^[^/]+$/.test(m.filename)) game.dump = `${game.saveDir}/morgue/${m.filename}`
+        return
       case 'client_path':
       case 'ending':
-      case 'dump':
         return
     }
     this.o.onDiagnostic?.(`offline engine sent an unknown server message "${m.msg}"`, m)
@@ -361,6 +369,7 @@ export class OfflineServer {
     const reason = game.exitReason ?? { type: code === 0 ? 'quit' : 'crash' }
     const ended: ServerMessage = { msg: 'game_ended', reason: reason.type }
     if (reason.message) ended.message = reason.message
+    if (game.dump) ended.dump = game.dump
     this.o.emit([{ msg: 'go_lobby' }, ended])
     if (this.loggedIn) void this.sendGameLinks()
   }

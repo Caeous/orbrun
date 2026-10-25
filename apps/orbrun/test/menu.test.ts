@@ -401,7 +401,8 @@ describe('the front end: the home screen', () => {
       expect(screen.root.querySelector('.head .place')?.textContent).toBe('Morgue file')
       expect(fetched).toHaveBeenCalledWith('/morgue-proxy/crawl.dcss.io/crawl/morgue/orbrun/morgue-orbrun-20260910-120000.txt')
       expect(screen.root.querySelector('.doc-scroll')?.textContent).toBe('Loading…')
-      await vi.waitFor(() => expect(screen.root.querySelector('.doc-scroll .doc-text')?.textContent).toContain('orbrun the Vexing'))
+      // read as a morgue (morgue-text.ts), not as one long line of text
+      await vi.waitFor(() => expect(screen.root.querySelector('.doc-scroll .morgue')?.textContent).toContain('orbrun the Vexing'))
       // no link out while it reads here
       expect(screen.root.querySelector('.about-links')).toBeNull()
       // Back returns to the report, with the game's end still on show
@@ -528,9 +529,11 @@ describe('the front end: the home screen', () => {
     await vi.waitFor(() => expect(fetched).toHaveBeenCalledWith(expect.stringContaining('/sam/sam.where'), expect.anything()))
     await Promise.resolve()
     pick(screen, 'sam · ' + cdi.name)
+    pick(screen, 'Play as sam')
     expect(labels(screen)[0]).toBe('Continue DCSS trunk')
     screen.showAccounts()
     pick(screen, 'orbrun · ' + cdi.name)
+    pick(screen, 'Play as orbrun')
     expect(labels(screen)[0]).toBe('Continue DCSS trunk')
   })
 
@@ -636,7 +639,7 @@ describe('the front end: the home screen', () => {
     try {
       const { screen } = make(() => s)
       pick(screen, 'Morgue file')
-      await vi.waitFor(() => expect(screen.root.querySelector('.doc-scroll .doc-text')).not.toBeNull())
+      await vi.waitFor(() => expect(screen.root.querySelector('.doc-scroll .morgue')).not.toBeNull())
       const scroller = screen.root.querySelector('.doc-scroll') as HTMLElement
       Object.defineProperty(scroller, 'clientHeight', { value: 500 })
       scroller.scrollTop = 0
@@ -652,7 +655,8 @@ describe('the front end: the home screen', () => {
       expect(scroller.scrollTop).toBe(612)
       press(screen, 'Home')
       expect(scroller.scrollTop).toBe(0)
-      expect(focused(screen)).toBe('back')
+      // the cursor stays where it stood, on Copy beside Back: up and down are the document's
+      expect(focused(screen)).toBe('doc:copy')
     } finally {
       vi.unstubAllGlobals()
     }
@@ -972,9 +976,9 @@ describe('the front end: accounts and servers', () => {
   })
 
   it('a player on this device is up once chosen, with no server to wait on', () => {
-    const device: Account = { serverId: 'offline', username: 'Marc' }
+    const device: Account = { serverId: 'offline', username: 'Ada' }
     expect(accountConn(null, device, true)).toBe('up')
-    expect(accountConn(fakeSession(OFFLINE_SERVER, 'Marc', {}, false), device, true)).toBe('up')
+    expect(accountConn(fakeSession(OFFLINE_SERVER, 'Ada', {}, false), device, true)).toBe('up')
     expect(accountConn(null, device, false)).toBe('off')
     // a server's account with nothing up yet is still on its way
     expect(accountConn(null, orbrun, true)).toBe('wait')
@@ -1033,7 +1037,9 @@ describe('the front end: accounts and servers', () => {
     const { screen } = make((sv, u) => (sv.id === 'cdi' && u === 'orbrun' ? s : null))
     screen.showAccounts()
     const dots = () => Array.from(screen.root.querySelectorAll('.menu .item')).filter((el) => el.querySelector('.conn-dot')).map((el) => [el.querySelector('.label')?.textContent, ['wait', 'down'].find((c) => el.querySelector('.conn-dot')!.classList.contains('conn-' + c))])
-    expect(dots()).toEqual([['orbrun · CDI', 'wait']])
+    // the one in use while its login is on the way; and one whose login its server has forgotten (no token kept),
+    // which its own screen asks for again
+    expect(dots()).toEqual([['orbrun · CDI', 'wait'], ['orbrun · CRG', 'down']])
     expect(sub(screen, 'orbrun · CDI')).toBe('in use')
     expect(sub(screen, 'orbrun · CRG')).toBeNull()
     // an account not in use is not a row that cannot be taken
@@ -1045,7 +1051,7 @@ describe('the front end: accounts and servers', () => {
     screen.refresh()
     expect(screen.root.querySelector('.menu')).not.toBe(before)
     // logged in: the dot goes, and "in use" stays
-    expect(dots()).toEqual([])
+    expect(dots()).toEqual([['orbrun · CRG', 'down']])
     expect(sub(screen, 'orbrun · CDI')).toBe('in use')
     expect(focused(screen)).toBe('add')
     const again = screen.root.querySelector('.menu')
@@ -1056,17 +1062,18 @@ describe('the front end: accounts and servers', () => {
   it('names an account on this device by name alone, with nothing under it, and the home screen says it too', () => {
     vi.stubEnv('MODE', 'development')
     try {
-      const marc: Account = { serverId: 'offline', username: 'Marc' }
-      localStorage.setItem('orbrun.accounts', JSON.stringify([marc, orbrun]))
+      const ada: Account = { serverId: 'offline', username: 'Ada' }
+      localStorage.setItem('orbrun.accounts', JSON.stringify([ada, orbrun]))
       localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
       const { screen } = make()
       screen.showAccounts()
-      expect(labels(screen)).toEqual(['Back', 'Marc', '(edit rc)', '(delete)', 'Add an offline account', 'orbrun · CDI', '(other versions)', '(remove)', 'Add a server account'])
-      expect(sub(screen, 'Marc')).toBeNull()
+      // nothing beside a name: what an account offers is on its own screen
+      expect(labels(screen)).toEqual(['Back', 'Ada', 'Add an offline account', 'orbrun · CDI', 'Add a server account'])
+      expect(sub(screen, 'Ada')).toBeNull()
       // and the home screen's account row names it as the account list does: the name alone
-      localStorage.setItem('orbrun.account', JSON.stringify(marc))
-      const home = make((sv, u) => fakeSession(sv, u, { username: 'Marc' })).screen
-      expect(conn(home)).toBe('Marc')
+      localStorage.setItem('orbrun.account', JSON.stringify(ada))
+      const home = make((sv, u) => fakeSession(sv, u, { username: 'Ada' })).screen
+      expect(conn(home)).toBe('Ada')
     } finally {
       vi.unstubAllEnvs()
     }
@@ -1076,18 +1083,18 @@ describe('the front end: accounts and servers', () => {
     vi.stubEnv('MODE', 'development')
     vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: function Suspending() {} }))
     try {
-      const marc: Account = { serverId: 'offline', username: 'Marc' }
+      const ada: Account = { serverId: 'offline', username: 'Ada' }
       // used last first, as ever, but within its group
-      localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, marc]))
+      localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, ada]))
       localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
       const { screen } = make()
       screen.showAccounts()
       const heads = () => Array.from(screen.root.querySelectorAll('.menu .group-head')).map((el) => el.textContent)
       expect(heads()).toEqual(['Offline', 'Servers'])
-      expect(labels(screen)).toEqual(['Back', 'Marc', '(edit rc)', '(delete)', 'Add an offline account', 'orbrun · CDI', '(other versions)', '(remove)', 'Add a server account'])
+      expect(labels(screen)).toEqual(['Back', 'Ada', 'Add an offline account', 'orbrun · CDI', 'Add a server account'])
       expect(sub(screen, 'Add an offline account')).toBe('on this device')
-      // the headings are read, never stood on: down from Marc's row is Add an offline account, then orbrun
-      while (focused(screen) !== 'account:offline/Marc') press(screen, 'ArrowDown')
+      // the headings are read, never stood on: down from Ada's row is Add an offline account, then orbrun
+      while (focused(screen) !== 'account:offline/Ada') press(screen, 'ArrowDown')
       press(screen, 'ArrowDown')
       expect(focused(screen)).toBe('add-player')
       press(screen, 'ArrowDown')
@@ -1132,20 +1139,20 @@ describe('the front end: accounts and servers', () => {
     // Firefox 151: no WebAssembly.Suspending
     vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: undefined }))
     try {
-      const marc: Account = { serverId: 'offline', username: 'Marc' }
-      localStorage.setItem('orbrun.accounts', JSON.stringify([marc, orbrun]))
+      const ada: Account = { serverId: 'offline', username: 'Ada' }
+      localStorage.setItem('orbrun.accounts', JSON.stringify([ada, orbrun]))
       const { screen } = make()
       screen.showAccounts()
-      expect(labels(screen)).toContain('Marc')
+      expect(labels(screen)).toContain('Ada')
       expect(sub(screen, 'Add an offline account')).toBe('needs a newer browser')
       // its home screen says why, and Play starts no game
-      localStorage.setItem('orbrun.account', JSON.stringify(marc))
-      const home = make((sv, u) => fakeSession(sv, u, { username: 'Marc', complete: true, games: [{ id: 'dcss-0.34', label: 'DCSS 0.34' }] }))
+      localStorage.setItem('orbrun.account', JSON.stringify(ada))
+      const home = make((sv, u) => fakeSession(sv, u, { username: 'Ada', complete: true, games: [{ id: 'dcss-0.34', label: 'DCSS 0.34' }] }))
       expect(home.screen.root.querySelector('.notice')?.textContent).toMatch(/Update it to its newest version/)
       expect(sub(home.screen, 'Play DCSS 0.34')).toBe('needs a newer browser')
       home.connect.mockClear()
       pick(home.screen, 'Play DCSS 0.34')
-      expect(home.connect).toHaveBeenCalledWith(OFFLINE_SERVER, 'Marc', undefined)
+      expect(home.connect).toHaveBeenCalledWith(OFFLINE_SERVER, 'Ada', undefined)
     } finally {
       vi.unstubAllEnvs()
       vi.unstubAllGlobals()
@@ -1164,13 +1171,13 @@ describe('the front end: accounts and servers', () => {
       for (const [ua, touch] of uas) {
         vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(ua)
         vi.spyOn(navigator, 'maxTouchPoints', 'get').mockReturnValue(touch)
-        const marc: Account = { serverId: 'offline', username: 'Marc' }
-        localStorage.setItem('orbrun.accounts', JSON.stringify([marc, orbrun]))
+        const ada: Account = { serverId: 'offline', username: 'Ada' }
+        localStorage.setItem('orbrun.accounts', JSON.stringify([ada, orbrun]))
         const { screen } = make()
         screen.showAccounts()
         expect(sub(screen, 'Add an offline account')).toBe('not on iPhone or iPad yet')
-        localStorage.setItem('orbrun.account', JSON.stringify(marc))
-        const home = make((sv, u) => fakeSession(sv, u, { username: 'Marc', complete: true, games: [{ id: 'dcss-0.34', label: 'DCSS 0.34' }] }))
+        localStorage.setItem('orbrun.account', JSON.stringify(ada))
+        const home = make((sv, u) => fakeSession(sv, u, { username: 'Ada', complete: true, games: [{ id: 'dcss-0.34', label: 'DCSS 0.34' }] }))
         const notice = home.screen.root.querySelector('.notice')?.textContent
         expect(notice).toMatch(/iPhone or iPad yet/)
         expect(notice).not.toMatch(/Update/)
@@ -1191,11 +1198,11 @@ describe('the front end: accounts and servers', () => {
     // the home screen looks for builds as it comes up: nothing is published here
     const update = vi.spyOn(engines, 'update').mockResolvedValue()
     try {
-      const marc: Account = { serverId: 'offline', username: 'Marc' }
-      localStorage.setItem('orbrun.accounts', JSON.stringify([marc]))
-      localStorage.setItem('orbrun.account', JSON.stringify(marc))
-      const games = [{ id: 'offline-trunk', label: 'DCSS trunk', save: 'Marc, a level 1 Human Fighter' }]
-      const { screen } = make((sv, u) => fakeSession(sv, u, { username: 'Marc', complete: true, games }))
+      const ada: Account = { serverId: 'offline', username: 'Ada' }
+      localStorage.setItem('orbrun.accounts', JSON.stringify([ada]))
+      localStorage.setItem('orbrun.account', JSON.stringify(ada))
+      const games = [{ id: 'offline-trunk', label: 'DCSS trunk', save: 'Ada, a level 1 Human Fighter' }]
+      const { screen } = make((sv, u) => fakeSession(sv, u, { username: 'Ada', complete: true, games }))
       const fine = () => screen.root.querySelector('.menu-msg .fine')?.textContent
       expect(fine()).toBe('0.35-a0-1079')
       build.mockReturnValue(info('0.35-a0-1080-gbbbbbbb'))
@@ -1236,16 +1243,30 @@ describe('the front end: accounts and servers', () => {
     expect(screen.root.querySelector('.home-version')).toBeNull()
   })
 
-  it('an account picked is chosen, opens its own connection, and the home screen is its', () => {
+  it('an account picked opens its own screen, and Play as it chooses it, opens its own connection, and the home screen is its', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, roguelikes]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
-    // CRG has forgotten its login: it asks for the password again beside its row
+    // CRG has forgotten its login: its screen asks for the password again
     localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
-    const { screen, connect } = make()
+    const { screen, connect, at } = make()
     pick(screen, 'orbrun · CDI')
     expect(screen.view).toBe('accounts')
-    expect(labels(screen)).toEqual(['Back', 'orbrun · CDI', '(other versions)', '(remove)', 'orbrun · CRG', '(other versions)', '(log in)', '(remove)', 'Add an account'])
+    expect(labels(screen)).toEqual(['Back', 'orbrun · CDI', 'orbrun · CRG', 'Add an account'])
     screen.root.querySelector<HTMLElement>('[data-focus="account:crg/orbrun"]')!.click()
+    expect(screen.view).toBe('account')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'accounts', serverId: 'crg', username: 'orbrun' })
+    expect(screen.root.querySelector('.head .place')?.textContent).toBe('orbrun · CRG')
+    // its versions come from the server once logged in, which CRG asks for again
+    expect(labels(screen)).toEqual(['Back', 'Play as orbrun', 'Morgues', 'Log in to see them', 'Log in', 'Remove'])
+    // the way in is lit, and nothing is chosen until it is taken
+    expect(focused(screen)).toBe('play')
+    expect(JSON.parse(localStorage.getItem('orbrun.account')!)).toEqual(orbrun)
+    // Back is the list again, on the account it came from
+    press(screen, 'Escape')
+    expect(screen.view).toBe('accounts')
+    expect(focused(screen)).toBe('account:crg/orbrun')
+    pad(screen, 'A')
+    pad(screen, 'A')
     expect(connect).toHaveBeenCalledWith(crg, 'orbrun', undefined)
     expect(JSON.parse(localStorage.getItem('orbrun.account')!)).toEqual(roguelikes)
     expect(screen.view).toBe('home')
@@ -1253,27 +1274,35 @@ describe('the front end: accounts and servers', () => {
     expect(conn(screen)).toBe('orbrun · CRG · Not logged in')
   })
 
-  it('a tap on a row chooses it at once: only the game’s own lists light a row first', () => {
+  it('a tap on a row takes it at once: only the game’s own lists light a row first', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, roguelikes]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
     const { screen, connect } = make()
     screen.showAccounts()
-    const row = screen.root.querySelector<HTMLElement>('[data-focus="account:crg/orbrun"]')!
-    expect(focused(screen)).not.toBe('account:crg/orbrun')
-    row.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true } as PointerEventInit))
-    row.click()
+    const tap = (id: string) => {
+      const row = screen.root.querySelector<HTMLElement>(`[data-focus="${id}"]`)!
+      expect(focused(screen)).not.toBe(id)
+      row.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true } as PointerEventInit))
+      row.click()
+    }
+    tap('account:crg/orbrun')
+    expect(screen.view).toBe('account')
+    tap('morgues')
+    expect(screen.view).toBe('morgues')
+    press(screen, 'Escape')
+    tap('play')
     expect(connect).toHaveBeenCalledWith(crg, 'orbrun', undefined)
     expect(screen.view).toBe('home')
   })
 
-  it('(log in) beside an account whose login is forgotten chooses it and asks for its password', () => {
+  it('Log in, on the screen of an account whose login is forgotten, chooses it and asks for its password', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun, roguelikes]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
     const { screen } = make()
-    screen.showAccounts()
-    ;(screen.root.querySelector('[data-focus="login:crg/orbrun"]') as HTMLElement).click()
+    screen.showAccount(roguelikes)
+    ;(screen.root.querySelector('[data-focus="login"]') as HTMLElement).click()
     expect(JSON.parse(localStorage.getItem('orbrun.account')!)).toEqual(roguelikes)
     expect(screen.view).toBe('login')
     expect(screen.root.querySelector<HTMLInputElement>('input[name="username"]')!.value).toBe('orbrun')
@@ -1297,7 +1326,11 @@ describe('the front end: accounts and servers', () => {
     localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
     const { screen, logout } = make()
     pick(screen, 'orbrun · CDI')
-    ;(screen.root.querySelector('[data-focus="remove:cdi/orbrun"]') as HTMLElement).click()
+    pick(screen, 'orbrun · CDI')
+    expect(screen.view).toBe('account')
+    // an account with its login kept has no Log in: its versions are on their way
+    expect(labels(screen)).toEqual(['Back', 'Play as orbrun', 'Morgues', 'Loading versions…', 'Remove'])
+    pick(screen, 'Remove')
     expect(logout).toHaveBeenCalledWith(orbrun)
     expect(localStorage.getItem('orbrun.account')).toBe('null')
     expect(JSON.parse(localStorage.getItem('orbrun.accounts')!)).toEqual([])
@@ -1311,8 +1344,8 @@ describe('the front end: accounts and servers', () => {
     localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok', 'crg/orbrun': 'tok' }))
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
     const { screen, logout } = make((sv, u) => (sv.id === 'cdi' && u === 'orbrun' ? s : null))
-    screen.showAccounts()
-    ;(screen.root.querySelector('[data-focus="remove:cdi/orbrun"]') as HTMLElement).click()
+    screen.showAccount(orbrun)
+    ;(screen.root.querySelector('[data-focus="remove"]') as HTMLElement).click()
     expect(logout).toHaveBeenCalledWith(orbrun)
     // the close it asked for lands a moment later (an offline engine's worker winds down on its own time)
     ;(s as unknown as { emit(e: unknown): void }).emit({ type: 'closed', reason: 'closed by the server' })
@@ -1530,7 +1563,7 @@ describe('the front end: Play and Watch', () => {
     expect(screen.root.textContent).not.toContain('Loading game versions…')
   })
 
-  it('keeps older versions and other modes off home: they are the account\'s Other versions, and nothing picked there sticks', () => {
+  it('keeps older versions and other modes off home: they are on the account’s own screen, and nothing picked there sticks', () => {
     const s = loggedIn()
     localStorage.setItem('orbrun.last', JSON.stringify({ serverId: 'cdi', gameId: 'dcss-web-0.33' }))
     s.state.lobby.games.push(
@@ -1546,37 +1579,33 @@ describe('the front end: Play and Watch', () => {
     expect(labels(screen).slice(0, 3)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch'])
     pick(screen, 'orbrun · CDI')
     expect(screen.view).toBe('accounts')
-    press(screen, 'ArrowRight')
-    expect(focused(screen)).toBe('versions:cdi/orbrun')
     pad(screen, 'A')
-    expect(screen.view).toBe('versions')
-    // one row per release, trunk first, the modes beside it; a slot another game holds is not offered
-    expect(labels(screen)).toEqual(['Back', 'DCSS trunk', '(tutorial)', 'DCSS 0.34', '(sprint)', 'DCSS 0.33', 'DCSS 0.32', 'Zot Defence 0.17'])
+    expect(screen.view).toBe('account')
+    // one row per release under Versions, trunk first, the modes beside it; a slot another game holds is not offered
+    expect(screen.root.querySelector('.group-head')?.textContent).toBe('Versions')
+    expect(labels(screen)).toEqual(['Back', 'Play as orbrun', 'Morgues', 'DCSS trunk', '(tutorial)', 'DCSS 0.34', '(sprint)', 'DCSS 0.33', 'DCSS 0.32', 'Zot Defence 0.17', 'Remove'])
     expect(sub(screen, 'DCSS 0.33')).toBe('a level 5 Gargoyle Fighter')
+    press(screen, 'ArrowDown')
+    press(screen, 'ArrowDown')
     expect(focused(screen)).toBe('play:dcss-web-trunk')
     press(screen, 'ArrowRight')
     expect(focused(screen)).toBe('play:tut-web-trunk')
     pad(screen, 'A')
     expect(connect).toHaveBeenLastCalledWith(cdi, 'orbrun', { kind: 'play', gameId: 'tut-web-trunk' })
     pick(screen, 'orbrun · CDI')
-    pick(screen, '(other versions)')
-    expect(screen.view).toBe('versions')
-    pad(screen, 'B')
-    expect(screen.view).toBe('accounts')
-    expect(focused(screen)).toBe('versions:cdi/orbrun')
-    pad(screen, 'A')
+    pick(screen, 'orbrun · CDI')
     pick(screen, 'DCSS 0.33')
     expect(connect).toHaveBeenLastCalledWith(cdi, 'orbrun', { kind: 'play', gameId: 'dcss-web-0.33' })
     expect(screen.view).toBe('home')
     expect(labels(screen)).not.toContain('Continue DCSS 0.33')
   })
 
-  it('opens Other versions from its address, and says it while on show', () => {
+  it('opens what was Other versions, from its address, as the account’s own screen', () => {
     const s = loggedIn()
     const { screen, at } = make(() => s)
     screen.open({ kind: 'menu', path: 'accounts/versions', serverId: 'cdi', username: 'orbrun' })
-    expect(screen.view).toBe('versions')
-    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'accounts/versions', serverId: 'cdi', username: 'orbrun' })
+    expect(screen.view).toBe('account')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'accounts', serverId: 'cdi', username: 'orbrun' })
     // an account this device does not have: the home screen
     screen.open({ kind: 'menu', path: 'accounts/versions', serverId: 'cdi', username: 'stranger' })
     expect(screen.view).toBe('home')
@@ -1736,12 +1765,14 @@ describe('the front end: the rc file', () => {
     t.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
-  it('stands beside each release on Other versions, and opens the file the lobby names, with who else reads it', async () => {
+  it('stands beside each release on the account’s screen, and opens the file the lobby names, with who else reads it', async () => {
     const { s, readRc } = withRc({ 'dcss-web-0.34': 'autopickup = $?!+"/%\n' })
     const { screen, at } = make(() => s)
-    screen.showOtherVersions({ serverId: 'cdi', username: 'orbrun' })
-    expect(labels(screen)).toEqual(['Back', 'DCSS trunk', '(edit rc)', '(sprint)', 'DCSS 0.34', '(edit rc)', '(sprint)', '(tutorial)'])
+    screen.showAccount({ serverId: 'cdi', username: 'orbrun' })
+    expect(labels(screen)).toEqual(['Back', 'Play as orbrun', 'Morgues', 'DCSS trunk', '(edit rc)', '(sprint)', 'DCSS 0.34', '(edit rc)', '(sprint)', '(tutorial)', 'Remove'])
     // the rc file is the first thing right of a release, in the same column on every row
+    press(screen, 'ArrowDown')
+    press(screen, 'ArrowDown')
     press(screen, 'ArrowRight')
     expect(focused(screen)).toBe('rc:dcss-web-trunk')
     ;(screen.root.querySelector('[data-focus="rc:dcss-web-0.34"]') as HTMLElement).click()
@@ -1814,7 +1845,7 @@ describe('the front end: the rc file', () => {
   it('asks for a second Back before it drops changes, and comes back to the rc link it was opened from', async () => {
     const { s } = withRc({ 'dcss-web-0.34': 'a = b\n' })
     const { screen } = make(() => s)
-    screen.showOtherVersions({ serverId: 'cdi', username: 'orbrun' })
+    screen.showAccount({ serverId: 'cdi', username: 'orbrun' })
     ;(screen.root.querySelector('[data-focus="rc:dcss-web-0.34"]') as HTMLElement).click()
     await settle()
     type(box(screen), 'c = d\n')
@@ -1822,14 +1853,14 @@ describe('the front end: the rc file', () => {
     expect(screen.view).toBe('rc')
     expect(labels(screen)[0]).toBe('Back, without saving?')
     pad(screen, 'B')
-    expect(screen.view).toBe('versions')
+    expect(screen.view).toBe('account')
     expect(focused(screen)).toBe('rc:dcss-web-0.34')
     // nothing changed: one Back
     ;(screen.root.querySelector('[data-focus="rc:dcss-web-0.34"]') as HTMLElement).click()
     await settle()
     expect(box(screen).value).toBe('a = b\n')
     pad(screen, 'B')
-    expect(screen.view).toBe('versions')
+    expect(screen.view).toBe('account')
   })
 
   it('types from a pad with the on-screen keyboard, a new line and all, and Y comes back out', async () => {
@@ -1876,26 +1907,28 @@ describe('the front end: the rc file', () => {
     expect(note(screen)).toBeNull()
   })
 
-  it('gives a player on this device one file for every game, beside its name under Accounts', async () => {
+  it('gives a player on this device one file for every game, on its screen under Accounts', async () => {
     vi.stubEnv('MODE', 'development')
     try {
-      const marc: Account = { serverId: 'offline', username: 'Marc' }
-      localStorage.setItem('orbrun.accounts', JSON.stringify([marc]))
-      const s = fakeSession(OFFLINE_SERVER, 'Marc', { username: 'Marc', complete: true, games: [{ id: 'offline-0.34', label: 'DCSS 0.34' }] })
+      const ada: Account = { serverId: 'offline', username: 'Ada' }
+      localStorage.setItem('orbrun.accounts', JSON.stringify([ada]))
+      const s = fakeSession(OFFLINE_SERVER, 'Ada', { username: 'Ada', complete: true, games: [{ id: 'offline-0.34', label: 'DCSS 0.34' }] })
       const readRc = vi.fn(async () => 'bold_brightens_foreground = true\n')
       Object.assign(s, { readRc, writeRc: vi.fn() })
       const { screen, at } = make(() => s)
       screen.showAccounts()
-      pick(screen, '(edit rc)')
+      pick(screen, 'Ada')
+      expect(labels(screen)).toEqual(['Back', 'Play as Ada', 'Morgues', 'Edit rc', 'Delete'])
+      pick(screen, 'Edit rc')
       expect(screen.view).toBe('rc')
       expect(readRc).toHaveBeenCalledWith('', expect.any(Number))
-      expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'accounts/rc', serverId: 'offline', username: 'Marc' })
-      expect(screen.root.querySelector('.lede')?.textContent).toBe('Marc · every game on this device')
+      expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'accounts/rc', serverId: 'offline', username: 'Ada' })
+      expect(screen.root.querySelector('.lede')?.textContent).toBe('Ada · every game on this device')
       await settle()
       expect(box(screen).value).toBe('bold_brightens_foreground = true\n')
       pad(screen, 'B')
-      expect(screen.view).toBe('accounts')
-      expect(focused(screen)).toBe('rc:offline/Marc')
+      expect(screen.view).toBe('account')
+      expect(focused(screen)).toBe('rc')
     } finally {
       vi.unstubAllEnvs()
     }
@@ -1906,6 +1939,208 @@ describe('the front end: the rc file', () => {
     const { screen } = make(() => s)
     screen.open({ kind: 'menu', path: 'accounts/rc', serverId: 'cdi', username: 'stranger', gameId: 'dcss-web-0.34' })
     expect(screen.view).toBe('home')
+  })
+})
+
+describe('the front end: an account and its morgues', () => {
+  beforeEach(() => {
+    store.clear()
+    document.body.replaceChildren()
+  })
+
+  /** A morgue as crawl writes one: its head (hiscores.cc `hiscore_line`, verbose), the overview's title, and its notes. */
+  const written = (version: string, lines: string[]) =>
+    [` Dungeon Crawl Stone Soup version ${version} (webtiles) character file.`, '', 'Game seed: 27', '', ...lines.map((l, i) => (i ? '             ' + l : l)), '', 'orbrun the Covert (Vine Stalker Enchanter)          Turns: 2296, Time: 00:20:19', '',
+      'Notes', 'Turn   | Place    | Note', '-------+----------+-------------------------------------------', '     0 | D:1      | orbrun began the quest for the Orb.', ''].join('\n')
+  /** the test account's games on CDI, by file */
+  const MORGUES: Record<string, string> = {
+    'morgue-orbrun-20260914-190808.txt': written('0.34.1-4-g0e95e087e2', ['0 orbrun the Cudgeller (level 1, 20/20 HPs)', 'Began as a Gnoll Reaver on Sept 10, 2026.', 'Quit the game on level 1 of the Dungeon on Sept 14, 2026.', 'The game lasted 00:00:34 (30 turns).']),
+    'morgue-orbrun-20260915-155745.txt': written('0.35-a0-1027-gfe65402f27', ['545 orbrun the Covert (level 7, 0/33 HPs)', 'Began as a Vine Stalker Enchanter on Sept 15, 2026.', 'Slain by a gnoll', '... wielding a +0 halberd of entangling', ' (1 damage)', '... on level 4 of the Dungeon.', 'The game lasted 00:20:18 (2296 turns).']),
+    'morgue-orbrun-20260916-000707.txt': written('0.35-a0-1027-gfe65402f27', ['53 orbrun the Sneak (level 3, -4/16 HPs)', 'Began as a Vine Stalker Enchanter on Sept 15, 2026.', 'Slain by Natasha (6 damage)', '... on level 2 of the Dungeon on Sept 16, 2026.', 'The game lasted 00:07:16 (1202 turns).']),
+    'morgue-orbrun-20260916-191307.txt': written('0.35-a0-1032-g9c70569048', ['1705 orbrun the Protected (level 8, 0/71 HPs)', 'Began as a Minotaur Fighter on Sept 16, 2026.', "Succumbed to a scorpion's poison", '... on level 6 of the Dungeon.', 'The game lasted 00:17:19 (5191 turns).']),
+  }
+  const morgue = (f: string) => MORGUES[f]
+  const FILES = ['morgue-orbrun-20260914-190808.txt', 'morgue-orbrun-20260915-155745.txt', 'morgue-orbrun-20260916-191307.txt']
+
+  /** CDI as the proxy has it: the account's morgue directory, listed, and its files, a head at a time */
+  function cdiMorgues(files = FILES) {
+    const fetched = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/morgue-proxy/crawl.dcss.io/crawl/morgue/orbrun/') return new Response(files.join('\n'))
+      const f = files.find((x) => url === '/morgue-proxy/crawl.dcss.io/crawl/morgue/orbrun/' + x)
+      if (!f) return new Response('', { status: 404 })
+      const range = new Headers(init?.headers).get('Range')
+      return new Response(range ? morgue(f).slice(0, 2048) : morgue(f), { status: range ? 206 : 200 })
+    })
+    vi.stubGlobal('fetch', fetched)
+    return fetched
+  }
+
+  const scores = (screen: FrontEnd) => Array.from(screen.root.querySelectorAll('table.morgues tr.game td.col-user')).map((el) => el.textContent)
+  const endings = (screen: FrontEnd) => Array.from(screen.root.querySelectorAll('table.morgues tr.ending')).map((el) => el.textContent)
+
+  it('lists every game the account has finished on its server, newest first, in the lobby’s columns', async () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+    const fetched = cdiMorgues()
+    const { screen, at } = make()
+    screen.showAccount(orbrun)
+    pick(screen, 'Morgues')
+    expect(screen.view).toBe('morgues')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'accounts/morgues', serverId: 'cdi', username: 'orbrun' })
+    expect(screen.root.querySelector('.head .place')?.textContent).toBe('Morgues · CDI')
+    await vi.waitFor(() => expect(scores(screen)).toEqual(['1705', '545', '0']))
+    expect(screen.root.querySelector('.head .lede')?.textContent).toBe('orbrun · 3 games')
+    const first = Array.from(screen.root.querySelectorAll('table.morgues tr.game')[0].querySelectorAll('td')).map((td) => td.textContent)
+    expect(first).toEqual(['1705', 'MiFi', '8', 'D:6', 'Succumbed to a scorpion\'s poison', '5191', 'trunk', expect.stringMatching(/^Sep 16/)])
+    expect(endings(screen)).toEqual(["Succumbed to a scorpion's poison", 'Slain by a gnoll', 'Quit the game'])
+    // each head is read with a Range, and no more than once
+    expect(fetched.mock.calls.filter(([u]) => u.endsWith('.txt')).every(([, init]) => new Headers(init?.headers).get('Range') === 'bytes=0-2047')).toBe(true)
+    // the cursor stands on the newest game once there are games, and says it
+    await vi.waitFor(() => expect(focused(screen)).toBe('morgue:20260916-191307'))
+    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('1705 points: the Protected, Minotaur Fighter, XL8. Succumbed to a scorpion\'s poison on D:6, Sep 16, turn 5191.')
+  })
+
+  it('puts the best first beside Back, the account’s high scores, and back again', async () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    cdiMorgues(['morgue-orbrun-20260914-190808.txt', 'morgue-orbrun-20260915-155745.txt', 'morgue-orbrun-20260916-000707.txt'])
+    const { screen } = make()
+    screen.showMorgues(orbrun)
+    await vi.waitFor(() => expect(scores(screen)).toEqual(['53', '545', '0']))
+    // the button names the order on show; pressed, it is the other
+    pick(screen, '(newest first)')
+    expect(scores(screen)).toEqual(['545', '53', '0'])
+    expect(labels(screen)).toContain('(best first)')
+    expect(focused(screen)).toBe('morgues:sort')
+    pick(screen, '(best first)')
+    expect(scores(screen)).toEqual(['53', '545', '0'])
+    expect(labels(screen)).toContain('(newest first)')
+  })
+
+  it('reads a morgue here, with its own address, and Back finds the list as it was', async () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    cdiMorgues()
+    const { screen, at } = make()
+    screen.showAccount(orbrun)
+    pick(screen, 'Morgues')
+    await vi.waitFor(() => expect(scores(screen)).toEqual(['1705', '545', '0']))
+    press(screen, 'ArrowDown')
+    expect(focused(screen)).toBe('morgue:20260915-155745')
+    pad(screen, 'A')
+    expect(screen.view).toBe('doc')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'accounts/morgues', serverId: 'cdi', username: 'orbrun', morgue: '20260915-155745' })
+    expect(screen.root.querySelector('.head .lede')?.textContent).toBe('545 · VSEn · Slain by a gnoll on D:4')
+    await vi.waitFor(() => expect(screen.root.querySelector('.doc-scroll .morgue .notes')).not.toBeNull())
+    // Copy, top right beside Back, takes the file as crawl wrote it
+    const writeText = vi.fn(async () => {})
+    const clipboard = vi.spyOn(navigator, 'clipboard', 'get').mockReturnValue({ writeText } as unknown as Clipboard)
+    expect(focused(screen)).toBe('doc:copy')
+    pad(screen, 'A')
+    await vi.waitFor(() => expect(labels(screen)).toContain('(copied)'))
+    expect(writeText).toHaveBeenCalledWith(morgue('morgue-orbrun-20260915-155745.txt'))
+    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('Copied: paste it anywhere.')
+    clipboard.mockRestore()
+    pad(screen, 'B')
+    expect(screen.view).toBe('morgues')
+    expect(focused(screen)).toBe('morgue:20260915-155745')
+    pad(screen, 'B')
+    expect(screen.view).toBe('account')
+    expect(focused(screen)).toBe('morgues')
+    pad(screen, 'B')
+    expect(screen.view).toBe('accounts')
+    expect(focused(screen)).toBe('account:cdi/orbrun')
+  })
+
+  it('opens a morgue from its address, the line under the title from the file itself', async () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
+    cdiMorgues()
+    const { screen } = make()
+    screen.open({ kind: 'menu', path: 'accounts/morgues', serverId: 'cdi', username: 'orbrun', morgue: '20260916-191307' })
+    expect(screen.view).toBe('doc')
+    await vi.waitFor(() => expect(screen.root.querySelector('.doc-scroll .morgue')).not.toBeNull())
+    expect(screen.root.querySelector('.head .lede')?.textContent).toBe("1705 · MiFi · Succumbed to a scorpion's poison on D:6")
+    // and an account's own screen from its address
+    screen.open({ kind: 'menu', path: 'accounts', serverId: 'cdi', username: 'orbrun' })
+    expect(screen.view).toBe('account')
+    screen.open({ kind: 'menu', path: 'accounts', serverId: 'cdi', username: 'stranger' })
+    expect(screen.view).toBe('accounts')
+  })
+
+  it('says so when a server lists no morgues where Orbrun can read them', async () => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([roguelikes]))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })))
+    const { screen } = make()
+    screen.showMorgues(roguelikes)
+    await vi.waitFor(() => expect(screen.root.querySelector('.hint.empty')?.textContent).toBe('CRG does not list orbrun’s morgues where Orbrun can read them.'.replace('’', "'")))
+    expect(scores(screen)).toEqual([])
+  })
+
+  it('reads an offline account’s morgues from this device, and the one a game just left from the report of its end', async () => {
+    vi.stubEnv('MODE', 'development')
+    vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: function Suspending() {} }))
+    // the morgue this device's engine wrote as Ada quit
+    const quit = written('0.34.1-4-g0e95e087e2', ['0 Ada the Shield-Bearer (level 1, 19/19 HPs)', 'Began as a Minotaur Fighter on Oct 25, 2026.', 'Quit the game on level 1 of the Dungeon.', 'The game lasted 00:00:00 (0 turns).'])
+    const files: Record<string, Int8Array> = {
+      '/crawl-0.34~ada/morgue/morgue-Ada-20261025-161159.txt': new Int8Array(new TextEncoder().encode(quit)),
+    }
+    const req = <T,>(result: T) => {
+      const r = { result } as { result: T; onsuccess?: () => void }
+      queueMicrotask(() => r.onsuccess?.())
+      return r
+    }
+    vi.stubGlobal('indexedDB', {
+      databases: async () => [{ name: '/crawl-0.34~ada' }],
+      open: () => req({ objectStoreNames: { contains: () => true }, transaction: () => ({ objectStore: () => ({ getAllKeys: () => req(Object.keys(files)), get: (k: string) => req(files[k] ? { contents: files[k] } : undefined) }) }), close() {} }),
+    })
+    try {
+      const ada: Account = { serverId: 'offline', username: 'Ada' }
+      localStorage.setItem('orbrun.accounts', JSON.stringify([ada]))
+      localStorage.setItem('orbrun.account', JSON.stringify(ada))
+      const s = fakeSession(OFFLINE_SERVER, 'Ada', { username: 'Ada', complete: true, games: [{ id: 'offline-0.34', label: 'DCSS 0.34' }] })
+      s.state.exit = { reason: 'quit', message: '       0 Ada the Shield-Bearer (level 1, 19/19 HPs)\n             Quit the game on level 1 of the Dungeon.\n', dump: '/crawl-0.34~ada/morgue/morgue-Ada-20261025-161159' }
+      const { screen } = make(() => s)
+      expect(screen.view).toBe('exit')
+      pick(screen, 'Morgue file')
+      expect(screen.root.querySelector('.head .lede')?.textContent).toBe('Kept on this device.')
+      await vi.waitFor(() => expect(screen.root.querySelector('.doc-scroll .morgue')?.textContent).toContain('Ada the Shield-Bearer'))
+      expect(screen.root.querySelector('.about-links')).toBeNull()
+      screen.showMorgues(ada)
+      expect(screen.root.querySelector('.head .place')?.textContent).toBe('Morgues · Ada')
+      await vi.waitFor(() => expect(scores(screen)).toEqual(['0']))
+      expect(endings(screen)).toEqual(['Quit the game'])
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('asks twice before an offline account is deleted, on its own screen', async () => {
+    vi.stubEnv('MODE', 'development')
+    const deleted: string[] = []
+    vi.stubGlobal('indexedDB', {
+      databases: async () => [{ name: '/crawl-0.34~ada' }, { name: '/crawl-0.34' }],
+      deleteDatabase(name: string) {
+        deleted.push(name)
+        const r = {} as { onsuccess?: () => void }
+        queueMicrotask(() => r.onsuccess?.())
+        return r
+      },
+    })
+    try {
+      const ada: Account = { serverId: 'offline', username: 'Ada' }
+      localStorage.setItem('orbrun.accounts', JSON.stringify([ada, orbrun]))
+      localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
+      const { screen } = make()
+      screen.showAccount(ada)
+      pick(screen, 'Delete')
+      expect(labels(screen)).toContain('Delete all?')
+      expect(focused(screen)).toBe('delete')
+      expect(deleted).toEqual([])
+      pick(screen, 'Delete all?')
+      await vi.waitFor(() => expect(deleted).toEqual(['/crawl-0.34~ada']))
+      expect(screen.view).toBe('accounts')
+      expect(labels(screen)).not.toContain('Ada')
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })
 

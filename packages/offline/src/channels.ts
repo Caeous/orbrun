@@ -78,6 +78,20 @@ async function saveDatabases(idb: IDBFactory): Promise<string[]> {
   return (await idb.databases()).map((d) => d.name ?? '').filter((n) => n.startsWith(slotSaveDir('')))
 }
 
+/** Whether a save database (profileSaveDir) is `profile`'s, in whichever slot. */
+function profileOwns(profile: string): (name: string) => boolean {
+  const p = profile.toLowerCase()
+  return (name) => {
+    const at = name.indexOf('~')
+    return p === DEFAULT_PROFILE.toLowerCase() ? at < 0 : at >= 0 && name.slice(at + 1) === p
+  }
+}
+
+/** A profile's save databases, one per slot it has played in. */
+export async function profileDatabases(profile: string, idb: IDBFactory = indexedDB): Promise<string[]> {
+  return (await saveDatabases(idb)).filter(profileOwns(profile))
+}
+
 /**
  * Delete a profile's saves in every slot: the IndexedDB database each slot's
  * directory is (profileSaveDir), what was noted of them (saves.ts), and its
@@ -86,15 +100,10 @@ async function saveDatabases(idb: IDBFactory): Promise<string[]> {
  * still open elsewhere (a game in another tab) goes when that closes.
  */
 export async function deleteProfileSaves(profile: string, idb: IDBFactory = indexedDB): Promise<void> {
-  const p = profile.toLowerCase()
-  const mine = (name: string) => {
-    const at = name.indexOf('~')
-    return p === DEFAULT_PROFILE.toLowerCase() ? at < 0 : at >= 0 && name.slice(at + 1) === p
-  }
-  forgetSaveNotes(mine)
+  forgetSaveNotes(profileOwns(profile))
   forgetRc(profile)
   await Promise.all(
-    (await saveDatabases(idb)).filter(mine).map(
+    (await profileDatabases(profile, idb)).map(
       (name) =>
         new Promise<void>((resolve) => {
           const req = idb.deleteDatabase(name)
@@ -126,7 +135,12 @@ async function holdsSave(idb: IDBFactory, name: string): Promise<boolean> {
  * The saved characters in one save directory's database: the `.cs` files
  * under `saves/`, by their full path. Null when the database cannot be read.
  */
-export function saveFiles(idb: IDBFactory, name: string): Promise<string[] | null> {
+export async function saveFiles(idb: IDBFactory, name: string): Promise<string[] | null> {
+  return (await fileKeys(idb, name))?.filter((k) => /\/saves\/[^/]+\.cs$/.test(k)) ?? null
+}
+
+/** Every file and directory in one save directory's database, by its full path. Null when the database cannot be read. */
+export function fileKeys(idb: IDBFactory, name: string): Promise<string[] | null> {
   return new Promise((resolve) => {
     const req = idb.open(name)
     req.onerror = () => resolve(null)
@@ -139,7 +153,7 @@ export function saveFiles(idb: IDBFactory, name: string): Promise<string[] | nul
       const keys = db.transaction('FILE_DATA').objectStore('FILE_DATA').getAllKeys()
       keys.onsuccess = () => {
         db.close()
-        resolve(keys.result.filter((k): k is string => typeof k === 'string' && /\/saves\/[^/]+\.cs$/.test(k)))
+        resolve(keys.result.filter((k): k is string => typeof k === 'string'))
       }
       keys.onerror = () => {
         db.close()

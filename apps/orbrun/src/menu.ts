@@ -9,6 +9,9 @@ import { nextHomePlace } from './room/places'
 import { RoomView } from './room/view'
 import { addAccount, addServer, ensureDeviceAccount, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, offlineRuns, onIOS, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
+import { deviceDump, deviceMorgues, morgueDate, morgueStamp, parseMorgue, serverMorgue, serverMorgueHead, serverMorgues, type MorgueSummary } from './morgues'
+import { morgueHtml } from './morgue-text'
+import { MORGUES_PATH } from './site'
 import type { Session } from './session'
 import { deleteProfileSaves, profileName, type EngineInfo, type EngineNote } from '@orbrun/offline'
 import { appSettled, connection, engines, updateApp } from './engines'
@@ -27,7 +30,7 @@ export type Intent = { kind: 'play'; gameId: string } | { kind: 'watch'; usernam
  * shoulder buttons walk; the rest are the flows off them: the account and
  * server flows off the account row, the login and register forms.
  */
-export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'versions' | 'rc' | 'servers' | 'add-server' | 'login' | 'register' | 'exit' | 'doc' | 'news'
+export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'accounts' | 'account' | 'morgues' | 'rc' | 'servers' | 'add-server' | 'login' | 'register' | 'exit' | 'doc' | 'news'
 
 const SECTIONS: View[] = ['home', 'watch', 'settings']
 
@@ -90,6 +93,55 @@ interface RcEdit {
   note: { text: string; error?: boolean } | null
   /** Back was pressed once with changes unsaved: once more leaves without them */
   leaving: boolean
+}
+
+/**
+ * An account's Morgues (showMorgues): what has been read of them. A server's
+ * are listed, then each row's head is read, newest first, a few at a time;
+ * this device's are read whole at once.
+ */
+interface MorgueBook {
+  account: Account
+  /** `unlisted`: the server lists no morgue directory for the account that the proxy can read */
+  state: 'listing' | 'reading' | 'ready' | 'none' | 'unlisted' | 'failed'
+  /** the morgue directory on the server they are in */
+  dir: string | null
+  /** every game, newest first, with its head once read (and its whole text, on this device) */
+  games: { file: string; summary: MorgueSummary | null; text?: string }[]
+  /** how many older ones there are than the newest MORGUES_SHOWN */
+  more: number
+  sort: 'date' | 'score'
+  aborter: AbortController
+}
+
+/** how many of an account's games Morgues lists: the newest */
+const MORGUES_SHOWN = 500
+/** how many heads are read at once */
+const MORGUE_READERS = 4
+
+/**
+ * Put text on the clipboard: the Clipboard API, and where a browser refuses it (an older one, a page not served
+ * securely) the selection of a box of it, as pages did before. False when neither would.
+ */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    // and the old way
+  }
+  const box = h('textarea', { readonly: true, style: 'position:fixed;top:0;left:0;opacity:0;pointer-events:none' })
+  box.value = text
+  document.body.append(box)
+  box.select()
+  let ok = false
+  try {
+    ok = document.execCommand('copy')
+  } catch {
+    ok = false
+  }
+  box.remove()
+  return ok
 }
 
 /** A text file read through the shell's proxy; a status that is not success is the failure's words. */
@@ -236,8 +288,15 @@ export class FrontEnd {
   private adding: ServerInfo | null = null
   /** the offline profile whose Delete was pressed once, asking to be pressed again (profileDelete) */
   private deleting: Account | null = null
-  /** whose Other versions are on show */
-  private versionsOf: Account | null = null
+  /** whose screen is on show under Accounts (showAccount) */
+  private accountOf: Account | null = null
+  /** an account's Morgues, as read so far: kept while a morgue of them is read, so Back finds the list as it was */
+  private morgues: MorgueBook | null = null
+  /** the Morgues table on show, and its rows by file, each with what it read last time, so a row that reads the same is kept */
+  private morgueTable: HTMLTableElement | null = null
+  private morgueRows = new Map<string, { tr: HTMLTableRowElement; end: HTMLTableRowElement; sig: string }>()
+  /** the still the document on show stands in: a morgue from an account's list stands where the account does */
+  private docStill: Backdrop | null = null
   /** the rc file on show */
   private rc: RcEdit | null = null
   /** where the server list was opened from, so B retraces the way in: the accounts, or the front screen */
@@ -643,10 +702,15 @@ export class FrontEnd {
       else this.showHome()
     } else if (v === 'watch') this.goHome()
     else if (v === 'accounts') this.showHome()
-    else if (v === 'versions') {
-      const a = this.versionsOf
-      this.versionsOf = null
-      this.showAccounts(a ? 'versions:' + a.serverId + '/' + a.username : undefined)
+    else if (v === 'account') {
+      const a = this.accountOf
+      this.accountOf = null
+      this.showAccounts(a ? accountRowId(a) : undefined)
+    } else if (v === 'morgues') {
+      const a = this.morgues?.account
+      this.leaveMorgues()
+      if (a) this.showAccount(a, 'morgues')
+      else this.showAccounts()
     } else if (v === 'rc') this.leaveRc()
     else if (v === 'exit') {
       // the screen behind the dialog is still the one to show: it is drawn again as it was (the shape it was
@@ -674,7 +738,8 @@ export class FrontEnd {
     if (this._view === 'home') this.showHome()
     else if (this._view === 'watch') this.showWatch()
     else if (this._view === 'accounts') this.showAccounts()
-    else if (this._view === 'versions' && this.versionsOf) this.showOtherVersions(this.versionsOf)
+    else if (this._view === 'account' && this.accountOf) this.showAccount(this.accountOf)
+    else if (this._view === 'morgues' && this.morgues) this.showMorgues(this.morgues.account)
     else if (this._view === 'rc' && this.rc) this.showRc(this.rc.account, this.rc.gameId)
   }
 
@@ -703,6 +768,10 @@ export class FrontEnd {
       this.rosterRows.clear()
       this.rosterSeen.clear()
       this.rosterTable = null
+    }
+    if (v !== 'morgues') {
+      this.morgueRows.clear()
+      this.morgueTable = null
     }
   }
 
@@ -767,13 +836,23 @@ export class FrontEnd {
       else this.showLogin()
       return
     }
+    // what was Other versions (`/accounts/versions/cdi`, before 2026-10-25) is the account's own screen now
     if (root === 'accounts' && sub === 'versions') {
       const account = r.serverId && r.username ? listAccounts().find((a) => sameAccount(a, { serverId: r.serverId!, username: r.username! })) : null
-      return account ? this.showOtherVersions(account) : this.showHome()
+      return account ? this.showAccount(account) : this.showHome()
     }
     if (root === 'accounts' && sub === 'rc') {
       const account = r.serverId && r.username ? listAccounts().find((a) => sameAccount(a, { serverId: r.serverId!, username: r.username! })) : null
       return account ? this.showRc(account, r.gameId ?? null) : this.showHome()
+    }
+    if (root === 'accounts' && sub === 'morgues') {
+      const account = r.serverId && r.username ? listAccounts().find((a) => sameAccount(a, { serverId: r.serverId!, username: r.username! })) : null
+      if (!account) return this.showHome()
+      return r.morgue ? this.showMorgue(account, r.morgue) : this.showMorgues(account)
+    }
+    if (root === 'accounts' && !sub && r.serverId) {
+      const account = r.username ? listAccounts().find((a) => sameAccount(a, { serverId: r.serverId!, username: r.username! })) : null
+      return account ? this.showAccount(account) : this.showAccounts()
     }
     if (root === 'settings') {
       // `camera` is the View tab's address from before it was named so (2026-10-17)
@@ -818,7 +897,8 @@ export class FrontEnd {
   private backdropFor(): Backdrop | null {
     const v = this._view
     if (v === 'news') return NEWS_BACKDROP
-    if (v === 'accounts' || v === 'versions' || v === 'rc' || v === 'login' || v === 'register') return ACCOUNT_BACKDROP
+    if (v === 'accounts' || v === 'account' || v === 'morgues' || v === 'rc' || v === 'login' || v === 'register') return ACCOUNT_BACKDROP
+    if (v === 'doc') return this.docStill
     if (v === 'settings' || v === 'settings-group' || v === 'controls') return SETTINGS_BACKDROP
     if (v === 'servers' || v === 'add-server') return this.serversMode === 'add' ? ACCOUNT_BACKDROP : WATCH_BACKDROP
     if (v === 'watch') return WATCH_BACKDROP
@@ -1301,21 +1381,29 @@ export class FrontEnd {
     if (words) parts.push(h('pre', { class: 'exit-message' }, words))
     const rows: Row[] = [{ id: 'exit:close', label: 'Close', marker: '<', hint: 'Back to the front.', fn: close }]
     if (exit.dump) {
+      const dump = exit.dump
       const text = exit.reason === 'saved' ? 'Character dump' : exit.reason === 'crash' ? 'Crash log' : 'Morgue file'
-      const url = morgueUrlFor(s.server, exit.dump)
-      let href = exit.dump + '.txt'
+      // a game on this device names a file in its save directory (@orbrun/offline), not an address
+      const device = !!s.server.offline
+      const url = device ? null : morgueUrlFor(s.server, dump)
+      let href = dump + '.txt'
       try {
         href = new URL(href, s.server.http).href
       } catch {
         // an address the browser cannot resolve is handed over as it came
       }
+      const read = () => (device ? deviceDump(dump).then((t) => t ?? Promise.reject(new Error('it is not on this device'))) : url ? fetchText(url) : Promise.reject(new Error('not a URL the proxy carries')))
+      // the file as it came, once it has, for Copy
+      let came: string | null = null
       rows.push({
         id: 'exit:dump', label: text, marker: '?', hint: `Read the ${text.toLowerCase()} here.`,
         fn: () => this.showDoc({
-          title: text, lede: `${s.server.name} keeps it; it reads here.`, links: [{ label: 'Open in a new tab', href }],
+          title: text, lede: device ? 'Kept on this device.' : `${s.server.name} keeps it; it reads here.`, links: device ? undefined : [{ label: 'Open in a new tab', href }],
           // the report is still the session's, so the front screen puts the dialog back up with it
           from: () => this.showHome(),
-          body: () => (url ? fetchText(url) : Promise.reject(new Error('not a URL the proxy carries'))).then((t) => h('pre', { class: 'doc-text' }, t)),
+          // a crash log is crawl's backtrace, not its console: it reads as it came
+          body: () => read().then((t) => ((came = t), exit.reason === 'crash' ? h('pre', { class: 'doc-text' }, t) : morgueDoc(t))),
+          copy: () => came,
         }),
       })
     }
@@ -1335,11 +1423,15 @@ export class FrontEnd {
    * "Loading…" until it does; one that fails says so, with the document's
    * link out as the way to it, when it has one.
    */
-  private showDoc(opts: { title: string; lede?: string; body: () => HTMLElement | Promise<HTMLElement>; from: () => void; links?: { label: string; href: string }[]; failed?: string; view?: View; cls?: string; extra?: Focusable[]; focus?: string }) {
+  private showDoc(opts: { title: string; lede?: string; body: () => HTMLElement | Promise<HTMLElement>; from: () => void; links?: { label: string; href: string }[]; failed?: string; view?: View; cls?: string; extra?: Focusable[]; focus?: string; still?: Backdrop; copy?: () => string | null }) {
     const cls = 'doc-list' + (opts.cls ? ' ' + opts.cls : '')
+    this.docStill = opts.still ?? null
     this.setView(opts.view ?? 'doc', cls)
     this.docFrom = opts.from
-    const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back.', fn: () => this.back() }]
+    // nothing to copy from a document that would not read: its link out is the way to it
+    const copy = opts.failed ? undefined : opts.copy
+    // a document that can be taken away (a morgue, to paste anywhere) has its Copy beside Back, at the top right
+    const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back.', fn: () => this.back(), ...(copy ? { also: [{ id: 'doc:copy', label: '(copy)', title: `Copy the ${opts.title.toLowerCase()} as crawl wrote it, to paste anywhere.`, fn: () => void this.copyDoc(copy) }] } : {}) }]
     const extra: Focusable[] = [...(opts.extra ?? [])]
     const below: HTMLElement[] = []
     const scroller = h('div', { class: 'doc-scroll' })
@@ -1378,6 +1470,17 @@ export class FrontEnd {
     this.list({ cls, title: opts.title, lede: opts.lede ?? (this.hooks.padConnected?.() ? 'Up and down scroll it; so does the right stick.' : 'Up and down scroll it.'), rows, below, extra, focus: opts.focus ?? BACK })
     // a document with no rows of its own leaves the cursor on Back: the document, not the cursor, is what up and down move
     this.docScroller = scroller
+  }
+
+  /** Copy the document on show, as it came: said on the message line, and on the button once it is done. */
+  private async copyDoc(text: () => string | null) {
+    const t = text()
+    if (t === null) return this.say('Still reading it: a moment, then copy it.')
+    const ok = await copyText(t)
+    if (this._view !== 'doc') return
+    const label = this.root.querySelector('[data-focus="doc:copy"] .label')
+    if (ok && label) label.textContent = '(copied)'
+    this.say(ok ? 'Copied: paste it anywhere.' : 'This browser would not copy it. Open it in a new tab, and copy it there.')
   }
 
   /** the release What's new was last read under before this visit to the front: every release since reads as New until the page is left for good */
@@ -1619,14 +1722,14 @@ export class FrontEnd {
   /**
    * The accounts on this device, in two groups: the ones on this device
    * (Offline), then the ones on servers, each group with its own Add at its
-   * foot. One row each, the name alone; the chosen one reads "in use" under
-   * it, and a dot after it while its connection is on the way or down. A server account listed is logged
-   * in: Remove beside it forgets it, and Log in stands beside it too once
-   * its server has forgotten the login.
+   * foot. One row each, the name alone, which opens the account's own screen
+   * (showAccount); the chosen one reads "in use" under it, and a dot after a
+   * name says something is not right: the chosen one's connection on the
+   * way or down, any other's login forgotten by its server.
    */
   showAccounts(focus?: string) {
     const again = this._view === 'accounts'
-    if (!focus && !again) this.deleting = null
+    this.deleting = null
     this.adding = null
     this.watchOn = null
     this.hooks.warm?.()
@@ -1638,36 +1741,18 @@ export class FrontEnd {
       const server = findServer(a.serverId)
       if (!server) return
       const s = this.hooks.session?.(server, a.username)
+      const inUse = sameAccount(a, chosen)
       rows.push({
-        id: 'account:' + a.serverId + '/' + a.username,
+        id: accountRowId(a),
         // named as the home screen's account row names it; its group says where it is. Only the chosen one has a
-        // line under it, and a dot when its connection is not ready: it is the one connected, and any other listed
-        // is logged in all the same
+        // line under it: it is the one connected, and any other listed is logged in all the same
         label: server.offline ? a.username : `${a.username} · ${server.name}`,
-        sub: sameAccount(a, chosen) ? 'in use' : null,
-        conn: sameAccount(a, chosen) ? accountConn(s, a, true) : undefined,
+        sub: inUse ? 'in use' : null,
+        conn: inUse ? accountConn(s, a, true) : !server.offline && loginState(a, s?.state.lobby.username || null, !!s?.loggingIn) === 'out' ? 'down' : undefined,
         marker: server.offline ? DEVICE_MARKER : '\\',
-        main: sameAccount(a, chosen),
-        hint: `Play as ${a.username} on ${server.host}.`,
-        fn: () => {
-          setChosenAccount(a)
-          // a switch, not a return from a game: what the server said is waiting still stands
-          this.connectTo(a, undefined, false)
-        },
-        also: server.offline
-          ? [{ id: 'rc:' + a.serverId + '/' + a.username, label: '(edit rc)', title: `${a.username}'s rc file: the options every game on this device starts with.`, fn: () => this.showRc(a, null) }, ...this.profileDelete(a)]
-          : [
-              { id: 'versions:' + a.serverId + '/' + a.username, label: '(other versions)', title: `Every version ${server.name} offers, with its Sprint, tutorial and seeded games.`, fn: () => this.showOtherVersions(a) },
-              // a login the server has forgotten is asked for again here; any other stays until the account is removed
-              ...(loginState(a, s?.state.lobby.username || null, !!s?.loggingIn) === 'out'
-                ? [{ id: 'login:' + a.serverId + '/' + a.username, label: '(log in)', title: `${server.host} has forgotten ${a.username}'s login: log in again.`, fn: () => {
-                    setChosenAccount(a)
-                    this.loginName = a.username
-                    this.showLogin()
-                  } }]
-                : []),
-              { id: 'remove:' + a.serverId + '/' + a.username, label: '(remove)', title: `Take ${a.username} off this device, and forget its login. The account stays on ${server.host}.`, fn: () => this.logout(a) },
-            ],
+        main: inUse,
+        hint: server.offline ? `${a.username}, on this device: play, the morgues, the rc file.` : `${a.username} on ${server.host}: play, the morgues, other versions.`,
+        fn: () => this.showAccount(a),
       })
     }
     if (offline) {
@@ -1691,7 +1776,7 @@ export class FrontEnd {
     rows.push({ id: 'add', label: offline ? 'Add a server account' : 'Add an account', sub: onServers ? 'on any server' : 'to play online', marker: '+', gap: !offline, main: !accounts.length, hint: 'Choose a server, then log in or register.', fn: () => this.showServers('add') })
     // redrawn as its login moves on (a connection's messages call it again): only when it would read differently,
     // and in place, without sliding in again
-    const shape = JSON.stringify(rows.map((r) => [r.id, r.label, r.sub, r.conn, r.main, r.also?.map((a) => a.label)]))
+    const shape = JSON.stringify(rows.map((r) => [r.id, r.label, r.sub, r.conn, r.main]))
     if (again && !focus && this.shape.get('accounts') === shape && !this.error) return
     this.setView('accounts', 'accounts-list')
     this.at({ kind: 'menu', path: 'accounts' })
@@ -1700,55 +1785,340 @@ export class FrontEnd {
   }
 
   /**
-   * Everything an account's server offers, one row per release (trunk, then newest first): the plain game is
-   * the row, with its save when the server says so, and the modes (Sprint, the tutorial, a custom seed…) stand
-   * beside it. Reached only from Accounts, and nothing picked here sticks: the home screen stays the latest
-   * and trunk.
+   * One account's screen, off its row under Accounts: play as it (the way in,
+   * and the switch to it), its Morgues, and on a server every version it
+   * offers, one row per release (trunk, then newest first) with its save when
+   * the server says so, its rc file and its modes (Sprint, the tutorial, a
+   * custom seed…) beside it; then a login its server has forgotten, and the
+   * way off this device. On this device, its rc file instead. A version
+   * played here is a game of that account; nothing picked here sticks, and the
+   * home screen stays the latest and trunk.
    */
-  showOtherVersions(a: Account, focus?: string) {
+  showAccount(a: Account, focus?: string) {
     const server = findServer(a.serverId)
-    if (!server || server.offline) return this.showAccounts()
-    const again = this._view === 'versions' && !!this.versionsOf && sameAccount(this.versionsOf, a)
-    this.versionsOf = a
-    // the links come only to a logged-in account, so this is a switch to it, as picking its row is
-    if (!again) setChosenAccount(a)
-    const s = this.ensureSession(server, a.username)
-    const lobby = s.conn.open ? s.state.lobby : null
-    const who = (lobby?.username || null) ?? a.username
-    const where = this.whereFor(server, who)
-    const games = this.games(server, s)
-    const versions = games?.length ? gameVersionRows(games) : null
-    const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back to the accounts.', fn: () => this.back() }]
-    const play = (g: GameLink) => () => {
-      this.versionsOf = null
-      this.connectTo(a, { kind: 'play', gameId: g.id })
-    }
-    for (const { version, game, modes } of versions ?? []) {
-      // a `.where` answers for its version's plain game only, never for a mode of it
-      const save = this.saveOf(game, version, who, s, where)
-      rows.push({
-        id: 'play:' + game.id, label: game.label, sub: save?.sub ?? null, marker: '>',
-        hint: save?.hint ?? `A new game of ${game.label} on ${server.host}.`,
-        fn: play(game),
-        also: [
-          // the release's rc file, as the lobby offers it beside the game (game_links.html `(edit rc)`): first, so it
-          // stands in the same column on every row, however many modes follow
-          ...(game.rc ? [{ id: 'rc:' + game.rc, label: '(edit rc)', title: `Your rc file for ${game.label}: the options crawl starts with${sharedRc(games ?? [], game.rc, ' — ')}.`, fn: () => this.showRc(a, game.rc!) }] : []),
-          ...modes.map((m) => {
-            const saved = !!m.save && m.save !== 'playing' && m.save !== 'slot full'
-            return { id: 'play:' + m.id, label: `(${saved ? 'continue ' : ''}${modeName(m)})`, title: saved ? `Continue ${m.label}: ${m.save}.` : `A new game of ${m.label} on ${server.host}.`, fn: play(m) }
-          }),
-        ],
-      })
-    }
+    if (!server) return this.showAccounts()
+    const again = this._view === 'account' && !!this.accountOf && sameAccount(this.accountOf, a)
+    if (!again) this.deleting = null
+    this.accountOf = a
+    this.adding = null
+    this.watchOn = null
+    // a server's versions come from its lobby, logged in as this account; this device's are its own
+    let s: Session | null = null
+    if (server.offline) this.hooks.warm?.()
+    else s = this.ensureSession(server, a.username)
+    s ??= this.hooks.session?.(server, a.username) ?? null
+    const inUse = sameAccount(a, getChosenAccount())
+    const rows: Row[] = [
+      { id: BACK, label: 'Back', marker: '<', hint: 'Back to the accounts.', fn: () => this.back() },
+      {
+        id: 'play', label: `Play as ${a.username}`, sub: inUse ? 'in use' : null, conn: inUse ? accountConn(s, a, true) : undefined, marker: '>', main: true,
+        hint: inUse ? `The front, as ${a.username}.` : `Play as ${a.username} on ${server.host}.`,
+        fn: () => {
+          this.accountOf = null
+          setChosenAccount(a)
+          // a switch, not a return from a game: what the server said is waiting still stands
+          this.connectTo(a, undefined, false)
+        },
+      },
+      { id: 'morgues', label: 'Morgues', marker: '?', hint: server.offline ? `Every game ${a.username} has finished on this device, and how it ended.` : `Every game ${a.username} has finished on ${server.name}, and how it ended.`, fn: () => this.showMorgues(a) },
+    ]
     const notices: HTMLElement[] = []
-    if (!versions) notices.push(h('div', { class: 'hint' }, !s.conn.open ? 'Connecting…' : lobby?.complete ? 'No games offered by this server.' : 'Loading game versions…'))
-    const shape = JSON.stringify([rows.map((r) => [r.id, r.label, r.sub, r.also?.map((m) => m.label)]), notices.map((n) => n.textContent)])
-    if (again && !focus && this.shape.get('versions') === shape && !this.error) return
-    this.setView('versions', 'versions-list')
-    this.at({ kind: 'menu', path: 'accounts/versions', serverId: server.id, username: a.username })
-    this.shape.set('versions', shape)
-    this.list({ cls: 'versions-list' + (again ? ' still' : ''), title: `Other versions · ${server.name}`, lede: 'Every version the server offers, and its other modes.', rows, notices, focus: focus ?? (again ? this.nav.current()?.id : rows[1]?.id ?? BACK) })
+    if (server.offline) {
+      rows.push({ id: 'rc', label: 'Edit rc', marker: '?', hint: `${a.username}'s rc file: the options every game on this device starts with.`, fn: () => this.showRc(a, null) })
+      rows.push(this.profileDelete(a))
+    } else {
+      const lobby = s?.conn.open ? s.state.lobby : null
+      const who = (lobby?.username || null) ?? a.username
+      const where = this.whereFor(server, who)
+      const games = this.games(server, s)
+      const versions = games?.length ? gameVersionRows(games) : null
+      const play = (g: GameLink) => () => {
+        this.accountOf = null
+        setChosenAccount(a)
+        this.connectTo(a, { kind: 'play', gameId: g.id })
+      }
+      rows.push({ id: 'versions', label: 'Versions', heading: true, gap: true })
+      for (const { version, game, modes } of versions ?? []) {
+        // a `.where` answers for its version's plain game only, never for a mode of it
+        const save = this.saveOf(game, version, who, s, where)
+        rows.push({
+          id: 'play:' + game.id, label: game.label, sub: save?.sub ?? null, marker: '>',
+          hint: save?.hint ?? `A new game of ${game.label} on ${server.host}.`,
+          fn: play(game),
+          also: [
+            // the release's rc file, as the lobby offers it beside the game (game_links.html `(edit rc)`): first, so it
+            // stands in the same column on every row, however many modes follow
+            ...(game.rc ? [{ id: 'rc:' + game.rc, label: '(edit rc)', title: `Your rc file for ${game.label}: the options crawl starts with${sharedRc(games ?? [], game.rc, ' — ')}.`, fn: () => this.showRc(a, game.rc!) }] : []),
+            ...modes.map((m) => {
+              const saved = !!m.save && m.save !== 'playing' && m.save !== 'slot full'
+              return { id: 'play:' + m.id, label: `(${saved ? 'continue ' : ''}${modeName(m)})`, title: saved ? `Continue ${m.label}: ${m.save}.` : `A new game of ${m.label} on ${server.host}.`, fn: play(m) }
+            }),
+          ],
+        })
+      }
+      // a server sends its games only to a login (ws_handler.py `send_lobby_html`)
+      if (!versions) {
+        const [label, hint] = !s?.conn.open ? ['Connecting…', `Connecting to ${server.host}.`]
+          : loginState(a, lobby?.username || null, !!s.loggingIn) === 'out' ? ['Log in to see them', `${server.host} shows its versions once you are logged in.`]
+          : lobby?.complete && lobby.username ? ['No games offered', `${server.host} offers no games.`]
+          : ['Loading versions…', `${server.host} is sending its versions.`]
+        rows.push({ id: 'versions:wait', label, off: true, hint })
+      }
+      // a login the server has forgotten is asked for again here; any other stays until the account is removed
+      if (loginState(a, s?.state.lobby.username || null, !!s?.loggingIn) === 'out')
+        rows.push({ id: 'login', label: 'Log in', marker: '+', gap: true, hint: `${server.host} has forgotten ${a.username}'s login: log in again.`, fn: () => {
+          setChosenAccount(a)
+          this.loginName = a.username
+          this.showLogin()
+        } })
+      rows.push({ id: 'remove', label: 'Remove', gap: true, hint: `Take ${a.username} off this device, and forget its login. The account stays on ${server.host}.`, fn: () => this.logout(a) })
+    }
+    const shape = JSON.stringify([rows.map((r) => [r.id, r.label, r.sub, r.conn, r.also?.map((m) => m.label)]), notices.map((n) => n.textContent)])
+    if (again && !focus && this.shape.get('account') === shape && !this.error) return
+    this.setView('account', 'account-list')
+    this.at({ kind: 'menu', path: 'accounts', serverId: server.id, username: a.username })
+    this.shape.set('account', shape)
+    const title = server.offline ? a.username : `${a.username} · ${server.name}`
+    this.list({ cls: 'account-list' + (again ? ' still' : ''), title, lede: server.offline ? 'An offline account, on this device.' : `An account on ${server.host}.`, rows, notices, focus: focus ?? (again ? this.nav.current()?.id : 'play') })
+  }
+
+  /**
+   * An account's Morgues: every game it has finished, one row each in the
+   * lobby's columns (Score, Char, XL, and the Place it ended), newest first or
+   * best first, with how it ended beside it on a wide screen and under it on a
+   * narrow one. A row opens its morgue (showMorgue).
+   */
+  showMorgues(a: Account, focus?: string) {
+    const server = findServer(a.serverId)
+    if (!server) return this.showAccounts()
+    let book = this.morgues
+    if (!book || !sameAccount(book.account, a)) {
+      book?.aborter.abort()
+      book = this.morgues = { account: a, state: 'listing', dir: null, games: [], more: 0, sort: 'date', aborter: new AbortController() }
+      void this.readMorgues(book, server)
+    }
+    const sorted = book.sort === 'score' ? [...book.games].sort((x, y) => (y.summary?.score ?? -1) - (x.summary?.score ?? -1)) : book.games
+    const n = book.games.length + book.more
+    const where = server.offline ? 'this device' : server.name
+    const lede = `${a.username} · ` + (book.state === 'listing' ? `looking on ${where}…` : `${n} ${n === 1 ? 'game' : 'games'}`)
+    const first = this._view !== 'morgues' || !this.morgueTable
+    if (first) {
+      this.setView('morgues', 'watch morgues')
+      this.at({ kind: 'menu', path: MORGUES_PATH, serverId: server.id, username: a.username })
+      const table = h('table', { class: 'roster morgues' }, h('thead', null, h('tr', null, ...MORGUE_COLS.map((c) => h('th', { class: 'col-' + c.cls + (c.extra ? ' extra' : '') }, c.head)))), h('tbody'))
+      this.morgueTable = table
+      // the order on show, as the button says it; pressed, the other
+      const order = book.sort === 'score' ? '(best first)' : '(newest first)'
+      const rows: Row[] = [
+        {
+          id: BACK, label: 'Back', marker: '<', hint: 'Back to the account.', fn: () => this.back(),
+          also: [{ id: 'morgues:sort', label: order, title: book.sort === 'score' ? 'The best scores first: the high scores. Press for the newest first.' : 'The newest games first. Press for the best scores first: the high scores.', fn: () => this.sortMorgues() }],
+        },
+      ]
+      const scroller = h('div', { class: 'roster-scroll' }, table)
+      const empty = h('div', { class: 'hint empty' })
+      this.list({ cls: 'watch-list morgues-list', title: `Morgues · ${server.offline ? a.username : server.name}`, lede, rows, below: [scroller, empty], focus: focus ?? this.marks.get('morgues') })
+    } else {
+      const ledeEl = this.root.querySelector('.head .lede')
+      if (ledeEl && ledeEl.textContent !== lede) ledeEl.textContent = lede
+    }
+    const body = this.morgueTable!.tBodies[0]
+    const keep = new Set<string>()
+    let before: Element | null = body.firstElementChild
+    for (const g of sorted) {
+      keep.add(g.file)
+      const sig = JSON.stringify(g.summary)
+      let r = this.morgueRows.get(g.file)
+      if (!r || r.sig !== sig) {
+        const [tr, end] = this.morgueRow(a, g.file, g.summary)
+        if (r) {
+          if (before === r.tr) before = tr
+          r.tr.replaceWith(tr)
+          r.end.replaceWith(end)
+        }
+        r = { tr, end, sig }
+        this.morgueRows.set(g.file, r)
+      }
+      if (r.tr.parentNode !== body || r.tr !== before) body.insertBefore(r.tr, before)
+      if (r.end !== r.tr.nextElementSibling) body.insertBefore(r.end, r.tr.nextElementSibling)
+      before = r.end.nextElementSibling
+    }
+    for (const [file, r] of this.morgueRows) {
+      if (keep.has(file)) continue
+      r.tr.remove()
+      r.end.remove()
+      this.morgueRows.delete(file)
+    }
+    const emptyEl = this.root.querySelector('.hint.empty')
+    if (emptyEl) {
+      const read = book.games.filter((g) => g.summary).length
+      emptyEl.textContent =
+        book.state === 'listing' ? `Looking for ${a.username}'s morgues on ${where}…`
+        : book.state === 'reading' ? `Reading ${read} of ${book.games.length}…`
+        : book.state === 'none' ? (server.offline ? `${a.username} has not finished a game on this device yet.` : `${server.name} has no morgues for ${a.username} yet.`)
+        : book.state === 'unlisted' ? `${server.name} does not list ${a.username}'s morgues where Orbrun can read them.`
+        : book.state === 'failed' ? `Could not read the morgues from ${where}.`
+        : book.more ? `The newest ${book.games.length}; ${book.more} older ${book.more === 1 ? 'game is' : 'games are'} on ${server.name}.`
+        : ''
+    }
+    // the cursor: the rows past Back are the games. Until there were any it stood where the screen put it (the sort,
+    // the first thing past Back); the first rows to arrive take it, unless it was put somewhere on purpose
+    const arrived = !this.navItems.some((f) => f.id?.startsWith('morgue:')) && !focus
+    const items: Focusable[] = [...this.navItems.filter((f) => !f.id?.startsWith('morgue:'))]
+    sorted.forEach((g, i) => {
+      const r = this.morgueRows.get(g.file)!
+      const stamp = morgueStamp(g.file) ?? g.file
+      items.push({ id: 'morgue:' + stamp, label: g.file, el: r.tr, row: 10 + i, activate: () => this.showMorgue(a, stamp), onFocus: () => this.say(morgueHere(g.summary, stamp)) })
+    })
+    this.prepareFocus(items.filter((f) => f.id?.startsWith('morgue:')))
+    this.navItems = items
+    const cur = this.nav.current()
+    const want = first ? (focus ?? this.marks.get('morgues')) : arrived && cur?.id === 'morgues:sort' ? undefined : cur?.id
+    let at = want ? items.findIndex((f) => f.id === want) : -1
+    if (at < 0 && (first || arrived)) at = items.findIndex((f) => f.id?.startsWith('morgue:'))
+    if (at < 0) at = items.findIndex((f) => f.id === cur?.id)
+    if (at < 0) at = 0
+    this.nav.set(items, 'morgues', { wrap: true, keepColumn: true }, at, first || arrived)
+    if (first || arrived) {
+      this.nav.current()?.onFocus?.()
+      if (focus) this.nav.current()?.el.scrollIntoView?.({ block: 'nearest' })
+    }
+  }
+
+  /** Newest first, or best first: the account's high scores. */
+  private sortMorgues() {
+    const book = this.morgues
+    if (!book) return
+    book.sort = book.sort === 'score' ? 'date' : 'score'
+    this.morgueTable = null
+    this.showMorgues(book.account, 'morgues:sort')
+  }
+
+  /** Leave Morgues for good: the reading stops, and the next visit lists them afresh. */
+  private leaveMorgues() {
+    this.morgues?.aborter.abort()
+    this.morgues = null
+  }
+
+  /** A game's rows in Morgues: the lobby's columns, and under them (a narrow screen) how it ended. */
+  private morgueRow(a: Account, file: string, m: MorgueSummary | null): [HTMLTableRowElement, HTMLTableRowElement] {
+    const stamp = morgueStamp(file) ?? file
+    const open = () => this.showMorgue(a, stamp)
+    const date = morgueDate(stamp)
+    const cells: Record<string, string> = m
+      ? { score: m.score === null ? '?' : String(m.score) + (m.wiz ? '*' : ''), char: m.char, xl: m.xl === null ? '' : String(m.xl), place: m.place, end: m.end, turns: m.turns === null ? '' : String(m.turns), version: m.version ?? '', date }
+      : { score: '…', char: '', xl: '', place: '', end: '', turns: '', version: '', date }
+    const tr = h('tr', { class: 'game', dataset: { focus: 'morgue:' + stamp }, onclick: open }, ...MORGUE_COLS.map((c) => h('td', { class: 'col-' + c.cls + (c.extra ? ' extra' : '') }, cells[c.key])))
+    const end = h('tr', { class: 'ending', onclick: open }, h('td', { colspan: MORGUE_COLS.filter((c) => !c.extra).length }, m ? m.end + (m.wiz ? ' · wizard mode' : '') : 'Reading…'))
+    return [tr, end]
+  }
+
+  /**
+   * Read an account's morgues into its book: this device's whole, a server's
+   * listed and then their heads, MORGUE_READERS at a time, newest first, the
+   * screen redrawn (once a frame) as each lands.
+   */
+  private async readMorgues(book: MorgueBook, server: ServerInfo) {
+    const signal = book.aborter.signal
+    const live = () => this.morgues === book && !signal.aborted && !this.destroyed
+    const redraw = () => {
+      if (live() && this._view === 'morgues') this.schedule()
+    }
+    try {
+      if (server.offline) {
+        const all = await deviceMorgues(book.account.username)
+        if (!live()) return
+        book.games = all.map((m) => ({ file: m.summary.file, summary: m.summary, text: m.text }))
+        book.state = book.games.length ? 'ready' : 'none'
+        return redraw()
+      }
+      const listed = await serverMorgues(server, book.account.username, signal)
+      if (!live()) return
+      if (!listed) {
+        book.state = 'unlisted'
+        return redraw()
+      }
+      book.dir = listed.dir
+      const files = listed.files.slice(0, MORGUES_SHOWN)
+      book.more = listed.files.length - files.length
+      book.games = files.map((file) => ({ file, summary: null }))
+      book.state = files.length ? 'reading' : 'none'
+      redraw()
+      let next = 0
+      const reader = async () => {
+        while (next < book.games.length && live()) {
+          const g = book.games[next++]
+          try {
+            g.summary = await serverMorgueHead(server, listed.dir, g.file, signal)
+          } catch {
+            if (!live()) return
+            // a file that would not read is still a game: its row says when, and opens it to try again
+            g.summary = parseMorgue(g.file, '')
+          }
+          redraw()
+        }
+      }
+      await Promise.all(Array.from({ length: MORGUE_READERS }, reader))
+      if (!live()) return
+      book.state = 'ready'
+      redraw()
+    } catch {
+      if (!live()) return
+      book.state = 'failed'
+      redraw()
+    }
+  }
+
+  /** One of an account's morgues, read here, by when its game ended. */
+  showMorgue(a: Account, stamp: string) {
+    const server = findServer(a.serverId)
+    if (!server) return this.showAccounts()
+    const book = this.morgues && sameAccount(this.morgues.account, a) ? this.morgues : null
+    const game = book?.games.find((g) => morgueStamp(g.file) === stamp) ?? null
+    const m = game?.summary ?? null
+    const said = (m: MorgueSummary | null) => (m?.score != null ? [String(m.score), m.char, m.end + (m.place ? ' on ' + m.place : '')].filter(Boolean).join(' · ') : null)
+    const lede = said(m) ?? `${a.username} · ${morgueDate(stamp)}`
+    let href: string | undefined
+    try {
+      if (!server.offline && book?.dir && game) href = new URL(book.dir + game.file, server.http).href
+    } catch {
+      // an address the browser cannot resolve has no link out
+    }
+    // the file as it came, once it has, for Copy
+    let came: string | null = null
+    this.showDoc({
+      title: 'Morgue file', lede,
+      links: href ? [{ label: 'Open in a new tab', href }] : undefined,
+      from: () => this.showMorgues(a, 'morgue:' + stamp),
+      still: ACCOUNT_BACKDROP,
+      copy: () => came,
+      body: () =>
+        this.morgueText(a, server, stamp, game).then((t) => {
+          came = t
+          // opened by its address, before the list read its head: the file itself says what the line under the title does
+          const head = !m && said(parseMorgue(`morgue-${a.username}-${stamp}.txt`, t))
+          const el = head ? this.root.querySelector('.doc-list .head .lede') : null
+          if (el && head) el.textContent = head
+          return morgueDoc(t)
+        }),
+    })
+    this.at({ kind: 'menu', path: MORGUES_PATH, serverId: server.id, username: a.username, morgue: stamp })
+  }
+
+  /** A morgue's text: from the list's book where it has it, else found again by when it ended. */
+  private async morgueText(a: Account, server: ServerInfo, stamp: string, game: MorgueBook['games'][number] | null): Promise<string> {
+    if (game?.text) return game.text
+    const signal = this.aborter.signal
+    if (server.offline) {
+      const found = (await deviceMorgues(a.username)).find((m) => m.summary.stamp === stamp)
+      if (!found) throw new Error('it is not on this device')
+      return found.text
+    }
+    const book = this.morgues && sameAccount(this.morgues.account, a) ? this.morgues : null
+    const listed = book?.dir && game ? { dir: book.dir, files: [game.file] } : await serverMorgues(server, a.username, signal)
+    const file = listed?.files.find((f) => morgueStamp(f) === stamp)
+    if (!listed || !file) throw new Error(`${server.name} has no such morgue`)
+    return serverMorgue(server, listed.dir, file, signal)
   }
 
   /**
@@ -1758,7 +2128,7 @@ export class FrontEnd {
    * device, one file for every game the player plays (@orbrun/offline
    * RcBook). A save is read back before it is called saved: a server says
    * nothing after `set_rc`, whether it wrote the file or not. Reached from
-   * Other versions, or from a device player's row under Accounts.
+   * Other versions, or from a device player's screen under Accounts.
    */
   showRc(a: Account, gameId: string | null) {
     const server = findServer(a.serverId)
@@ -1786,7 +2156,7 @@ export class FrontEnd {
     const version = server.offline ? null : game ? gameLinkVersion(game) : null
     const guide = `https://github.com/crawl/crawl/blob/${version && version !== 'trunk' ? 'stone_soup-' + version : 'master'}/crawl-ref/docs/options_guide.txt`
     const rows: Row[] = [
-      { id: BACK, label: 'Back', marker: '<', hint: server.offline ? 'Back to the accounts.' : 'Back to the versions.', fn: () => this.back() },
+      { id: BACK, label: 'Back', marker: '<', hint: 'Back to the account.', fn: () => this.back() },
       { id: 'rc:text', label: 'rc file', text: rc.text, hint: 'Crawl’s options, one to a line.' + (pad ? ' A to type, Y when done; the right stick scrolls.' : ' Enter to edit, Esc when done, Ctrl+S to save.') },
       {
         id: 'rc:save', label: 'Save', sub: rcWord(rc), hint: server.offline ? 'Keep it on this device. It counts from the next game you start or continue.' : `Save it on ${server.host}. It counts from the next game you start or continue.`,
@@ -1893,19 +2263,18 @@ export class FrontEnd {
     }
     this.rc = null
     const server = findServer(rc.account.serverId)
-    if (server?.offline) this.showAccounts('rc:' + rc.account.serverId + '/' + rc.account.username)
-    else this.showOtherVersions(rc.account, rc.gameId ? 'rc:' + rc.gameId : undefined)
+    if (server?.offline) this.showAccount(rc.account, 'rc')
+    else this.showAccount(rc.account, rc.gameId ? 'rc:' + rc.gameId : undefined)
   }
 
   /**
-   * An offline profile's Delete, beside its row: it takes the profile's saved characters with it, so it asks
-   * once more (the same button, relabelled) before it does.
+   * An offline profile's Delete, on its screen: it takes the profile's saved characters with it, so it asks
+   * once more (the same row, relabelled) before it does.
    */
-  private profileDelete(a: Account): NonNullable<Row['also']> {
-    const id = 'delete:' + a.serverId + '/' + a.username
+  private profileDelete(a: Account): Row {
     if (this.deleting && sameAccount(this.deleting, a))
-      return [{ id, label: '(delete all?)', title: `Delete ${a.username} and every character saved under it. This cannot be undone.`, fn: () => void this.deleteProfile(a) }]
-    return [{ id, label: '(delete)', title: `Delete ${a.username} from this device, and its saved characters.`, fn: () => ((this.deleting = a), this.showAccounts(id)) }]
+      return { id: 'delete', label: 'Delete all?', gap: true, hint: `Delete ${a.username} and every character saved under it. This cannot be undone.`, fn: () => void this.deleteProfile(a) }
+    return { id: 'delete', label: 'Delete', gap: true, hint: `Delete ${a.username} from this device, and its saved characters.`, fn: () => ((this.deleting = a), this.showAccount(a, 'delete')) }
   }
 
   /** Delete an offline profile: the account, its connection, then its saves, once nothing has them open. */
@@ -2142,7 +2511,7 @@ export class FrontEnd {
     this.session = session
     this.unsub = session.on((e) => {
       // every message redraws what changed, once a frame however many came
-      if ((e.type === 'state' || e.type === 'open') && (this._view === 'home' || this._view === 'watch' || this._view === 'accounts' || this._view === 'versions' || this._view === 'rc')) this.schedule()
+      if ((e.type === 'state' || e.type === 'open') && (this._view === 'home' || this._view === 'watch' || this._view === 'accounts' || this._view === 'account' || this._view === 'rc')) this.schedule()
       if (e.type === 'state' && e.msg.msg === 'login_success' && (this._view === 'login' || this._view === 'register')) this.loggedIn(session)
       if (e.type === 'state' && e.msg.msg === 'login_fail' && this._view === 'login') this.showLogin()
       if (e.type === 'state' && e.msg.msg === 'register_fail' && this._view === 'register') this.showRegister()
@@ -2154,7 +2523,7 @@ export class FrontEnd {
         // a drop the app is already retrying says so; one it is not (the server closed it) says why. Only a screen
         // that stands on the connection says it: one that does not (the server list, the settings) is not redrawn,
         // so the words would wait there and turn up on the next screen, long after the connection was back
-        const says = !this.hooks.parked?.() && (this._view === 'login' || this._view === 'register' || this._view === 'home' || this._view === 'watch' || this._view === 'accounts' || this._view === 'versions' || this._view === 'rc')
+        const says = !this.hooks.parked?.() && (this._view === 'login' || this._view === 'register' || this._view === 'home' || this._view === 'watch' || this._view === 'accounts' || this._view === 'account' || this._view === 'rc')
         // with no network at all, the home screen's notice says so for as long as it lasts
         if (says && !(this._view === 'home' && deviceOffline())) this.error = this.hooks.retrying?.() ? 'Connection lost. Reconnecting…' : 'Connection closed: ' + e.reason
         if (this._view === 'login' || this._view === 'register') this.goHome()
@@ -2365,6 +2734,44 @@ interface RosterCol {
   cls: string
   extra?: boolean
 }
+/** an account's row under Accounts, which its screen's Back puts the cursor on */
+function accountRowId(a: Account): string {
+  return 'account:' + a.serverId + '/' + a.username
+}
+
+/** A morgue (or a character dump) to read: morgue-text.ts sets it out. */
+function morgueDoc(text: string): HTMLElement {
+  return h('div', { class: 'morgue', html: morgueHtml(text) })
+}
+
+interface MorgueCol {
+  key: string
+  head: string
+  cls: string
+  /** a column a narrow screen leaves out: how it ended goes under the row instead */
+  extra?: boolean
+}
+
+/** Morgues' columns, the lobby's where they mean the same: the score where the roster has the player, who stands first with the cursor */
+const MORGUE_COLS: MorgueCol[] = [
+  { key: 'score', head: 'Score', cls: 'user' },
+  { key: 'char', head: 'Char', cls: 'char' },
+  { key: 'xl', head: 'XL', cls: 'xl' },
+  { key: 'place', head: 'Place', cls: 'place' },
+  { key: 'end', head: 'How it ended', cls: 'milestone', extra: true },
+  { key: 'turns', head: 'Turns', cls: 'turn', extra: true },
+  { key: 'version', head: 'Version', cls: 'game', extra: true },
+  { key: 'date', head: 'Date', cls: 'date' },
+]
+
+/** A game in Morgues, spoken: the score, the character, how and where it ended, and when. */
+function morgueHere(m: MorgueSummary | null, stamp: string): string {
+  const when = morgueDate(stamp)
+  if (!m || m.score === null) return m ? `A game that ended ${when}; its morgue would not read.` : `A game that ended ${when}.`
+  const who = [m.title, m.began].filter(Boolean).join(', ') + (m.xl ? `, XL${m.xl}` : '') + (m.god ? `, of ${m.god}` : '')
+  return `${m.score} points${m.wiz ? ' (wizard mode)' : ''}: ${who}. ${m.end}${m.place ? ' on ' + m.place : ''}, ${when}${m.turns ? `, turn ${m.turns}` : ''}.`
+}
+
 const ROSTER_COLS: RosterCol[] = [
   { key: 'username', head: 'Player', cls: 'user' },
   { key: 'char', head: 'Char', cls: 'char' },

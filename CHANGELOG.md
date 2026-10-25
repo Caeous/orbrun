@@ -2,6 +2,10 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.3.4 — 2026-10-25
+
+- View your morgues and high scores, online or offline.
+
 ## 0.3.3 — 2026-10-24
 
 - Play on more servers: CRG, CBRG, CNC and CPO.

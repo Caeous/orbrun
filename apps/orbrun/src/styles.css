@@ -1232,6 +1232,180 @@ a.item.beside {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* a morgue file (morgue-text.ts), block by block in crawl's own grey, a blank line between them, its parts' titles
+   standing out: at crawl's widths where eighty columns fit, and on a phone held upright so that nothing breaks */
+.doc-scroll .morgue {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--color-7);
+}
+.morgue .mblock + .mblock {
+  margin-top: 1.45em;
+}
+.morgue .mtitle {
+  color: var(--color-15);
+}
+.morgue .text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.morgue .mind {
+  padding-left: var(--ind);
+}
+/* on a phone, set in no further than an item's description is: the death under the score is crawl's thirteen across */
+@media (max-width: 600px) {
+  .morgue .mind {
+    padding-left: min(var(--ind), 4ch);
+  }
+}
+/* a line that wraps (a long message) reads as one: what wraps of it is set in under it */
+.morgue .mline {
+  padding-left: 2ch;
+  text-indent: -2ch;
+}
+/* a map, as drawn, sliding across where the screen is narrower */
+.morgue .wide {
+  white-space: pre;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(191, 191, 191, 0.25) transparent;
+}
+.morgue .map {
+  color: var(--color-15);
+}
+/* a line of entries (the shops): it wraps between them, never inside one */
+.morgue .entries {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 3ch;
+}
+.morgue .entries > span {
+  white-space: pre;
+}
+/* entries in columns (the branches): crawl's columns across, and on a phone as many as fit, an entry never broken */
+.morgue .egrid {
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, max-content));
+  column-gap: 4ch;
+}
+.morgue .egrid > span {
+  white-space: pre;
+}
+@media (max-width: 600px) {
+  .morgue .egrid {
+    grid-template-columns: repeat(auto-fill, minmax(var(--w), 1fr));
+    column-gap: 2ch;
+  }
+}
+/* a table of crawl's console columns, at crawl's widths: a table under headings a row to a line, any other side by side */
+.morgue .mtable {
+  display: grid;
+  grid-template-columns: var(--cols);
+}
+.morgue .mtable .c {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* an item wraps under its name, past its letter */
+.morgue .mtable .mitem {
+  padding-left: 4ch;
+  text-indent: -4ch;
+}
+.morgue .rec .mrow,
+.morgue .rec .ln,
+.morgue .panel .grp {
+  display: contents;
+}
+.morgue .panel .c {
+  grid-area: var(--r) / var(--k);
+}
+.morgue :is(.rec .th, .notes .th, .ptable th) {
+  color: var(--color-8);
+}
+/* on a phone held upright: a row under headings over a line per group of columns, the groups after the first set in;
+   columns side by side stacked a group at a time, each a table of its own */
+@media (max-width: 600px) {
+  .morgue .mtable,
+  .morgue .rec .mrow {
+    display: block;
+  }
+  .morgue .rec .ln,
+  .morgue .panel .grp {
+    display: grid;
+    grid-template-columns: var(--g);
+    column-gap: 2ch;
+  }
+  .morgue .rec .ln + .ln {
+    padding-left: 2ch;
+  }
+  .morgue .panel .grp + .grp {
+    margin-top: 0.7em;
+  }
+  .morgue .panel .c {
+    grid-area: var(--r) / var(--gk);
+  }
+}
+.morgue .notes {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  column-gap: 1.5ch;
+}
+.morgue .notes .turn {
+  text-align: right;
+}
+.morgue .list .hang {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* a table drawn with lines: a table, its row labels standing still while a narrow screen slides the rest across */
+.morgue .ptable {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(191, 191, 191, 0.25) transparent;
+}
+.morgue .ptable table {
+  border-collapse: collapse;
+  white-space: nowrap;
+  font: inherit;
+  color: inherit;
+}
+.morgue .ptable :is(th, td) {
+  padding: 0 1ch;
+  text-align: left;
+  font-weight: inherit;
+}
+.morgue .ptable .n {
+  text-align: right;
+}
+.morgue .ptable .pre {
+  white-space: pre;
+}
+.morgue .ptable :is(th, td) + :is(th, td) {
+  border-left: 1px solid rgba(191, 191, 191, 0.2);
+}
+.morgue .ptable :is(th, td).dbl {
+  border-left: 3px double rgba(191, 191, 191, 0.3);
+}
+.morgue .ptable thead tr:last-child,
+.morgue .ptable tr.sep {
+  border-bottom: 1px solid rgba(191, 191, 191, 0.2);
+}
+.morgue .ptable tr.sep {
+  border-bottom: 0;
+  border-top: 1px solid rgba(191, 191, 191, 0.2);
+}
+.morgue .ptable :is(th, td):first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding-left: 0;
+  background: rgb(8, 7, 12);
+}
 .doc {
   max-width: 70ch;
   color: var(--ink);
@@ -1814,8 +1988,11 @@ a.item.beside {
   color: var(--gold-bright);
 }
 .frame.menu-frame table.roster :is(th, td).col-user {
-  position: relative;
   padding-left: var(--menu-label-inset);
+}
+/* the cell holds the cursor (::before); its heading stays sticky with the rest */
+.frame.menu-frame table.roster td.col-user {
+  position: relative;
 }
 .frame.menu-frame table.roster td.col-user {
   font-size: var(--menu-action-size);
@@ -1895,6 +2072,36 @@ a.item.beside {
     max-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+}
+/* an account's Morgues (menu.ts showMorgues): the roster's table, a game to a row, how it ended in its own column on a
+   wide screen and on a line under the row on a narrow one, lit with it */
+.frame.menu-frame table.roster.morgues tr.ending {
+  display: none;
+  cursor: pointer;
+}
+.frame.menu-frame table.roster.morgues tr.ending td {
+  padding: 0 0.6rem 0.5rem var(--menu-label-inset);
+  white-space: normal;
+  color: var(--color-8);
+}
+.frame.menu-frame table.roster.morgues tr.game:is(.focused, :focus-visible) + tr.ending {
+  background: var(--menu-highlight);
+}
+.frame.menu-frame table.roster.morgues tr.game:is(.focused, :focus-visible) + tr.ending td {
+  color: var(--gold);
+}
+@media (max-width: 900px) {
+  .frame.menu-frame table.roster.morgues tr.ending {
+    display: table-row;
+  }
+  /* the row and the line under it read as one: the row gives up the air under its words to the line */
+  .frame.menu-frame table.roster.morgues tr.game {
+    height: auto;
+  }
+  .frame.menu-frame table.roster.morgues tr.game td {
+    padding-top: 0.5rem;
+    padding-bottom: 0.1rem;
   }
 }
 /* the arrivals held back: a line under the table, pressed (or Y) to bring them in */
@@ -3572,46 +3779,46 @@ canvas.minimap.hidden,
   overflow-x: auto;
 }
 
-/* crawl's console text in a describe popup or the character overview (console-text.ts): a table at crawl's own
+/* crawl's console text in a describe popup, the character overview or a morgue file (console-text.ts): a table at crawl's own
    column widths, a row to a line, the last column taking what is left; a line hanging what wraps of it under its text */
-.popup .ctable {
+:is(.popup, .morgue) .ctable {
   display: grid;
   grid-template-columns: var(--cols) minmax(0, 1fr);
 }
-.popup .ccell,
-.popup .hang {
+:is(.popup, .morgue) .ccell,
+:is(.popup, .morgue) .hang {
   display: block;
 }
-.popup .hang {
+:is(.popup, .morgue) .hang {
   padding-left: var(--hang);
   text-indent: calc(-1 * var(--hang));
 }
-.popup .keep {
+:is(.popup, .morgue) .keep {
   white-space: nowrap;
 }
 /* a rule as long as crawl drew it, cut short where the popup is narrower; a line crawl set against its right edge,
    there still, or at the popup's where that comes first; a talisman's table as crawl drew it, slid across if it must */
-.popup .rule,
-.popup .right,
-.popup .grid {
+:is(.popup, .morgue) .rule,
+:is(.popup, .morgue) .right,
+:is(.popup, .morgue) .grid {
   display: block;
 }
-.popup .rule {
+:is(.popup, .morgue) .rule {
   overflow: hidden;
   white-space: nowrap;
 }
-.popup .right {
+:is(.popup, .morgue) .right {
   max-width: 80ch;
   text-align: right;
 }
-.popup .grid {
+:is(.popup, .morgue) .grid {
   white-space: pre;
   overflow-x: auto;
 }
 /* on a phone held upright, too narrow for eighty columns: the columns drawn in to their widest cells, so the last has
    room to wrap in, under itself (a long piece of gear on the gear side), rather than the rows breaking mid-column */
 @media (max-width: 600px) {
-  .popup .ctable {
+  :is(.popup, .morgue) .ctable {
     grid-template-columns: repeat(var(--n), max-content) minmax(0, 1fr);
     column-gap: 2ch;
   }

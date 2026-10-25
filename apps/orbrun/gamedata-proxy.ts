@@ -22,10 +22,13 @@ export const GAMEDATA_PROXY_PREFIX = '/gamedata-proxy/'
  * file or character dump (`game_ended` `dump`), and the `<player>.where` beside
  * them, are plain-text files the server publishes without CORS headers. The exit
  * screen shows a dump in place rather than in a new tab; the home screen reads
- * the `.where` to know whether a save is still waiting (whereis.ts).
+ * the `.where` to know whether a save is still waiting (whereis.ts). An
+ * account's Morgues reads the directory they are in, as the morgues' names
+ * only, one to a line, rather than the server's listing page (morgues.ts), and
+ * each file's head with a Range, which is passed on.
  *
- * URL shape: /morgue-proxy/<host>/<path>.txt|.where
- * Upstream:  https://<host>/<path>.txt|.where
+ * URL shape: /morgue-proxy/<host>/<path>.txt|.where, /morgue-proxy/<host>/<path>/
+ * Upstream:  https://<host>/<path>.txt|.where, https://<host>/<path>/
  */
 export const MORGUE_PROXY_PREFIX = '/morgue-proxy/'
 
@@ -57,6 +60,18 @@ const HOST = /^[A-Za-z0-9.-]+(:[0-9]{1,5})?$/
  * layouts dgamelaunch-config ships with.
  */
 const MORGUE_ROUTE = /^\/morgue-proxy\/([^/@]+)\/((?:[A-Za-z0-9_.~-]+\/)*[A-Za-z0-9_.~-]+\.(?:txt|where))$/
+/** A morgue directory: plain segments and a closing `/`, listed as the morgues' names (serveMorgue). */
+const MORGUE_DIR_ROUTE = /^\/morgue-proxy\/([^/@]+)\/((?:[A-Za-z0-9_.~-]+\/)+)$/
+
+/**
+ * A morgue's name in a listing page: nginx's autoindex, Apache's and
+ * fancyindex's alike link each file by its name (or its path), and crawl names
+ * a morgue `morgue-<name>-<date>-<time>.txt` (end.cc).
+ */
+const LISTED_MORGUE = /href="(?:[^"]*\/)?(morgue-[^"/?#]+-\d{8}-\d{6}\.txt)"/g
+
+/** A morgue file proper, which never changes once written; a character dump (`<name>.txt`) is rewritten on every save. */
+const FIXED_MORGUE = /\/morgue-[^/]+-\d{8}-\d{6}\.txt$/
 
 function validHost(host: string): boolean {
   return HOST.test(host) && !host.startsWith('.') && !host.endsWith('.')
@@ -64,7 +79,7 @@ function validHost(host: string): boolean {
 
 /** The upstream URL a morgue proxy path names, or null if it is not one of ours. */
 export function morgueUpstream(pathname: string): string | null {
-  const m = MORGUE_ROUTE.exec(pathname)
+  const m = MORGUE_ROUTE.exec(pathname) ?? MORGUE_DIR_ROUTE.exec(pathname)
   if (!m) return null
   const [, host, path] = m
   if (!validHost(host)) return null
@@ -129,17 +144,22 @@ export async function serveGamedata(pathname: string, fetchImpl: typeof fetch = 
 }
 
 /**
- * Serve one morgue file as text, or null when the path is not a morgue
- * proxy path. A character dump is rewritten on every save, so nothing here
- * is immutable: a short cache is all it gets, and a `.where` barely any — it
- * is how the home screen learns that a save died in another browser.
+ * Serve one morgue file as text, or a morgue directory as the names of the
+ * morgues in it, or null when the path is not a morgue proxy path. A
+ * character dump is rewritten on every save, so nothing but a morgue proper
+ * is immutable: a short cache is all the rest gets, and a `.where` barely any
+ * — it is how the home screen learns that a save died in another browser.
+ * `range` (a request's `Range: bytes=a-b`) is passed on, so a list of games
+ * reads each morgue's head and no more.
  */
-export async function serveMorgue(pathname: string, fetchImpl: typeof fetch = fetch): Promise<Response | null> {
+export async function serveMorgue(pathname: string, fetchImpl: typeof fetch = fetch, range?: string | null): Promise<Response | null> {
   const upstream = morgueUpstream(pathname)
   if (!upstream) return null
+  const dir = pathname.endsWith('/')
+  const ask = !dir && range && /^bytes=\d+-\d+$/.test(range) ? { headers: { Range: range } } : undefined
   let r: Response
   try {
-    r = await fetchImpl(upstream)
+    r = await fetchImpl(upstream, ask)
   } catch (e) {
     return new Response(`morgue upstream unreachable: ${String(e)}`, {
       status: 502,
@@ -153,14 +173,28 @@ export async function serveMorgue(pathname: string, fetchImpl: typeof fetch = fe
     })
   }
   const body = await r.text()
-  return new Response(body, {
-    status: 200,
-    headers: {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': pathname.endsWith('.where') ? 'public, max-age=15' : 'public, max-age=300',
-    },
-  })
+  const headers: Record<string, string> = {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': dir ? 'public, max-age=60' : FIXED_MORGUE.test(pathname) ? 'public, max-age=31536000, immutable' : pathname.endsWith('.where') ? 'public, max-age=15' : 'public, max-age=300',
+  }
+  if (dir) {
+    // a page that is no listing (a server that answers every address with its home page) lists nothing
+    const names = [...new Set([...body.matchAll(LISTED_MORGUE)].map((m) => decodeURIComponentSafe(m[1])))]
+    if (!names.length && !/<title>\s*Index of /i.test(body)) return new Response('not a morgue listing', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
+    return new Response(names.join('\n'), { status: 200, headers })
+  }
+  const partial = r.status === 206 ? r.headers.get('Content-Range') : null
+  if (partial) headers['Content-Range'] = partial
+  return new Response(body, { status: partial ? 206 : 200, headers })
+}
+
+function decodeURIComponentSafe(s: string): string {
+  try {
+    return decodeURIComponent(s)
+  } catch {
+    return s
+  }
 }
 
 /**
@@ -173,7 +207,7 @@ export function gamedataProxy(): Plugin {
   const handler = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const pathname = (req.url || '').split('?')[0]
     if (pathname.startsWith(MORGUE_PROXY_PREFIX)) {
-      const r = await serveMorgue(pathname)
+      const r = await serveMorgue(pathname, fetch, req.headers.range)
       if (!r) return next()
       res.statusCode = r.status
       r.headers.forEach((v, k) => res.setHeader(k, v))
