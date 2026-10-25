@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { initialState } from '@orbrun/webtiles'
 import { GameScreen } from '../src/game'
+import { FLICK_TURN_RATE } from '../src/swipe-turn'
 
 /**
  * A held button that goes up outside the window is never heard as a pointerup,
@@ -55,6 +56,8 @@ describe('a finger swiping the view, a heading at a time', () => {
     // held still a moment before it lifts: no speed to coast on
     h.touch('pointerup', 255, 302, 80)
     expect(turned(h)).toEqual([1])
+    // at a swipe's own pace, not a flick's
+    expect(h.endLean.mock.calls[0][2]).toBeUndefined()
     expect(h.lookBy).not.toHaveBeenCalled()
     expect(h.onPointer).not.toHaveBeenCalled()
   })
@@ -94,6 +97,8 @@ describe('a finger swiping the view, a heading at a time', () => {
     h.touch('pointermove', 280, 300, 32)
     h.touch('pointerup', 280, 300, 36)
     expect(turned(h)).toEqual([1])
+    // and quicker than a longer swipe's turn
+    expect(h.endLean.mock.calls[0][2]).toBe(FLICK_TURN_RATE)
   })
 
   it('dragged back where it came down, it turns nothing', () => {

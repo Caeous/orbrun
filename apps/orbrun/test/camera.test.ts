@@ -438,6 +438,20 @@ describe('a swipe lifted at speed', () => {
     expect(c.camera.yaw).toBeCloseTo(Math.PI / 4)
   })
 
+  it('a short flick’s heading eases home at the quicker rate it is given', () => {
+    const swipe = cam()
+    const flick = cam()
+    for (const c of [swipe, flick]) {
+      c.reducedMotion = false
+      c.lean(0.05)
+    }
+    swipe.endLean(1, 0)
+    flick.endLean(1, 0, 32)
+    for (let i = 0; i < 3; i++) for (const c of [swipe, flick]) c.update(1 / 60)
+    expect(flick.camera.yaw).toBeGreaterThan(swipe.camera.yaw)
+    expect(flick.camera.yaw).toBeLessThan(Math.PI / 4)
+  })
+
   it('a slow lift, or one going the other way, eases as it always has', () => {
     const slow = cam()
     const still = cam()

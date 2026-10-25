@@ -28,7 +28,7 @@ import { fovOf, messageLinesOf, rcPacesExplore, setAutoMessageLines, setAutoMini
 import { PerfOverlay, type LogContext } from './perf'
 import { MapHold } from './map-hold'
 import { swipeLean, swipeStep } from './swipe'
-import { SWIPE_HEADING_PX, swipeRest, swipeView } from './swipe-turn'
+import { FLICK_TURN_RATE, SWIPE_FIRST_PX, SWIPE_HEADING_PX, swipeRest, swipeView } from './swipe-turn'
 import { HEADING } from './fling'
 import { LookDrag } from './look-drag'
 import type { DragRelease } from './camera'
@@ -1998,7 +1998,8 @@ export class GameScreen {
         if (ev.type === 'pointercancel') this.cam.endLean()
         else {
           const { vx } = d.g.speed(ev.timeStamp)
-          this.cam.endLean(-swipeRest(d.g.x - d.g.x0, d.stepping, vx), (-vx * 1000 * HEADING) / d.stepping)
+          const dx = d.g.x - d.g.x0
+          this.cam.endLean(-swipeRest(dx, d.stepping, vx), (-vx * 1000 * HEADING) / d.stepping, Math.abs(dx) < SWIPE_FIRST_PX ? FLICK_TURN_RATE : undefined)
         }
         this.needsRender = true
       } else if (d.g.moved) {

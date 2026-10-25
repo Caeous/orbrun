@@ -21,6 +21,8 @@ export const SWIPE_HEADING_PX = 70
 export const SWIPE_ON = 0.25
 /** css px across a finger has to go, or flicked coast, before it turns at all as it lifts: a deliberate swipe, not a finger that barely moved */
 export const SWIPE_FIRST_PX = 40
+/** how quickly a short flick's 45° eases home, per second (camera.ts endLean): quicker than a longer swipe's, the flick having been quick, landing in about a tenth of a second */
+export const FLICK_TURN_RATE = 32
 /** headings one drag turns at most: about */
 export const SWIPE_MAX = 4
 
