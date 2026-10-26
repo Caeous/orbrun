@@ -3,7 +3,7 @@ import { emptyScene } from '@orbrun/scene'
 import { initialState, MouseMode } from '@orbrun/webtiles'
 import { CameraController } from '../src/camera'
 import { GameScreen } from '../src/game'
-import { Runner, type RunnerHooks } from '../src/runner'
+import { OWN_STEP_WINDOW_MS, Runner, type RunnerHooks } from '../src/runner'
 import type { Session } from '../src/session'
 
 /** Real input, hop tracking and scene-to-camera routing; no socket, DOM or renderer. */
@@ -137,7 +137,8 @@ describe('forward input and confirmed camera motion', () => {
     expect(h.runner.stepForMove(0, -1, now)).not.toBeNull()
     expect(h.runner.stepForMove(0, 1, now)).toBeNull()
     expect(h.runner.stepForMove(2, 0, now)).toBeNull() // no invented intermediate hops
-    expect(h.runner.stepForMove(1, 0, now + 1500)).toBeNull()
+    // clear of the edge: the clock is fractional, so (now + 1500) - now can round to just under 1500
+    expect(h.runner.stepForMove(1, 0, now + OWN_STEP_WINDOW_MS + 1)).toBeNull()
     expect(h.runner.stepForMove(1, 1, now, [{ dx: 1, dy: 0 }, { dx: 0, dy: 1 }])).toBeNull()
     h.runner.send({ msg: 'input', text: 'o' })
     expect(h.runner.stepForMove(0, -1, now)).toBeNull()
