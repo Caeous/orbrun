@@ -17,6 +17,26 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./level-mesh": {
+      "types": "./src/level-mesh.ts",
+      "default": "./src/level-mesh.ts"
+    },
+    "./grid": {
+      "types": "./src/grid.ts",
+      "default": "./src/grid.ts"
+    },
+    "./sprites": {
+      "types": "./src/sprites.ts",
+      "default": "./src/sprites.ts"
+    },
+    "./hands": {
+      "types": "./src/hands.ts",
+      "default": "./src/hands.ts"
+    },
+    "./footprint": {
+      "types": "./src/footprint.ts",
+      "default": "./src/footprint.ts"
     }
   },
   "files": [
