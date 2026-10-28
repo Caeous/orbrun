@@ -19,6 +19,18 @@
         "*.mjs"
       ]
     },
+    "tools/term": {
+      "entry": [
+        "game/main.ts",
+        "game/engine-worker.mjs"
+      ],
+      "ignoreDependencies": [
+        "vite-node"
+      ],
+      "ignoreBinaries": [
+        "ssh-keygen"
+      ]
+    },
     "packages/scene-webtiles": {
       "ignore": [
         "test/fixtures/**"

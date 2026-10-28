@@ -1,0 +1,29 @@
+{
+  "name": "@orbrun/render-term",
+  "version": "0.1.0",
+  "description": "First-person renderer of an @orbrun/scene Scene for terminals: render-3d's own geometry and sprites, rasterized on the CPU into a small RGB buffer",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Caeous/orbrun.git",
+    "directory": "packages/render-term"
+  },
+  "homepage": "https://github.com/Caeous/orbrun/tree/main/packages/render-term",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "@orbrun/render-3d": "*",
+    "@orbrun/scene": "*"
+  }
+}
