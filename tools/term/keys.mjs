@@ -69,6 +69,14 @@ export function parseKeys(data) {
         continue
       }
       const next = s[i + 1]
+      // a string the terminal sent of itself (APC, DCS, OSC, as its replies are): to its end, and no key; alone,
+      // the bytes are alt with the key
+      if ((next === '_' || next === 'P' || next === ']') && i + 2 < s.length) {
+        let j = i + 2
+        while (j < s.length && s[j] !== '\x07' && !(s[j] === '\x1b' && s[j + 1] === '\\')) j++
+        i = s[j] === '\x07' ? j + 1 : j + 2
+        continue
+      }
       if (next === '[' || next === 'O') {
         // CSI or SS3: parameters, then one final byte
         let j = i + 2

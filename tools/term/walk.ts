@@ -9,21 +9,25 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
-import { RenderTerm, type Pixels } from '@orbrun/render-term'
+import type { Pixels } from '@orbrun/render-term'
 import { cellKey, REST_PITCH, type Camera, type Dir8 } from '@orbrun/scene'
 import { readScene, type PlaceFile } from '../../apps/orbrun/src/room/place-data'
 import { RoomTiles } from '../../apps/orbrun/src/room/tiles'
 // @ts-expect-error: plain JS, shared with the browser bridge
-import { BLOCKS, Screen, blockCells, cellsWithText } from './frame.mjs'
+import { GLYPH_CELLS, MOSAIC_SX, MOSAIC_SY, Screen, cellsWithGlyphs, cellsWithText, synced } from './frame.mjs'
+import { PALETTE } from './game/text'
+import { TermRaster, mosaicFor } from './raster'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const placesDir = path.resolve(here, '../../apps/orbrun/public/room/places')
 const placeId = process.argv[2] || 'lair-grove'
 const CAP = Number(process.env.FPS || 120)
-/** the block characters the view is drawn in (`BLOCKS`): ORBRUN_TERM_BLOCKS, else quadrants */
-const KIND = (process.env.ORBRUN_TERM_BLOCKS ?? 'quadrant') as keyof typeof BLOCKS
+/** the glyphs the view is drawn in, as the game picks them (`mosaicFor`) */
+const MOSAIC = mosaicFor()
 /** how long a step and a 45° turn take, seconds */
 const STEP_S = 0.16
+/** how far a cell's colour may move before it is sent again, and how near the one before it it must be to be drawn in that one (frame.mjs `Screen`): too little to see */
+const REUSE = 2
 const TURN_S = 0.12
 
 const file = JSON.parse(fs.readFileSync(path.join(placesDir, `${placeId}.json`), 'utf8')) as PlaceFile
@@ -32,7 +36,7 @@ const atlas: Pixels = { width: info.width, height: info.height, data }
 const tiles = RoomTiles.fromPlace(file, undefined)
 const scene = readScene(file.scene)
 
-const r = new RenderTerm()
+const r = new TermRaster()
 r.setTiles(tiles, (name) => (tiles.atlasNames().includes(name) ? atlas : undefined))
 r.setScene(scene)
 
@@ -50,13 +54,11 @@ out.write('\x1b[?1049h\x1b[?25l\x1b[2J')
 
 let cols = out.columns || 80
 let rows = out.rows || 24
-let screen = new Screen(cols, rows, 0)
-let buf = new Uint8Array(cols * BLOCKS[KIND].sx * rows * BLOCKS[KIND].sy * 3)
+let screen = new Screen(cols, rows, REUSE, REUSE)
 out.on('resize', () => {
   cols = out.columns
   rows = out.rows
-  screen = new Screen(cols, rows, 0)
-  buf = new Uint8Array(cols * BLOCKS[KIND].sx * rows * BLOCKS[KIND].sy * 3)
+  screen = new Screen(cols, rows, REUSE, REUSE)
   out.write('\x1b[0m\x1b[2J')
   wake()
 })
@@ -110,6 +112,7 @@ let running = false
 let last = performance.now()
 let fpsWindow: number[] = []
 let renderMs = 0
+let sent = Promise.resolve()
 
 function wake() {
   if (!running) {
@@ -146,19 +149,21 @@ async function frame() {
     cam.yaw = Math.abs(dy) <= turnBy ? goalYaw : cam.yaw + Math.sign(dy) * turnBy
   }
 
-  const { sx, sy } = BLOCKS[KIND]
-  const w = cols * sx
-  const h = rows * sy
   const t0 = performance.now()
-  // a pixel a dot of the cell's block character, in a cell twice as tall as it is wide
-  r.render(cam, w, h, buf, ((Number(process.env.ORBRUN_TERM_CELL_ASPECT) || 2) * sx) / sy)
+  // in a cell twice as tall as it is wide
+  const at = { cols, rows }
+  const { cells, glyphs } = await r.draw(cam, at.cols, at.rows, { cellAspect: Number(process.env.ORBRUN_TERM_CELL_ASPECT) || 2, glyphBelow: GLYPH_CELLS * MOSAIC_SY, ...MOSAIC })
   renderMs = performance.now() - t0
-  const pic = blockCells(buf, w, h, 3, cols, rows, KIND)
+  if (at.cols !== cols || at.rows !== rows) return void setTimeout(frame, 0)
+  const pic = cellsWithGlyphs(cells, glyphs, cols, rows, MOSAIC_SX, MOSAIC_SY, PALETTE)
   fpsWindow.push(now)
   fpsWindow = fpsWindow.filter((t) => now - t < 1000)
-  const status = `${file.place}  ${fpsWindow.length} fps  render ${renderMs.toFixed(1)} ms  ${cols}x${rows}  arrows walk and turn  b spins  q quits`
+  const status = `${file.place}  ${MOSAIC.kind}  ${fpsWindow.length} fps  render ${renderMs.toFixed(1)} ms  ${cols}x${rows}  arrows walk and turn  b spins  q quits`
   const text = [[0, 0, status.length, 230, 230, 230, [[0, status]]]]
-  await new Promise<void>((done) => out.write(screen.update(cellsWithText(pic, text, cols, rows)), () => done()))
+  const update = synced(screen.update(cellsWithText(pic, text, cols, rows)))
+  // after the frame before it, which the terminal may still be taking in while this one was drawn
+  await sent
+  sent = new Promise<void>((done) => out.write(update, () => done()))
 
   if (bench) {
     bench.frames++

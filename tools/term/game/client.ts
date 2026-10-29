@@ -19,11 +19,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { installPage } from './env'
 // @ts-expect-error: plain JS, shared with the browser bridge
-import { BLOCKS, Screen, blockCells } from '../frame.mjs'
+import { GLYPH_CELLS, MOSAIC_SX, MOSAIC_SY, Screen, cellsWithGlyphs } from '../frame.mjs'
+import { mosaicFor } from '../raster'
 import { PALETTE, cut, layout, type Line, type RGB } from './text'
 import { press, terminalKeys } from './input'
 // @ts-expect-error: plain JS
-import { kittyImage } from '../frame.mjs'
+import { kittyImage, synced } from '../frame.mjs'
 import type { Dir8 } from '@orbrun/scene'
 
 export interface Io {
@@ -54,13 +55,24 @@ const STATS_SHARE = 0.3
 const PANE_SHADE = 0.7
 /** the brightest the view is left under text (luminance, 0..255): enough for the game's palest text to read on */
 const TEXT_GROUND = 60
+/** how far a cell's colour may move before it is sent again, and how near the one before it it must be to be drawn in that one (frame.mjs `Screen`): too little to see */
+const REUSE = 2
 /**
  * Asked of the terminal at the start: whether it shows kitty graphics (the
- * protocol's query, answered `OK`), and its cell's size in pixels (CSI 16 t).
- * The answers come back as input, and are taken out of it before the keys.
+ * protocol's query, answered `OK`), its cell's size in pixels (CSI 16 t),
+ * and its name and version (XTVERSION, `DCS >| name ST`), which reaches
+ * over SSH where TERM_PROGRAM does not. The answers come back as input, and
+ * are taken out of it before the keys.
  */
-const PROBE = '\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[16t'
-const PROBE_REPLY = /\x1b_Gi=31;([^\x1b]*)\x1b\\|\x1b\[6;(\d+);(\d+)t/g
+const PROBE = '\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[16t\x1b[>0q'
+// every kitty graphics reply goes, not just the probe's: iTerm2 answers each image sent, though asked not to (q=2)
+const PROBE_REPLY = /\x1b_Gi=(\d+)[^;\x1b]*;([^\x1b]*)\x1b\\|\x1b\[6;(\d+);(\d+)t|\x1bP>\|([^\x1b]*)\x1b\\/g
+/**
+ * The terminals whose kitty images lie in the cells rather than over them,
+ * by TERM_PROGRAM or XTVERSION name: a cell written under an image cuts that
+ * piece out of it, so the view changing under the minimap strips it away.
+ */
+const CUTS_IMAGES = /iterm/i
 /** the kitty images the HUD shows, by name */
 const IMAGE_IDS = { portrait: 7, minimap: 8, cone: 9 }
 
@@ -74,8 +86,9 @@ interface Image {
   /** over the images under it: the higher the nearer (kitty's z-index) */
   z?: number
   make(): { px: Uint8Array; w: number; h: number } | null
+  /** what `make` made, where the frame needed the pixels before they were sent */
+  made?: { px: Uint8Array; w: number; h: number } | null
 }
-const QUADS = ' ▘▝▀▖▌▞▛▗▚▐▜▄▙▟█'
 /** monster_list.js: at most this many rows */
 const MONSTER_ROWS = 5
 /** the attitude colours of the monster list's names (styles.css `.monsters .name`) */
@@ -117,7 +130,7 @@ export async function runGame(io: Io, o: ClientOptions) {
 
   let cols = io.cols
   let rows = io.rows
-  let screen = new Screen(cols, rows, 0)
+  let screen = new Screen(cols, rows, REUSE, REUSE)
   let dirty = true
   let ended = false
   const view = new TermView(() => (dirty = true))
@@ -179,31 +192,20 @@ export async function runGame(io: Io, o: ClientOptions) {
     dirty = true
   }
 
-  // what the terminal said of itself: kitty graphics, and its cell in pixels
+  // what the terminal said of itself: kitty graphics, its cell in pixels, and its name
   let kitty = false
   let cellPx = { w: 8, h: 16 }
+  let termName = ''
   /** each image as last sent, by name: where it stood and its pixels */
-  let sent: Record<string, { at: string; key: string; px: Uint8Array }> = {}
-  /**
-   * The block characters the view is drawn in: octants where the terminal is
-   * known to draw them (Ghostty and Rex draw them themselves, kitty too, and
-   * a terminal that shows kitty graphics is one of those or newer); whole
-   * cells in Terminal.app, which draws blocks from the font, short of the
-   * line, so every block leaves a sliver of its background showing; else
-   * quadrants, which every terminal with a decent font has.
-   * ORBRUN_TERM_BLOCKS (cell, half, quadrant, sextant, octant) says otherwise.
-   */
-  const blocks = (): keyof typeof BLOCKS => {
-    const said = process.env.ORBRUN_TERM_BLOCKS
-    if (said && said in BLOCKS) return said as keyof typeof BLOCKS
-    const named = /ghostty|rex|kitty/i.test(`${process.env.TERM_PROGRAM ?? ''} ${process.env.TERM ?? ''}`)
-    if (named || kitty) return 'octant'
-    return process.env.TERM_PROGRAM === 'Apple_Terminal' ? 'cell' : 'quadrant'
-  }
+  let sent: Record<string, { at: string; key: string; px: Uint8Array; clear: Uint8Array }> = {}
+  /** whether a cell written under an image cuts it here (`CUTS_IMAGES`) */
+  const cutsImages = () => CUTS_IMAGES.test(`${process.env.TERM_PROGRAM ?? ''} ${termName}`)
   io.onInput((d) => {
     const raw = d.toString('latin1')
-    const rest = raw.replace(PROBE_REPLY, (_m, g: string | undefined, h: string | undefined, w: string | undefined) => {
-      if (g !== undefined) kitty = g === 'OK'
+    const rest = raw.replace(PROBE_REPLY, (_m, id: string | undefined, g: string | undefined, h: string | undefined, w: string | undefined, name: string | undefined) => {
+      if (id === '31') kitty = g === 'OK'
+      else if (id !== undefined) return ''
+      else if (name !== undefined) termName = name
       else if (Number(h) > 0 && Number(w) > 0) cellPx = { w: Number(w), h: Number(h) }
       dirty = true
       return ''
@@ -232,7 +234,7 @@ export async function runGame(io: Io, o: ClientOptions) {
   io.onResize((c, r) => {
     cols = c
     rows = r
-    screen = new Screen(cols, rows, 0)
+    screen = new Screen(cols, rows, REUSE, REUSE)
     sent = {}
     void io.write('\x1b[0m\x1b[2J')
     dirty = true
@@ -240,7 +242,9 @@ export async function runGame(io: Io, o: ClientOptions) {
   await io.write('\x1b[?1049h\x1b[?25l\x1b[2J' + PROBE)
 
   // ---- one frame: every cell of the terminal
-  const frame = () => {
+  /** the view as cells, made before the frame is (`picture`), and the glyphs over it */
+  type Picture = { char: string[]; fg: Uint8Array; bg: Uint8Array; cols: number; rows: number } | null
+  const frame = (pic: Picture) => {
     const n = cols * rows
     const char: string[] = new Array(n).fill(' ')
     const fg = new Uint8Array(n * 3)
@@ -270,16 +274,8 @@ export async function runGame(io: Io, o: ClientOptions) {
 
     // the view, or the level map, under everything
     if (!over && screenState().mapShown) drawMap(put, fill, 0, 0, vw, vh)
-    else if (vw > 0 && vh > 0) {
-      // a pixel a dot of the cell's block character: octants' are square in a cell twice as tall as it is wide
-      const kind = blocks()
-      const { sx, sy } = BLOCKS[kind] as { sx: number; sy: number }
-      const w = vw * sx
-      const h = vh * sy
-      const buf = new Uint8Array(w * h * 3)
-      const cellAspect = Number(process.env.ORBRUN_TERM_CELL_ASPECT) || cellPx.h / cellPx.w
-      view.draw(w, h, buf, (cellAspect * sx) / sy)
-      const pic = blockCells(buf, w, h, 3, vw, vh, kind) as { char: string[]; fg: Uint8Array; bg: Uint8Array }
+    // a picture made before a resize is let go
+    else if (pic && pic.cols === cols && pic.rows === rows)
       for (let y = 0; y < vh; y++)
         for (let x = 0; x < vw; x++) {
           const i = y * vw + x
@@ -288,7 +284,6 @@ export async function runGame(io: Io, o: ClientOptions) {
           fg.set(pic.fg.subarray(i * 3, i * 3 + 3), o * 3)
           bg.set(pic.bg.subarray(i * 3, i * 3 + 3), o * 3)
         }
-    }
 
     // the HUD over the view, as the browser lays it (hud.ts `layout`): bare, the view left whole round the text
     /**
@@ -448,7 +443,39 @@ export async function runGame(io: Io, o: ClientOptions) {
       const msg = ended ? 'Saving…' : session.loading ? 'Loading…' : 'Starting crawl…'
       text(Math.max(0, Math.floor((cols - msg.length) / 2)), Math.floor(rows / 2), [{ text: msg, fg: PALETTE[14] }], cols, PANE_BG)
     }
+    // where a cell written under an image cuts it, the cells under the images are left as they are, the pane's own,
+    // but for those every image leaves clear, which show the view as the browser's map shows it through its void
+    if (cutsImages()) {
+      const held = new Uint8Array(n)
+      for (const [name, im] of Object.entries(images)) {
+        // the image this frame sends: the one last sent, or one made now, so no cell is held a frame late and cuts it
+        const last = sent[name]
+        let clear: Uint8Array | null = null
+        if (last && last.key === im.key && last.at === `${im.at},${im.cols},${im.rows}`) clear = last.clear
+        else {
+          im.made = im.make()
+          // nothing to send, nothing to hold
+          if (!im.made) continue
+          clear = clearCells(im.made.px, im.made.w, im.made.h, im.cols, im.rows)
+        }
+        for (let j = 0; j < im.rows; j++)
+          for (let i = 0; i < im.cols; i++) {
+            const x = im.at[0] + i, y = im.at[1] + j
+            if (x >= 0 && y >= 0 && x < cols && y < rows && !clear?.[j * im.cols + i]) held[y * cols + x] = 1
+          }
+      }
+      for (let o = 0; o < n; o++) if (held[o]) put(o % cols, (o / cols) | 0, ' ', TEXT, PANE_BG)
+    }
     return { char, fg, bg }
+  }
+  /** The view as the terminal's cells, with crawl's glyphs over what is too small to make out; null where it is not shown. */
+  const picture = async (): Promise<Picture> => {
+    if (over || screenState().mapShown || cols <= 0 || rows <= 0) return null
+    const { kind, box, rate } = mosaicFor(termName)
+    const cellAspect = Number(process.env.ORBRUN_TERM_CELL_ASPECT) || cellPx.h / cellPx.w
+    const at = { cols, rows }
+    const got = await view.picture(at.cols, at.rows, { cellAspect, glyphBelow: GLYPH_CELLS * MOSAIC_SY, kind, box, rate })
+    return got && { ...cellsWithGlyphs(got.cells, got.glyphs, at.cols, at.rows, MOSAIC_SX, MOSAIC_SY, PALETTE), ...at }
   }
   let statsPrev = {}
   /** the images the frame wants over its cells, where the terminal shows them: by name, each made when sent */
@@ -505,7 +532,11 @@ export async function runGame(io: Io, o: ClientOptions) {
         const mon = first.ref as { name?: string; plural?: string } | undefined
         const name = group.length === 1 ? (mon?.name ?? '') : group.length + ' ' + (mon?.plural || mon?.name || '')
         const colour = ATTITUDE[first.attitude ?? 'hostile'] ?? ATTITUDE.hostile
-        line = [{ text: ARROWS[rel] + ' ', fg: TEXT }, { text: name, fg: first.threat === 'trivial' ? (colour.map((v) => v * 0.75) as RGB) : colour }]
+        line = [{ text: ARROWS[rel] + ' ', fg: TEXT }]
+        // crawl's glyph for it, as the view names it when it is too small to make out
+        const cell = sc.cells.get(cellKey(first.x, first.y))
+        if (cell?.glyph && !/^[\s.#·]$/.test(cell.glyph)) line.push({ text: cell.glyph + ' ', fg: PALETTE[(cell.colour ?? 7) & 15] })
+        line.push({ text: name, fg: first.threat === 'trivial' ? (colour.map((v) => v * 0.75) as RGB) : colour })
         if (r === n - 1 && n < all) line.push({ text: ' ...', fg: [0xaa, 0xaa, 0xaa] })
       }
       const len = Math.min(w - 2, line.reduce((k, s) => k + s.text.length, 0))
@@ -576,7 +607,10 @@ export async function runGame(io: Io, o: ClientOptions) {
   // ---- the loop: a frame when something changed, at most `fps` a second
   const minMs = 1000 / (o.fps ?? 120)
   let busy = false
-  // ORBRUN_TERM_TRACE=1 also counts the frames: how many, how long one took to make and to send, and the bytes
+  // the frame going out to the terminal while the next is made; none once the game has closed the screen
+  let writing: Promise<void> = Promise.resolve()
+  let closed = false
+  // ORBRUN_TERM_TRACE=1 also counts the frames: how many, how long one took to make, how long it waited on the terminal, and the bytes
   const stats = { frames: 0, make: 0, send: 0, bytes: 0, since: performance.now() }
   const tick = async () => {
     const start = performance.now()
@@ -589,10 +623,13 @@ export async function runGame(io: Io, o: ClientOptions) {
     if (dirty && !busy) {
       dirty = false
       busy = true
-      let out = screen.update(frame())
+      const pic = await picture()
+      let out = screen.update(frame(pic))
       out += sendImages()
       const made = performance.now()
-      if (out) await io.write(out)
+      // after the frame before it, which the terminal may still be taking in while this one was made
+      await writing
+      if (out && !closed) writing = io.write(synced(out))
       busy = false
       stats.frames++
       stats.make += made - start
@@ -620,7 +657,7 @@ export async function runGame(io: Io, o: ClientOptions) {
       const want = images[name]
       const last = sent[name]
       if (want && last && last.key === want.key && last.at === `${want.at},${want.cols},${want.rows}`) continue
-      const made = want?.make()
+      const made = want && (want.made !== undefined ? want.made : want.make())
       if (!want || !made) {
         if (sent[name]) out += `\x1b_Ga=d,d=I,i=${id},q=2\x1b\\`
         delete sent[name]
@@ -628,11 +665,20 @@ export async function runGame(io: Io, o: ClientOptions) {
       }
       const at = `${want.at},${want.cols},${want.rows}`
       const same = last && last.at === at && last.px.length === made.px.length && Buffer.compare(last.px, made.px) === 0
-      sent[name] = { at, key: want.key, px: made.px }
+      sent[name] = { at, key: want.key, px: made.px, clear: clearCells(made.px, made.w, made.h, want.cols, want.rows) }
       if (same) continue
       out += `\x1b[${want.at[1] + 1};${want.at[0] + 1}H` + kittyImage(id, made.px, made.w, made.h, want.cols, want.rows, want.z ?? 0)
     }
     return out
+  }
+
+  /** Which of the `cols` x `rows` cells an RGBA image (`w` x `h`) spread over them leaves wholly clear. */
+  function clearCells(px: Uint8Array, w: number, h: number, cols: number, rows: number): Uint8Array {
+    const clear = new Uint8Array(cols * rows).fill(1)
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++)
+        if (px[(y * w + x) * 4 + 3]) clear[Math.min(rows - 1, ((y * rows) / h) | 0) * cols + Math.min(cols - 1, ((x * cols) / w) | 0)] = 0
+    return clear
   }
 
   async function quit(save = true) {
@@ -645,7 +691,10 @@ export async function runGame(io: Io, o: ClientOptions) {
       await new Promise((r) => setTimeout(r, 1500))
     }
     await eng.sync()
+    closed = true
+    await writing
     await io.write(Object.values(IMAGE_IDS).map((id) => `\x1b_Ga=d,d=I,i=${id},q=2\x1b\\`).join('') + '\x1b[0m\x1b[2J\x1b[?25h\x1b[?1049l')
+    view.close()
     io.end(0)
   }
 }

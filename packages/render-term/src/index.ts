@@ -1,4 +1,4 @@
-import { flashOf, getCell, keyToXY, shadeOf, type CellKey, type Camera, type HandItem, type Scene, type SceneCursor, type TileSource, type Viewmodel } from '@orbrun/scene'
+import { cellKey, flashOf, getCell, keyToXY, shadeOf, type CellKey, type Billboard, type Camera, type HandItem, type Scene, type SceneCursor, type TileSource, type Viewmodel } from '@orbrun/scene'
 import { LevelGrid } from '@orbrun/render-3d/grid'
 import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, type HandPose } from '@orbrun/render-3d/hands'
 import { LEVEL_CHUNK, LevelMesher, MARK_MARGIN, uvFor, type ChunkGeometry, type MeshContext, type TileDraw } from '@orbrun/render-3d/level-mesh'
@@ -16,8 +16,9 @@ import { SEL_GROW, crowdInstances, fixtureInstances, type SpriteInstance } from 
  *
  * What a terminal's pixels cannot carry is left out or made simpler: a
  * picture that small is the browser's shrunk, so textures are averaged as
- * they recede (mipmaps) where render-3d samples the nearest texel; sprites
- * are their front face, without the texel-deep block behind it, and keep
+ * they recede (mipmaps) where render-3d samples the nearest texel, a
+ * sprite's leaning to its texels that stand out from those round them (a
+ * goblin's eyes, a quokka's) so they outlast the shrinking; sprites are their front face, without the texel-deep block behind it, and keep
  * the art's own ink where render-3d peels it off and draws it back as a
  * hull; a way up stands whole rather than folded; the hands are flat icons
  * in their place, with no lift.
@@ -28,6 +29,24 @@ export interface Pixels {
   width: number
   height: number
   data: Uint8Array | Uint8ClampedArray
+}
+
+/**
+ * A monster or an item drawn too small to make out, to be named by crawl's
+ * own glyph over it: the pixel its middle stands on, how far off, the glyph
+ * and its colour (crawl's, 0..15), whether it is out of sight (remembered),
+ * whether it is seen through the level as render-3d's ghosts are, and
+ * whether the cursor is on it.
+ */
+export interface TermGlyph {
+  x: number
+  y: number
+  depth: number
+  char: string
+  colour: number
+  dim: boolean
+  behind: boolean
+  selected: boolean
 }
 
 /** render-3d's options, as far as they reach a terminal. */
@@ -77,15 +96,23 @@ const MODE_RING = 8
 const MODE_SHADE_MAP = 16
 const MODE_LIE = 64
 const MODE_FACE_EYE = 128
-/** the coarsest a sprite is averaged to: a 32-texel tile down to two */
-const SPRITE_MIP_MAX = 4
+/** how much bigger than its threshold a glyphed sprite must grow to lose its glyph, so one at the edge does not flicker */
+const GLYPH_KEEP = 1.25
+/** how much nearer than a glyph's own sprite what hides it must stand: the sprite's own face is a little nearer than its middle */
+const GLYPH_HIDDEN = 0.35
+/** the glyphs crawl draws for the ground, which name no monster or item */
+const GROUND_GLYPHS = /^[\s.#·]$/
+/** how strongly a far sprite's pixel leans to the texels whose colour stands out from the tile's (eyes, a gem, a flame), on the squared distance */
+const SALIENCE = 30
+/** how far a texel's colour must stand from those round it (squared, encoded) before it counts as standing out: under it, the art's own shading and dither */
+const CONTRAST_MIN = 0.1
 /** the coarsest mip a level texture is sampled at: past this, its averages would reach into the next tile in the atlas */
 const MIP_MAX = 3
 
 type RGB = [number, number, number]
 
-/** An atlas in linear light, RGBA floats, with its mips. */
-interface Atlas {
+/** An atlas in linear light, RGBA floats, with its mips (`linearAtlas`). */
+export interface Atlas {
   levels: { w: number; h: number; data: Float32Array }[]
 }
 
@@ -95,13 +122,14 @@ type Frag = (o: number, depth: number, a: Float64Array) => void
 export class RenderTerm {
   private tiles: TileSource | null = null
   private pixels: (atlas: string) => Pixels | undefined = () => undefined
+  private linear: ((atlas: string) => Atlas | null | undefined) | undefined
   private atlases = new Map<string, Atlas | null>()
   private scene: Scene | null = null
   private opts: Required<RenderTermOptions>
   private cursor: SceneCursor | null = null
   private viewmodel: Viewmodel | null = null
   private hands = new Map<string, Hand | null>()
-  private spriteMips = new Map<string, { w: number; h: number; data: Float32Array }[]>()
+  private spriteSums = new Map<string, Float64Array>()
 
   // the level, as render-3d keeps it
   private mesher = new LevelMesher()
@@ -114,15 +142,35 @@ export class RenderTerm {
   private shadows: { x: number; y: number; r: number }[] = []
   private crowdRevision = -1
   private crowdSelection = ''
+  /** the cells shown as glyphs last frame, by key */
+  private glyphed = new Set<string>()
   // the fields: each cell's light and the flash over it
   private field = { ox: 0, oz: 0, w: 1, h: 1, shade: new Uint8Array(1), flash: new Uint8Array(4), near: new Uint8Array(1) }
 
+  // what a mesh's drawing works in, kept from one to the next
+  private scratches = new Map<string, Float64Array>()
+  /** each mesh in camera space, its triangles in order, for the view they were worked for */
+  private viewed = new WeakMap<ChunkGeometry, { view: number; cam: Float64Array; order: Uint32Array }>()
+  /** which view this is: the same eye, lens and frame as the last keep the number */
+  private view = 0
+  private viewKey = ''
+  // a polygon's drawing: its vertices clipped, where the near plane cuts it, on the screen, and the attributes at a pixel
+  private polyQ: Float64Array[] = []
+  private polyCut = Array.from({ length: 4 }, () => new Float64Array(8))
+  private polySx = new Float64Array(32)
+  private polySy = new Float64Array(32)
+  private attrs = new Float64Array(8)
   // the frame
   private width = 0
   private height = 0
+  /** the rows drawn this frame, y0 up to y1 */
+  private y0 = 0
+  private y1 = 0
   private colour = new Float32Array(0)
   private zbuf = new Float32Array(0)
   private sceneDepth = new Float32Array(0)
+  /** how much each pixel stands out (SALIENCE): 1, or more where it is a sprite's texel that stands out from those round it */
+  private weight = new Float32Array(0)
   // the camera, for this frame
   private ex = 0
   private ey = 0
@@ -146,12 +194,18 @@ export class RenderTerm {
     if (before.wallInset !== this.opts.wallInset || before.chamfer !== this.opts.chamfer) this.relevel()
   }
 
-  setTiles(tiles: TileSource, pixels: (atlas: string) => Pixels | undefined): void {
+  /**
+   * The tiles, and the pixels of their atlases; `linear`, where given, has
+   * each atlas already in linear light (`linearAtlas`), so renderers sharing
+   * one memory need not each make their own.
+   */
+  setTiles(tiles: TileSource, pixels: (atlas: string) => Pixels | undefined, linear?: (atlas: string) => Atlas | null | undefined): void {
     this.tiles = tiles
     this.pixels = pixels
+    this.linear = linear
     this.atlases.clear()
     this.hands.clear()
-    this.spriteMips.clear()
+    this.spriteSums.clear()
     this.relevel()
   }
 
@@ -173,30 +227,48 @@ export class RenderTerm {
   /**
    * Draw the view from `cam` into `out`, `width` x `height` RGB, each pixel
    * `pixelAspect` times as tall as it is wide (2 for a terminal's quadrant
-   * blocks, whose cells are about twice as tall as wide).
+   * blocks, whose cells are about twice as tall as wide). Returns the
+   * monsters and items whose tile stands under `glyphBelow` pixels tall, to
+   * be named by their glyphs (none when 0). `rows`, where given, draws only
+   * those rows of the frame, [from, to), and names only what is in them, as
+   * one of several renderers each drawing a band of it. `weights`, where
+   * given, takes how much each pixel stands out, 1 up to 255: more where it
+   * is a sprite's texel that stands out from those round it (a goblin's
+   * eyes), for an encoder that keeps a few colours a cell to keep it.
    */
-  render(cam: Camera, width: number, height: number, out: Uint8Array, pixelAspect = 1): void {
+  render(cam: Camera, width: number, height: number, out: Uint8Array, pixelAspect = 1, glyphBelow = 0, rows?: [number, number], weights?: Uint8Array): TermGlyph[] {
     this.pixelAspect = pixelAspect
     const scene = this.scene
+    const y0 = rows ? Math.max(0, rows[0]) : 0
+    const y1 = rows ? Math.min(height, rows[1]) : height
     if (!scene || !this.tiles) {
-      out.fill(0)
-      return
+      out.fill(0, y0 * width * 3, y1 * width * 3)
+      weights?.fill(1, y0 * width, y1 * width)
+      return []
     }
     this.size(width, height)
+    this.y0 = y0
+    this.y1 = y1
     this.update(scene)
     this.place(cam)
+    const viewKey = `${cam.eyeX},${cam.eyeY},${cam.yaw},${cam.pitch},${this.ey},${this.opts.fov},${width},${height},${pixelAspect},${this.builtRevision},${this.builtLayout}`
+    if (viewKey !== this.viewKey) {
+      this.viewKey = viewKey
+      this.view++
+    }
     const bg = scene.level.sky === 'open' ? 0x0b1220 : scene.level.sky === 'dark' ? 0x120818 : 0
     const c = this.colour
-    for (let i = 0; i < width * height; i++) {
+    for (let i = y0 * width; i < y1 * width; i++) {
       c[i * 3] = ((bg >> 16) & 255) / 255
       c[i * 3 + 1] = ((bg >> 8) & 255) / 255
       c[i * 3 + 2] = (bg & 255) / 255
     }
-    this.zbuf.fill(Infinity)
+    this.zbuf.fill(Infinity, y0 * width, y1 * width)
+    this.weight.fill(1, y0 * width, y1 * width)
     // the level and its fixtures, then what the ghosts show through
     this.level(['level', 'void'])
     for (const s of this.fixtures) this.sprite(s, 'solid')
-    this.sceneDepth.set(this.zbuf)
+    this.sceneDepth.set(this.zbuf.subarray(y0 * width, y1 * width), y0 * width)
     // the transparent passes, in render-3d's render order
     for (const s of this.crowd) if (s.pass === 'ghostVisible') this.sprite(s, 'ghost')
     for (const s of this.crowd) if (s.pass === 'ghostRemembered') this.sprite(s, 'ghost')
@@ -210,7 +282,57 @@ export class RenderTerm {
     this.level(['marks'])
     this.drawHands(scene)
     // every value is in 0..1: encoded, or blended between encoded values
-    for (let i = 0; i < width * height * 3; i++) out[i] = (c[i] * 255 + 0.5) | 0
+    for (let i = y0 * width * 3; i < y1 * width * 3; i++) out[i] = (c[i] * 255 + 0.5) | 0
+    if (weights) for (let i = y0 * width; i < y1 * width; i++) weights[i] = Math.min(255, (this.weight[i] + 0.5) | 0)
+    return glyphBelow > 0 ? this.glyphs(scene, glyphBelow) : []
+  }
+
+  /**
+   * The monsters and items too small to make out, a glyph a cell (its monster
+   * before its items): those whose tile stands under `below` pixels tall,
+   * or under a little more if it was a glyph last frame, and that show in
+   * the picture: in front, or, in sight, through the level as render-3d's
+   * ghosts show it; not behind something nearer, nor behind the hands.
+   */
+  private glyphs(scene: Scene, below: number): TermGlyph[] {
+    const out: TermGlyph[] = []
+    const was = this.glyphed
+    this.glyphed = new Set()
+    const at = new Map<string, Billboard>()
+    for (const b of scene.billboards) {
+      if ((b.kind !== 'monster' && b.kind !== 'item') || b.scenery) continue
+      if (b.x === scene.player.x && b.y === scene.player.y && scene.playerOnLevel) continue
+      const key = `${b.x},${b.y}`
+      const had = at.get(key)
+      if (!had || (had.kind === 'item' && b.kind === 'monster') || (had.kind === b.kind && b.height > had.height)) at.set(key, b)
+    }
+    const p = new Float64Array(3)
+    for (const [key, b] of at) {
+      const cell = scene.cells.get(cellKey(b.x, b.y))
+      const char = cell?.glyph
+      if (!char || GROUND_GLYPHS.test(char)) continue
+      // its tile's middle: a lying thing's on the floor
+      this.toCamera([b.x + 0.5, b.lying ? 0 : b.height / 2, b.y + 0.5], p)
+      const depth = p[2]
+      if (depth < NEAR) continue
+      const tall = (b.height * this.fy) / depth
+      if (tall >= below * (was.has(key) ? GLYPH_KEEP : 1)) continue
+      this.glyphed.add(key)
+      const x = this.width / 2 + (p[0] / depth) * this.f
+      const y = this.height / 2 - (p[1] / depth) * this.fy
+      if (x < 0 || y < this.y0 || x >= this.width || y >= this.y1) continue
+      const o = Math.floor(y) * this.width + Math.floor(x)
+      const seen = cell.visibility === 'visible'
+      const gap = depth - this.sceneDepth[o]
+      // behind the level, what is in sight, as far as render-3d's ghosts reach: a name over every ghost of what is
+      // remembered would write over the walls
+      const behind = gap > GHOST_GAP
+      if (behind && (!seen || gap > GHOST_FADE_VISIBLE)) continue
+      if (!behind && this.zbuf[o] < depth - GLYPH_HIDDEN) continue
+      const cur = this.cursor
+      out.push({ x, y, depth, char, colour: (cell.colour ?? 7) & 15, dim: !seen, behind, selected: !!cur && cur.x === b.x && cur.y === b.y })
+    }
+    return out
   }
 
   // ------------------------------------------------------------ the level
@@ -303,6 +425,15 @@ export class RenderTerm {
     return F.shade[i] / 255
   }
 
+  /** Whether the flash can reach anywhere on the cell (x, z) or round its edges (`flashed`'s early way out, a cell further each way). */
+  private flashNear(x: number, z: number): boolean {
+    const F = this.field
+    const cx = Math.round(x) - F.ox, cz = Math.round(z) - F.oz
+    if (cx < 2 || cz < 2 || cx >= F.w - 1 || cz >= F.h - 1) return true
+    for (let j = cz - 2; j <= cz + 1; j++) for (let i = cx - 2; i <= cx + 1; i++) if (F.near[j * F.w + i]) return true
+    return false
+  }
+
   /** The flash field at a world point, filtered between cell middles as the GPU filters it, washed over `c` (linear). */
   private flashed(c: RGB, wx: number, wz: number) {
     const F = this.field
@@ -329,6 +460,13 @@ export class RenderTerm {
     c[2] += (b / 255 - c[2]) * a
   }
 
+  /** A buffer of at least `n` to work in, the one named, kept for the next that asks. */
+  private scratch(name: string, n: number): Float64Array {
+    let b = this.scratches.get(name)
+    if (!b || b.length < n) this.scratches.set(name, (b = new Float64Array(n * 2)))
+    return b
+  }
+
   /** The level's chunks of the given kinds, those in sight. */
   private level(kinds: ChunkGeometry['kind'][]) {
     const lidded = this.scene!.level.sky === 'none'
@@ -343,9 +481,11 @@ export class RenderTerm {
     for (const { geos } of near) for (const g of geos) if (kinds.includes(g.kind)) this.geometry(g, lidded)
   }
 
-  /** Whether any of the box x0..x1, 0..1, z0..z1 can be in sight: in front of the eye and not wholly past one side of the view. */
+  /** Whether any of the box x0..x1, 0..1, z0..z1 can be in sight: in front of the eye and not wholly past one side of the rows drawn. */
   private boxInView(x0: number, z0: number, x1: number, z1: number): boolean {
-    const halfX = this.width / 2 / this.f, halfY = this.height / 2 / this.fy
+    const halfX = this.width / 2 / this.f
+    // the rows drawn, as slopes up from the eye's axis: the frame's top row is the highest
+    const top = (this.height / 2 - this.y0) / this.fy, bottom = (this.height / 2 - this.y1) / this.fy
     let front = false, left = true, right = true, below = true, above = true
     for (let i = 0; i < 8; i++) {
       const dx = (i & 1 ? x1 : x0) - this.ex, dy = (i & 2 ? 1 : 0) - this.ey, dz = (i & 4 ? z1 : z0) - this.ez
@@ -355,8 +495,8 @@ export class RenderTerm {
       if (pz > NEAR) front = true
       if (px > -halfX * pz) left = false
       if (px < halfX * pz) right = false
-      if (py > -halfY * pz) below = false
-      if (py < halfY * pz) above = false
+      if (py > bottom * pz) below = false
+      if (py < top * pz) above = false
     }
     return front && !left && !right && !below && !above
   }
@@ -367,21 +507,26 @@ export class RenderTerm {
     if (g.kind !== 'void' && !atlas) return
     const pos = g.position, uv = g.uv, idx = g.index
     const n = pos.length / 3
-    // the vertices into camera space, once
-    const cam = new Float64Array(n * 3)
-    for (let i = 0; i < n; i++) {
-      const dx = pos[i * 3] - this.ex, dy = pos[i * 3 + 1] - this.ey, dz = pos[i * 3 + 2] - this.ez
-      cam[i * 3] = dx * this.ax[0] + dy * this.ax[1] + dz * this.ax[2]
-      cam[i * 3 + 1] = dx * this.ay[0] + dy * this.ay[1] + dz * this.ay[2]
-      cam[i * 3 + 2] = dx * this.af[0] + dy * this.af[1] + dz * this.af[2]
-    }
+    // the vertices into camera space, and the triangles nearest first: once a view, however many bands of it are drawn
+    let seen = this.viewed.get(g)
+    const again = seen?.view === this.view
+    if (!seen || seen.cam.length !== n * 3) this.viewed.set(g, (seen = { view: -1, cam: new Float64Array(n * 3), order: new Uint32Array(idx.length / 3) }))
+    seen.view = this.view
+    const cam = seen.cam
+    if (!again)
+      for (let i = 0; i < n; i++) {
+        const dx = pos[i * 3] - this.ex, dy = pos[i * 3 + 1] - this.ey, dz = pos[i * 3 + 2] - this.ez
+        cam[i * 3] = dx * this.ax[0] + dy * this.ax[1] + dz * this.ax[2]
+        cam[i * 3 + 1] = dx * this.ay[0] + dy * this.ay[1] + dz * this.ay[2]
+        cam[i * 3 + 2] = dx * this.af[0] + dy * this.af[1] + dz * this.af[2]
+      }
     const aw = atlas ? atlas.levels[0].w : 1, ah = atlas ? atlas.levels[0].h : 1
     const alphaTest = g.kind === 'level' ? 0.5 : g.kind === 'decal' ? 0.02 : 0.01
     const blend = g.kind === 'decal' || g.kind === 'marks'
     const enc: RGB = [0, 0, 0]
     const tex = [0, 0, 0, 0]
     const c: RGB = [0, 0, 0]
-    let level = 0, col0 = 0, col1 = 0, col2 = 0, shade = 1, cut = false
+    let level = 0, col0 = 0, col1 = 0, col2 = 0, shade = 1, cut = false, flashy = false, world = false
     // a mark's tile rect, and how its uv moves a pixel across and a pixel down (the shader's dFdx, dFdy)
     const marks = g.kind === 'marks'
     const rect = [0, 0, 0, 0]
@@ -400,14 +545,16 @@ export class RenderTerm {
       c[0] = tex[0] * col0 * shade
       c[1] = tex[1] * col1 * shade
       c[2] = tex[2] * col2 * shade
-      const wx = a[2], wy = a[3], wz = a[4]
-      this.flashed(c, wx, wz)
-      // the lid recedes, and a wall darkens toward it (LID)
+      // the lid recedes, and a wall darkens toward it (LID); where neither nor a flash reaches, the point itself is not wanted
       let over = 1
-      if (cut) over = 1 + ((lidded ? WALL_TOP : 1) - 1) * smoothstep(1 - WALL_SHADOW, 1, wy)
-      else if (wy > 0.999) {
-        const dx = wx - this.ex, dy = wy - this.ey, dz = wz - this.ez
-        over = LID_LIGHT * lidFade(Math.sqrt(dx * dx + dy * dy + dz * dz))
+      if (world) {
+        const wx = a[2], wy = a[3], wz = a[4]
+        if (flashy) this.flashed(c, wx, wz)
+        if (cut) over = 1 + ((lidded ? WALL_TOP : 1) - 1) * smoothstep(1 - WALL_SHADOW, 1, wy)
+        else if (wy > 0.999) {
+          const dx = wx - this.ex, dy = wy - this.ey, dz = wz - this.ez
+          over = LID_LIGHT * lidFade(Math.sqrt(dx * dx + dy * dy + dz * dz))
+        }
       }
       enc[0] = encode(c[0] * over)
       enc[1] = encode(c[1] * over)
@@ -420,10 +567,10 @@ export class RenderTerm {
     }
     const P = [0, 0, 0].map(() => new Float64Array(8))
     const tris = idx.length / 3
-    const order = new Uint32Array(tris)
-    for (let t = 0; t < tris; t++) order[t] = t
-    if (!blend) {
-      const key = new Float64Array(tris)
+    const order = seen.order
+    if (!again) for (let t = 0; t < tris; t++) order[t] = t
+    if (!blend && !again) {
+      const key = this.scratch('key', tris)
       for (let t = 0; t < tris; t++) key[t] = Math.min(cam[idx[t * 3] * 3 + 2], cam[idx[t * 3 + 1] * 3 + 2], cam[idx[t * 3 + 2] * 3 + 2])
       order.sort((a, b) => key[a] - key[b])
     }
@@ -449,6 +596,8 @@ export class RenderTerm {
       col2 = g.color[i0 * 3 + 2]
       shade = this.shadeAt(g.cell[i0 * 2], g.cell[i0 * 2 + 1])
       cut = g.cut[i0] > 0.5
+      flashy = this.flashNear(g.cell[i0 * 2], g.cell[i0 * 2 + 1])
+      world = cut || flashy || P[0][6] > 0.999 || P[1][6] > 0.999 || P[2][6] > 0.999
       if (atlas) {
         const uvArea = Math.abs((P[1][3] - P[0][3]) * (P[2][4] - P[0][4]) - (P[2][3] - P[0][3]) * (P[1][4] - P[0][4])) * aw * ah
         level = this.mipFor(P, uvArea)
@@ -457,7 +606,8 @@ export class RenderTerm {
         for (let j = 0; j < 4; j++) rect[j] = g.rect[i0 * 4 + j]
         this.uvGradient(P, grad)
       }
-      this.poly(P, 5, cut, frag, true)
+      // the point in the world only where it is wanted: interpolated, it is the most of a pixel's work
+      this.poly(P, world || marks ? 5 : 2, cut, frag, true)
     }
   }
 
@@ -551,10 +701,11 @@ export class RenderTerm {
       bandS = (bandB - bandA + Wq - W) / (bandB - bandA)
     }
     const colX = (i: number) => (i <= bandA ? i : i <= bandB ? bandA + (i - bandA) * bandS : i + (bandB - bandA) * (bandS - 1))
-    const colAt = (x: number) => {
+    const colOf = (x: number) => {
       const xa = bandA, xb = colX(bandB)
-      return Math.floor(x <= xa ? x : x <= xb ? bandA + (x - xa) / bandS : x - (xb - bandB))
+      return x <= xa ? x : x <= xb ? bandA + (x - xa) / bandS : x - (xb - bandB)
     }
+    const colAt = (x: number) => Math.floor(colOf(x))
     const toWorld = (lx: number, ly: number, lz: number): RGB => {
       // lying, the frame is tipped onto its back: its y along the floor, its z up
       const ux = lx, uy = lie ? lz : ly, uz = lie ? -ly : lz
@@ -574,12 +725,16 @@ export class RenderTerm {
     })
     const L0 = atlas.levels[0]
     const [sx, sy] = s.texel
-    // far off, the tile averaged down to about a texel a pixel, its edge drawn as far as it covers the pixel
+    // far off, each pixel the texels it covers, leaning to those that stand out, its edge drawn as far as it covers the pixel
     const fx = ax - this.ex, fy = ay + qy - this.ey, fz = az - this.ez
     const far = Math.max(NEAR, fx * this.af[0] + fy * this.af[1] + fz * this.af[2])
-    const texels = Math.max(far / (this.f * k), far / (this.fy * k))
-    const L = Math.max(0, Math.min(SPRITE_MIP_MAX, Math.floor(Math.log2(texels))))
-    const mip = L ? this.spriteMip(s.atlas, L0, sx, sy, W, H, L) : null
+    const hx = far / (this.f * k) / 2, hy = far / (this.fy * k) / 2
+    const sums = this.spriteSum(s.atlas, L0, sx, sy, W, H)
+    const spread = hx > 0.5 || hy > 0.5
+    const W1 = W + 1
+    /** channel `ch` summed over columns c0 up to c1 and rows r0 up to r1 */
+    const block = (c0: number, r0: number, c1: number, r1: number, ch: number) =>
+      sums[(r1 * W1 + c1) * 5 + ch] - sums[(r0 * W1 + c1) * 5 + ch] - sums[(r1 * W1 + c0) * 5 + ch] + sums[(r0 * W1 + c0) * 5 + ch]
     const body = (cx: number, cy: number) => {
       if (cx < 0 || cy < 0 || cx >= W || cy >= H) return false
       return L0.data[((sy + cy) * L0.w + sx + cx) * 4 + 3] >= OPAQUE_ALPHA
@@ -591,6 +746,7 @@ export class RenderTerm {
     const shade = mode & MODE_SHADE_MAP ? this.shadeAt(s.cell[0], s.cell[1]) : 1
     const lin: RGB = [0, 0, 0]
     const enc: RGB = [0, 0, 0]
+    let stands = 1
     const frag: Frag = (o, depth, a) => {
       if (how !== 'ghost' && depth >= this.zbuf[o]) return
       let alpha = s.color[3]
@@ -601,21 +757,31 @@ export class RenderTerm {
         alpha *= 1 - smoothstep(fadeStart, fadeRange, gap)
       }
       const tcx = colAt(a[0]), tcy = Math.floor(a[1])
-      if (mip) {
-        if (tcx < 0 || tcy < 0 || tcx >= W || tcy >= H) return
-        const i = ((tcy >> L) * mip.w + (tcx >> L)) * 4
-        const cover = mip.data[i + 3]
-        if (cover < 0.02) return
-        lin[0] = (mip.data[i] / cover) * s.color[0] * shade
-        lin[1] = (mip.data[i + 1] / cover) * s.color[1] * shade
-        lin[2] = (mip.data[i + 2] / cover) * s.color[2] * shade
+      if (spread) {
+        // the texels under the pixel, rounded to whole ones, at least the one under its middle; past the tile is clear
+        let c0 = Math.round(colOf(a[0] - hx)), c1 = Math.round(colOf(a[0] + hx))
+        let r0 = Math.round(a[1] - hy), r1 = Math.round(a[1] + hy)
+        if (c1 <= c0) (c0 = tcx), (c1 = tcx + 1)
+        if (r1 <= r0) (r0 = tcy), (r1 = tcy + 1)
+        const n = (c1 - c0) * (r1 - r0)
+        c0 = Math.max(0, c0)
+        r0 = Math.max(0, r0)
+        c1 = Math.min(W, c1)
+        r1 = Math.min(H, r1)
+        if (c1 <= c0 || r1 <= r0) return
+        const sum = (ch: number) => block(c0, r0, c1, r1, ch)
+        const cover = sum(0) / n, weight = sum(4)
+        if (cover < 0.02 || !(weight > 0)) return
+        lin[0] = (sum(1) / weight) * s.color[0] * shade
+        lin[1] = (sum(2) / weight) * s.color[1] * shade
+        lin[2] = (sum(3) / weight) * s.color[2] * shade
         alpha *= cover
         this.flashed(lin, a[2], a[4])
         enc[0] = encode(lin[0])
         enc[1] = encode(lin[1])
         enc[2] = encode(lin[2])
         if (how === 'solid' && cover >= 0.5) this.zbuf[o] = depth
-        this.blend(o, enc, alpha)
+        this.blend(o, enc, alpha, weight / sum(0))
         return
       }
       if (body(tcx, tcy)) {
@@ -624,6 +790,7 @@ export class RenderTerm {
         lin[1] = L0.data[i + 1] * s.color[1] * shade
         lin[2] = L0.data[i + 2] * s.color[2] * shade
         alpha *= L0.data[i + 3]
+        stands = block(tcx, tcy, tcx + 1, tcy + 1, 4) / (L0.data[i + 3] || 1)
         this.flashed(lin, a[2], a[4])
         enc[0] = encode(lin[0])
         enc[1] = encode(lin[1])
@@ -633,55 +800,53 @@ export class RenderTerm {
         enc[0] = SHELL[0]
         enc[1] = SHELL[1]
         enc[2] = SHELL[2]
+        stands = 1
       } else return
       if (how === 'solid') this.zbuf[o] = depth
-      this.blend(o, enc, alpha)
+      this.blend(o, enc, alpha, stands)
     }
     this.poly(P, 5, false, frag, how !== 'ghost')
   }
 
   /**
-   * A sprite tile's texels averaged `level` times over, two by two, each
-   * level of its own so no average reaches into the next tile in the atlas:
-   * colour premultiplied by alpha, and alpha, which is how much of the
-   * texel the art covers. Kept per tile.
+   * A sprite tile's texels summed from its top-left corner (a summed-area
+   * table), so any block of them adds up in four looks: per texel its
+   * cover, its colour weighted by cover and by how far its encoded colour
+   * stands from the eight round it, where all eight are the sprite's
+   * (SALIENCE): the eyes in a face, black on a quokka's fur or yellow on a
+   * goblin's, and not the outline, which stands against nothing. And that
+   * weight. Kept per tile.
    */
-  private spriteMip(atlas: string, L0: Atlas['levels'][number], sx: number, sy: number, W: number, H: number, level: number): { w: number; data: Float32Array } {
+  private spriteSum(atlas: string, L0: Atlas['levels'][number], sx: number, sy: number, W: number, H: number): Float64Array {
     const key = `${atlas}|${sx},${sy},${W},${H}`
-    let levels = this.spriteMips.get(key)
-    if (!levels) {
-      const base = new Float32Array(W * H * 4)
-      for (let y = 0; y < H; y++)
-        for (let x = 0; x < W; x++) {
-          const i = ((sy + y) * L0.w + sx + x) * 4, o = (y * W + x) * 4
-          const al = L0.data[i + 3]
-          base[o] = L0.data[i] * al
-          base[o + 1] = L0.data[i + 1] * al
-          base[o + 2] = L0.data[i + 2] * al
-          base[o + 3] = al
+    let sums = this.spriteSums.get(key)
+    if (sums) return sums
+    const ink = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && L0.data[((sy + y) * L0.w + sx + x) * 4 + 3] >= OPAQUE_ALPHA
+    const enc = (x: number, y: number, ch: number) => encode(L0.data[((sy + y) * L0.w + sx + x) * 4 + ch])
+    /** how far (x, y) stands from the eight round it, squared: 0 at the sprite's edge */
+    const contrast = (x: number, y: number) => {
+      if (!ink(x, y)) return 0
+      const m: RGB = [0, 0, 0]
+      for (let j = -1; j <= 1; j++)
+        for (let i = -1; i <= 1; i++) {
+          if (!i && !j) continue
+          if (!ink(x + i, y + j)) return 0
+          for (let ch = 0; ch < 3; ch++) m[ch] += enc(x + i, y + j, ch) / 8
         }
-      levels = [{ w: W, h: H, data: base }]
-      this.spriteMips.set(key, levels)
+      return (enc(x, y, 0) - m[0]) ** 2 + (enc(x, y, 1) - m[1]) ** 2 + (enc(x, y, 2) - m[2]) ** 2
     }
-    while (levels.length <= level) {
-      const s = levels[levels.length - 1]
-      const w = Math.ceil(s.w / 2), h = Math.ceil(s.h / 2)
-      const d = new Float32Array(w * h * 4)
-      for (let y = 0; y < h; y++)
-        for (let x = 0; x < w; x++)
-          for (let ch = 0; ch < 4; ch++) {
-            // past the tile's edge is clear
-            let v = 0
-            for (let j = 0; j < 2; j++)
-              for (let i = 0; i < 2; i++) {
-                const xx = 2 * x + i, yy = 2 * y + j
-                if (xx < s.w && yy < s.h) v += s.data[(yy * s.w + xx) * 4 + ch]
-              }
-            d[(y * w + x) * 4 + ch] = v / 4
-          }
-      levels.push({ w, h, data: d })
-    }
-    return levels[level]
+    const W1 = W + 1
+    sums = new Float64Array(W1 * (H + 1) * 5)
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = ((sy + y) * L0.w + sx + x) * 4, al = L0.data[i + 3]
+        const w = al * (1 + SALIENCE * Math.max(0, contrast(x, y) - CONTRAST_MIN))
+        const o = ((y + 1) * W1 + x + 1) * 5, up = (y * W1 + x + 1) * 5, left = o - 5, diag = up - 5
+        const v = [al, w * L0.data[i], w * L0.data[i + 1], w * L0.data[i + 2], w]
+        for (let ch = 0; ch < 5; ch++) sums[o + ch] = v[ch] + sums[up + ch] + sums[left + ch] - sums[diag + ch]
+      }
+    this.spriteSums.set(key, sums)
+    return sums
   }
 
   /** A shadow: a disc on the floor under what stands, darkening what it lies on. */
@@ -771,7 +936,7 @@ export class RenderTerm {
       const mid = (h.x0 + h.x1) / 2
       const lin: RGB = [0, 0, 0]
       const enc: RGB = [0, 0, 0]
-      for (let y = Math.max(0, Math.floor(py0)); y < Math.min(this.height, Math.ceil(py1)); y++)
+      for (let y = Math.max(this.y0, Math.floor(py0)); y < Math.min(this.y1, Math.ceil(py1)); y++)
         for (let x = Math.max(0, Math.floor(px0)); x < Math.min(this.width, Math.ceil(px0 + sizeX)); x++) {
           let u = (x + 0.5 - px0) / sizeX
           if (mirror) u = 1 - u
@@ -789,6 +954,8 @@ export class RenderTerm {
           enc[1] = encode(lin[1])
           enc[2] = encode(lin[2])
           this.blend(y * this.width + x, enc, h.data[i + 3])
+          // nearest of all, for the glyphs it hides
+          this.zbuf[y * this.width + x] = 0
         }
     }
     pose(vm.weapon, VM_WEAPON_REST)
@@ -849,6 +1016,7 @@ export class RenderTerm {
     this.colour = new Float32Array(width * height * 3)
     this.zbuf = new Float32Array(width * height)
     this.sceneDepth = new Float32Array(width * height)
+    this.weight = new Float32Array(width * height)
   }
 
   /** The camera as render-3d stands it: at eye height in the middle of the eye's cell, turned YXZ by (pitch, -yaw). */
@@ -882,41 +1050,60 @@ export class RenderTerm {
    */
   private poly(P: Float64Array[], k: number, cullBack: boolean, frag: Frag, test = false) {
     const n = 3 + k
-    const Q: Float64Array[] = []
-    for (let i = 0; i < P.length; i++) {
-      const a = P[i], b = P[(i + 1) % P.length]
-      const ina = a[2] >= NEAR, inb = b[2] >= NEAR
-      if (ina) Q.push(a)
-      if (ina !== inb) {
-        const t = (NEAR - a[2]) / (b[2] - a[2])
-        const q = new Float64Array(n)
-        for (let j = 0; j < n; j++) q[j] = a[j] + (b[j] - a[j]) * t
-        Q.push(q)
+    // the polygon clipped, into buffers kept from one polygon to the next: the most are wholly in front, and kept as they are
+    const Q = this.polyQ
+    let nq = 0
+    let front = true
+    for (let i = 0; i < P.length; i++) if (P[i][2] < NEAR) front = false
+    if (front) for (let i = 0; i < P.length; i++) Q[nq++] = P[i]
+    else
+      for (let i = 0, cut = 0; i < P.length; i++) {
+        const a = P[i], b = P[(i + 1) % P.length]
+        const ina = a[2] >= NEAR, inb = b[2] >= NEAR
+        if (ina) Q[nq++] = a
+        if (ina !== inb) {
+          const t = (NEAR - a[2]) / (b[2] - a[2])
+          const q = this.polyCut[cut++]
+          for (let j = 0; j < n; j++) q[j] = a[j] + (b[j] - a[j]) * t
+          Q[nq++] = q
+        }
       }
-    }
-    if (Q.length < 3) return
+    if (nq < 3) return
     const W = this.width, H = this.height, f = this.f, fy = this.fy
-    const sx = Q.map((q) => W / 2 + (q[0] / q[2]) * f)
-    const sy = Q.map((q) => H / 2 - (q[1] / q[2]) * fy)
+    const sx = this.polySx, sy = this.polySy
+    let loX = Infinity, hiX = -Infinity, loY = Infinity, hiY = -Infinity
+    for (let i = 0; i < nq; i++) {
+      const q = Q[i]
+      sx[i] = W / 2 + (q[0] / q[2]) * f
+      sy[i] = H / 2 - (q[1] / q[2]) * fy
+      if (sx[i] < loX) loX = sx[i]
+      if (sx[i] > hiX) hiX = sx[i]
+      if (sy[i] < loY) loY = sy[i]
+      if (sy[i] > hiY) hiY = sy[i]
+    }
+    // wholly off the rows drawn, or off the sides
+    if (Math.ceil(hiY) < this.y0 || Math.floor(loY) > this.y1 - 1 || Math.ceil(hiX) < 0 || Math.floor(loX) > W - 1) return
     if (cullBack) {
       let area = 0
-      for (let i = 0; i < Q.length; i++) {
-        const j = (i + 1) % Q.length
+      for (let i = 0; i < nq; i++) {
+        const j = (i + 1) % nq
         area += sx[i] * sy[j] - sx[j] * sy[i]
       }
       // a front face winds counter-clockwise with y up, which is clockwise with the screen's y down
       if (area >= 0) return
     }
-    const attrs = new Float64Array(k)
-    for (let t = 1; t + 1 < Q.length; t++) {
+    const attrs = this.attrs
+    for (let t = 1; t + 1 < nq; t++) {
       const A = 0, B = t, C = t + 1
       const area = (sx[B] - sx[A]) * (sy[C] - sy[A]) - (sx[C] - sx[A]) * (sy[B] - sy[A])
       if (Math.abs(area) < 1e-9) continue
       const minX = Math.max(0, Math.floor(Math.min(sx[A], sx[B], sx[C]))), maxX = Math.min(W - 1, Math.ceil(Math.max(sx[A], sx[B], sx[C])))
-      const minY = Math.max(0, Math.floor(Math.min(sy[A], sy[B], sy[C]))), maxY = Math.min(H - 1, Math.ceil(Math.max(sy[A], sy[B], sy[C])))
+      const minY = Math.max(this.y0, Math.floor(Math.min(sy[A], sy[B], sy[C]))), maxY = Math.min(this.y1 - 1, Math.ceil(Math.max(sy[A], sy[B], sy[C])))
       if (minX > maxX || minY > maxY) continue
       const V0 = Q[A], V1 = Q[B], V2 = Q[C]
       const iz0 = 1 / V0[2], iz1 = 1 / V1[2], iz2 = 1 / V2[2]
+      const uv = k >= 2
+      const u0 = uv ? V0[3] : 0, u1 = uv ? V1[3] : 0, u2 = uv ? V2[3] : 0, v0 = uv ? V0[4] : 0, v1 = uv ? V1[4] : 0, v2 = uv ? V2[4] : 0
       // the barycentric weights are linear across the screen: w = ax·x + by·y + c, for the pixel's middle
       const a0 = -(sy[C] - sy[B]) / area, b0 = (sx[C] - sx[B]) / area, c0 = (sx[B] * sy[C] - sx[C] * sy[B]) / area
       const a1 = -(sy[A] - sy[C]) / area, b1 = (sx[A] - sx[C]) / area, c1 = (sx[C] * sy[A] - sx[A] * sy[C]) / area
@@ -944,23 +1131,28 @@ export class RenderTerm {
           const inv = p0 + p1 + p2
           const depth = 1 / inv
           if (test && depth >= zb[o]) continue
-          for (let j = 0; j < k; j++) attrs[j] = (p0 * V0[3 + j] + p1 * V1[3 + j] + p2 * V2[3 + j]) * depth
+          // the attributes, the uv alone written out as most polygons want only it
+          attrs[0] = (p0 * u0 + p1 * u1 + p2 * u2) * depth
+          attrs[1] = (p0 * v0 + p1 * v1 + p2 * v2) * depth
+          for (let j = 2; j < k; j++) attrs[j] = (p0 * V0[3 + j] + p1 * V1[3 + j] + p2 * V2[3 + j]) * depth
           frag(o, depth, attrs)
         }
       }
     }
   }
 
-  /** `enc` over the pixel at `alpha`, on encoded values, as the canvas blends. */
-  private blend(o: number, enc: RGB, alpha: number) {
+  /** `enc` over the pixel at `alpha`, on encoded values, as the canvas blends; and how much it stands out, `weight`, over the pixel's. */
+  private blend(o: number, enc: RGB, alpha: number, weight = 1) {
     const c = this.colour
     if (alpha >= 1) {
       c[o * 3] = enc[0]
       c[o * 3 + 1] = enc[1]
       c[o * 3 + 2] = enc[2]
+      this.weight[o] = weight
       return
     }
     if (alpha <= 0) return
+    this.weight[o] += (weight - this.weight[o]) * alpha
     c[o * 3] += (enc[0] - c[o * 3]) * alpha
     c[o * 3 + 1] += (enc[1] - c[o * 3 + 1]) * alpha
     c[o * 3 + 2] += (enc[2] - c[o * 3 + 2]) * alpha
@@ -972,33 +1164,42 @@ export class RenderTerm {
   private atlas(name: string): Atlas | null {
     let a = this.atlases.get(name)
     if (a !== undefined) return a
-    a = null
-    const px = this.pixels(name)
-    if (px) {
-      const { width: w, height: h, data: src } = px
-      const data = new Float32Array(w * h * 4)
-      for (let i = 0; i < w * h; i++) {
-        data[i * 4] = DECODE[src[i * 4]]
-        data[i * 4 + 1] = DECODE[src[i * 4 + 1]]
-        data[i * 4 + 2] = DECODE[src[i * 4 + 2]]
-        data[i * 4 + 3] = src[i * 4 + 3] / 255
-      }
-      const levels = [{ w, h, data }]
-      for (let l = 1; l <= MIP_MAX; l++) {
-        const s = levels[l - 1]
-        const nw = Math.max(1, s.w >> 1), nh = Math.max(1, s.h >> 1)
-        const d = new Float32Array(nw * nh * 4)
-        const at = (xx: number, yy: number, ch: number) => s.data[(Math.min(s.h - 1, yy) * s.w + Math.min(s.w - 1, xx)) * 4 + ch]
-        for (let y = 0; y < nh; y++)
-          for (let x = 0; x < nw; x++)
-            for (let ch = 0; ch < 4; ch++) d[(y * nw + x) * 4 + ch] = (at(2 * x, 2 * y, ch) + at(2 * x + 1, 2 * y, ch) + at(2 * x, 2 * y + 1, ch) + at(2 * x + 1, 2 * y + 1, ch)) / 4
-        levels.push({ w: nw, h: nh, data: d })
-      }
-      a = { levels }
+    a = this.linear?.(name)
+    if (a === undefined) {
+      const px = this.pixels(name)
+      a = px ? linearAtlas(px) : null
     }
     this.atlases.set(name, a)
     return a
   }
+}
+
+/**
+ * An atlas's pixels in linear light, with MIP_MAX mips, as render-term
+ * samples them: in memory threads can share, where there is any.
+ */
+export function linearAtlas(px: Pixels): Atlas {
+  const floats = (n: number) => (typeof SharedArrayBuffer === 'function' ? new Float32Array(new SharedArrayBuffer(n * 4)) : new Float32Array(n))
+  const { width: w, height: h, data: src } = px
+  const data = floats(w * h * 4)
+  for (let i = 0; i < w * h; i++) {
+    data[i * 4] = DECODE[src[i * 4]]
+    data[i * 4 + 1] = DECODE[src[i * 4 + 1]]
+    data[i * 4 + 2] = DECODE[src[i * 4 + 2]]
+    data[i * 4 + 3] = src[i * 4 + 3] / 255
+  }
+  const levels = [{ w, h, data }]
+  for (let l = 1; l <= MIP_MAX; l++) {
+    const s = levels[l - 1]
+    const nw = Math.max(1, s.w >> 1), nh = Math.max(1, s.h >> 1)
+    const d = floats(nw * nh * 4)
+    const at = (xx: number, yy: number, ch: number) => s.data[(Math.min(s.h - 1, yy) * s.w + Math.min(s.w - 1, xx)) * 4 + ch]
+    for (let y = 0; y < nh; y++)
+      for (let x = 0; x < nw; x++)
+        for (let ch = 0; ch < 4; ch++) d[(y * nw + x) * 4 + ch] = (at(2 * x, 2 * y, ch) + at(2 * x + 1, 2 * y, ch) + at(2 * x, 2 * y + 1, ch) + at(2 * x + 1, 2 * y + 1, ch)) / 4
+    levels.push({ w: nw, h: nh, data: d })
+  }
+  return { levels }
 }
 
 interface Hand {
