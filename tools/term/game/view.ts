@@ -3,13 +3,14 @@
  * draws through (its `renderer` hook), answering the 3D view's extra calls
  * as a view with no motion and no picking does. It draws nothing
  * itself: it keeps what it is given (the tiles, the scene, the camera) and
- * says when a frame is wanted, and the terminal draws it with render-term
- * (`draw`) at the terminal's own pace.
+ * says when a frame is wanted, and the terminal draws it with render-term,
+ * on threads (`TermRaster`), at the terminal's own pace (`picture`).
  */
-import { RenderTerm, type Pixels, type RenderTermOptions } from '@orbrun/render-term'
+import type { Pixels, RenderTermOptions, TermGlyph } from '@orbrun/render-term'
 import { cellKey } from '@orbrun/scene'
 import type { Billboard, Camera, CellKey, MapRenderer, Scene, SceneCursor, TileSource, Viewmodel } from '@orbrun/scene'
 import { isRgbaBitmap } from './env'
+import { TermRaster, type Cells, type DrawOptions } from '../raster'
 
 /** a tile's cell, in texels */
 const CELL = 32
@@ -26,13 +27,15 @@ export class TermView implements MapRenderer {
   readonly stats = {}
   mark: ((n: string) => void) | null = null
   cellSize = 32
-  private r = new RenderTerm({ fov: 80 })
+  private r = new TermRaster()
   private fov = 80
   private eye = 0.6
   private tiles: TileSource | null = null
   private atlases = new Map<string, Pixels | undefined>()
 
-  constructor(private onFrame: () => void) {}
+  constructor(private onFrame: () => void) {
+    this.r.setOptions({ fov: 80 })
+  }
 
   mount(): void {}
   setTiles(tiles: TileSource): void {
@@ -60,7 +63,6 @@ export class TermView implements MapRenderer {
     return null
   }
   resize(): void {}
-  destroy(): void {}
 
   // what GameScreen asks of a 3D view
   /** the game's 3D options (game.ts `render3dOptions`), as far as a terminal takes them */
@@ -107,13 +109,18 @@ export class TermView implements MapRenderer {
     }
   }
 
-  /** Draw the view into `out`, `width` x `height` RGB, each pixel `pixelAspect` times as tall as wide. */
-  draw(width: number, height: number, out: Uint8Array, pixelAspect = 1): void {
-    if (!this.camera || !this.scene) {
-      out.fill(0)
-      return
-    }
-    this.r.render(this.camera, width, height, out, pixelAspect)
+  /** The view as `cols` x `rows` cells, with the monsters and items to be named by their glyphs; null with nothing to show. */
+  async picture(cols: number, rows: number, o: DrawOptions): Promise<{ cells: Cells; glyphs: TermGlyph[] } | null> {
+    if (!this.camera || !this.scene) return null
+    return this.r.draw(this.camera, cols, rows, o)
+  }
+
+  /** what GameScreen asks when it goes: the view outlives it, for the next game */
+  destroy(): void {}
+
+  /** The threads, let go. */
+  close(): void {
+    this.r.destroy()
   }
 
   /**
