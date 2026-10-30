@@ -18,8 +18,9 @@ the scene, no GL, no DOM.
   closed, so the walls either side stand back from it); `floorLayers`
   (underlays, the feature where it lies painted on the floor, overlays less
   crawl's wall shadows and shorelines, which read as seams beside a wall
-  standing back); `faceTile` (the tile a wall's face toward a side wears);
-  `insetStrips` and `stripAt` (what a wall's body leaves of its cell, and
+  standing back, and the cell's marks: travel arrows, exclusion on an unseen
+  cell, badges, WebTiles' cursors); `faceTile` (the tile a wall's face
+  toward a side wears); `insetStrips` and `stripAt` (what a wall's body leaves of its cell, and
   the open cell whose floor and lid reach each part, as polygons and at a
   point).
 - `doors.ts`: `framedDoors` (the doors hanging in a doorway and the heading
@@ -45,10 +46,17 @@ the scene, no GL, no DOM.
   are followed, including corners; bursts are caught up to at most two
   steps behind and stalled replies always leave the sprite stopped at its
   last cell.
-- `marks.ts`: the cursor's ring, a diamond band `RING_INNER`..`RING_OUTER`
-  round the cell's middle, in `CURSOR_COLOUR` (`CURSOR_MAP_COLOUR` on the
-  level map).
-- `things.ts`: `CLOUD_ALPHA`, how much a cloud hides of what is behind it.
+- `things.ts`: what stands, one list for every renderer (`Standing`):
+  `crowd` (the monsters, items, missiles and clouds: their layers and
+  badges, height, glide, alpha, lift, whether they lie, are shown through
+  walls or cast a shadow, a monster's name, crawl's glyph and colour for
+  the cell) and `fixtures` (the level's features by `featureStance`,
+  `FIXTURE_H` tall, stairs `STAIR_H`). render-3d stands them as sprite
+  instances, the glyph view as its `Thing`s.
+- `marks.ts`: the cursor: WebTiles' icon for it where the tiles have it,
+  else a ring, a diamond band `RING_INNER`..`RING_OUTER` round the cell's
+  middle in its mode's colour (`cursorColour`), its coverage of a pixel as
+  the shader works it (`ringCover`).
 
 Depends on `@orbrun/scene`. Part of [Orbrun](https://github.com/Caeous/orbrun).
 AGPL-3.0-or-later.

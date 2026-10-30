@@ -16,8 +16,8 @@ import {
   type Viewmodel,
 } from '@orbrun/scene'
 import {
-  CURSOR_COLOUR,
-  CURSOR_MAP_COLOUR,
+  CURSOR_ALPHA,
+  cursorColour,
   Movers,
   RING_INNER,
   RING_OUTER,
@@ -1203,8 +1203,8 @@ export class Render3d implements MapRenderer {
     } else {
       this.cursorTileMesh.visible = false
       this.cursorMesh.visible = true
-      const c = new THREE.Color(cur.mode === 'map' ? CURSOR_MAP_COLOUR : CURSOR_COLOUR)
-      this.cursorMat.uniforms.color.value.set(c.r, c.g, c.b, 0.95)
+      const c = new THREE.Color(cursorColour(cur))
+      this.cursorMat.uniforms.color.value.set(c.r, c.g, c.b, CURSOR_ALPHA)
       this.cursorMesh.position.set(cur.x + 0.5, 0.012, cur.y + 0.5)
     }
   }

@@ -1,6 +1,6 @@
 import { flashOf, getCell, keyToXY, shadeOf, type CellKey, type Camera, type HandItem, type Scene, type SceneCursor, type TileRect, type TileSource, type Viewmodel } from '@orbrun/scene'
 import { LevelGrid } from '@orbrun/render-3d/grid'
-import { RING_INNER, RING_OUTER, VM_FILL, VM_LIFT, VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, WALL_INSET, type HandPose } from '@orbrun/world'
+import { CURSOR_ALPHA, RING_OUTER, VM_FILL, cursorColour, ringCover, VM_LIFT, VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, WALL_INSET, type HandPose } from '@orbrun/world'
 import { LEVEL_CHUNK, LevelMesher, MARK_MARGIN, uvFor, type ChunkGeometry, type MeshContext, type TileDraw } from '@orbrun/render-3d/level-mesh'
 import { INK_LEVEL, distanceField, peelInk } from '@orbrun/render-3d/peel'
 import {
@@ -72,9 +72,6 @@ const GHOST_FADE = 14
 const GHOST_FADE_VISIBLE_START = 8
 const GHOST_FADE_VISIBLE = 30
 const RING_REACH = RING_OUTER + MARK_MARGIN
-/** the cursor's colours, linear, as render-3d's uniforms hold them */
-const CURSOR_COLOUR: RGB = [1, 0.53, 0]
-const CURSOR_MAP_COLOUR: RGB = [1, 1, 1]
 /** the selected sprite's shell (HULL_SEL_COLOUR), in linear light as three hands it to the shader */
 const SHELL_LINEAR: RGB = [0xff, 0xdd, 0x33].map((v) => srgbToLinear(v / 255)) as RGB
 const BLACK: RGB = [0, 0, 0]
@@ -1140,15 +1137,14 @@ export class RenderTerm {
       })
       return
     }
-    const lin = cur.mode === 'map' ? CURSOR_MAP_COLOUR : CURSOR_COLOUR
-    const enc: RGB = [encode(lin[0]), encode(lin[1]), encode(lin[2])]
+    // the ring's colour as render-3d's uniform holds it, linear (three's Color of the sRGB), and then encoded as the
+    // shader encodes it: the sRGB again
+    const hex = cursorColour(cur)
+    const enc: RGB = [encode(srgbToLinear((hex >> 16) / 255)), encode(srgbToLinear(((hex >> 8) & 255) / 255)), encode(srgbToLinear((hex & 255) / 255))]
     this.poly(P, 2, false, (o, depth, a) => {
       // the band's coverage of the pixel as the shader works it, the pixel's width on the floor taken from its depth
-      const d = Math.abs(a[0]) + Math.abs(a[1])
-      const w = Math.max((1.5 * depth) / this.f, 1e-5)
-      const cov = Math.max(0, Math.min(1, (Math.min(d + 0.5 * w, RING_OUTER) - Math.max(d - 0.5 * w, RING_INNER)) / w))
-      const al = 1 - Math.pow(1 - cov, Math.max(1, w / (RING_OUTER - RING_INNER)))
-      if (al >= 0.01) this.blend(o, enc, 0.95 * al)
+      const al = ringCover(a[0] + 0.5, a[1] + 0.5, (1.5 * depth) / this.f)
+      if (al >= 0.01) this.blend(o, enc, CURSOR_ALPHA * al)
     })
   }
 

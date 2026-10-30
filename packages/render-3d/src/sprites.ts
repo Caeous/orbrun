@@ -1,7 +1,7 @@
-import { cellKey, shadeOf, type Billboard, type Scene, type TileRect } from '@orbrun/scene'
-import { CLOUD_ALPHA, doorBoard, featureStance } from '@orbrun/world'
+import { cellKey, shadeOf, type Scene, type TileRect } from '@orbrun/scene'
+import { CLOUD_ALPHA, FIXTURE_H, PROJECTILE_LIFT, STAIR_H, crowd, doorBoard, fixtures } from '@orbrun/world'
 
-export { CLOUD_ALPHA }
+export { CLOUD_ALPHA, FIXTURE_H, PROJECTILE_LIFT, STAIR_H }
 
 /**
  * Standing sprites as instances (shaders.ts `SPRITE_VERT`): what a monster,
@@ -20,16 +20,11 @@ export const BLOCK_SHADE = { front: 1, top: 0.86, side: 0.7, bottom: 0.5 }
  * texel grid stood up.
  */
 export const BB_DEPTH = 1
-/** How tall an upright feature stands, in cells; stairs lower, a mouth in the floor. */
-export const FIXTURE_H = 0.9
-export const STAIR_H = 0.7
 /**
  * How far an upright feature's board stands back from the middle of its cell:
  * whatever stands on the cell reads in front of it rather than through it.
  */
 export const FIXTURE_BACK = BB_DEPTH / 32
-/** How far a projectile in flight is lifted off the floor, in cells. */
-export const PROJECTILE_LIFT = 0.1
 /** How far a lying sprite's underside is lifted off the floor, in cells: clear of the floor's decals (level-mesh.ts, up to 0.008). */
 export const LIE_LIFT = 0.01
 /** How many texels the selected sprite's shell stands out from its body, against the hull's one. */
@@ -205,12 +200,6 @@ export function stand(x: number, y: number, layers: readonly SpriteLayer[], o: S
 /** A tile's rect, or null where the source has none. */
 export type TileLookup = (id: number) => TileRect | undefined
 
-/** Crawl's client id for the monster a billboard was built from, where it has one. */
-export function monsterIdOf(b: Billboard): number | undefined {
-  const id = (b.ref as { id?: number } | undefined)?.id
-  return typeof id === 'number' ? id : undefined
-}
-
 /**
  * The instances of a scene's billboards: the sprite of each, its ghost where
  * it has one (rendering-3d.md II.4: whatever the 2D map shows on the cell
@@ -221,41 +210,34 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
   const sprites: SpriteInstance[] = []
   const shadows: { x: number; y: number; r: number; moverId?: number }[] = []
   const tint = scene.level.tint
-  for (const b of scene.billboards) {
-    if (b.kind === 'player') continue
-    if (b.x === scene.player.x && b.y === scene.player.y && scene.playerOnLevel && b.kind !== 'cloud') continue
+  for (const b of crowd(scene)) {
     const cell = scene.cells.get(cellKey(b.x, b.y))
     const shade = shadeOf(cell, scene)
-    const visible = cell?.visibility === 'visible'
+    const visible = b.visible
     if (b.kind === 'cloud') {
-      const r = tile(b.tile)
+      const r = tile(b.layers[0].tile)
       if (!r) continue
       // a cloud carries its light in its colour: it blends, and reads no map
-      sprites.push(...stand(b.x, b.y, [{ r, ox: 0, oy: 0 }], { height: b.height, shade, tint, shadeMap: false, thick: false, pass: 'blend', alpha: CLOUD_ALPHA, grow: 0, back: -CLOUD_FORWARD }))
+      sprites.push(...stand(b.x, b.y, [{ r, ox: 0, oy: 0 }], { height: b.height, shade, tint, shadeMap: false, thick: false, pass: 'blend', alpha: b.alpha, grow: 0, back: -CLOUD_FORWARD }))
       continue
     }
     const layers: SpriteLayer[] = []
-    if (b.layers && b.layers.length) {
-      for (const l of b.layers) {
-        const r = tile(l.tile)
-        if (r) layers.push({ r, ox: l.ox || 0, oy: l.oy || 0, ymax: l.ymax })
-      }
-    } else {
-      const r = tile(b.tile)
-      if (r) layers.push({ r, ox: 0, oy: 0 })
+    for (const l of b.layers) {
+      if (l.badge) continue
+      const r = tile(l.tile)
+      if (r) layers.push({ r, ox: l.ox, oy: l.oy, ymax: l.ymax })
     }
     if (!layers.length) continue
     const nSprite = layers.length
-    if (b.statusIcons) {
-      for (const i of b.statusIcons) {
-        const r = tile(i.tile)
-        if (r) layers.push({ r, ox: i.ox, oy: i.at === 'top' ? -r.oy : i.oy, flat: true })
-      }
+    for (const l of b.layers) {
+      if (!l.badge) continue
+      const r = tile(l.tile)
+      if (r) layers.push({ r, ox: l.ox, oy: l.top ? -r.oy : l.oy, flat: true })
     }
     const translucent = b.alpha !== undefined && b.alpha < 1
-    const lift = b.kind === 'projectile' ? PROJECTILE_LIFT : 0
-    const lie = b.lying
-    const moverId = b.kind === 'monster' ? monsterIdOf(b) : undefined
+    const lift = b.lift ?? 0
+    const lie = b.lie
+    const moverId = b.moverId
     const sel = selected && selected.x === b.x && selected.y === b.y
     sprites.push(
       ...stand(b.x, b.y, layers, {
@@ -273,8 +255,7 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
         moverId,
       }),
     )
-    // scenery is the exception to the ghost pass: a plant behind a wall tells you nothing
-    if (!b.scenery) {
+    if (b.ghost) {
       const gt = visible ? tint : b.kind === 'monster' ? GHOST_TINT.remembered : b.kind === 'projectile' ? GHOST_TINT.projectile : GHOST_TINT.item
       const ghostLayers = layers.map((l, i) => (i < nSprite ? l : { ...l, tint: BADGE_TINT }))
       sprites.push(
@@ -292,8 +273,7 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
         }),
       )
     }
-    // what lies on the floor casts no shadow round itself
-    if (!lie) shadows.push({ x: b.x, y: b.y, r: Math.max(0.6, b.height), moverId })
+    if (b.shadow !== undefined) shadows.push({ x: b.x, y: b.y, r: b.shadow, moverId })
   }
   return { sprites, shadows }
 }
@@ -310,10 +290,10 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
 export function fixtureInstances(scene: Scene, tile: TileLookup, framed: ReadonlyMap<number, number>, occupied: ReadonlySet<number>, columns?: StairColumns, inset = 0): SpriteInstance[] {
   const out: SpriteInstance[] = []
   const tint = scene.level.tint
-  for (const cell of scene.cells.values()) {
-    const stance = featureStance(cell, framed, occupied)
-    if (stance !== 'upright' && stance !== 'framed' && stance !== 'lying') continue
-    const r = tile(cell.featureTile!)
+  for (const fx of fixtures(scene, framed, occupied)) {
+    const cell = scene.cells.get(cellKey(fx.x, fx.y))!
+    const stance = fx.stance
+    const r = tile(fx.layers[0].tile)
     if (!r) continue
     if (stance === 'lying') {
       // laid as the floor paints it, the tile's top to the north, whatever the camera does
@@ -333,13 +313,12 @@ export function fixtureInstances(scene: Scene, tile: TileLookup, framed: Readonl
     const stairs = f?.type === 'stairs'
     const up = (f?.type === 'stairs' || f?.type === 'hatch') && f.dir === 'up'
     const art = up ? columns?.(r) : undefined
-    const folded = art && foldedStairs(cell.x, cell.y, r, art, tint, stairs ? STAIR_H : FIXTURE_H, stairs ? STAIRS_STEPS : HATCH_STEPS, stairs)
+    const folded = art && foldedStairs(cell.x, cell.y, r, art, tint, fx.height, stairs ? STAIRS_STEPS : HATCH_STEPS, stairs)
     if (folded) {
       out.push(...folded)
       continue
     }
-    const h = stairs ? STAIR_H : FIXTURE_H
-    out.push(...stand(cell.x, cell.y, [{ r, ox: 0, oy: 0 }], { height: h, shade: 1, tint, shadeMap: true, thick: true, pass: 'fixture', back: FIXTURE_BACK }))
+    out.push(...stand(cell.x, cell.y, [{ r, ox: 0, oy: 0 }], { height: fx.height, shade: 1, tint, shadeMap: true, thick: true, pass: 'fixture', back: FIXTURE_BACK }))
   }
   return out
 }

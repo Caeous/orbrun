@@ -31,11 +31,17 @@ export function levelClassAt(scene: Scene, framed: ReadonlyMap<CellKey, number>)
   return (x, z) => CLASS_NAME[cellClass(scene.cells.get(cellKey(x, z)), framed)]
 }
 
-/** What lies on a cell's floor over its tile, bottom first: under the feature, the feature where it is painted there, and over it. */
+/**
+ * What lies on a cell's floor over its tile, bottom first: under the
+ * feature, the feature where it is painted there, and over it; then the
+ * cell's marks over all that stands there too (travel arrows, exclusion on
+ * an unseen cell, a new way down's badge, WebTiles' cursors).
+ */
 export interface FloorLayers {
   under: readonly TileId[]
   feature: TileId | undefined
   over: readonly TileId[]
+  marks: readonly TileId[]
 }
 
 const NONE: readonly TileId[] = []
@@ -49,7 +55,7 @@ const NONE: readonly TileId[] = []
 export function floorLayers(c: SceneCell, stance: FeatureStance | null, shadows = false): FloorLayers {
   const o = c.overlays
   const over = !o ? NONE : shadows || (!c.wallShadows?.length && !c.shorelines?.length) ? o : o.filter((id) => !c.wallShadows?.includes(id) && !c.shorelines?.includes(id))
-  return { under: c.underlays ?? NONE, feature: stance === 'floor' ? c.featureTile : undefined, over }
+  return { under: c.underlays ?? NONE, feature: stance === 'floor' ? c.featureTile : undefined, over, marks: c.icons ?? NONE }
 }
 
 export type Side = 'n' | 's' | 'w' | 'e'
