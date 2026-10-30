@@ -14,14 +14,12 @@ import { fileURLToPath } from 'node:url'
 import { serialize } from 'node:v8'
 import { MessageChannel, Worker } from 'node:worker_threads'
 import { RenderTerm, linearAtlas, spriteAtlas, type Atlas, type Motion, type Pixels, type RenderTermOptions } from '@orbrun/render-term'
-import { Movers, monsterId } from '@orbrun/render-3d/motion'
+import { Movers, monsterId, liftEnvelope } from '@orbrun/world'
 import type { Camera, Scene, SceneCursor, TileSource, Viewmodel } from '@orbrun/scene'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 /** how many bands of rows a frame is cut into, for each thread */
 const BANDS_PER_THREAD = Number(process.env.ORBRUN_TERM_BANDS) || 4
-/** the swing (render-3d's VM_LIFT_S): how long the weapon's lift lasts, seconds */
-const LIFT_S = 0.22
 
 /** How a frame is drawn. */
 export interface DrawOptions {
@@ -217,7 +215,7 @@ export class TermRaster {
     this.motionRevision = sc.revision
   }
 
-  /** What moves at `now`: each monster's glide off its cell, and the lift (render-3d's `liftEnvelope`). */
+  /** What moves at `now`: each monster's glide off its cell, and the lift (world hands.ts `liftEnvelope`). */
   private motionAt(now: number): Motion {
     this.track(now)
     const offsets = new Map<number, { x: number; y: number }>()
@@ -230,9 +228,9 @@ export class TermRaster {
     this.movers.landed(now)
     let lift = 0
     if (!Number.isNaN(this.liftAt)) {
-      const u = Math.max(0, now - this.liftAt) / LIFT_S
-      if (u >= 1) this.liftAt = NaN
-      else lift = u < 0.3 ? u / 0.3 : 1 - (u - 0.3) / 0.7
+      const e = liftEnvelope(now - this.liftAt)
+      if (Number.isNaN(e)) this.liftAt = NaN
+      else lift = e
     }
     return { offsets, lift }
   }

@@ -39,5 +39,6 @@ handed to `render` each frame as `Motion`).
 comparison bed's poses, `<dir>` being a `node tools/build/render-compare.mjs
 capture` run.
 
-Depends on `@orbrun/scene` and `@orbrun/render-3d` (its three-free modules).
+Depends on `@orbrun/scene`, `@orbrun/world` and `@orbrun/render-3d` (its
+three-free modules).
 Part of [Orbrun](https://github.com/Caeous/orbrun). AGPL-3.0-or-later.

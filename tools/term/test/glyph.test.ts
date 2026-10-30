@@ -186,7 +186,7 @@ describe('walls as render-3d stands them', () => {
     expect(depthAhead()).toBeCloseTo(7.875, 1)
   })
 
-  it("floors a wall's strip with the floor beside it, and keeps a wall flush with a door in its doorway", () => {
+  it("floors a wall's strip with the floor beside it, and stands a wall back from a door in its doorway, the door stretched to it", () => {
     const { view, cam } = room()
     view.opts.wallInset = 0.375
     // a closed door in the north wall's run
@@ -195,16 +195,24 @@ describe('walls as render-3d stands them', () => {
     Object.assign(door, { kind: 'door', feature: { type: 'door', state: 'closed' }, featureTile: 2 })
     view.setScene(scene)
     view.prepare(cam(0), 40, 15)
-    const v = view as unknown as { bodies: ({ x0: number; x1: number; z0: number; z1: number } | null)[]; strip: (g: number, lx: number, lz: number) => number; index: (x: number, y: number) => number }
-    // the wall beside the door stands flush with it, and back from the room south of it
+    type Rect = { x0: number; x1: number; z0: number; z1: number }
+    const v = view as unknown as { bodies: (Rect | null)[]; strip: (g: number, lx: number, lz: number) => number; index: (x: number, y: number) => number; doorIn: (dg: number, d: unknown, x: number, y: number) => Rect | null; doors: Map<number, unknown> }
+    // the wall beside the door stands back from it as from the room south of it (world cells.ts `cellClass`)
     const beside = v.bodies[v.index(1, -7)]!
-    expect(beside.x0).toBe(0)
+    expect(beside.x0).toBeCloseTo(0.375)
     expect(beside.z1).toBeCloseTo(0.625)
-    // the door a block the run's thickness
-    const d = v.bodies[v.index(0, -7)]!
-    expect([d.x0, d.x1, d.z0]).toEqual([0, 1, 0])
-    // a point of the wall's cell south of its body is the floor of the cell south of it
+    // the door a block the run's thickness, reaching into the walls either side as far as they stand back
+    const dg = v.index(0, -7)
+    expect(v.bodies[dg]).toBeNull()
+    const d = v.doors.get(dg)!
+    const own = v.doorIn(dg, d, 0, -7)!
+    expect([own.x0, own.x1, own.z0, own.z1]).toEqual([0, 1, 0.375, 0.625])
+    const east = v.doorIn(dg, d, 1, -7)!
+    expect([east.x0, east.x1]).toEqual([0, 0.375])
+    expect(v.doorIn(dg, d, 2, -7)).toBeNull()
+    // a point of the wall's cell south of its body is the floor of the cell south of it, and one west of it the door's
     expect(v.strip(v.index(1, -7), 0.5, 0.9)).toBe(v.index(1, -6))
+    expect(v.strip(v.index(1, -7), 0.1, 0.5)).toBe(dg)
     expect(v.strip(v.index(1, -7), 0.5, 0.3)).toBe(-1)
   })
 

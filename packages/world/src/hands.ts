@@ -9,6 +9,11 @@
  * heads up-left from a grip low right. A shield is held as drawn.
  */
 export const VM_SIZE = 0.8
+/** How much of VM_SIZE a held item's art fills, the longer way, its opaque box measured. */
+export const VM_FILL = 0.9
+/** The swing: how long the weapon's lift lasts, seconds, and how high it lifts at the top, in the hands' units. */
+export const VM_LIFT_S = 0.22
+export const VM_LIFT = 0.07
 /** A rest pose: view position, then roll (in-plane), pitch (tip away), yaw (inward), in radians. */
 export type HandPose = { x: number; y: number; roll: number; pitch: number; yaw: number }
 // held flat, facing the player; the wielded weapon is turned half a circle so its blade heads up-left
@@ -76,4 +81,16 @@ export function handsFootprint(held: HandsHeld, aspect: number, foot = 0, uprigh
   if (held.offhand === 'shield') rect(VM_SHIELD_REST)
   else if (held.offhand === 'weapon') rect(VM_OFFWEAPON_REST)
   return out
+}
+
+/**
+ * How far into its lift the weapon is `t` seconds after a swing began, 0..1:
+ * up fast, down slow. NaN once the swing is over. A lift stamped after the
+ * frame's clock (an attack handled after rAF's timestamp) has not begun yet:
+ * at rest, not over.
+ */
+export function liftEnvelope(t: number): number {
+  if (t >= VM_LIFT_S) return NaN
+  const u = Math.max(0, t) / VM_LIFT_S
+  return u < 0.3 ? u / 0.3 : 1 - (u - 0.3) / 0.7
 }

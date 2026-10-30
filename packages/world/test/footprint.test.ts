@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { asciiClassAt, inPoly, insetFootprint, insetOracle, type ClassAt, type FootprintOptions } from '../src/index.js'
+import { asciiClassAt, inPoly, insetFootprint, insetOracle, type ClassAt, type FootprintOptions } from '../src/footprint.js'
 
 /**
  * Fixtures. `#` wall, `.` floor, space void. Cells outside the rows are void,

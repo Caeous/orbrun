@@ -12,6 +12,7 @@
     "@orbrun/render-term": "*",
     "@orbrun/scene": "*",
     "@orbrun/scene-webtiles": "*",
+    "@orbrun/world": "*",
     "esbuild": "^0.28.2",
     "happy-dom": "^20.14.0",
     "sharp": "^0.35.5",

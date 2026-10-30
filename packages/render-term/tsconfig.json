@@ -2,5 +2,5 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": "src", "outDir": "dist", "noEmit": false, "emitDeclarationOnly": true },
   "include": ["src"],
-  "references": [{ "path": "../scene" }, { "path": "../render-3d" }]
+  "references": [{ "path": "../scene" }, { "path": "../world" }, { "path": "../render-3d" }]
 }

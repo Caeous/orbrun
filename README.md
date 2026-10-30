@@ -81,7 +81,8 @@ recorder or a viewer can use it on its own. Each has a README.
 | [`@orbrun/scene`](packages/scene) | The world model a renderer draws: cells, billboards, camera, directions, minibars, and the `MapRenderer` and `TileSource` contracts | nothing |
 | [`@orbrun/scene-webtiles`](packages/scene-webtiles) | `GameState` + gamedata → `Scene`. All the DCSS knowledge: tile ranges, feature classification, monster list rules, the viewmodel | webtiles, gamedata, scene |
 | [`@orbrun/render-2d`](packages/render-2d) | Top-down Canvas 2D renderer of a `Scene`; also draws the minimap | scene |
-| [`@orbrun/render-3d`](packages/render-3d) | First-person three.js renderer of a `Scene` | scene, three |
+| [`@orbrun/world`](packages/world) | What stands where, for every renderer: inset walls, doors in their doorways, what a cell's floor shows, the hands, the monsters' glides, the cursor | scene |
+| [`@orbrun/render-3d`](packages/render-3d) | First-person three.js renderer of a `Scene` | scene, world, three |
 | [`@orbrun/vault`](packages/vault) | A subset of DCSS's `.des` vault format, compiled to a `Scene` | scene, scene-webtiles |
 | [`@orbrun/offline`](packages/offline) | Runs the WebAssembly engine in a Web Worker behind a WebTiles connection, and stands in for the server's lobby | webtiles |
 

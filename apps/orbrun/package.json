@@ -19,6 +19,7 @@
     "@orbrun/scene-webtiles": "*",
     "@orbrun/vault": "*",
     "@orbrun/webtiles": "*",
+    "@orbrun/world": "*",
     "three": "^0.185.1"
   }
 }

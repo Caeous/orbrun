@@ -19,6 +19,13 @@
 
 import { cellKey, type Scene } from '@orbrun/scene'
 
+/**
+ * Inset walls (II.1): the wall surface stands this far back from the floor,
+ * in cells (12 texels of 32), leaving a one-thick wall an 8-texel core and
+ * a lone wall cell an 8-texel post.
+ */
+export const WALL_INSET = 12 / 32
+
 export type CellClass = 'floor' | 'wall' | 'void'
 export type ClassAt = (x: number, z: number) => CellClass
 

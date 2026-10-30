@@ -20,15 +20,32 @@
  * its floor, a cell's flash is washed over all of it, and the hands are
  * drawn over all in a lens of their own (`Thing.hand`).
  */
-import { cellKey, keyToXY, type Camera, type Scene, type SceneCell, type TileId, type TileRect, type TileSource } from '@orbrun/scene'
+import { keyToXY, type Camera, type CellKey, type Scene, type SceneCell, type TileId, type TileRect, type TileSource } from '@orbrun/scene'
 import type { Pixels } from '@orbrun/render-term'
 import { bigGlyph } from './font'
 import { INVERSE, OCTANTS } from './shapes'
 import { setChroma, setDark, SpriteTex } from './sprite'
 import { encoders, q, unpack, type Encoder, type EncoderName, type FitOptions } from './encode'
 import { drawSprite, gridFor, type SpriteColumns } from './sampling'
-import { bodyRect, sceneClassAt, type BodyRect, type ClassAt } from '@orbrun/render-3d/footprint'
-import { framedDoors } from '@orbrun/render-3d/grid'
+import {
+  CURSOR_COLOUR,
+  RING_INNER,
+  RING_OUTER,
+  VM_FILL,
+  boardAlong,
+  boardTexel,
+  bodyRect,
+  doorBoard,
+  faceTile,
+  featureStance,
+  floorLayers,
+  framedDoors,
+  levelClassAt,
+  occupiedFeatures,
+  stripAt,
+  type BodyRect,
+  type DoorBoard,
+} from '@orbrun/world'
 
 export type RGB = [number, number, number]
 
@@ -68,7 +85,7 @@ export interface Thing {
    * lens of its own over the view, two units tall, its art a `size` square
    * whose bottom middle stands at (x, y) of it, x by the view's aspect; drawn
    * over everything, at its own light. `fit`: the square its art's opaque
-   * box, its longer side HAND_FILL of it, standing on the box's foot, as
+   * box, its longer side VM_FILL of it, standing on the box's foot, as
    * render-3d sizes a hand; else the whole tile.
    */
   hand?: { x: number; y: number; size: number; fit?: boolean }
@@ -236,11 +253,6 @@ const NEAR = 0.15
 const LID = 0.32
 /** the most open doors a column sees through */
 const BOARDS = 3
-/** how much of a hand's square its art fills, the longer way (render-3d's VM_FILL) */
-const HAND_FILL = 0.9
-/** the cursor's ring on the floor, its inner and outer radius in cells (render-3d's RING_INNER, RING_OUTER) */
-const RING_INNER = 0.34
-const RING_OUTER = 0.46
 /** a sprite fewer rows tall than this is named by its glyph */
 const GLYPH_ROWS = 2
 
@@ -254,6 +266,8 @@ const DECODE = new Float32Array(256).map((_, i) => {
   const v = i / 255
   return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
 })
+/** the cursor's colour (world marks.ts), linear */
+const CURSOR: RGB = [CURSOR_COLOUR >> 16, (CURSOR_COLOUR >> 8) & 255, CURSOR_COLOUR & 255].map((v) => DECODE[v]) as RGB
 const enc = (v: number) => {
   const c = v <= 0 ? 0 : v >= 1 ? 1 : v
   return Math.round(255 * (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055))
@@ -440,15 +454,22 @@ export class GlyphView {
       list.push(...(b.layers?.length ? b.layers.map((l) => l.tile) : [b.tile]))
       this.lying.set(at, list)
     }
+    // how each cell's feature stands (world doors.ts `featureStance`): a door in its doorway, or what something stands on, lies
+    this.framed = framedDoors(scene)
+    this.occupied = scene.billboards ? occupiedFeatures(scene, this.framed) : new Set()
   }
+  private framed: ReadonlyMap<CellKey, number> = new Map()
+  private occupied: ReadonlySet<CellKey> = new Set()
   private flashes = new Float32Array(0)
   private lying = new Map<number, TileId[]>()
   /** each cell's wall body by the grid's index (`bodyRect`), null where the wall is the whole cell or there is none */
   private bodies: (BodyRect | null)[] = []
   /** the inset the bodies were worked out for */
   private bodiesInset = -1
-  /** each door in its doorway by the grid's index, and which way its run goes: 0 east–west, else north–south */
-  private doors = new Map<number, number>()
+  /** each door in its doorway by the grid's index, as it stands where walls stand back (world doors.ts `doorBoard`) */
+  private doors = new Map<number, DoorBoard>()
+  /** by the grid's index, the doors whose board reaches into the cell: its own, and a wall's beside a door, which the board is stretched to reach */
+  private reach: (number[] | undefined)[] = []
 
   /** the grid's index of cell (x, y), -1 off it */
   private index(x: number, y: number): number {
@@ -458,31 +479,27 @@ export class GlyphView {
 
   /**
    * Where a floor or lid pixel falls in a wall's cell, outside its body, the
-   * open cell whose floor and lid reach there (render-3d level-mesh.ts
-   * `patch`): the one beside the strip it is in, or across the corner cut;
-   * -1 inside the body, or where the cell is no wall's.
+   * open cell whose floor and lid reach there (world cells.ts `stripAt`); -1
+   * inside the body, or where the cell is no wall's.
    */
   private strip(g: number, lx: number, lz: number): number {
     const b = this.bodies[g]
     if (!b) return -1
+    const d = stripAt(b, lx, lz)
+    if (!d) return -1
     const c = this.grid[g]!
-    let dx = 0, dz = 0
-    if (b.z0 > 0 && lz < b.z0) dz = -1
-    else if (b.z1 < 1 && lz >= b.z1) dz = 1
-    else if (b.x0 > 0 && lx < b.x0) dx = -1
-    else if (b.x1 < 1 && lx >= b.x1) dx = 1
-    else {
-      const t = b.t, w = lx < t, e = lx >= 1 - t, n = lz < t, s = lz >= 1 - t
-      if (b.cut[0] && w && n) (dx = -1), (dz = -1)
-      else if (b.cut[1] && e && n) (dx = 1), (dz = -1)
-      else if (b.cut[2] && w && s) (dx = -1), (dz = 1)
-      else if (b.cut[3] && e && s) (dx = 1), (dz = 1)
-      else return -1
-    }
-    return this.index(c.x + dx, c.y + dz)
+    return this.index(c.x + d[0], c.y + d[1])
   }
 
-  /** each wall's body, where walls stand back from the floor (`wallInset`), worked out again when the scene or the inset is new */
+  /**
+   * Each wall's body, where walls stand back from the floor (`wallInset`),
+   * worked out again when the scene or the inset is new, and each door in its
+   * doorway as render-3d stands it: the walls either side stand back from it
+   * as from any opening (world cells.ts `cellClass`), and its board is
+   * stretched to reach them, a block the run's thickness where closed, a
+   * board in the run's face you see through where its art is clear where
+   * open.
+   */
   private shapeWalls() {
     const inset = this.opts.wallInset ?? 0
     if (inset === this.bodiesInset) return
@@ -491,22 +508,45 @@ export class GlyphView {
     // the floors again: what they leave out goes with the inset (`floorOf`)
     this.floors = new Array(this.gw * this.gh)
     this.doors = new Map()
+    this.reach = new Array(this.gw * this.gh)
     if (inset <= 0) return
-    // a door in its doorway (render-3d grid.ts `framedDoors`) stands in the plane of its wall run: the walls either
-    // side keep their faces flush with it rather than standing back from an opening, and it is a block the run's
-    // thickness where closed (its own body), a board you see through where its art is clear where open (`doors`)
-    const framed = framedDoors(this.scene)
-    const scene = sceneClassAt(this.scene)
-    const at: ClassAt = (x, z) => (framed.has(cellKey(x, z)) ? 'wall' : scene(x, z))
-    for (const [k, yaw] of framed) {
+    const at = levelClassAt(this.scene, this.framed)
+    const reachInto = (g: number, door: number) => {
+      if (g >= 0) (this.reach[g] ??= []).push(door)
+    }
+    for (const k of this.framed.keys()) {
       const { x, y } = keyToXY(k)
       const g = this.index(x, y)
-      if (g >= 0) this.doors.set(g, yaw)
+      const d = g < 0 ? null : doorBoard(this.grid[g]!, this.framed, inset, (id) => this.tiles.tile(id))
+      if (!d) continue
+      this.doors.set(g, d)
+      reachInto(g, g)
+      // the art's left end is west, or south running north–south
+      const [ax, az] = d.yaw === 0 ? [-1, 0] : [0, 1]
+      if (d.left > 0) reachInto(this.index(x + ax, y + az), g)
+      if (d.right > 0) reachInto(this.index(x - ax, y - az), g)
     }
     for (let g = 0; g < this.grid.length; g++) {
       const c = this.grid[g]
-      if (c && (c.occluder || c.kind === 'unknown')) this.bodies[g] = bodyRect(at, c.x, c.y, { inset })
+      if (c && !this.doors.has(g) && (c.occluder || c.kind === 'unknown')) this.bodies[g] = bodyRect(at, c.x, c.y, { inset })
     }
+  }
+
+  /**
+   * Where door `d`'s board, in door cell `dg`, reaches into the cell (mx, my),
+   * as a rectangle of that cell's own coordinates: a closed door's block, or
+   * an open one's span along its run (its across the run's whole
+   * thickness); null where it does not reach in.
+   */
+  private doorIn(dg: number, d: DoorBoard, mx: number, my: number): BodyRect | null {
+    const dc = this.grid[dg]!
+    const ox = dc.x - mx, oz = dc.y - my
+    const t = this.bodiesInset, k = 1 / d.art.cell
+    // along the run, the art's left end west (south, running north–south), and across it the run's thickness
+    const [a0, a1] = d.yaw === 0 ? [-d.left * k, 1 + d.right * k] : [-d.right * k, 1 + d.left * k]
+    const x0 = Math.max(0, ox + (d.yaw === 0 ? a0 : t)), x1 = Math.min(1, ox + (d.yaw === 0 ? a1 : 1 - t))
+    const z0 = Math.max(0, oz + (d.yaw === 0 ? t : a0)), z1 = Math.min(1, oz + (d.yaw === 0 ? 1 - t : a1))
+    return x1 - x0 > 1e-9 && z1 - z0 > 1e-9 ? { x0, x1, z0, z1, t: 0, cut: [false, false, false, false] } : null
   }
 
   private flats = new Map<string, Flat>()
@@ -522,13 +562,12 @@ export class GlyphView {
   private floorOf(g: number, fc: SceneCell): Flat {
     let f = this.floors[g]
     if (!f) {
-      const layers = [fc.floorTile, ...(fc.underlays ?? [])]
-      if (fc.featureTile != null && (fc.stance === 'decal' || fc.stance === 'lying')) layers.push(fc.featureTile)
-      // where walls stand back as render-3d's do, the wall shadows and the shorelines left out, as it leaves them: a line
-      // on the floor's edge reads as a seam there, not a shadow (SceneCell `wallShadows`, `shorelines`)
-      const inset = (this.opts.wallInset ?? 0) > 0
-      layers.push(...(fc.overlays ?? []).filter((o) => !inset || (!fc.wallShadows?.includes(o) && !fc.shorelines?.includes(o))), ...(this.lying.get(g) ?? []))
-      this.floors[g] = f = this.flat(0, layers)
+      // as render-3d lays it (world cells.ts `floorLayers`), and what lies in its cell laid flat on it; the wall shadows
+      // and shorelines kept only where walls are flush with the floor, as crawl draws them
+      const stance = featureStance(fc, this.framed, this.occupied)
+      const { under, feature, over } = floorLayers(fc, stance, (this.opts.wallInset ?? 0) <= 0)
+      const flat = feature ?? (stance === 'lying' ? fc.featureTile : undefined)
+      this.floors[g] = f = this.flat(0, [fc.floorTile, ...under, ...(flat !== undefined ? [flat] : []), ...over, ...(this.lying.get(g) ?? [])])
     }
     return f
   }
@@ -630,6 +669,7 @@ export class GlyphView {
       let hit: SceneCell | undefined
       let g = -1
       let dist = 64
+      let door: DoorBoard | undefined
       for (let i = 0; i < 96; i++) {
         if (sdx < sdy) {
           sdx += ddx
@@ -643,43 +683,76 @@ export class GlyphView {
         const gx = mx - this.gx0, gy = my - this.gy0
         g = gx < 0 || gy < 0 || gx >= this.gw || gy >= this.gh ? -1 : gy * this.gw + gx
         const c = g < 0 ? undefined : this.grid[g]
-        // an open door in its doorway: a board in its run's face on the eye's side, struck where the ray crosses it
-        const yaw = c && !c.occluder ? this.doors.get(g) : undefined
-        if (yaw !== undefined && L.boards[b] < BOARDS) {
-          const t = this.opts.wallInset ?? 0, ox = ex - mx, oz = ey - my
-          const across = yaw === 0
-          const o = across ? oz : ox, r = across ? ry : rx
-          const plane = o < 0.5 ? t : 1 - t
-          const tp = Math.abs(r) < 1e-12 ? -1 : (plane - o) / r
-          const along = (across ? ox : oz) + tp * (across ? rx : ry)
-          if (tp > 0 && along >= 0 && along < 1) {
-            const k = b * BOARDS + L.boards[b]++
+        // the doors whose board reaches this cell, as render-3d stands them (world doors.ts `doorBoard`): an open one a
+        // board in its run's face on the eye's side, struck where the ray crosses it; a closed one a block the run's
+        // thickness, met as a wall's body is. Either reaches into the walls beside it, as far as they stand back
+        const near = g < 0 ? undefined : this.reach[g]
+        let blockT = Infinity, blockSide = 0, blockG = -1
+        if (near)
+          for (const dg of near) {
+            const d = this.doors.get(dg)!
+            const span = this.doorIn(dg, d, mx, my)
+            if (!span) continue
+            if (d.closed) {
+              const struck = strike(span, ex - mx, ey - my, rx, ry)
+              if (struck && struck[0] < blockT) [blockT, blockSide, blockG] = [struck[0], struck[1], dg]
+              continue
+            }
+            if (L.boards[b] >= BOARDS) continue
+            const dc = this.grid[dg]!
+            const t = this.bodiesInset, ox = ex - dc.x, oz = ey - dc.y
+            const across = d.yaw === 0
+            const o = across ? oz : ox, r = across ? ry : rx
+            const plane = o < 0.5 ? t : 1 - t
+            const tp = Math.abs(r) < 1e-12 ? -1 : (plane - o) / r
+            if (!(tp > 0)) continue
+            // where along the run, in this cell and in the door's
+            const lx = ex - mx + tp * rx, lz = ey - my + tp * ry
+            if (across ? lx < span.x0 || lx >= span.x1 : lz < span.z0 || lz >= span.z1) continue
+            const tx = boardTexel(d, boardAlong(d, ox + tp * rx, oz + tp * ry))
+            if (Number.isNaN(tx)) continue
+            // nearest first
+            let k = b * BOARDS + L.boards[b]++
+            for (; k > b * BOARDS && L.boardT[k - 1] > tp; k--) {
+              L.boardT[k] = L.boardT[k - 1]
+              L.boardU[k] = L.boardU[k - 1]
+              L.boardG[k] = L.boardG[k - 1]
+              L.boardTex[k] = L.boardTex[k - 1]
+            }
             L.boardT[k] = tp
-            // the art's left at the run's west end (south, running north–south), from whichever side, as render-3d stands
-            // the board: crawl's gate pieces (left, middle, right) then meet with the posts at the gate's ends, not
-            // between its leaves, and from behind the board reads mirrored, as crawl's far face is
-            L.boardU[k] = across ? along : 1 - along
-            L.boardG[k] = g
-            L.boardTex[k] = this.tex((!across && c!.faceTiles?.e) || c!.featureTile)
+            L.boardU[k] = tx / d.art.cell
+            L.boardG[k] = dg
+            L.boardTex[k] = this.tex(d.tile)
           }
-        }
-        if (!c || c.occluder || c.kind === 'unknown') {
+        if (!c || (c.occluder && !this.doors.has(g)) || c.kind === 'unknown') {
           // the wall's body as render-3d stands it (`bodyRect`): back from the floor round it, a corner cut where a
           // diagonal is open; a ray through what it leaves of the cell goes on to the next
           const body = g < 0 ? null : this.bodies[g]
           if (body) {
             const struck = strike(body, ex - mx, ey - my, rx, ry)
-            if (!struck) continue
-            side = struck[1]
+            if (struck && struck[0] <= blockT) {
+              side = struck[1]
+              hit = c
+              dist = struck[0]
+              break
+            }
+          } else if (blockG < 0) {
             hit = c
-            dist = struck[0]
+            dist = side === 0 ? sdx - ddx : sdy - ddy
             break
           }
-          hit = c
-          dist = side === 0 ? sdx - ddx : sdy - ddy
+        }
+        if (blockG >= 0) {
+          side = blockSide
+          dist = blockT
+          g = blockG
+          hit = this.grid[g]
+          door = this.doors.get(g)!
           break
         }
       }
+      // an open door's board behind what the ray met is hidden by it
+      while (L.boards[b] > 0 && L.boardT[b * BOARDS + L.boards[b] - 1] > dist) L.boards[b]--
       dist = Math.max(dist, NEAR)
       for (let m = 0; m < step; m++) zbuf[col + m] = dist
       // where along the face the ray struck, 0..1 left to right as the eye sees it, and which face
@@ -687,20 +760,24 @@ export class GlyphView {
       u -= Math.floor(u)
       const f = side === 0 ? (rx > 0 ? 0 : 1) : ry > 0 ? 2 : 3
       if (f === 1 || f === 2) u = 1 - u
-      L.u[b] = u
       const top = (L.top[b] = horizon - ((1 - eye) * fy) / dist)
       const bot = (L.bot[b] = horizon + (eye * fy) / dist)
       const at = hit ? g * 4 + f : this.walls.length - 1
       let wall = this.walls[at]
-      if (!wall) {
-        const face = FACES[f]
-        this.walls[at] = wall = this.flat(0.02, [hit?.faceTiles?.[face] ?? hit?.wallTile ?? hit?.featureTile])
-      }
+      if (door) {
+        // a closed door's block: its art along the run as its board's is, whichever face (`boardTexel`), its ends their edge columns
+        const dc = hit!, k = 1 / door.art.cell
+        const s = boardAlong(door, ex + dist * rx - dc.x, ey + dist * ry - dc.y)
+        const tx = boardTexel(door, Math.min(1 + door.right * k - 1e-6, Math.max(-door.left * k, s)))
+        u = Number.isNaN(tx) ? 0 : tx * k
+        wall = this.flat(0.02, [door.tile])
+      } else if (!wall) this.walls[at] = wall = this.flat(0.02, [faceTile(hit, FACES[f]) ?? hit?.featureTile])
       L.wallK[b] = (f < 2 ? 0.8 : 1) * light(dist) * this.dimmed(hit)
       L.wallG[b] = hit ? g : -1
       // the mip for the texels a pixel of the wall spans
       const level = (L.wallLevel[b] = mip(32 / ((bot - top) || 1)))
       L.wall[b] = wall[level]
+      L.u[b] = u
     }
 
     // what stands: sprites facing the eye, the farthest first
@@ -776,7 +853,7 @@ export class GlyphView {
       if (h.fit && boxes.length) {
         const bx0 = Math.min(...boxes.map((b) => b!.x0)), bx1 = Math.max(...boxes.map((b) => b!.x1)) + 1
         const by0 = Math.min(...boxes.map((b) => b!.y0)), by1 = Math.max(...boxes.map((b) => b!.y1)) + 1
-        span = Math.max(bx1 - bx0, by1 - by0) / HAND_FILL
+        span = Math.max(bx1 - bx0, by1 - by0) / VM_FILL
         mid = (bx0 + bx1) / 2
         foot = by1 - Math.max(...texs.map((tx) => tx.top * 32))
       }
@@ -948,11 +1025,11 @@ export class GlyphView {
           put(i, 0, 0, 0, rowLight[row])
           continue
         }
-        // the cursor's ring on its cell's floor, unlit (render-3d's CURSOR_COLOUR)
+        // the cursor's ring on its cell's floor, unlit (world marks.ts): a diamond band round the cell's middle
         if (cursor && cx === cursor.x && cy === cursor.y) {
-          const r = Math.hypot(wx - cx - 0.5, wy - cy - 0.5)
+          const r = Math.abs(wx - cx - 0.5) + Math.abs(wy - cy - 0.5)
           if (r >= RING_INNER && r <= RING_OUTER) {
-            put(i, 1, 0.53, 0, 1)
+            put(i, CURSOR[0], CURSOR[1], CURSOR[2], 1)
             continue
           }
         }

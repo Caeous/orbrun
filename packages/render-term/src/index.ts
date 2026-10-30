@@ -1,6 +1,6 @@
 import { flashOf, getCell, keyToXY, shadeOf, type CellKey, type Camera, type HandItem, type Scene, type SceneCursor, type TileRect, type TileSource, type Viewmodel } from '@orbrun/scene'
 import { LevelGrid } from '@orbrun/render-3d/grid'
-import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, type HandPose } from '@orbrun/render-3d/hands'
+import { RING_INNER, RING_OUTER, VM_FILL, VM_LIFT, VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, WALL_INSET, type HandPose } from '@orbrun/world'
 import { LEVEL_CHUNK, LevelMesher, MARK_MARGIN, uvFor, type ChunkGeometry, type MeshContext, type TileDraw } from '@orbrun/render-3d/level-mesh'
 import { INK_LEVEL, distanceField, peelInk } from '@orbrun/render-3d/peel'
 import {
@@ -54,11 +54,10 @@ export interface RenderTermOptions {
   viewmodel?: boolean
 }
 
-// render-3d's numbers (index.ts, shaders.ts), kept in step by hand
+// render-3d's numbers (index.ts, shaders.ts), kept in step by hand; those of the world's rules are @orbrun/world's
 const EYE = 0.6
 const EYE_MIN = 0.25
 const EYE_MAX = 0.9
-const WALL_INSET = 12 / 32
 const CHAMFER = 1 / 32
 const NEAR = 0.05
 const LID_LIGHT = 0.7
@@ -72,8 +71,6 @@ const GHOST_FADE_START = 5
 const GHOST_FADE = 14
 const GHOST_FADE_VISIBLE_START = 8
 const GHOST_FADE_VISIBLE = 30
-const RING_INNER = 0.34
-const RING_OUTER = 0.46
 const RING_REACH = RING_OUTER + MARK_MARGIN
 /** the cursor's colours, linear, as render-3d's uniforms hold them */
 const CURSOR_COLOUR: RGB = [1, 0.53, 0]
@@ -85,9 +82,7 @@ const SHADOW_RADIUS = 0.22
 const SHADOW_ALPHA = 0.35
 /** the hands (render-3d's VM_*): their depth in texels, how much of VM_SIZE their art fills, the lens they are seen through, and the lift of a swing */
 const VM_DEPTH = 2
-const VM_FILL = 0.9
 const VM_FOV = 40
-const VM_LIFT = 0.07
 /** how far a texel stands from the body that no hull reaches (peel.ts `FAR`) */
 const FAR = 255
 type RGB = [number, number, number]

@@ -1,5 +1,5 @@
 import { cellKey, cellLayoutEquals, keyToXY, type CellKey, type Rect, type Scene, type SceneCell, type TileRect } from '@orbrun/scene'
-import type { FootprintOptions } from './footprint.js'
+import { faceTile, featureStance, floorLayers, insetStrips, type FeatureStance, type FootprintOptions } from '@orbrun/world'
 import { LevelGrid, sameKeys, type FootprintEntry } from './grid.js'
 import { BB_DEPTH, LIE_LIFT } from './sprites.js'
 
@@ -236,8 +236,8 @@ interface Build {
   ctx: MeshContext
   memo: Map<number, FootprintEntry>
   ceilingOf(c: SceneCell | undefined): TileDraw | null
-  /** Whether the cell's feature is drawn as a sprite (sprites.ts `fixtureInstances`) rather than painted on the floor. */
-  stands(c: SceneCell): boolean
+  /** How the cell's feature stands: drawn as a sprite (sprites.ts `fixtureInstances`) or painted on the floor. */
+  stance(c: SceneCell): FeatureStance | null
 }
 
 /** Work counters the readout and the tests read. */
@@ -321,8 +321,8 @@ export class LevelMesher {
       if (t === undefined) ceilingCache.set(c.ceilingTile, (t = ctx.tileOf(c.ceilingTile)))
       return t
     }
-    const stands = (c: SceneCell) => c.stance === 'lying' || (c.stance === 'upright' && !grid.occupied.has(cellKey(c.x, c.y)))
-    const build: Build = { grid, scene, tint, ctx, memo: new Map(), ceilingOf, stands }
+    const stance = (c: SceneCell) => featureStance(c, grid.framed, grid.occupied)
+    const build: Build = { grid, scene, tint, ctx, memo: new Map(), ceilingOf, stance }
     const range = grid.range
     const globals = `${tint.r},${tint.g},${tint.b}|${scene.level.ceilingTile}|${scene.level.sky}|${ctx.fo.inset}|${ctx.chamfer}`
     const full = this.full || !this.builtRange || globals !== this.builtGlobals
@@ -411,7 +411,7 @@ export class LevelMesher {
 
   private buildChunk(ck: number, b: Build) {
     this.chunks.delete(ck)
-    const { grid, tint, ctx, memo, ceilingOf, stands } = b
+    const { grid, tint, ctx, memo, ceilingOf, stance } = b
     const { tileOf, fo } = ctx
     const range = grid.range
     const c0 = keyToXY(ck)
@@ -449,8 +449,6 @@ export class LevelMesher {
         const solid = grid.isSolid(x, y)
         const n = grid.cell(x, y - 1)
         const s = grid.cell(x, y + 1)
-        const w = grid.cell(x - 1, y)
-        const e = grid.cell(x + 1, y)
         if (!solid && cell) {
           const ft = tileOf(cell.floorTile)
           if (ft) get(ft.atlas).at(x, y).quad([[x, 0, y + 1], [x + 1, 0, y + 1], [x + 1, 0, y], [x, 0, y]], ft.uv, 1, tint)
@@ -468,9 +466,10 @@ export class LevelMesher {
               getMark(ot.atlas).at(x, y).quad([[dx0 - m, lift, dz1 + m], [dx1 + m, lift, dz1 + m], [dx1 + m, lift, dz0 - m], [dx0 - m, lift, dz0 - m]], wide, 1, tint, false, uv)
             } else getDecal(ot.atlas, cell, id).at(x, y).quad([[dx0, lift, dz1], [dx1, lift, dz1], [dx1, lift, dz0], [dx0, lift, dz0]], ot.uv, 1, tint)
           }
-          if (cell.underlays) for (const o of cell.underlays) decal(o, 0.002)
-          if (cell.featureTile !== undefined && !stands(cell)) decal(cell.featureTile, 0.004)
-          if (cell.overlays) for (const o of cell.overlays) if (!cell.wallShadows?.includes(o) && !cell.shorelines?.includes(o)) decal(o, 0.006)
+          const layers = floorLayers(cell, stance(cell))
+          for (const o of layers.under) decal(o, 0.002)
+          if (layers.feature !== undefined) decal(layers.feature, 0.004)
+          for (const o of layers.over) decal(o, 0.006)
           if (cell.icons) {
             // on a way down or a trap lying as a block (sprites.ts `fixtureInstances`) the marks sit on its top, not under it
             const lies = cell.stance === 'lying' && cell.featureTile !== undefined ? tileOf(cell.featureTile) : null
@@ -525,7 +524,7 @@ export class LevelMesher {
             voids.quad(p, { u0: 0, v0: 0, u1: 1, v1: 1 }, 0, { r: 0, g: 0, b: 0 })
             return
           }
-          const own = cell?.faceTiles?.[d]
+          const own = faceTile(cell, d)
           const wt = (own !== undefined && tileOf(own)) || wallT
           const uv = { ...wt.uv, ...faceU(d, wt.uv, t0, t1) }
           uv.v1 = wt.uv.v1 - (wt.uv.v1 - wt.uv.v0) * y0
@@ -585,16 +584,7 @@ export class LevelMesher {
           const ceiling = ceilingOf(other)
           if (ceiling) flat(get(ceiling.atlas).at(lx, lz), 1, pts, (fx, fz) => ceilUV(ceiling.uv, fx, fz), false, LID_SHADE)
         }
-        const { x0: bx0, x1: bx1, z0: bz0, z1: bz1, t } = rect
-        if (openN) patch([[0, bz0], [1, bz0], [1, 0], [0, 0]], n)
-        if (openS) patch([[0, 1], [1, 1], [1, bz1], [0, bz1]], s)
-        if (openW) patch([[0, bz1], [bx0, bz1], [bx0, bz0], [0, bz0]], w)
-        if (openE) patch([[bx1, bz1], [1, bz1], [1, bz0], [bx1, bz0]], e)
-        const diag = (i: number) => grid.cell(x + (i & 1 ? 1 : -1), y + (i >> 1 ? 1 : -1))
-        if (rect.cut[0]) patch([[0, t], [t, t], [t, 0], [0, 0]], diag(0))
-        if (rect.cut[1]) patch([[1 - t, t], [1, t], [1, 0], [1 - t, 0]], diag(1))
-        if (rect.cut[2]) patch([[0, 1], [t, 1], [t, 1 - t], [0, 1 - t]], diag(2))
-        if (rect.cut[3]) patch([[1 - t, 1], [1, 1], [1, 1 - t], [1 - t, 1 - t]], diag(3))
+        for (const st of insetStrips(rect, [openN, openS, openW, openE])) patch(st.pts, grid.cell(x + st.dx, y + st.dz))
         for (let i = 0; i < 4; i++) {
           if (!cornerOn[i] || Nv[i] === 0) continue
           const N = Nv[i]
