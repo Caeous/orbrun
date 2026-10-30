@@ -50,16 +50,18 @@ file says how a game begins and the Settings menu still changes it.
 
 - **The view** is the glyph view's cells (glyph/, below), drawn as the
   prototype draws them, with what the browser's view has besides: a ray a
-  column through crawl's grid meets each wall's body as render-3d stands it
-  (render-3d footprint.ts `bodyRect`: back from the floor round it by its
-  inset, a corner cut where a diagonal is open), so a corner can be seen
-  round and a ray past a cut corner goes on; what a wall's body leaves of
-  its cell is floored and roofed with the open cell's beside it, its floor
-  tile alone, and crawl's wall shadows are left off the floor, as render-3d
-  does (level-mesh.ts `patch`). A door in its doorway (grid.ts
-  `framedDoors`) stands in its wall run, the walls either side flush with
-  it: closed, a block the run's thickness; open, a board in the run's face
-  on the eye's side that the view shows through where its art is clear.
+  column through crawl's grid meets each wall's body as render-3d stands it,
+  both by `@orbrun/world`'s rules (footprint.ts `bodyRect`: back from the
+  floor round it by its inset, a corner cut where a diagonal is open), so a
+  corner can be seen round and a ray past a cut corner goes on; what a
+  wall's body leaves of its cell is floored and roofed with the open cell's
+  beside it, its floor tile alone, and crawl's wall shadows are left off the
+  floor (cells.ts `stripAt`, `floorLayers`). A door in its doorway
+  (doors.ts `framedDoors`, `doorBoard`) stands in its wall run, the walls
+  either side standing back from it as from any opening and its art
+  stretched to reach them, its ends as they are: closed, a block the run's
+  thickness, wider than its cell; open, a board in the run's face on the
+  eye's side that the view shows through where its art is clear.
   The walls, floors and lid are
   crawl's own tiles, a texel a dot near and their averages (mips) as they
   recede, lit by the eye's torch, what is remembered dimmer, and a cell's
@@ -67,13 +69,13 @@ file says how a game begins and the Settings menu still changes it.
   and the cursor is a ring there. What stands (the monsters, the items, the
   missiles, the features, the plants) is each its own sprite, its layers and
   badges as render-3d stacks them, the damage bar over its head, washed with
-  its flash, gliding as render-3d's movers glide it, its name under it close
+  its flash, gliding as world's movers glide it, its name under it close
   up, crawl's letter for it when too far to make out; a cloud, or what is
   submerged or seen invisible, shows what is behind it. A monster near
   enough that its texels fill a dot stands on the dots and is read on the
   coarsest of a cell's grids its texels fill (glyph/sampling.ts `gridFor`),
   so its texels' edges fall where a glyph draws them. Over all, in a lens of
-  their own, the hands, posed and sized as render-3d poses them (hands.ts),
+  their own, the hands, posed and sized as render-3d poses them (world hands.ts),
   the weapon lifting for a swing, and the net or the web round a trapped
   player (hud.ts `renderTrapped`). The view is drawn on threads in bands of
   rows (glyph/threads.ts; `ORBRUN_TERM_THREADS`, 0 for none), and again only

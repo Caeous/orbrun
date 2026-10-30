@@ -1,6 +1,6 @@
 import { it, expect } from 'vitest'
 import { LevelGrid } from '../src/grid.js'
-import { insetFootprint, bodyRect } from '../src/footprint.js'
+import { insetFootprint, bodyRect } from '@orbrun/world'
 import { emptyScene, cellKey, type SceneCell } from '@orbrun/scene'
 it('memo matches direct evaluation on random grids', () => {
   let seed = 7

@@ -15,10 +15,31 @@ import {
   type TileSource,
   type Viewmodel,
 } from '@orbrun/scene'
-import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, handsFootprint, handsScale, scaledPose, type HandPose, type HandRect } from './hands.js'
+import {
+  CURSOR_COLOUR,
+  CURSOR_MAP_COLOUR,
+  Movers,
+  RING_INNER,
+  RING_OUTER,
+  VM_FILL,
+  VM_LIFT,
+  VM_OFFWEAPON_REST,
+  VM_SHIELD_REST,
+  VM_SIZE,
+  VM_WEAPON_REST,
+  WALL_INSET,
+  bodyRect,
+  handsFootprint,
+  handsScale,
+  liftEnvelope,
+  monsterId,
+  sceneClassAt,
+  scaledPose,
+  type HandPose,
+  type HandRect,
+} from '@orbrun/world'
 import { LevelGrid } from './grid.js'
 import { LevelMesher, MARK_MARGIN, uvFor, type ChunkGeometry, type LevelStats, type MeshContext, type TileDraw } from './level-mesh.js'
-import { Movers, monsterId } from './motion.js'
 import { INK_LEVEL, distanceField, peelInk } from './peel.js'
 import type { PeelReply, PeelRequest } from './peel.worker.js'
 import {
@@ -32,7 +53,6 @@ import {
   type SpritePass,
 } from './sprites.js'
 import { CURSOR_FRAG, CURSOR_VERT, FLAT_FRAG, LEVEL_FRAG, LEVEL_VERT, SHADOW_VERT, SPRITE_FRAG, SPRITE_VERT, VOID_FRAG } from './shaders.js'
-import { bodyRect, sceneClassAt } from './footprint.js'
 
 /**
  * @orbrun/render-3d
@@ -68,12 +88,6 @@ export interface Render3dOptions {
 const EYE = 0.6
 const EYE_MIN = 0.25
 const EYE_MAX = 0.9
-/**
- * Inset walls (II.1): the wall surface stands this far back from the floor,
- * in cells (12 texels of 32), leaving a one-thick wall an 8-texel core and
- * a lone wall cell an 8-texel post.
- */
-export const WALL_INSET = 12 / 32
 /** Texel alpha at or above which a texel is opaque. */
 const OPAQUE_ALPHA = 26
 /** How long one frame may spend building level chunks, in milliseconds; the rest go out over the frames after. At least one is built a frame, and a phone takes about this long for one. */
@@ -86,20 +100,12 @@ const GHOST_FADE = 14
 /** The same for anything the server currently shows, which is never allowed to disappear. */
 const GHOST_FADE_VISIBLE_START = 8
 const GHOST_FADE_VISIBLE = 30
-/** The cursor ring's band, in cells out from the cell's centre along either axis (a diamond). */
-const RING_INNER = 0.34
-const RING_OUTER = 0.46
 /** How far the ring's quad reaches, the band and a margin for the pixels its outer edge grazes. */
 const RING_REACH = RING_OUTER + MARK_MARGIN
-const CURSOR_COLOUR = 0xff8800
-const CURSOR_MAP_COLOUR = 0xffffff
 const HULL_SEL_COLOUR = 0xffdd33
 /** Viewmodel: the view is two units tall at the hands' depth; each icon is extruded VM_DEPTH texels and scaled so its opaque extent fills VM_FILL of VM_SIZE. */
 const VM_DEPTH = 2
-const VM_FILL = 0.9
 const VM_FOV = 40
-const VM_LIFT_S = 0.22
-const VM_LIFT = 0.07
 /**
  * The layer of everything that is not the level or its fixtures: the crowd,
  * the ghosts, the shadows, the cursor. The ghosts' depth image (II.4) is what
@@ -1232,7 +1238,7 @@ export class Render3d implements MapRenderer {
     const scene = this.scene
     const cam = this.camera
     if (!r || !scene || !cam) return
-    this.lift = Number.isNaN(this.vmLift) ? NaN : this.liftEnvelope(now - this.vmLift)
+    this.lift = Number.isNaN(this.vmLift) ? NaN : liftEnvelope(now - this.vmLift)
     if (Number.isNaN(this.lift)) this.vmLift = NaN
     // a step that ends this frame leaves the crowd standing where the last frame drew it: it is written once more, on its cell
     let landed = false
@@ -1314,13 +1320,6 @@ export class Render3d implements MapRenderer {
 
   private get vmVisible(): boolean {
     return this.opts.viewmodel && !!this.viewmodel && (!!this.viewmodel.weapon || !!this.viewmodel.offhand)
-  }
-
-  /** A lift stamped after the frame's clock (an attack handled after rAF's timestamp) has not begun yet: at rest, not over. */
-  private liftEnvelope(t: number): number {
-    if (t >= VM_LIFT_S) return NaN
-    const u = Math.max(0, t) / VM_LIFT_S
-    return u < 0.3 ? u / 0.3 : 1 - (u - 0.3) / 0.7
   }
 
   /** The item's icon layers painted into one cell-sized pixel grid, as WebTiles composes an inventory icon. */
@@ -1486,7 +1485,7 @@ function nowSeconds(): number {
 
 export { BLOCK_SHADE }
 export type { Billboard, Viewmodel }
-export * from './footprint.js'
+export { WALL_INSET }
 export { gridWalk } from './gridwalk.js'
 export { peelInk, distanceField } from './peel.js'
 export { LevelGrid, framedDoors, occupiedFeatures } from './grid.js'

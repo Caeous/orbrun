@@ -12,9 +12,22 @@
  * make out; the cursor's ring, the flash, and the hands over all.
  */
 import type { Pixels } from '@orbrun/render-term'
-import { Movers, monsterId } from '@orbrun/render-3d/motion'
-import { framedDoors } from '@orbrun/render-3d/grid'
-import { VM_OFFWEAPON_REST, VM_SHIELD_REST, VM_SIZE, VM_WEAPON_REST, type HandPose } from '@orbrun/render-3d/hands'
+import {
+  CLOUD_ALPHA,
+  Movers,
+  VM_LIFT,
+  VM_OFFWEAPON_REST,
+  VM_SHIELD_REST,
+  VM_SIZE,
+  VM_WEAPON_REST,
+  WALL_INSET,
+  featureStance,
+  framedDoors,
+  liftEnvelope,
+  monsterId,
+  occupiedFeatures,
+  type HandPose,
+} from '@orbrun/world'
 import { cellKey } from '@orbrun/scene'
 import type { Billboard, Camera, CellKey, HandItem, MapRenderer, Scene, SceneCursor, TileRect, TileSource, Viewmodel } from '@orbrun/scene'
 import { isRgbaBitmap } from './env'
@@ -30,15 +43,8 @@ const REMEMBERED = 0.55
 /** render-3d's bounds on the eye's height (EYE_MIN, EYE_MAX) */
 const EYE_MIN = 0.25
 const EYE_MAX = 0.9
-/** how far walls stand back from the floor, where the game does not say (render-3d's WALL_INSET) */
-const WALL_INSET = 12 / 32
 /** the trapped mark's share of the view's shorter side (hud.ts TRAPPED_FRACTION) */
 const TRAPPED_FRACTION = 0.8
-/** a cloud's share of what is behind it (render-3d's CLOUD_ALPHA) */
-const CLOUD_ALPHA = 0.55
-/** the swing (render-3d's VM_LIFT_S, VM_LIFT): how long the weapon's lift lasts, seconds, and how high, in the hands' units */
-const LIFT_S = 0.22
-const VM_LIFT = 0.07
 
 /** How the view is drawn: the glyph view's options the client takes (config.ts `view`). */
 export interface ViewOptions {
@@ -86,8 +92,8 @@ export class TermView implements MapRenderer {
   private tileBlocks: { tile: number; tiles: TileSource | null; blocks: Map<CellKey, { what: string; px: Uint8Array | null }> } = { tile: 0, tiles: null, blocks: new Map() }
   /** the last cells drawn, and what they were drawn from */
   private last: { key: string; cells: Int32Array } | null = null
-  /** the doors in their doorways (render-3d `framedDoors`), as worked out for the scene's revision */
-  private framed: { scene: Scene; revision: number; keys: Map<CellKey, number> } | null = null
+  /** the doors in their doorways and the features something stands on (world doors.ts), as worked out for the scene's revision */
+  private features: { scene: Scene; revision: number; framed: Map<CellKey, number>; occupied: Set<CellKey> } | null = null
   /** crawl's glyphs set in the font for the big letters, and those on their way */
   private warmed = new Set<string>()
   // what moves, as render-3d keeps it: the monsters' glides, and the swing
@@ -261,12 +267,16 @@ export class TermView implements MapRenderer {
       const f = sc.cells.get(cellKey(x, y))?.flash
       return f && f.a > 0 ? [f.r / 255, f.g / 255, f.b / 255, Math.min(1, f.a / 255)] : undefined
     }
-    // a door in its doorway is the level's (glyph/render.ts `doors`), not a sprite facing the eye
-    if (this.framed?.scene !== sc || this.framed.revision !== sc.revision) this.framed = { scene: sc, revision: sc.revision, keys: framedDoors(sc) }
-    const framed = this.framed.keys
+    // the features that stand in their cells as sprites (world doors.ts `featureStance`): a door in its doorway is the
+    // level's (glyph/render.ts `doors`), and a feature something stands on lies on its floor
+    if (this.features?.scene !== sc || this.features.revision !== sc.revision) {
+      const framed = framedDoors(sc)
+      this.features = { scene: sc, revision: sc.revision, framed, occupied: occupiedFeatures(sc, framed) }
+    }
+    const { framed, occupied } = this.features
     for (const c of sc.cells.values()) {
-      if (c.featureTile == null || c.stance !== 'upright' || c.occluder || framed.has(cellKey(c.x, c.y))) continue
-      const art = this.artOf(c.featureTile)
+      if (featureStance(c, framed, occupied) !== 'upright') continue
+      const art = this.artOf(c.featureTile!)
       if (!art) continue
       const glyph = c.glyph && !/^[\s.#]$/.test(c.glyph) ? c.glyph : ''
       out.push({ x: c.x, y: c.y, art: [art], glyph, colour: CRAWL[(c.colour ?? 7) & 15], size: 1, flash: flashOf(c.x, c.y) })
@@ -321,7 +331,7 @@ export class TermView implements MapRenderer {
   }
 
   /**
-   * The hands (render-3d hands.ts) and the trapped mark, in the hands' own
+   * The hands (world hands.ts) and the trapped mark, in the hands' own
    * lens: each hand a VM_SIZE square hanging from its pose's point, the
    * wielded weapon turned about and lifting VM_LIFT for a swing, a shield as
    * drawn; the net or the web round a trapped player (its `full` badges)
@@ -340,9 +350,9 @@ export class TermView implements MapRenderer {
     if (this.handsOn && vm && sc.playerOnLevel) {
       let lift = 0
       if (!Number.isNaN(this.liftAt)) {
-        const u = Math.max(0, now - this.liftAt) / LIFT_S
-        if (u >= 1) this.liftAt = NaN
-        else lift = (u < 0.3 ? u / 0.3 : 1 - (u - 0.3) / 0.7) * VM_LIFT
+        const e = liftEnvelope(now - this.liftAt)
+        if (Number.isNaN(e)) this.liftAt = NaN
+        else lift = e * VM_LIFT
       }
       hold(vm.weapon, VM_WEAPON_REST, true, lift)
       hold(vm.offhand, vm.offhand?.name?.startsWith('HAND2_') ? VM_SHIELD_REST : VM_OFFWEAPON_REST, false)

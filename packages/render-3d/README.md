@@ -17,26 +17,19 @@ nothing.
   omitting the timestamps keeps the standalone renderer on `performance.now()`.
   `resetMotion()` drops old-level or parked-view movement without rebuilding
   the standing crowd.
-- `footprint.ts`: the inset-wall geometry (`insetFootprint`, `bodyRect`,
-  `inPoly`, `WALL_INSET`), pure functions over a `ClassAt` oracle so they are
-  testable without WebGL.
-- `hands.ts`: where the viewmodel's weapon, off-hand and shield rest
-  (`handsFootprint`).
+- The rules of what stands where, which the glyph view shares, are
+  `@orbrun/world`'s: the inset walls, the doors in their doorways, what a
+  cell's floor shows, the hands' poses, and the monsters' glides
+  (`Movers`). `grid.ts` (`LevelGrid`) reads a scene into a dense grid by
+  them, `level-mesh.ts` and `sprites.ts` build from them.
 - `gridWalk`: the cells a ray crosses, for picking and line of sight.
 - `crowd.ts`: the baked crowd. Standing sprites are merged into a few meshes
   per 16-cell chunk of the level, with persistent buffers written in place,
   conservative bounding spheres for frustum culling, and blended batches
   ordered back to front by chunk each frame.
-- `motion.ts`: the monsters mid-step. WebTiles sends no move message, so a
-  step is read as a monster's client id changing cell between two scenes; only
-  a single step glides, and a blink, a teleport or a burst of turns snaps. A
-  sprite in flight stands out of the baked crowd for the length of its step
-  and goes back into it on landing, so moving it every frame never rewrites
-  a chunk's buffers. Player and monster timing share `scene/motion.ts`:
-  isolated steps take 100 ms; repeated steps adapt to arrival cadence within
-  100–140 ms, carrying speed and braking late. Only confirmed cells are
-  followed, including corners; bursts are caught up to at most two steps
-  behind and stalled replies always leave the sprite stopped at its last cell.
+- The monsters mid-step (world's `Movers`): a sprite in flight stands out of
+  the baked crowd for the length of its step and goes back into it on
+  landing, so moving it every frame never rewrites a chunk's buffers.
 - `mesh.ts`: exact merging of one-colour texel faces (the hulls, the ghost
   rings, the hands' ink) into rectangles and runs; textured rim faces merge
   only where neighbouring texels hold the very same colour.
@@ -51,5 +44,5 @@ relights the crowd repaints a small texture and no geometry. The cursor's
 selected shell is a holder of its own beside the crowd, so moving the cursor
 touches nothing else. `destroy()` releases everything the renderer made.
 
-Depends on `@orbrun/scene`; `three` is a peer dependency. Part of
+Depends on `@orbrun/scene` and `@orbrun/world`; `three` is a peer dependency. Part of
 [Orbrun](https://github.com/Caeous/orbrun). AGPL-3.0-or-later.

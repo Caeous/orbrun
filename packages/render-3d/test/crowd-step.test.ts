@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { settle, stubbed, shadowsWritten, written, type Guts } from './bed.js'
-import { STEP_SECONDS } from '../src/motion.js'
+import { STEP_SECONDS } from '@orbrun/world'
 import { Render3d } from '../src/index.js'
 import { cellKey, emptyScene, makeCamera, type Billboard, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 

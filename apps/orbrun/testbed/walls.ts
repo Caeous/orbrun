@@ -1,14 +1,14 @@
 /**
  * Wall test bed (rendering-3d.md II.1, "Inset walls" experiment).
  *
- * Renders ASCII layouts with the footprint rule from @orbrun/render-3d, with
+ * Renders ASCII layouts with the footprint rule from @orbrun/world, with
  * a live inset slider, beside a top-down map of the same
  * footprints that overlays the literal definition so any seam shows in red.
  * Served by the app's dev server at /testbed/walls.html; not part of the build.
  */
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { asciiClassAt, insetFootprint, insetOracle, inPoly, type ClassAt, type FootprintOptions } from '@orbrun/render-3d'
+import { asciiClassAt, insetFootprint, insetOracle, inPoly, type ClassAt, type FootprintOptions } from '@orbrun/world'
 
 const LAYOUTS: Record<string, string[]> = {
   corridor: ['#########', '#.......#', '#.#######', '#.#.....#', '#.#.....#', '#.......#', '#########'],

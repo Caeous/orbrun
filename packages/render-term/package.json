@@ -24,6 +24,7 @@
   ],
   "dependencies": {
     "@orbrun/render-3d": "*",
-    "@orbrun/scene": "*"
+    "@orbrun/scene": "*",
+    "@orbrun/world": "*"
   }
 }

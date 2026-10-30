@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { handsFootprint, handsScale } from '../src/hands'
+import { handsFootprint, handsScale } from '../src/hands.js'
 
 describe('hands footprint (rendering-3d.md II.7)', () => {
   it('a wielded weapon stands low right: right of centre, the lower third, on a 16:9 canvas', () => {

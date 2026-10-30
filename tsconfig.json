@@ -6,6 +6,7 @@
     { "path": "packages/gamedata" },
     { "path": "packages/scene-webtiles" },
     { "path": "packages/render-2d" },
+    { "path": "packages/world" },
     { "path": "packages/render-3d" },
     { "path": "packages/render-term" },
     { "path": "packages/vault" },

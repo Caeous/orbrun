@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { Billboard } from '@orbrun/scene'
 import { CameraController } from '../src/camera'
-import { Movers } from '../../../packages/render-3d/src/motion'
+import { Movers } from '@orbrun/world'
 
 function mon(x: number, y = 0): Billboard {
   return { x, y, tile: 1, kind: 'monster', height: 1, ref: { id: 1 } }

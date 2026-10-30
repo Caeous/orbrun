@@ -21,7 +21,7 @@ import { cellKey, REST_PITCH, type Billboard, type Camera, type Dir8, type Scene
 import type { Pixels } from '@orbrun/render-term'
 import { readScene, type PlaceFile } from '../../apps/orbrun/src/room/place-data'
 import { RoomTiles } from '../../apps/orbrun/src/room/tiles'
-import { framedDoors } from '@orbrun/render-3d/grid'
+import { featureStance, framedDoors, occupiedFeatures } from '@orbrun/world'
 import { CRAWL, toAnsi, type Art, type Cell, type RGB, type Thing } from './glyph/render'
 import { GlyphThreads } from './glyph/threads'
 import { INVERSE } from './glyph/shapes'
@@ -107,8 +107,9 @@ let goalYaw = cam.yaw
 const fixtures: Thing[] = []
 // a door in its doorway is the level's where walls stand back (glyph/render.ts `doors`), not a sprite facing the eye
 const framed = view.opts.wallInset ? framedDoors(scene) : new Map()
+const occupied = occupiedFeatures(scene, framed)
 for (const c of scene.cells.values()) {
-  if (c.featureTile == null || c.stance !== 'upright' || c.occluder || framed.has(cellKey(c.x, c.y))) continue
+  if (featureStance(c, framed, occupied) !== 'upright') continue
   const art = view.art(c.featureTile)
   if (!art) continue
   const g = featureGlyph(c)

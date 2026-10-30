@@ -1,4 +1,7 @@
-import { cellKey, shadeOf, type Billboard, type Scene, type SceneCell, type TileRect } from '@orbrun/scene'
+import { cellKey, shadeOf, type Billboard, type Scene, type TileRect } from '@orbrun/scene'
+import { CLOUD_ALPHA, doorBoard, featureStance } from '@orbrun/world'
+
+export { CLOUD_ALPHA }
 
 /**
  * Standing sprites as instances (shaders.ts `SPRITE_VERT`): what a monster,
@@ -41,8 +44,6 @@ export const GHOST_TINT = {
   projectile: { r: 1, g: 1, b: 1 },
 }
 const BADGE_TINT = { r: 1, g: 1, b: 1 }
-/** A cloud's opacity. */
-export const CLOUD_ALPHA = 0.55
 /**
  * How far a cloud's board stands forward of the middle of its cell, in cells.
  * A board at the cell's middle is coplanar with the front face of the block
@@ -309,41 +310,22 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
 export function fixtureInstances(scene: Scene, tile: TileLookup, framed: ReadonlyMap<number, number>, occupied: ReadonlySet<number>, columns?: StairColumns, inset = 0): SpriteInstance[] {
   const out: SpriteInstance[] = []
   const tint = scene.level.tint
-  const stands = (c: SceneCell) => c.stance === 'upright' && !occupied.has(cellKey(c.x, c.y))
   for (const cell of scene.cells.values()) {
-    if (cell.kind === 'unknown') continue
-    const yaw = framed.get(cellKey(cell.x, cell.y))
-    if (cell.occluder && yaw === undefined) continue
-    if (cell.featureTile === undefined) continue
-    const lie = cell.stance === 'lying'
-    if (!lie && !stands(cell)) continue
-    const r = tile(cell.featureTile)
+    const stance = featureStance(cell, framed, occupied)
+    if (stance !== 'upright' && stance !== 'framed' && stance !== 'lying') continue
+    const r = tile(cell.featureTile!)
     if (!r) continue
-    if (lie) {
+    if (stance === 'lying') {
       // laid as the floor paints it, the tile's top to the north, whatever the camera does
-      out.push(...stand(cell.x, cell.y, [{ r, ox: 0, oy: 0 }], { height: 1, shade: 1, tint, shadeMap: true, thick: true, pass: 'fixture', lie, yaw: 0 }))
+      out.push(...stand(cell.x, cell.y, [{ r, ox: 0, oy: 0 }], { height: 1, shade: 1, tint, shadeMap: true, thick: true, pass: 'fixture', lie: true, yaw: 0 }))
       continue
     }
-    if (yaw !== undefined) {
-      // a gate running north–south wears the horizontal piece its east face shows (`SceneCell.faceTiles`): turned to
-      // stand north–south, the board's art reads the right way round from the east, and seen from the west it is
-      // mirrored, as crawl's west face is
-      const art = (yaw !== 0 && cell.faceTiles?.e !== undefined ? tile(cell.faceTiles.e) : undefined) ?? r
-      // the walls either side stand `inset` back from the doorway as from any opening, and the board is stretched to
-      // reach them; an end facing the next leaf of a gate stays at the cell's edge. The board's west (south, turned
-      // north–south) end is its art's left. Only its middle stretches: open, the leaves either side keep their
-      // size, as they would parting to the walls, and the stretch is the doorway between them; closed, the outer
-      // quarters keep theirs
-      const push = inset * art.cell
-      const [ax, az] = yaw === 0 ? [-1, 0] : [0, 1]
-      const wall = (dx: number, dz: number) => (framed.has(cellKey(cell.x + dx, cell.y + dz)) ? 0 : push)
-      const left = wall(ax, az), right = wall(-ax, -az)
-      const native = Math.floor((art.w * (cell.occluder ? 2 : 3)) / 8)
-      // closed, a block the run's thickness, its faces in the planes of the walls either side; open, a board in the
-      // face of the run on the eye's side (the shader moves it across for an eye behind it), as a slab the leaves
-      // would show their whole depth seen edge-on from the doorway
-      const run = Math.max(0, 1 - 2 * inset)
-      const depth = cell.occluder && run > 0 ? { depth: run } : {}
+    const door = stance === 'framed' ? doorBoard(cell, framed, inset, tile) : null
+    if (door) {
+      // closed, a block the run's thickness; open, a board in the face of the run on the eye's side (the shader moves
+      // it across for an eye behind it), as a slab the leaves would show their whole depth seen edge-on from the doorway
+      const { art, left, right, native, run, yaw } = door
+      const depth = door.closed && run > 0 ? { depth: run } : {}
       out.push(...stand(cell.x, cell.y, [{ r: art, ox: -left, oy: 0, stretch: left + right, native }], { height: 1, shade: 1, tint, shadeMap: true, thick: true, pass: 'fixture', yaw, ...depth, back: -run / 2 }))
       continue
     }

@@ -1,5 +1,7 @@
-import { cellKey, keyToXY, type CellKey, type Rect, type Scene, type SceneCell } from '@orbrun/scene'
-import { bodyRect, insetFootprint, type BodyRect, type CellClass, type ClassAt, type Footprint, type FootprintOptions } from './footprint.js'
+import type { CellKey, Rect, Scene, SceneCell } from '@orbrun/scene'
+import { CLASS_NAME, VOID, WALL, bodyRect, cellClass, framedDoors, insetFootprint, occupiedFeatures, type BodyRect, type ClassAt, type Footprint, type FootprintOptions } from '@orbrun/world'
+
+export { framedDoors, occupiedFeatures }
 
 /**
  * The level as a dense grid, read off a `Scene` once per build: a class byte
@@ -14,12 +16,6 @@ import { bodyRect, insetFootprint, type BodyRect, type CellClass, type ClassAt, 
  * neighbour), so a level of thousands of cells asks for a few hundred distinct
  * patterns and the rest are lookups.
  */
-
-/** Cell classes as the grid stores them. */
-export const VOID = 0
-export const FLOOR = 1
-export const WALL = 2
-const CLASS_NAME: CellClass[] = ['void', 'floor', 'wall']
 
 /** The plus-shaped neighbourhood the footprint rule reads, as offsets: the 5x5 less its corners, less the cell itself. */
 const REACH: [number, number][] = []
@@ -53,18 +49,12 @@ export class LevelGrid {
     this.h = Math.max(0, this.range.bottom - this.range.top + 1)
     this.cls = new Uint8Array(this.w * this.h)
     this.cells = new Array(this.w * this.h)
+    this.framed = framedDoors(scene)
     for (const c of scene.cells.values()) {
       const i = this.index(c.x, c.y)
       if (i < 0) continue
       this.cells[i] = c
-      this.cls[i] = c.kind === 'unknown' ? VOID : c.occluder ? WALL : FLOOR
-    }
-    this.framed = framedDoors(scene)
-    // a closed door in its doorway is a board as an open one is: the walls either side stand back from an opening
-    for (const k of this.framed.keys()) {
-      const { x, y } = keyToXY(k)
-      const i = this.index(x, y)
-      if (i >= 0) this.cls[i] = FLOOR
+      this.cls[i] = cellClass(c, this.framed)
     }
     this.occupied = occupiedFeatures(scene, this.framed)
     this.classAt = (x, z) => {
@@ -123,79 +113,6 @@ export class LevelGrid {
     }
     return e
   }
-}
-
-/**
- * The doors that hang in a doorway, open or closed, and the heading each
- * stands at.
- *
- * A door is a hole in a wall run, and the run tells the door which way it
- * faces: walls east and west of it and the doorway faces north/south (yaw 0,
- * the heading a billboard stands at when the camera looks down -z), walls
- * north and south and it faces east/west. A door with neither reads on past
- * the doors beside it, the other leaves of a double door or a gate, to
- * the walls that end the opening. A door with no run to read — a corner, an
- * opening broken through on both axes — has no plane to stand in and is left
- * to face the eye like any other fixture.
- *
- * A closed door counts as wall for its neighbours' runs (it is one, to
- * crawl), but in its own run it is a door like an open one.
- */
-export function framedDoors(scene: Scene): Map<CellKey, number> {
-  const solid = (x: number, y: number) => {
-    const c = scene.cells.get(cellKey(x, y))
-    return !c || c.kind === 'unknown' || c.occluder
-  }
-  const door = (c: SceneCell | undefined) => c?.feature?.type === 'door' && c.kind !== 'unknown'
-  // past the doors beside it, which are leaves of the same gate, to the cell that ends the run
-  const end = (x: number, y: number, dx: number, dy: number) => {
-    do {
-      x += dx
-      y += dy
-    } while (door(scene.cells.get(cellKey(x, y))))
-    return solid(x, y)
-  }
-  const out = new Map<CellKey, number>()
-  for (const c of scene.cells.values()) {
-    if (!door(c)) continue
-    let alongX = solid(c.x - 1, c.y) && solid(c.x + 1, c.y)
-    let alongZ = solid(c.x, c.y - 1) && solid(c.x, c.y + 1)
-    if (!alongX && !alongZ) {
-      alongX = end(c.x, c.y, -1, 0) && end(c.x, c.y, 1, 0)
-      alongZ = end(c.x, c.y, 0, -1) && end(c.x, c.y, 0, 1)
-    }
-    if (alongX === alongZ) continue
-    out.set(cellKey(c.x, c.y), alongX ? 0 : Math.PI / 2)
-  }
-  return out
-}
-
-/**
- * The cells with an upright feature that something stands on. A board in
- * such a cell is a board through whoever stands there, so those features lie
- * back down on the floor instead, and what the player sees is 2D's own order,
- * the feature under the actor. Clouds and things in flight pass over a cell
- * rather than stand on it, and leave its feature standing. A door in its
- * doorway (`framed`) stays up: whoever is on it stands in its open middle,
- * between the jambs, the player too. The cell underfoot counts for any other
- * feature: the camera sits in the middle of that sprite.
- */
-export function occupiedFeatures(scene: Scene, framed?: ReadonlyMap<CellKey, number>): Set<CellKey> {
-  const out = new Set<CellKey>()
-  const upright = (k: CellKey) => {
-    const c = scene.cells.get(k)
-    return c?.stance === 'upright' && c.featureTile !== undefined
-  }
-  for (const b of scene.billboards) {
-    if (b.kind === 'cloud' || b.kind === 'projectile') continue
-    const k = cellKey(b.x, b.y)
-    if (upright(k) && !framed?.has(k)) out.add(k)
-  }
-  if (scene.playerOnLevel) {
-    const k = cellKey(scene.player.x, scene.player.y)
-    if (upright(k) && !framed?.has(k)) out.add(k)
-  }
-  return out
 }
 
 /** Whether two sets hold the same keys. */
