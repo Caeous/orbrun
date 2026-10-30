@@ -216,6 +216,31 @@ describe('walls as render-3d stands them', () => {
     expect(v.strip(v.index(1, -7), 0.5, 0.3)).toBe(-1)
   })
 
+  it("marks the cursor's cell as render-3d does: its mode's colour, or WebTiles' icon for it, and a cell's own marks on its floor", () => {
+    const { view, cam } = room()
+    view.things = []
+    const floor = () => Array.from(view.raster(cam(0), 160, 96, 4, 8).pix)
+    const before = floor()
+    view.opts.cursor = { x: 0, y: -1, mode: 'target' }
+    const target = floor()
+    view.opts.cursor = { x: 0, y: -1, mode: 'map' }
+    const map = floor()
+    view.opts.cursor = { x: 0, y: -1, mode: 'target', tile: 3 }
+    const icon = floor()
+    expect(target).not.toEqual(before)
+    expect(map).not.toEqual(target)
+    expect(icon).not.toEqual(target)
+    // the ring in white on the level map: some pixel all but white, lit or not
+    const white = (px: number[]) => px.some((_, i) => i % 3 === 0 && px[i] > 0.8 && px[i + 1] > 0.8 && px[i + 2] > 0.7)
+    expect(white(map)).toBe(true)
+    expect(white(target)).toBe(false)
+    view.opts.cursor = null
+    const scene = (view as unknown as { scene: Scene }).scene
+    scene.cells.get(cellKey(0, -1))!.icons = [3]
+    view.setScene(scene)
+    expect(floor()).not.toEqual(before)
+  })
+
   it('draws a hand over all, in its own lens, its art filling its square as render-3d sizes it', () => {
     const { view, cam } = room()
     const goblin = view.things[0]

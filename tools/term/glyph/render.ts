@@ -20,7 +20,7 @@
  * its floor, a cell's flash is washed over all of it, and the hands are
  * drawn over all in a lens of their own (`Thing.hand`).
  */
-import { keyToXY, type Camera, type CellKey, type Scene, type SceneCell, type TileId, type TileRect, type TileSource } from '@orbrun/scene'
+import { keyToXY, type Camera, type CellKey, type Scene, type SceneCell, type SceneCursor, type TileId, type TileRect, type TileSource } from '@orbrun/scene'
 import type { Pixels } from '@orbrun/render-term'
 import { bigGlyph } from './font'
 import { INVERSE, OCTANTS } from './shapes'
@@ -28,13 +28,12 @@ import { setChroma, setDark, SpriteTex } from './sprite'
 import { encoders, q, unpack, type Encoder, type EncoderName, type FitOptions } from './encode'
 import { drawSprite, gridFor, type SpriteColumns } from './sampling'
 import {
-  CURSOR_COLOUR,
-  RING_INNER,
-  RING_OUTER,
+  CURSOR_ALPHA,
   VM_FILL,
   boardAlong,
   boardTexel,
   bodyRect,
+  cursorColour,
   doorBoard,
   faceTile,
   featureStance,
@@ -42,6 +41,7 @@ import {
   framedDoors,
   levelClassAt,
   occupiedFeatures,
+  ringCover,
   stripAt,
   type BodyRect,
   type DoorBoard,
@@ -80,6 +80,8 @@ export interface Thing {
   flash?: [number, number, number, number]
   /** how much of it shows, 0..1: a cloud, or what is submerged or seen invisible */
   alpha?: number
+  /** how far off the floor it stands, in cells: a missile in flight */
+  lift?: number
   /**
    * one of the player's hands (render-3d hands.ts): not in the world but in a
    * lens of its own over the view, two units tall, its art a `size` square
@@ -131,8 +133,8 @@ export interface GlyphViewOptions {
   fit?: FitOptions
   /** how far walls stand back from the floor round them, in cells (render-3d's WALL_INSET); 0 or none, a wall is its whole cell */
   wallInset?: number
-  /** the cell a look or an aim is on: a ring on its floor, as render-3d marks it */
-  cursor?: { x: number; y: number } | null
+  /** the cell a look or an aim is on, as render-3d marks it (world marks.ts): WebTiles' icon for it laid on its floor, else a ring there in its mode's colour */
+  cursor?: { x: number; y: number; mode?: SceneCursor['mode']; tile?: TileId } | null
   /**
    * what stands near enough that its texels fill a dot stood on the dots and
    * read on the coarsest of a cell's grids its texels fill (sampling.ts
@@ -266,8 +268,8 @@ const DECODE = new Float32Array(256).map((_, i) => {
   const v = i / 255
   return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
 })
-/** the cursor's colour (world marks.ts), linear */
-const CURSOR: RGB = [CURSOR_COLOUR >> 16, (CURSOR_COLOUR >> 8) & 255, CURSOR_COLOUR & 255].map((v) => DECODE[v]) as RGB
+/** an sRGB colour (0xRRGGBB) in linear light */
+const linear = (hex: number): RGB => [DECODE[hex >> 16], DECODE[(hex >> 8) & 255], DECODE[hex & 255]]
 const enc = (v: number) => {
   const c = v <= 0 ? 0 : v >= 1 ? 1 : v
   return Math.round(255 * (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055))
@@ -562,12 +564,12 @@ export class GlyphView {
   private floorOf(g: number, fc: SceneCell): Flat {
     let f = this.floors[g]
     if (!f) {
-      // as render-3d lays it (world cells.ts `floorLayers`), and what lies in its cell laid flat on it; the wall shadows
+      // as render-3d lays it (world cells.ts `floorLayers`), what lies in its cell laid flat on it, and its marks; the wall shadows
       // and shorelines kept only where walls are flush with the floor, as crawl draws them
       const stance = featureStance(fc, this.framed, this.occupied)
-      const { under, feature, over } = floorLayers(fc, stance, (this.opts.wallInset ?? 0) <= 0)
+      const { under, feature, over, marks } = floorLayers(fc, stance, (this.opts.wallInset ?? 0) <= 0)
       const flat = feature ?? (stance === 'lying' ? fc.featureTile : undefined)
-      this.floors[g] = f = this.flat(0, [fc.floorTile, ...under, ...(flat !== undefined ? [flat] : []), ...over, ...(this.lying.get(g) ?? [])])
+      this.floors[g] = f = this.flat(0, [fc.floorTile, ...under, ...(flat !== undefined ? [flat] : []), ...over, ...(this.lying.get(g) ?? []), ...marks])
     }
     return f
   }
@@ -771,7 +773,7 @@ export class GlyphView {
         const tx = boardTexel(door, Math.min(1 + door.right * k - 1e-6, Math.max(-door.left * k, s)))
         u = Number.isNaN(tx) ? 0 : tx * k
         wall = this.flat(0.02, [door.tile])
-      } else if (!wall) this.walls[at] = wall = this.flat(0.02, [faceTile(hit, FACES[f]) ?? hit?.featureTile])
+      } else if (!wall) this.walls[at] = wall = this.flat(0.02, [faceTile(hit, FACES[f]) ?? hit?.featureTile, ...(hit?.wallOverlays ?? [])])
       L.wallK[b] = (f < 2 ? 0.8 : 1) * light(dist) * this.dimmed(hit)
       L.wallG[b] = hit ? g : -1
       // the mip for the texels a pixel of the wall spans
@@ -787,7 +789,7 @@ export class GlyphView {
       const ry = t.y + 0.5 - ey
       const across = det * (dy * rx - dx * ry)
       const depth = det * (-py * rx + px * ry)
-      return { depth, sx: (W / 2) * (1 + across / depth), floorY: horizon + (eye * fy) / depth }
+      return { depth, sx: (W / 2) * (1 + across / depth), floorY: horizon + ((eye - (t.lift ?? 0)) * fy) / depth }
     })
     return L
   }
@@ -918,14 +920,22 @@ export class GlyphView {
     // a block's first pixel only, where the cells are drawn from this memory alone: the dots are read there, and the rest of a block only where something stands (`spread`, below)
     const once = reuse && step > 1
     const flashes = this.flashes
-    /** a pixel of the level, its colour lit by `k`, and washed with the flash of the cell `fg` (the grid's index; -1 for none) */
-    const put = (i: number, r: number, g: number, b: number, k: number, fg = -1) => {
+    /**
+     * a pixel of the level, its colour lit by `k`, and washed with the flash of the cell `fg` (the grid's index; -1 for
+     * none); then `over` laid on it, unlit, at its alpha (the cursor)
+     */
+    const put = (i: number, r: number, g: number, b: number, k: number, fg = -1, over?: RGB, oa = 0) => {
       let R = r * k * tr, G = g * k * tg, B = b * k * tb
       const fa = fg >= 0 ? flashes[fg * 4 + 3] : 0
       if (fa > 0) {
         R += (flashes[fg * 4] - R) * fa
         G += (flashes[fg * 4 + 1] - G) * fa
         B += (flashes[fg * 4 + 2] - B) * fa
+      }
+      if (over && oa > 0) {
+        R += (over[0] - R) * oa
+        G += (over[1] - G) * oa
+        B += (over[2] - B) * oa
       }
       if (once) {
         pix[i * 3] = R
@@ -957,6 +967,10 @@ export class GlyphView {
 
     const dims = this.dims
     const cursor = this.opts.cursor
+    // the cursor: its icon where the tiles have it (premultiplied, its mips), else the ring in its mode's colour
+    const cursorTex = cursor?.tile !== undefined ? this.tex(cursor.tile) : null
+    const ringRgb = linear(cursorColour({ mode: cursor?.mode ?? 'target' }))
+    const mark: RGB = [0, 0, 0]
     for (let col = 0, b = 0; col < W; col += step, b++) {
       const rx = L.rx[b], ry = L.ry[b], u = L.u[b], top = L.top[b], bot = L.bot[b]
       const wallRgb = L.wall[b], wallLevel = L.wallLevel[b], wallK = L.wallK[b], wallG = L.wallG[b]
@@ -1025,17 +1039,23 @@ export class GlyphView {
           put(i, 0, 0, 0, rowLight[row])
           continue
         }
-        // the cursor's ring on its cell's floor, unlit (world marks.ts): a diamond band round the cell's middle
-        if (cursor && cx === cursor.x && cy === cursor.y) {
-          const r = Math.abs(wx - cx - 0.5) + Math.abs(wy - cy - 0.5)
-          if (r >= RING_INNER && r <= RING_OUTER) {
-            put(i, CURSOR[0], CURSOR[1], CURSOR[2], 1)
-            continue
-          }
-        }
         const rgb = (bare ? this.flat(0, [fc.floorTile]) : this.floorOf(g, fc))[level]
         const o = texel(wx - cx, wy - cy, level)
-        put(i, rgb[o], rgb[o + 1], rgb[o + 2], rowLight[row] * dims[g], g)
+        // the cursor on its cell's floor, unlit (world marks.ts): its icon, or a diamond band round the cell's middle,
+        // as much of the pixel as it covers, the pixel's width on the floor taken from how far it is
+        let oa = 0
+        if (cursor && cx === cursor.x && cy === cursor.y) {
+          if (cursorTex) {
+            const lv = cursorTex.levels[level], n = lv.n
+            const t = (Math.min(n - 1, Math.floor((wy - cy) * n)) * n + Math.min(n - 1, Math.floor((wx - cx) * n))) * 4
+            oa = lv.rgba[t + 3]
+            if (oa > 0) (mark[0] = lv.rgba[t] / oa), (mark[1] = lv.rgba[t + 1] / oa), (mark[2] = lv.rgba[t + 2] / oa)
+          } else {
+            oa = CURSOR_ALPHA * ringCover(wx - cx, wy - cy, (1.5 * d * step) / fx)
+            ;(mark[0] = ringRgb[0]), (mark[1] = ringRgb[1]), (mark[2] = ringRgb[2])
+          }
+        }
+        put(i, rgb[o], rgb[o + 1], rgb[o + 2], rowLight[row] * dims[g], g, mark, oa)
       }
     }
 

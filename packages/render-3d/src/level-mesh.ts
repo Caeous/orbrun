@@ -470,11 +470,11 @@ export class LevelMesher {
           for (const o of layers.under) decal(o, 0.002)
           if (layers.feature !== undefined) decal(layers.feature, 0.004)
           for (const o of layers.over) decal(o, 0.006)
-          if (cell.icons) {
+          if (layers.marks.length) {
             // on a way down or a trap lying as a block (sprites.ts `fixtureInstances`) the marks sit on its top, not under it
             const lies = cell.stance === 'lying' && cell.featureTile !== undefined ? tileOf(cell.featureTile) : null
             const lift = lies ? LIE_LIFT + BB_DEPTH / lies.r.cell + 0.002 : 0.008
-            for (const o of cell.icons) decal(o, lift, true)
+            for (const o of layers.marks) decal(o, lift, true)
           }
           const ceiling = ceilingOf(cell)
           if (ceiling) get(ceiling.atlas).at(x, y).quad([[x, 1, y], [x + 1, 1, y], [x + 1, 1, y + 1], [x, 1, y + 1]], ceiling.uv, LID_SHADE, tint)

@@ -66,9 +66,14 @@ file says how a game begins and the Settings menu still changes it.
   crawl's own tiles, a texel a dot near and their averages (mips) as they
   recede, lit by the eye's torch, what is remembered dimmer, and a cell's
   flash washed over all of it; what lies (a corpse) is laid on its floor,
-  and the cursor is a ring there. What stands (the monsters, the items, the
-  missiles, the features, the plants) is each its own sprite, its layers and
-  badges as render-3d stacks them, the damage bar over its head, washed with
+  with a cell's marks (travel arrows, exclusion, badges) over it, and the
+  blood and the rest crawl paints on a wall on its faces; the cursor is
+  WebTiles' icon for it on its floor, or render-3d's ring in its mode's
+  colour. What stands (the monsters, the items, the missiles, the features,
+  the plants) is each its own sprite, as `@orbrun/world` lists it
+  (things.ts `crowd`, `fixtures`): its layers and badges as render-3d
+  stacks them, a missile lifted off the floor, a feature render-3d's
+  height, the damage bar over its head, washed with
   its flash, gliding as world's movers glide it, its name under it close
   up, crawl's letter for it when too far to make out; a cloud, or what is
   submerged or seen invisible, shows what is behind it. A monster near

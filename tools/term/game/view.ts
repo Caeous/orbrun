@@ -13,7 +13,6 @@
  */
 import type { Pixels } from '@orbrun/render-term'
 import {
-  CLOUD_ALPHA,
   Movers,
   VM_LIFT,
   VM_OFFWEAPON_REST,
@@ -21,7 +20,8 @@ import {
   VM_SIZE,
   VM_WEAPON_REST,
   WALL_INSET,
-  featureStance,
+  crowd,
+  fixtures,
   framedDoors,
   liftEnvelope,
   monsterId,
@@ -224,7 +224,7 @@ export class TermView implements MapRenderer {
     o.fov = (2 * Math.atan(Math.tan((this.fov * Math.PI) / 360) * this.lensAspect) * 180) / Math.PI
     o.eye = Math.max(EYE_MIN, Math.min(EYE_MAX, this.eye))
     o.wallInset = this.wallInset
-    o.cursor = this.cursor ? { x: this.cursor.x, y: this.cursor.y } : null
+    o.cursor = this.cursor ? { x: this.cursor.x, y: this.cursor.y, mode: this.cursor.mode, tile: this.cursor.tile } : null
     g.things = this.things(sc, performance.now() / 1000)
     const cells = await g.cellsOnly(cam, cols, rows)
     this.last = { key, cells }
@@ -267,19 +267,18 @@ export class TermView implements MapRenderer {
       const f = sc.cells.get(cellKey(x, y))?.flash
       return f && f.a > 0 ? [f.r / 255, f.g / 255, f.b / 255, Math.min(1, f.a / 255)] : undefined
     }
-    // the features that stand in their cells as sprites (world doors.ts `featureStance`): a door in its doorway is the
-    // level's (glyph/render.ts `doors`), and a feature something stands on lies on its floor
+    // what stands (world things.ts): the features upright in their cells, as sprites (a door in its doorway is the
+    // level's, glyph/render.ts `doors`, and what lies the floor's), then the monsters, items, missiles and clouds
     if (this.features?.scene !== sc || this.features.revision !== sc.revision) {
       const framed = framedDoors(sc)
       this.features = { scene: sc, revision: sc.revision, framed, occupied: occupiedFeatures(sc, framed) }
     }
     const { framed, occupied } = this.features
-    for (const c of sc.cells.values()) {
-      if (featureStance(c, framed, occupied) !== 'upright') continue
-      const art = this.artOf(c.featureTile!)
+    for (const f of fixtures(sc, framed, occupied)) {
+      if (f.stance !== 'upright') continue
+      const art = this.artOf(f.layers[0].tile)
       if (!art) continue
-      const glyph = c.glyph && !/^[\s.#]$/.test(c.glyph) ? c.glyph : ''
-      out.push({ x: c.x, y: c.y, art: [art], glyph, colour: CRAWL[(c.colour ?? 7) & 15], size: 1, flash: flashOf(c.x, c.y) })
+      out.push({ x: f.x, y: f.y, art: [art], glyph: f.glyph ?? '', colour: CRAWL[(f.colour ?? 7) & 15], size: f.height, flash: flashOf(f.x, f.y) })
     }
     // what moves this frame
     this.track(now)
@@ -291,34 +290,33 @@ export class TermView implements MapRenderer {
         if (o) glides.set(id!, o)
       }
     this.movers.landed(now)
-    for (const b of sc.billboards) {
-      if (b.kind === 'player' || b.lying) continue
-      if (b.x === sc.player.x && b.y === sc.player.y && sc.playerOnLevel && b.kind !== 'cloud') continue
-      const art = (b.layers?.length ? b.layers.map((l) => this.artOf(l.tile, l.ox ?? 0, l.oy ?? 0, l.ymax)) : [this.artOf(b.tile)]).filter((a): a is Art => !!a)
+    for (const t of crowd(sc)) {
+      // what lies the glyph view lays on its floor
+      if (t.lie) continue
+      const art = t.layers.filter((l) => !l.badge).map((l) => this.artOf(l.tile, l.ox, l.oy, l.ymax)).filter((a): a is Art => !!a)
       if (!art.length) continue
       // the badges over it, the damage bar pinned over its head
-      if (b.kind !== 'cloud') for (const i of b.statusIcons ?? []) {
-        const a = this.artOf(i.tile, i.ox, i.at === 'top' ? () => 0 : i.oy)
+      for (const l of t.layers) {
+        if (!l.badge) continue
+        const a = this.artOf(l.tile, l.ox, l.top ? () => 0 : l.oy)
         if (a) art.push(a)
       }
-      const cell = sc.cells.get(cellKey(b.x, b.y))
-      const alive = b.kind === 'monster' && !b.scenery
-      const id = b.kind === 'monster' ? monsterId(b) : undefined
-      const o = id === undefined ? undefined : glides.get(id)
-      const glyph = b.kind !== 'cloud' && cell?.glyph && !/^[\s.]$/.test(cell.glyph) ? cell.glyph : ''
+      const alive = t.kind === 'monster' && !t.scenery
+      const o = t.moverId === undefined ? undefined : glides.get(t.moverId)
+      const glyph = t.glyph ?? ''
       if (glyph && alive && !this.warmed.has(glyph)) cold.push(glyph)
-      const mon = b.ref as { name?: string } | undefined
       out.push({
-        x: b.x + (o?.x ?? 0),
-        y: b.y + (o?.y ?? 0),
+        x: t.x + (o?.x ?? 0),
+        y: t.y + (o?.y ?? 0),
         art,
         glyph,
-        colour: CRAWL[(cell?.colour ?? 7) & 15],
-        size: b.height,
-        name: alive ? (mon?.name ?? b.name) : undefined,
+        colour: CRAWL[(t.colour ?? 7) & 15],
+        size: t.height,
+        name: t.name,
         alive,
-        alpha: b.kind === 'cloud' ? CLOUD_ALPHA : b.alpha,
-        flash: flashOf(b.x, b.y),
+        alpha: t.alpha,
+        lift: t.lift,
+        flash: flashOf(t.x, t.y),
       })
     }
     out.push(...this.hands(sc, now))

@@ -3,6 +3,8 @@ import { cellKey, emptyScene, type Scene, type SceneCell, type TileRect } from '
 import { bodyRect, inPoly, type ClassAt } from '../src/footprint.js'
 import { faceTile, floorLayers, insetStrips, stripAt } from '../src/cells.js'
 import { boardAlong, boardTexel, doorBoard, featureStance, framedDoors, occupiedFeatures } from '../src/doors.js'
+import { CLOUD_ALPHA, FIXTURE_H, PROJECTILE_LIFT, STAIR_H, crowd, fixtures } from '../src/things.js'
+import { cursorColour, ringCover } from '../src/marks.js'
 
 const cell = (x: number, y: number, o: Partial<SceneCell> = {}): SceneCell => ({
   x,
@@ -54,9 +56,9 @@ const stripsHave = (strips: { pts: [number, number][]; dx: number; dz: number }[
 
 describe("a cell's floor and faces", () => {
   it('leaves the wall shadows and shorelines off the floor, unless asked, and paints a feature only where it lies flat', () => {
-    const c = cell(0, 0, { underlays: [2], overlays: [3, 4, 5], wallShadows: [4], shorelines: [5], featureTile: 6 })
-    expect(floorLayers(c, 'floor')).toEqual({ under: [2], feature: 6, over: [3] })
-    expect(floorLayers(c, 'upright', true)).toEqual({ under: [2], feature: undefined, over: [3, 4, 5] })
+    const c = cell(0, 0, { underlays: [2], overlays: [3, 4, 5], wallShadows: [4], shorelines: [5], featureTile: 6, icons: [10] })
+    expect(floorLayers(c, 'floor')).toEqual({ under: [2], feature: 6, over: [3], marks: [10] })
+    expect(floorLayers(c, 'upright', true)).toEqual({ under: [2], feature: undefined, over: [3, 4, 5], marks: [10] })
   })
 
   it("wears a face's own tile where crawl gives one, else the wall's", () => {
@@ -115,5 +117,50 @@ describe('features and doors', () => {
       expect(tx).toBeGreaterThan(last)
       last = tx
     }
+  })
+})
+
+describe('what stands', () => {
+  const mon = (x: number, y: number, o: Partial<Scene['billboards'][number]> = {}) => ({ kind: 'monster', x, y, tile: 9, height: 1, ...o }) as Scene['billboards'][number]
+
+  it('stands the billboards but the player and what shares its cell, a cloud bare, a missile lifted, what lies unshadowed', () => {
+    const s = scene([cell(0, 0, { glyph: 'g', colour: 4 }), cell(1, 0), cell(2, 0), cell(3, 0), cell(4, 0)])
+    s.playerOnLevel = true
+    s.player = { x: 4, y: 0 }
+    s.billboards.push(
+      mon(0, 0, { ref: { id: 7, name: 'goblin' }, statusIcons: [{ tile: 20, ox: 1, oy: 2, at: 'top' }] }),
+      { kind: 'cloud', x: 1, y: 0, tile: 11, height: 1 } as Scene['billboards'][number],
+      { kind: 'projectile', x: 2, y: 0, tile: 12, height: 0.5 } as Scene['billboards'][number],
+      { kind: 'item', x: 3, y: 0, tile: 13, height: 0.6, lying: true } as Scene['billboards'][number],
+      mon(4, 0),
+      { kind: 'player', x: 4, y: 0, tile: 1, height: 0.7 } as Scene['billboards'][number],
+    )
+    const [g, cloud, missile, corpse, ...rest] = crowd(s)
+    expect(rest).toEqual([])
+    expect(g).toMatchObject({ kind: 'monster', moverId: 7, name: 'goblin', glyph: 'g', colour: 4, ghost: true, shadow: 1 })
+    expect(g.layers).toEqual([{ tile: 9, ox: 0, oy: 0 }, { tile: 20, ox: 1, oy: 2, badge: true, top: true }])
+    expect(cloud).toMatchObject({ alpha: CLOUD_ALPHA, ghost: false })
+    expect(cloud.shadow).toBeUndefined()
+    expect(missile.lift).toBe(PROJECTILE_LIFT)
+    expect(corpse.lie).toBe(true)
+    expect(corpse.shadow).toBeUndefined()
+  })
+
+  it("stands the level's features by their stance, stairs lower", () => {
+    const s = scene([cell(0, 0, { featureTile: 4, stance: 'upright', feature: { type: 'stairs', dir: 'down' } }), cell(1, 0, { featureTile: 5, stance: 'upright' }), cell(2, 0, { featureTile: 6, stance: 'decal' })])
+    expect(fixtures(s, new Map(), new Set()).map((f) => [f.x, f.stance, f.height])).toEqual([[0, 'upright', STAIR_H], [1, 'upright', FIXTURE_H]])
+  })
+})
+
+describe('the cursor', () => {
+  it("covers the diamond band round the cell's middle, its colour by its mode", () => {
+    expect(ringCover(0.5 + 0.4, 0.5, 1e-6)).toBeCloseTo(1)
+    expect(ringCover(0.5 + 0.2, 0.5 + 0.2, 1e-6)).toBeCloseTo(1)
+    expect(ringCover(0.5, 0.5, 1e-6)).toBe(0)
+    expect(ringCover(0.5 + 0.3, 0.5 + 0.3, 1e-6)).toBe(0)
+    // a pixel wider than the band still covers some of it
+    expect(ringCover(0.5 + 0.4, 0.5, 0.5)).toBeGreaterThan(0)
+    expect(cursorColour({ mode: 'map' })).toBe(0xffffff)
+    expect(cursorColour({ mode: 'target' })).toBe(0xff8800)
   })
 })
