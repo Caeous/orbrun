@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { RenderTerm, linearAtlas, type Pixels } from '../src/index.js'
+import { RenderTerm, linearAtlas, spriteAtlas, type Pixels } from '../src/index.js'
 import { REST_PITCH, cellKey, emptyScene, type Billboard, type Camera, type Scene, type SceneCell, type TileRect, type TileSource } from '@orbrun/scene'
 
 const RECT: TileRect = { atlas: 'main', sx: 0, sy: 0, w: 32, h: 32, ox: 0, oy: 0, cell: 32 }
@@ -18,37 +18,46 @@ function corridor(): Scene {
   const cell = (x: number, y: number, wall: boolean): SceneCell => ({ x, y, kind: wall ? 'wall' : 'floor', visibility: 'visible', occluder: wall, floorTile: 1, wallTile: 2 })
   for (let y = -40; y <= 1; y++) for (let x = -2; x <= 2; x++) s.cells.set(cellKey(x, y), cell(x, y, Math.abs(x) === 2))
   s.bounds = { left: -2, top: -40, right: 2, bottom: 1 }
-  const c = s.cells.get(cellKey(0, -25))!
-  c.glyph = 'o'
-  c.colour = 4
   s.billboards = [{ x: 0, y: -25, tile: 3, kind: 'monster', height: 1 } as Billboard]
   return s
 }
 
 function renderer(linear = false): RenderTerm {
   const r = new RenderTerm()
-  const shared = linearAtlas(PIXELS)
-  r.setTiles(TILES, () => PIXELS, linear ? () => shared : undefined)
+  const level = linearAtlas(PIXELS), sprite = spriteAtlas(PIXELS)
+  r.setTiles(TILES, () => PIXELS, linear ? (_name, isSprite) => (isSprite ? sprite : level) : undefined)
   r.setScene(corridor())
   return r
 }
 
 describe('bands', () => {
-  it('draws a frame band by band as it draws it whole, and names the same things', () => {
+  it('draws a frame band by band as it draws it whole', () => {
     const whole = new Uint8Array(W * H * 3)
-    const named = renderer().render(CAM, W, H, whole, 2, 8)
+    renderer().render(CAM, W, H, whole, 2)
     const banded = new Uint8Array(W * H * 3)
     const r = renderer()
-    const bandNamed = [0, 13, 40, 41, 77, H].slice(1).flatMap((to, i, ends) => r.render(CAM, W, H, banded, 2, 8, [i ? ends[i - 1] : 0, to]))
+    const ends = [0, 13, 40, 41, 77, H]
+    for (let i = 1; i < ends.length; i++) r.render(CAM, W, H, banded, 2, [ends[i - 1], ends[i]])
     expect(Buffer.compare(Buffer.from(banded), Buffer.from(whole))).toBe(0)
-    expect(bandNamed).toEqual(named)
   })
 
   it('leaves the rows outside its band as they were', () => {
     const out = new Uint8Array(W * H * 3).fill(7)
-    renderer().render(CAM, W, H, out, 2, 0, [30, 50])
+    renderer().render(CAM, W, H, out, 2, [30, 50])
     expect(out.subarray(0, 30 * W * 3).every((v) => v === 7)).toBe(true)
     expect(out.subarray(50 * W * 3).every((v) => v === 7)).toBe(true)
+  })
+
+  it('draws a smaller frame after a bigger one, and turned, as a renderer drawing it first', () => {
+    // the view goes between its sizes moving and at rest, and the renderer keeps what it worked out for the last view
+    const turned = { ...CAM, yaw: 0.7 }
+    const r = renderer()
+    r.render(CAM, W, H, new Uint8Array(W * H * 3), 2)
+    const after = new Uint8Array((W / 2) * (H / 2) * 3)
+    r.render(turned, W / 2, H / 2, after, 2)
+    const fresh = new Uint8Array((W / 2) * (H / 2) * 3)
+    renderer().render(turned, W / 2, H / 2, fresh, 2)
+    expect(Buffer.compare(Buffer.from(after), Buffer.from(fresh))).toBe(0)
   })
 
   it('draws from an atlas made in linear light already as from its pixels', () => {

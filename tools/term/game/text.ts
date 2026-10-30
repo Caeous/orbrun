@@ -28,7 +28,7 @@ interface Span {
 }
 export type Line = Span[]
 
-const lineLength = (l: Line) => l.reduce((n, s) => n + s.text.length, 0)
+export const lineLength = (l: Line) => l.reduce((n, s) => n + s.text.length, 0)
 
 /** `l` cut to `width` characters */
 export function cut(l: Line, width: number): Line {
@@ -43,16 +43,17 @@ export function cut(l: Line, width: number): Line {
   return out
 }
 
-/** `l` wrapped to `width`, at spaces where it can be */
-function wrap(l: Line, width: number): Line[] {
+/** `l` wrapped to `width`, at spaces where it can be, each line after the first hung `hang` in */
+function wrap(l: Line, width: number, hang = 0): Line[] {
   if (width <= 0) return [l]
+  hang = Math.min(hang, Math.floor(width / 2))
   const out: Line[] = []
   let cur: Line = []
   let n = 0
   const flush = () => {
     out.push(cur)
-    cur = []
-    n = 0
+    cur = hang ? [{ text: ' '.repeat(hang) }] : []
+    n = hang
   }
   for (const s of l) {
     let text = s.text
@@ -77,7 +78,7 @@ function wrap(l: Line, width: number): Line[] {
 
 const BLOCK = new Set(['DIV', 'P', 'UL', 'OL', 'LI', 'NAV', 'SECTION', 'HEADER', 'FOOTER', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'PRE', 'TABLE', 'TR', 'FORM', 'DL', 'DT', 'DD', 'BLOCKQUOTE', 'HR', 'MAIN', 'ARTICLE', 'ASIDE', 'FIELDSET', 'DETAILS', 'SUMMARY'])
 const SKIP = new Set(['CANVAS', 'IMG', 'SVG', 'SCRIPT', 'STYLE', 'TEMPLATE', 'VIDEO', 'AUDIO'])
-const LIT = ['focused', 'selected']
+const LIT = ['focused', 'selected', 'hovered']
 
 function shown(el: Element): boolean {
   const h = el as HTMLElement
@@ -93,21 +94,29 @@ function colours(el: Element, fg?: RGB, bg?: RGB): { fg?: RGB; bg?: RGB } {
     const m = /^(fg|bg)(\d+)$/.exec(c)
     if (m && +m[2] < 16) {
       if (m[1] === 'fg') fg = PALETTE[+m[2]]
-      else bg = PALETTE[+m[2]]
+      // crawl's black ground is the console's own: whatever the box behind has
+      else bg = +m[2] ? PALETTE[+m[2]] : undefined
     }
   }
   return { fg, bg }
 }
 
 function isLit(el: Element) {
-  return LIT.some((c) => el.classList.contains(c)) || el.getAttribute('aria-selected') === 'true' || (el.getAttribute('role') === 'tab' && el.classList.contains('current'))
+  // a tab is lit where it is the current one: crawl's (role tab) and the pack's (a button)
+  const tab = el.getAttribute('role') === 'tab' || el.tagName === 'BUTTON'
+  return LIT.some((c) => el.classList.contains(c)) || el.getAttribute('aria-selected') === 'true' || (tab && el.classList.contains('current'))
 }
 
-/** grid placement from inline style, 1-based; 0 where not said */
+/** grid placement from inline style (`grid-row`, `grid-column`, or `grid-area: row / column`), 1-based; 0 where not said */
 function cellOf(el: Element): { row: number; col: number } {
   const st = (el as HTMLElement).style
+  const area = /grid-area:\s*(\d+)\s*\/\s*(\d+)/.exec(el.getAttribute('style') ?? '')
+  if (area) return { row: +area[1], col: +area[2] }
   return { row: parseInt(st?.gridRow || '') || 0, col: parseInt(st?.gridColumn || '') || 0 }
 }
+
+/** a custom property of the inline style (`--cols`), as written */
+const customProp = (el: Element, name: string) => new RegExp(`${name}:\\s*([^;]*)`).exec(el.getAttribute('style') ?? '')?.[1].trim()
 
 function gridColumns(el: Element): number {
   const t = (el as HTMLElement).style?.gridTemplateColumns || ''
@@ -119,11 +128,19 @@ function gridColumns(el: Element): number {
 /** The lines `el` lays out to at `width`, and which of them are lit (the focused item's). */
 export function layout(el: Element, width: number): { lines: Line[]; lit: number[] } {
   const lines: Line[] = []
+  /** how far in each line's wrapped rest hangs (a `.hang`'s `--hang`) */
+  const hangs: number[] = []
+  let hang = 0
   let cur: Line = []
   const flush = (force = false) => {
-    if (cur.length || force) lines.push(cur)
+    if (cur.length || force) {
+      lines.push(cur)
+      hangs.push(hang)
+    }
     cur = []
   }
+  /** lines laid out whole already, kept from wrapping again */
+  const done = new Set<Line>()
   const walk = (node: Node, fg: RGB | undefined, bg: RGB | undefined, lit: boolean) => {
     if (node.nodeType === 3) {
       const parts = (node.nodeValue ?? '').split('\n')
@@ -139,12 +156,47 @@ export function layout(el: Element, width: number): { lines: Line[]; lit: number
     const c = colours(el, fg, bg)
     const l = lit || isLit(el)
     if (el.tagName === 'BR') return flush(true)
+    // a key named on a prompt's chip, as crawl's console names one
+    if (el.tagName === 'KBD') {
+      cur.push({ text: `[${el.textContent ?? ''}]`, fg: c.fg ?? PALETTE[15], bg: c.bg, lit: l }, { text: ' ' })
+      return
+    }
     if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
       const v = (el as HTMLInputElement).value ?? ''
       cur.push({ text: v + '_', fg: c.fg ?? PALETTE[15], bg: [40, 40, 56], lit: l })
       return
     }
-    const block = BLOCK.has(el.tagName)
+    if (el.classList.contains('ctable')) {
+      // console.ts's table of crawl's console text: its columns crawl's widths apart (`--cols`), each cell on the row and
+      // column it came from, the last column taking what is left and wrapping in itself, under its own start
+      flush()
+      const widths = (customProp(el, '--cols') ?? '').split(/\s+/).map((w) => parseInt(w)).filter((w) => w > 0)
+      const at = widths.reduce<number[]>((a, w) => [...a, a[a.length - 1] + w], [0])
+      const cells = (Array.from(el.children) as Element[]).filter(shown).map((k) => ({ ...cellOf(k), line: layout(k, width).lines.flat(), hang: parseInt(customProp(k, '--hang') ?? '') || 0, lit: l || isLit(k) }))
+      for (const r of [...new Set(cells.map((x) => x.row))].sort((a, b) => a - b)) {
+        let line: Line = []
+        let n = 0
+        for (const x of cells.filter((y) => y.row === r).sort((a, b) => a.col - b.col)) {
+          const from = at[Math.min(x.col - 1, widths.length)]
+          if (from > n) line.push({ text: ' '.repeat(from - n), bg: c.bg })
+          n = Math.max(n, from)
+          const last = x.col > widths.length
+          const content = last ? x.line : cut(x.line, Math.max(0, at[x.col] - n))
+          if (last) {
+            const rows = wrap(content.map((s) => ({ ...s, lit: s.lit || x.lit })), Math.max(8, width - n), x.hang)
+            line.push(...rows[0])
+            for (const more of rows.slice(1)) {
+              lines.push(line), hangs.push(0), done.add(line)
+              line = [{ text: ' '.repeat(n) }, ...more]
+            }
+          } else line.push(...content.map((s) => ({ ...s, lit: s.lit || x.lit })))
+          n = lineLength(line)
+        }
+        lines.push(line), hangs.push(0), done.add(line)
+      }
+      return
+    }
+    const block = BLOCK.has(el.tagName) || el.classList.contains('hang')
     const cols = gridColumns(el)
     const kids = Array.from(el.childNodes)
     const gridKids = kids.filter((k) => k.nodeType === 1 && shown(k as Element) && !SKIP.has((k as Element).tagName)) as Element[]
@@ -181,14 +233,18 @@ export function layout(el: Element, width: number): { lines: Line[]; lit: number
       return
     }
     if (block) flush()
+    const hung = hang
+    const own = parseInt(customProp(el, '--hang') ?? '')
+    if (own > 0) hang = own
     for (const k of kids) walk(k, c.fg, c.bg, l)
     if (block) flush()
-    else if (el.tagName === 'BUTTON' || el.classList.contains('button')) cur.push({ text: '  ' })
+    else if (el.tagName === 'BUTTON' || el.classList.contains('button') || el.classList.contains('chip')) cur.push({ text: '  ' })
+    hang = hung
   }
   walk(el, undefined, undefined, false)
   flush()
   const out: Line[] = []
-  for (const l of lines) out.push(...wrap(l, width))
+  lines.forEach((l, i) => out.push(...(done.has(l) ? [l] : wrap(l, width, hangs[i]))))
   const lit: number[] = []
   out.forEach((l, i) => {
     if (l.some((s) => s.lit)) lit.push(i)
