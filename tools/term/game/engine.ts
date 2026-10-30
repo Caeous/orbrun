@@ -9,12 +9,26 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
 import { channelOf, type EngineInfo, type EngineLauncher, type OfflineChannel } from '@orbrun/offline'
+import { ConfigError } from './config'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 export const DIST = path.resolve(here, '../../../engine/dist')
 
 export function builtChannels(): OfflineChannel[] {
   return ['stable', 'trunk'].filter((c) => fs.existsSync(path.join(DIST, c, 'engine.json'))).map((c) => channelOf(JSON.parse(fs.readFileSync(path.join(DIST, c, 'engine.json'), 'utf8')) as EngineInfo))
+}
+
+/**
+ * The built crawl that `want` names (config.ts `dcss`): `stable`, the newest
+ * release built; `trunk`; or a release (`0.34`). A ConfigError naming those
+ * there are, where it is not built.
+ */
+export function pickChannel(channels: OfflineChannel[], want: string): OfflineChannel {
+  if (!channels.length) throw new ConfigError('no crawl is built: run engine/build.sh first')
+  const releases = channels.filter((c) => c.id !== 'offline-trunk')
+  const ch = want === 'stable' ? releases[releases.length - 1] : channels.find((c) => c.id === `offline-${want}`)
+  if (!ch) throw new ConfigError(`dcss ${want} is not built; there are: ${['stable', ...channels.map((c) => c.id.replace(/^offline-/, ''))].join(', ')}`)
+  return ch
 }
 
 const modules = new Map<string, Promise<WebAssembly.Module>>()

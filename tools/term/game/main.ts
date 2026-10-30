@@ -1,21 +1,38 @@
 /**
- * Play Orbrun in this terminal, no browser: `npm run term:play [-- --name Ada --trunk]`.
- * Ctrl-\ saves and quits. Needs Node 24 or later (crawl's WebAssembly uses
- * JSPI, `WebAssembly.Suspending`).
+ * Play Orbrun in this terminal, no browser: `npm run term [-- --name Ada --dcss trunk]`,
+ * `--help` for the rest; options also come from ~/.config/orbrun/config.toml
+ * (config.ts). Ctrl-\ saves and quits. Needs Node 24 or later (crawl's
+ * WebAssembly uses JSPI, `WebAssembly.Suspending`).
  */
 import os from 'node:os'
 import path from 'node:path'
 import { runGame } from './client'
+import { ConfigError, USAGE, resolveConfig, settingsList } from './config'
+import { builtChannels, pickChannel } from './engine'
 
 if (typeof (WebAssembly as unknown as { Suspending?: unknown }).Suspending !== 'function') {
   console.error(`Orbrun's engine needs Node 24 or later (WebAssembly JSPI); this is ${process.version}.`)
   process.exit(1)
 }
 
-const args = process.argv.slice(2)
-const flag = (name: string) => {
-  const i = args.indexOf(name)
-  return i >= 0 ? args[i + 1] : undefined
+// what to play and how: told wrong, say so and stop, before the screen is taken
+let config: ReturnType<typeof resolveConfig>
+let channel: ReturnType<typeof pickChannel>
+try {
+  config = resolveConfig(process.argv.slice(2))
+  if (config.help === 'usage') {
+    console.log(USAGE)
+    process.exit(0)
+  }
+  if (config.help === 'settings') {
+    console.log(`The game's settings, for --set KEY=VALUE or [settings] in ${config.file ?? '~/.config/orbrun/config.toml'}:\n\n${settingsList()}`)
+    process.exit(0)
+  }
+  channel = pickChannel(builtChannels(), config.dcss)
+} catch (e) {
+  if (!(e instanceof ConfigError)) throw e
+  console.error(`orbrun: ${e.message}`)
+  process.exit(2)
 }
 const out = process.stdout
 const input = process.stdin
@@ -40,10 +57,5 @@ await runGame(
       process.exit(code)
     },
   },
-  {
-    stateDir: path.join(os.homedir(), '.cache', 'orbrun-term'),
-    name: flag('--name') ?? (os.userInfo().username.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 20) || 'Player'),
-    channel: args.includes('--trunk') ? 'trunk' : '0.34',
-    fps: Number(process.env.FPS || 120),
-  },
+  { ...config, stateDir: path.join(os.homedir(), '.cache', 'orbrun-term'), channel },
 )

@@ -5,11 +5,19 @@
  *  - Gamedata is read from disk: `fetch` of a path (not a URL) reads the file,
  *    and `createImageBitmap` decodes a PNG to an `RgbaBitmap` that carries its
  *    pixels, which render-term draws from.
- *  - `requestAnimationFrame` runs on a timer, so the game's loop runs.
+ *  - `requestAnimationFrame` runs when the terminal draws (`frame`, which the
+ *    client calls at the start of each of its frames), so each frame shows
+ *    the game as its loop has just moved it, as a browser runs the page's
+ *    animation frames just before it paints; on a timer until the terminal
+ *    draws, and whenever it stops.
  *  - A canvas's 2D context draws nothing (no canvas here), as the e2e harness
  *    has it; the terminal draws the view and the minimap itself.
  *  - localStorage (settings, the offline player, the saved view) is kept in a
  *    JSON file, so it lasts from one run to the next.
+ *  - `reducedMotion`: the player prefers reduced motion
+ *    (`prefers-reduced-motion: reduce`), as the app reads it: turns and steps
+ *    land at once, and nothing glides or swings, so a move is one frame of
+ *    the view sent rather than a stream of them.
  *
  * Import this before anything of the app's.
  */
@@ -30,7 +38,7 @@ export function isRgbaBitmap(x: unknown): x is RgbaBitmap {
   return !!x && typeof x === 'object' && (x as RgbaBitmap).rgba instanceof Uint8Array
 }
 
-export function installPage(stateDir: string, frameMs = 8) {
+export function installPage(stateDir: string, { reducedMotion = false, frameMs = 8 } = {}) {
   const window = new Window({ url: 'http://localhost/', width: 1280, height: 800 })
   const g = globalThis as Record<string, unknown>
   // everything of the window's the global scope lacks, as vitest's happy-dom environment does it
@@ -53,6 +61,14 @@ export function installPage(stateDir: string, frameMs = 8) {
   g.document = window.document
   g.navigator ??= window.navigator
 
+  // reduced motion, where asked for
+  if (reducedMotion) {
+    const matchMedia = window.matchMedia.bind(window)
+    const reduce = (q: string) => /prefers-reduced-motion\s*:\s*reduce/.test(q)
+    window.matchMedia = (q: string) => (reduce(q) ? Object.defineProperty(matchMedia(q), 'matches', { value: true }) : matchMedia(q))
+    g.matchMedia = window.matchMedia
+  }
+
   // localStorage lasts across runs
   const storeFile = path.join(stateDir, 'storage.json')
   try {
@@ -71,14 +87,24 @@ export function installPage(stateDir: string, frameMs = 8) {
     fs.mkdirSync(stateDir, { recursive: true })
     fs.writeFileSync(storeFile, JSON.stringify(out))
   }
-  const setItem = window.localStorage.setItem.bind(window.localStorage)
-  const removeItem = window.localStorage.removeItem.bind(window.localStorage)
   const later = () => {
     if (!storeTimer) storeTimer = setTimeout(() => ((storeTimer = null), persist()), 200)
   }
-  window.localStorage.setItem = (k: string, v: string) => (setItem(k, v), later())
-  window.localStorage.removeItem = (k: string) => (removeItem(k), later())
-  g.localStorage = window.localStorage
+  // happy-dom's storage takes no methods of ours (it keeps what is set on it as items), so the page is given one
+  // that saves each change
+  const store = window.localStorage
+  const saving: Storage = {
+    get length() {
+      return store.length
+    },
+    key: (i) => store.key(i),
+    getItem: (k) => store.getItem(k),
+    setItem: (k, v) => (store.setItem(k, v), later()),
+    removeItem: (k) => (store.removeItem(k), later()),
+    clear: () => (store.clear(), later()),
+  }
+  Object.defineProperty(window, 'localStorage', { value: saving, configurable: true })
+  g.localStorage = saving
 
   // gamedata from disk
   const netFetch = globalThis.fetch.bind(globalThis)
@@ -96,18 +122,34 @@ export function installPage(stateDir: string, frameMs = 8) {
     return { width: info.width, height: info.height, rgba: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), close() {} }
   }
 
-  // the game's loop on a timer
+  // the game's loop in step with the terminal's frames: the callbacks asked for, run together when it draws
   let next = 1
-  const timers = new Map<number, NodeJS.Timeout>()
+  const waiting = new Map<number, (t: number) => void>()
+  /** when the terminal last drew, and the timer that runs the callbacks where it has not for a while */
+  let drawnAt = -Infinity
+  let fallback: NodeJS.Timeout | null = null
+  const frame = (now = performance.now()) => {
+    if (fallback) clearTimeout(fallback)
+    fallback = null
+    // those asked for during this frame wait for the next, as a browser's do
+    const due = [...waiting]
+    waiting.clear()
+    for (const [, cb] of due) cb(now)
+  }
   g.requestAnimationFrame = (cb: (t: number) => void) => {
     const id = next++
-    timers.set(id, setTimeout(() => (timers.delete(id), cb(performance.now())), frameMs))
+    waiting.set(id, cb)
+    // until the terminal draws, and once it has stopped, on a timer
+    fallback ??= setTimeout(
+      () => {
+        fallback = null
+        frame()
+      },
+      performance.now() - drawnAt < FALLBACK_MS ? FALLBACK_MS : frameMs,
+    )
     return id
   }
-  g.cancelAnimationFrame = (id: number) => {
-    clearTimeout(timers.get(id))
-    timers.delete(id)
-  }
+  g.cancelAnimationFrame = (id: number) => void waiting.delete(id)
   window.requestAnimationFrame = g.requestAnimationFrame as typeof window.requestAnimationFrame
   window.cancelAnimationFrame = g.cancelAnimationFrame as typeof window.cancelAnimationFrame
 
@@ -118,8 +160,19 @@ export function installPage(stateDir: string, frameMs = 8) {
     if (!c) contexts.set(this, (c = nullContext(this)))
     return c
   }
-  return { window, persist }
+  return {
+    window,
+    persist,
+    /** A frame of the terminal's: the page's animation frames run now, before it draws. */
+    frame: () => {
+      drawnAt = performance.now()
+      frame(drawnAt)
+    },
+  }
 }
+
+/** How long after the terminal last drew the page's animation frames wait for it before they run on their own, ms. */
+const FALLBACK_MS = 100
 
 /** A canvas 2D context that draws nothing and answers what is read back with zeros (e2e client.ts). */
 function nullContext(canvas: object): unknown {

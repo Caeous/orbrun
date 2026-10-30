@@ -1,96 +1,36 @@
 /**
- * The view drawn as a terminal's cells, on several threads: each worker
- * (raster-worker.ts) a RenderTerm of its own drawing a band of the frame's
- * rows, MOSAIC_SX x MOSAIC_SY samples a cell, then encoding those rows of
- * cells as mosaics (frame.mjs `mosaicEncoder`), into memory they all share.
- * The scene goes to each as it changes; the tiles are asked for as wanted
- * and answered here, an atlas made once, in linear light, for all of them.
- * With no threads (ORBRUN_TERM_THREADS=0), the same on this one.
+ * The view drawn as a picture, on several threads: each worker
+ * (raster-worker.ts) a RenderTerm of its own drawing bands of the frame's
+ * rows into memory they all share. The scene goes to each as it changes; the
+ * tiles are asked for as wanted and answered here, an atlas made once, in
+ * linear light (and once with its sprites' ink peeled), for all of them.
+ * What moves (render-3d's `Movers`, the swing's lift) is kept here and each
+ * frame's handed to them, so every band draws it alike. With no threads
+ * (ORBRUN_TERM_THREADS=0), the same on this one.
  */
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serialize } from 'node:v8'
 import { MessageChannel, Worker } from 'node:worker_threads'
-import { RenderTerm, linearAtlas, type Atlas, type Pixels, type RenderTermOptions, type TermGlyph } from '@orbrun/render-term'
+import { RenderTerm, linearAtlas, spriteAtlas, type Atlas, type Motion, type Pixels, type RenderTermOptions } from '@orbrun/render-term'
+import { Movers, monsterId } from '@orbrun/render-3d/motion'
 import type { Camera, Scene, SceneCursor, TileSource, Viewmodel } from '@orbrun/scene'
-// @ts-expect-error: plain JS, shared with the browser bridge
-import { MOSAICS, MOSAIC_SX, MOSAIC_SY, mosaicEncoder } from './frame.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 /** how many bands of rows a frame is cut into, for each thread */
-const BANDS_PER_THREAD = Number(process.env.ORBRUN_TERM_BANDS) || 3
+const BANDS_PER_THREAD = Number(process.env.ORBRUN_TERM_BANDS) || 4
+/** the swing (render-3d's VM_LIFT_S): how long the weapon's lift lasts, seconds */
+const LIFT_S = 0.22
 
-/** the cells a frame comes to: a character and two colours each */
-export interface Cells {
-  char: string[]
-  fg: Uint8Array
-  bg: Uint8Array
-}
-
-/** How a frame is drawn: each cell `cellAspect` times as tall as wide, in the glyphs of mosaic `kind` (frame.mjs `MOSAICS`). */
+/** How a frame is drawn. */
 export interface DrawOptions {
-  cellAspect: number
-  /** a monster or an item under this many samples tall is named by its glyph (render-term's `glyphBelow`) */
-  glyphBelow: number
-  kind: string
-  /** where a font's blocks stop short of the cell (frame.mjs `mosaicGlyphs`) */
-  box?: Box
-  /** what a colour escape costs, for a terminal slow to change colour (frame.mjs `mosaicEncoder`) */
-  rate?: number
+  /** how many times taller than wide a pixel is */
+  pixelAspect: number
 }
 
-/**
- * The terminals known to draw octants themselves, by TERM_PROGRAM, TERM or
- * XTVERSION name. Showing kitty graphics says nothing of it: iTerm2 shows
- * them and draws octants as missing glyphs.
- */
-const DRAWS_OCTANTS = /ghostty|rex|kitty/i
-/** the terminals that draw sextants and wedges themselves but not octants, by TERM_PROGRAM or XTVERSION name */
-const DRAWS_SEXTANTS = /iterm/i
-/** How far short of a cell's top, right and bottom a font's blocks stop, as shares of the cell (frame.mjs `mosaicGlyphs`). */
-export interface Box {
-  top: number
-  right: number
-  bottom: number
-}
-const NO_BOX: Box = { top: 0, right: 0, bottom: 0 }
-/**
- * Terminal.app's blocks, from its own font (SF Mono), as measured from its
- * screen: unless ORBRUN_TERM_BOX ("top,right,bottom") says otherwise.
- */
-const APPLE_BOX: Box = { top: 0.16, right: 0.02, bottom: 0.03 }
-
-/**
- * What a colour escape costs each terminal, in squared error (frame.mjs
- * `mosaicEncoder`), as measured: Terminal.app takes about 10 µs for each
- * change of colour, whatever the bytes, so a frame of fine detail took it
- * 70 ms at 160x50 and takes 18 ms at this; iTerm2 gains less and has less to
- * give; the GPU terminals keep every colour.
- */
-const RATE = { apple: 10000, sextant: 2000, octant: 0, other: 2000 }
-
-/**
- * The glyphs the view is drawn in (frame.mjs `MOSAICS`) on the terminal
- * named `name` (its XTVERSION, as well as TERM_PROGRAM and TERM): everything
- * where it is known to draw octants (`DRAWS_OCTANTS`), all but those where
- * it draws sextants (`DRAWS_SEXTANTS`), Terminal.app's font's blocks with
- * the box they stand in, else the blocks and quadrants every terminal with a
- * decent font has; and what a colour costs it (`RATE`).
- * ORBRUN_TERM_BLOCKS and ORBRUN_TERM_RATE say otherwise.
- */
-export function mosaicFor(name = ''): { kind: string; box: Box; rate: number } {
-  const said = process.env.ORBRUN_TERM_BLOCKS
-  const [top, right, bottom] = (process.env.ORBRUN_TERM_BOX ?? '').split(',').map(Number)
-  const box = Number.isFinite(top) && process.env.ORBRUN_TERM_BOX ? { top, right: right || 0, bottom: bottom || 0 } : APPLE_BOX
-  const all = `${process.env.TERM_PROGRAM ?? ''} ${process.env.TERM ?? ''} ${name}`
-  const apple = process.env.TERM_PROGRAM === 'Apple_Terminal'
-  const known = DRAWS_OCTANTS.test(all) ? 'octant' : DRAWS_SEXTANTS.test(all) ? 'sextant' : apple ? 'block' : 'quadrant'
-  const kind = said && MOSAICS.includes(said) ? said : known
-  const rateSaid = process.env.ORBRUN_TERM_RATE
-  const rate = rateSaid ? Math.max(0, Number(rateSaid) || 0) : apple ? RATE.apple : known === 'octant' ? RATE.octant : known === 'sextant' ? RATE.sextant : RATE.other
-  return { kind, box: kind === 'block' ? box : NO_BOX, rate }
-}
+/** render-term's options, and whether things move (render-3d's `motion`). */
+export type RasterOptions = RenderTermOptions & { motion?: boolean }
 
 /** ORBRUN_TERM_THREADS, else all the cores but two, up to eight */
 export function defaultThreads(): number {
@@ -111,8 +51,8 @@ function workerCode(): Promise<string> {
 
 interface Thread {
   worker: Worker
-  /** the frames asked of it, answered with the glyphs of its bands, or null when it failed */
-  pending: Map<number, (glyphs: TermGlyph[] | null) => void>
+  /** the frames asked of it, answered true when its bands are drawn, or false when it failed */
+  pending: Map<number, (ok: boolean) => void>
 }
 
 export class TermRaster {
@@ -125,7 +65,6 @@ export class TermRaster {
   private ready: Promise<void>
   /** on this thread: with no workers, or when they failed */
   private local: RenderTerm | null = null
-  private encoders = new Map<string, ReturnType<typeof mosaicEncoder>>()
   // what the view is drawn from, for a renderer made late (`goLocal`)
   private scene: Scene | null = null
   private cursor: SceneCursor | null = null
@@ -134,7 +73,14 @@ export class TermRaster {
   private sent: { scene: Scene | null; revision: number; layout: number } = { scene: null, revision: -1, layout: -1 }
   private frameId = 0
   private next = new Int32Array(new SharedArrayBuffer(4))
-  private shared = { size: '', px: new Uint8Array(0), wt: new Uint8Array(0), char: new Uint32Array(0), fg: new Uint8Array(0), bg: new Uint8Array(0) }
+  /** the memory the threads draw the frame into: kept from frame to frame, made bigger only where a frame needs it */
+  private shared: Uint8Array = new Uint8Array(0)
+  // what moves
+  private motionOn = true
+  private movers = new Movers()
+  private motionRevision = -1
+  /** when the swing began, seconds; NaN at rest */
+  private liftAt = NaN
 
   constructor(threads = defaultThreads()) {
     if (threads <= 0) {
@@ -159,19 +105,19 @@ export class TermRaster {
     const worker = new Worker(code, { eval: true, workerData: { port: port1, flag }, transferList: [port1] })
     const t: Thread = { worker, pending: new Map() }
     // the worker waits on its questions: the answer, then the flag that wakes it
-    port2.on('message', (q: { type: string; id?: number; layer?: string; name?: string }) => {
-      port2.postMessage(q.type === 'tile' ? this.tiles?.tile(q.id!, q.layer) : this.atlas(q.name!))
+    port2.on('message', (q: { type: string; id?: number; layer?: string; name?: string; sprite?: boolean }) => {
+      port2.postMessage(q.type === 'tile' ? this.tiles?.tile(q.id!, q.layer) : this.atlas(q.name!, !!q.sprite))
       Atomics.store(flag, 0, 1)
       Atomics.notify(flag, 0)
     })
-    worker.on('message', (m: { type: string; id: number; glyphs: TermGlyph[] }) => {
+    worker.on('message', (m: { type: string; id: number }) => {
       if (m.type !== 'done') return
-      t.pending.get(m.id)?.(m.glyphs)
+      t.pending.get(m.id)?.(true)
       t.pending.delete(m.id)
     })
     // a worker that fails takes the others with it: the view is drawn here from then on
     const fail = () => {
-      for (const th of this.threads) for (const done of th.pending.values()) done(null)
+      for (const th of this.threads) for (const done of th.pending.values()) done(false)
       if (!this.local) this.goLocal()
     }
     worker.on('error', fail)
@@ -190,18 +136,20 @@ export class TermRaster {
       void t.worker.terminate()
     }
     const r = (this.local = new RenderTerm(this.opts))
-    if (this.tiles) r.setTiles(this.tiles, this.pixels, (name) => this.atlas(name))
+    if (this.tiles) r.setTiles(this.tiles, this.pixels, (name, sprite) => this.atlas(name, sprite))
     if (this.scene) r.setScene(this.scene)
     r.setCursor(this.cursor)
     r.setViewmodel(this.viewmodel)
   }
 
-  private atlas(name: string): Atlas | null {
-    if (!this.atlases.has(name)) {
+  /** An atlas in linear light, as the level draws it, or peeled, as the sprites do (`sprite`): made once, for every thread. */
+  private atlas(name: string, sprite: boolean): Atlas | null {
+    const key = `${sprite ? 'sprite' : 'level'}|${name}`
+    if (!this.atlases.has(key)) {
       const px = this.pixels(name)
-      this.atlases.set(name, px ? linearAtlas(px) : null)
+      this.atlases.set(key, px ? (sprite ? spriteAtlas(px, this.tiles?.spriteRects?.(name)) : linearAtlas(px)) : null)
     }
-    return this.atlases.get(name)!
+    return this.atlases.get(key)!
   }
 
   /** a message to every worker, in order: now, or once they are there */
@@ -214,12 +162,13 @@ export class TermRaster {
     this.tiles = tiles
     this.pixels = pixels
     this.atlases.clear()
-    this.local?.setTiles(tiles, pixels, (name) => this.atlas(name))
+    this.local?.setTiles(tiles, pixels, (name, sprite) => this.atlas(name, sprite))
     this.post({ type: 'tiles' })
   }
   setScene(scene: Scene): void {
     this.scene = scene
     this.local?.setScene(scene)
+    this.track()
   }
   setCursor(cursor: SceneCursor | null): void {
     this.cursor = cursor
@@ -231,52 +180,89 @@ export class TermRaster {
     this.local?.setViewmodel(vm)
     this.post({ type: 'viewmodel', vm })
   }
-  setOptions(opts: RenderTermOptions): void {
+  setOptions({ motion, ...opts }: RasterOptions): void {
+    if (motion === false && this.motionOn) {
+      this.resetMotion()
+      this.liftAt = NaN
+    }
+    if (motion !== undefined) this.motionOn = motion
     this.opts = { ...this.opts, ...opts }
     this.local?.setOptions(opts)
     this.post({ type: 'options', opts })
   }
 
-  /** The view from `cam` as `cols` x `rows` cells, and the monsters and items to be named by their glyphs, in samples. */
-  async draw(cam: Camera, cols: number, rows: number, o: DrawOptions): Promise<{ cells: Cells; glyphs: TermGlyph[] }> {
-    await this.ready
-    const sx = MOSAIC_SX, sy = MOSAIC_SY
-    const width = cols * sx, height = rows * sy
-    // a sample `aspect` times as tall as wide
-    const aspect = (o.cellAspect * sx) / sy
-    const box = o.box ?? NO_BOX
-    const key = `${cols}x${rows}`
-    const sh = this.shared
-    if (sh.size !== key) {
-      const bytes = (n: number) => new Uint8Array(new SharedArrayBuffer(n))
-      Object.assign(sh, { size: key, px: bytes(width * height * 3), wt: bytes(width * height), char: new Uint32Array(new SharedArrayBuffer(cols * rows * 4)), fg: bytes(cols * rows * 3), bg: bytes(cols * rows * 3) })
+  // ---- what moves, as render-3d keeps it
+
+  /** The weapon lifts a touch for a swing. */
+  attack(): void {
+    if (this.motionOn) this.liftAt = performance.now() / 1000
+  }
+
+  /** Every monster forgotten, so none glides from where a level or the map left it. */
+  resetMotion(): void {
+    this.movers.clear()
+    this.motionRevision = -1
+  }
+
+  /** Whether something is still moving, so frames are still wanted. */
+  get animating(): boolean {
+    return !Number.isNaN(this.liftAt) || this.movers.active
+  }
+
+  /** the scene's monsters read against the last revision's, for their glides */
+  private track(now = performance.now() / 1000) {
+    const sc = this.scene
+    if (!sc || !this.motionOn || sc.revision === this.motionRevision) return
+    this.movers.track(sc.billboards, now)
+    this.motionRevision = sc.revision
+  }
+
+  /** What moves at `now`: each monster's glide off its cell, and the lift (render-3d's `liftEnvelope`). */
+  private motionAt(now: number): Motion {
+    this.track(now)
+    const offsets = new Map<number, { x: number; y: number }>()
+    if (this.motionOn && this.scene)
+      for (const b of this.scene.billboards) {
+        const id = b.kind === 'monster' ? monsterId(b) : undefined
+        const o = id === undefined ? null : this.movers.offset(id, now)
+        if (o) offsets.set(id!, o)
+      }
+    this.movers.landed(now)
+    let lift = 0
+    if (!Number.isNaN(this.liftAt)) {
+      const u = Math.max(0, now - this.liftAt) / LIFT_S
+      if (u >= 1) this.liftAt = NaN
+      else lift = u < 0.3 ? u / 0.3 : 1 - (u - 0.3) / 0.7
     }
+    return { offsets, lift }
+  }
+
+  /** The view from `cam`, `width` x `height` RGB, into memory the threads share (kept until the next frame). */
+  async draw(cam: Camera, width: number, height: number, o: DrawOptions): Promise<Uint8Array> {
+    await this.ready
+    const motion = this.motionAt(performance.now() / 1000)
+    if (this.shared.length < width * height * 3) this.shared = new Uint8Array(new SharedArrayBuffer(width * height * 3))
+    const px = this.shared.subarray(0, width * height * 3)
     if (!this.local) {
       this.sync()
       const id = ++this.frameId
       // more bands than threads, taken as each comes free
-      const count = Math.min(rows, this.threads.length * BANDS_PER_THREAD)
-      const bands = Array.from({ length: count + 1 }, (_, i) => Math.floor((rows * i) / count))
+      const count = Math.min(height, this.threads.length * BANDS_PER_THREAD)
+      const bands = Array.from({ length: count + 1 }, (_, i) => Math.floor((height * i) / count))
       Atomics.store(this.next, 0, 0)
       const got = await Promise.all(
         this.threads.map(
           (t) =>
-            new Promise<TermGlyph[] | null>((done) => {
+            new Promise<boolean>((done) => {
               t.pending.set(id, done)
-              t.worker.postMessage({ type: 'frame', id, cam, width, height, aspect, glyphBelow: o.glyphBelow, cols, bands, next: this.next, sx, sy, kind: o.kind, box, rate: o.rate ?? 0, px: sh.px, wt: sh.wt, char: sh.char, fg: sh.fg, bg: sh.bg })
+              t.worker.postMessage({ type: 'frame', id, cam, width, height, aspect: o.pixelAspect, motion, bands, next: this.next, px })
             }),
         ),
       )
-      if (got.every((g) => g)) {
-        const char = new Array<string>(cols * rows)
-        for (let i = 0; i < cols * rows; i++) char[i] = String.fromCodePoint(sh.char[i])
-        return { cells: { char, fg: sh.fg.slice(), bg: sh.bg.slice() }, glyphs: got.flat() as TermGlyph[] }
-      }
+      if (got.every((g) => g)) return px
     }
-    const glyphs = this.local!.render(cam, width, height, sh.px, aspect, o.glyphBelow, undefined, sh.wt)
-    const cells = this.encoder(o.kind, box, o.rate ?? 0)(sh.px, cols, rows, undefined, 0, rows, sh.char, sh.wt)
-    for (let i = 0; i < cols * rows; i++) sh.char[i] = cells.char[i].codePointAt(0)!
-    return { cells: { char: cells.char, fg: cells.fg, bg: cells.bg }, glyphs }
+    this.local!.render(cam, width, height, px, o.pixelAspect, undefined, motion)
+    return px
   }
 
   /** the scene to the workers, when it is another or has changed since */
@@ -288,13 +274,6 @@ export class TermRaster {
     const data = serialize(sc)
     this.post({ type: 'scene', fresh: sc !== s.scene, data })
     this.sent = { scene: sc, revision: sc.revision, layout: sc.layoutRevision }
-  }
-
-  private encoder(kind: string, box: Box, rate: number) {
-    const key = `${kind}|${box.top},${box.right},${box.bottom}|${rate}`
-    let e = this.encoders.get(key)
-    if (!e) this.encoders.set(key, (e = mosaicEncoder(kind, box, rate)))
-    return e
   }
 
   destroy(): void {

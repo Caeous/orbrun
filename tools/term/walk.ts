@@ -4,6 +4,12 @@
  * (apps/orbrun/public/room/places: lair-grove, abyss, zot-4, necropolis…).
  * Arrows (or WASD) step and turn, `b` spins the view twice to measure the
  * frame rate, `q` quits. FPS=<n> caps the frames a second (120 by default).
+ *
+ * The view is a kitty graphics image, as the game draws it (game/client.ts),
+ * a pixel a point of an 8x16 cell (ORBRUN_TERM_CELL_PX "w,h" for another),
+ * times ORBRUN_TERM_SCALE, ORBRUN_TERM_MOTION_SCALE (0.5) of each side while
+ * the view moves and whole once it stops, handed over as a temporary file (ORBRUN_TERM_FILES=0
+ * to send it compressed, as over SSH).
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -13,22 +19,27 @@ import type { Pixels } from '@orbrun/render-term'
 import { cellKey, REST_PITCH, type Camera, type Dir8 } from '@orbrun/scene'
 import { readScene, type PlaceFile } from '../../apps/orbrun/src/room/place-data'
 import { RoomTiles } from '../../apps/orbrun/src/room/tiles'
-// @ts-expect-error: plain JS, shared with the browser bridge
-import { GLYPH_CELLS, MOSAIC_SX, MOSAIC_SY, Screen, cellsWithGlyphs, cellsWithText, synced } from './frame.mjs'
-import { PALETTE } from './game/text'
-import { TermRaster, mosaicFor } from './raster'
+// @ts-expect-error: plain JS
+import { DELETE_IMAGES, kittyFile, kittyImage, kittyTempPath, synced } from './frame.mjs'
+import { TermRaster } from './raster'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const placesDir = path.resolve(here, '../../apps/orbrun/public/room/places')
 const placeId = process.argv[2] || 'lair-grove'
 const CAP = Number(process.env.FPS || 120)
-/** the glyphs the view is drawn in, as the game picks them (`mosaicFor`) */
-const MOSAIC = mosaicFor()
 /** how long a step and a 45° turn take, seconds */
 const STEP_S = 0.16
-/** how far a cell's colour may move before it is sent again, and how near the one before it it must be to be drawn in that one (frame.mjs `Screen`): too little to see */
-const REUSE = 2
 const TURN_S = 0.12
+const [CELL_W, CELL_H] = (process.env.ORBRUN_TERM_CELL_PX || '8,16').split(',').map(Number)
+const SCALE = Number(process.env.ORBRUN_TERM_SCALE) || 1
+const MOTION_SCALE = Number(process.env.ORBRUN_TERM_MOTION_SCALE) || 0.5
+/** the pixels a cell is drawn in: fewer while the view moves */
+const cellPixels = (moving: boolean) => {
+  const s = SCALE * (moving ? MOTION_SCALE : 1)
+  return { SX: Math.max(1, Math.round(CELL_W * s)), SY: Math.max(1, Math.round(CELL_H * s)) }
+}
+const FILES = process.env.ORBRUN_TERM_FILES !== '0'
+let fileCount = 0
 
 const file = JSON.parse(fs.readFileSync(path.join(placesDir, `${placeId}.json`), 'utf8')) as PlaceFile
 const { data, info } = await sharp(path.join(placesDir, `${placeId}.png`)).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
@@ -50,15 +61,13 @@ const out = process.stdout
 const input = process.stdin
 input.setRawMode?.(true)
 input.resume()
-out.write('\x1b[?1049h\x1b[?25l\x1b[2J')
+out.write('\x1b[?1049h\x1b[?25l\x1b[0m\x1b[2J')
 
 let cols = out.columns || 80
 let rows = out.rows || 24
-let screen = new Screen(cols, rows, REUSE, REUSE)
 out.on('resize', () => {
   cols = out.columns
   rows = out.rows
-  screen = new Screen(cols, rows, REUSE, REUSE)
   out.write('\x1b[0m\x1b[2J')
   wake()
 })
@@ -94,24 +103,23 @@ input.on('data', (d: Buffer) => {
   else if (s === '\x1b[C' || s === 'd') turn(1)
   else if (s === 'b') {
     spin = 4 * Math.PI
-    bench = { frames: 0, renderMs: 0, start: performance.now() }
+    bench = { frames: 0, renderMs: 0, sendMs: 0, kb: 0, start: performance.now() }
     wake()
   }
 })
 
 function quit() {
-  out.write('\x1b[0m\x1b[2J\x1b[?25h\x1b[?1049l')
+  out.write(DELETE_IMAGES + '\x1b[0m\x1b[2J\x1b[?25h\x1b[?1049l')
   if (lastBench) out.write(lastBench + '\n')
   process.exit(0)
 }
 
 // frames: drawn only while something moves, as fast as the cap allows
-let bench: { frames: number; renderMs: number; start: number } | null = null
+let bench: { frames: number; renderMs: number; sendMs: number; kb: number; start: number } | null = null
 let lastBench = ''
 let running = false
 let last = performance.now()
 let fpsWindow: number[] = []
-let renderMs = 0
 let sent = Promise.resolve()
 
 function wake() {
@@ -149,18 +157,27 @@ async function frame() {
     cam.yaw = Math.abs(dy) <= turnBy ? goalYaw : cam.yaw + Math.sign(dy) * turnBy
   }
 
+  // the view under the status line, in fewer pixels while it moves, whole on the frame it stops
+  const moving = cam.eyeX !== cam.x || cam.eyeY !== cam.y || cam.yaw !== goalYaw || spin > 0
+  const { SX, SY } = cellPixels(moving)
   const t0 = performance.now()
-  // in a cell twice as tall as it is wide
-  const at = { cols, rows }
-  const { cells, glyphs } = await r.draw(cam, at.cols, at.rows, { cellAspect: Number(process.env.ORBRUN_TERM_CELL_ASPECT) || 2, glyphBelow: GLYPH_CELLS * MOSAIC_SY, ...MOSAIC })
-  renderMs = performance.now() - t0
-  if (at.cols !== cols || at.rows !== rows) return void setTimeout(frame, 0)
-  const pic = cellsWithGlyphs(cells, glyphs, cols, rows, MOSAIC_SX, MOSAIC_SY, PALETTE)
+  const at = { cols, rows: rows - 1 }
+  const w = at.cols * SX, h = at.rows * SY
+  const px = await r.draw(cam, w, h, { pixelAspect: (CELL_H / CELL_W) * (SX / SY) })
+  const renderMs = performance.now() - t0
+  if (at.cols !== cols || at.rows !== rows - 1) return void setTimeout(frame, 0)
+  const t1 = performance.now()
+  let image: string
+  if (FILES) {
+    const file = kittyTempPath(fileCount++)
+    await fs.promises.writeFile(file, px.subarray(0, w * h * 3))
+    image = kittyFile(1, file, w, h, at.cols, at.rows, -1)
+  } else image = kittyImage(1, px, w, h, at.cols, at.rows, -1, 3)
+  const sendMs = performance.now() - t1
   fpsWindow.push(now)
   fpsWindow = fpsWindow.filter((t) => now - t < 1000)
-  const status = `${file.place}  ${MOSAIC.kind}  ${fpsWindow.length} fps  render ${renderMs.toFixed(1)} ms  ${cols}x${rows}  arrows walk and turn  b spins  q quits`
-  const text = [[0, 0, status.length, 230, 230, 230, [[0, status]]]]
-  const update = synced(screen.update(cellsWithText(pic, text, cols, rows)))
+  const status = `${file.place}  ${w}x${h}  ${fpsWindow.length} fps  render ${renderMs.toFixed(1)} ms  compress ${sendMs.toFixed(1)} ms  ${(image.length / 1024).toFixed(0)} KB  arrows walk and turn  b spins  q quits`
+  const update = synced(`\x1b[0m\x1b[2;1H${image}\x1b[1;1H\x1b[0m${status.slice(0, cols)}\x1b[K`)
   // after the frame before it, which the terminal may still be taking in while this one was drawn
   await sent
   sent = new Promise<void>((done) => out.write(update, () => done()))
@@ -168,13 +185,15 @@ async function frame() {
   if (bench) {
     bench.frames++
     bench.renderMs += renderMs
+    bench.sendMs += sendMs
+    bench.kb += image.length / 1024
     if (spin <= 0) {
       const secs = (performance.now() - bench.start) / 1000
-      lastBench = `spin at ${cols}x${rows}: ${(bench.frames / secs).toFixed(0)} fps on screen, render ${(bench.renderMs / bench.frames).toFixed(2)} ms a frame`
+      const n = bench.frames
+      lastBench = `spin at ${cols}x${rows} (${w}x${h} px): ${(n / secs).toFixed(0)} fps on screen, render ${(bench.renderMs / n).toFixed(2)} ms, compress ${(bench.sendMs / n).toFixed(2)} ms, ${(bench.kb / n).toFixed(0)} KB a frame`
       bench = null
     }
   }
-  const moving = cam.eyeX !== cam.x || cam.eyeY !== cam.y || cam.yaw !== goalYaw || spin > 0
   if (!moving) {
     running = false
     return
