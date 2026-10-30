@@ -3,6 +3,7 @@ import { emptyScene } from '@orbrun/scene'
 import { initialState, MouseMode } from '@orbrun/webtiles'
 import { CameraController } from '../src/camera'
 import { GameScreen } from '../src/game'
+import { Pilot, type PilotHooks } from '../src/pilot'
 import { OWN_STEP_WINDOW_MS, Runner, type RunnerHooks } from '../src/runner'
 import type { Session } from '../src/session'
 
@@ -20,11 +21,14 @@ function harness() {
     context: () => ({ mode: 'command' }), now: () => performance.now(), swing,
   } as unknown as RunnerHooks)
   const screen = Object.assign(Object.create(GameScreen.prototype), {
-    session, cam, runner, wake: vi.fn(), lastPos: { x: 0, y: 0 }, hopPos: { x: 0, y: 0 },
-    hops: [], jumped: false, lastLevel: `${state.player.place}:${state.player.depth}`,
-    lastMonsters: new Set(), padStep: null, arrivalPending: false,
+    session, cam, runner, wake: vi.fn(), padStep: null,
     actionTabUp: 'spells', packPage: null, packRow: new Map(),
-  }) as { trackHop(): void; onScene(): void; actionTabUp: string; packPage: string | null; packRow: Map<string, number> }
+  }) as { trackHop(): void; onScene(): void; pilotHooks(): PilotHooks; actionTabUp: string; packPage: string | null; packRow: Map<string, number> }
+  // the player stands at the origin of a level the pilot has seen
+  const pilot = Object.assign(new Pilot(session, cam, runner, screen.pilotHooks()), {
+    lastPos: { x: 0, y: 0 }, hopPos: { x: 0, y: 0 }, lastLevel: `${state.player.place}:${state.player.depth}`,
+  })
+  Object.assign(screen, { pilot })
   const position = (x: number, y: number) => {
     state.player.pos = { x, y }
     scene.player = { ...scene.player, x, y }

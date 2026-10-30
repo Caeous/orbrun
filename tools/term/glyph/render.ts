@@ -123,12 +123,10 @@ export interface GlyphViewOptions {
   mean?: 'oklab' | 'linear'
   /** how much a pixel that stands out (a goblin's eye) counts for, over one that does not */
   stand?: number
-  /** a sprite fewer rows tall than this is named by its glyph instead (GLYPH_ROWS) */
-  glyphRows?: number
+  /** what stands farther than this, in cells, is named by its glyph instead of drawn (GLYPH_DIST) */
+  glyphDist?: number
   /** what lives too far to draw is its glyph on a cell of its own colour, not on what is behind it */
   farTint?: boolean
-  /** names under what lives, near enough (on unless false) */
-  labels?: boolean
   /** for the `fit` encoder */
   fit?: FitOptions
   /** how far walls stand back from the floor round them, in cells (render-3d's WALL_INSET); 0 or none, a wall is its whole cell */
@@ -176,7 +174,7 @@ export interface RasterOptions {
   rows?: [number, number]
 }
 
-/** something named rather than drawn, or the name under what is drawn */
+/** something named rather than drawn */
 interface Mark {
   t: Thing
   depth: number
@@ -184,7 +182,8 @@ interface Mark {
   sx: number
   floorY: number
   tall: number
-  label?: boolean
+  /** whether it is past `glyphDist`: named small, rather than drawn, or its letter drawn large */
+  far: boolean
 }
 
 /** what `GlyphView.look` saw of a frame; a column here is a block of `step` pixels */
@@ -249,14 +248,14 @@ export interface Raster {
   glyphs: Mark[]
 }
 
-const FOG = 10
+const FOG = 16
 const TORCH = 3.2
 const NEAR = 0.15
 const LID = 0.32
 /** the most open doors a column sees through */
 const BOARDS = 3
-/** a sprite fewer rows tall than this is named by its glyph */
-const GLYPH_ROWS = 2
+/** what stands farther than this, in cells, is named by its glyph */
+const GLYPH_DIST = 5
 
 /** crawl's sixteen colours, bright enough to read on the dark. */
 export const CRAWL: RGB[] = [
@@ -385,7 +384,7 @@ function strike(b: BodyRect, ox: number, oz: number, rx: number, rz: number): [n
 
 /** a wall's faces, by the side of the cell the ray struck: west and east, north and south */
 const FACES = ['w', 'e', 'n', 's'] as const
-const light = (d: number) => 0.3 * Math.exp(-d / FOG) + 0.9 * Math.exp(-d / TORCH)
+const light = (d: number) => 0.75 * Math.exp(-d / FOG) + 0.4 * Math.exp(-d / TORCH)
 
 /** the mip a texture is sampled at where a pixel spans `texels` texels: each has the same six, 32 texels a side to 1 */
 const mip = (texels: number) => Math.max(0, Math.min(5, Math.floor(Math.log2(Math.max(1, texels)))))
@@ -789,7 +788,7 @@ export class GlyphView {
       const ry = t.y + 0.5 - ey
       const across = det * (dy * rx - dx * ry)
       const depth = det * (-py * rx + px * ry)
-      return { depth, sx: (W / 2) * (1 + across / depth), floorY: horizon + ((eye - (t.lift ?? 0)) * fy) / depth }
+      return { depth, dist: Math.hypot(rx, ry), sx: (W / 2) * (1 + across / depth), floorY: horizon + ((eye - (t.lift ?? 0)) * fy) / depth }
     })
     return L
   }
@@ -797,10 +796,12 @@ export class GlyphView {
   /**
    * What stands, into `L`: each thing where `place` puts it on the screen
    * (its depth, the middle of its foot across, and the row of its foot), the
-   * farthest first; a sprite where it is big enough to make out, else its
-   * glyph.
+   * farthest first; a sprite within `glyphDist` cells, else its glyph. Which
+   * is by how far it is (`dist`) alone, not its depth, which shrinks as it
+   * moves off the middle of the view, nor the size of the view, so turning
+   * or resizing doesn't change it.
    */
-  private stand(L: Look, ro: RasterOptions, place: (t: Thing) => { depth: number; sx: number; floorY: number }) {
+  private stand(L: Look, ro: RasterOptions, place: (t: Thing) => { depth: number; dist: number; sx: number; floorY: number }) {
     const { W, H, SX, SY, fx, fy, glyphs } = L
     const seen = this.things
       .filter((t) => !t.hand)
@@ -813,11 +814,12 @@ export class GlyphView {
       // a cell's sprite: 32 texels, `size` cells tall and as wide
       const side = (t.size * fy) / depth
       const tall = side / SY // in rows
+      const far = v.dist > (this.opts.glyphDist ?? GLYPH_DIST)
       const letter = t.alive && this.opts.letters
-      const glyphRows = this.opts.glyphRows ?? GLYPH_ROWS
-      if (!ro.allSprites && (letter || !t.art.length || tall < glyphRows)) {
-        if (t.glyph && (t.alive || !t.art.length || tall >= 1)) glyphs.push({ t, depth, sx: v.sx / SX, floorY: floorY / SY, tall })
-        if (letter || !t.art.length || (t.alive && tall < glyphRows)) continue
+      // far, what has no glyph to be named by is still drawn
+      if (!ro.allSprites && (letter || !t.art.length || (far && t.glyph))) {
+        if (t.glyph) glyphs.push({ t, depth, sx: v.sx / SX, floorY: floorY / SY, tall, far })
+        continue
       }
       const texs = t.art.map((a) => this.spriteTex(a))
       // as wide as tall on the screen, whatever the shape of a pixel
@@ -839,7 +841,6 @@ export class GlyphView {
       const r0 = Math.max(0, Math.floor(floorY - side * reach)), r1 = Math.min(H - 1, Math.ceil(floorY))
       if (c0 > c1 || r0 > r1) continue
       L.sprites.push({ texs, x0, y0, sideX, side, c0, c1, r0, r1, depth, k, alpha: t.alpha ?? 1, flash: t.flash, grid, columns: {} })
-      if (t.alive && t.name && tall > 5 && this.opts.labels !== false) glyphs.push({ t, depth, sx: v.sx / SX, floorY: floorY / SY, tall, label: true })
     }
     // the hands last, over all: in their own lens, the view two units tall (render-3d hands.ts), as wide as tall on
     // the screen whatever the shape of a pixel, read on their grid where their texels fill a dot
@@ -1007,7 +1008,9 @@ export class GlyphView {
         const cx = Math.floor(wx), cy = Math.floor(wy)
         let g = this.index(cx, cy)
         let fc = g < 0 ? undefined : this.grid[g]
-        // in a wall's cell, beside its body: the floor and lid of the open cell beside it, its floor tile alone
+        // in a wall's cell, beside its body: the floor and lid of the open cell beside it, its floor tile alone, but
+        // the wall's cell's flash, as render-3d washes a pixel by where it is (the cell beside may be out of sight)
+        const fg = g
         let bare = false
         if (fc && this.bodies[g]) {
           const n = this.strip(g, wx - cx, wy - cy)
@@ -1031,7 +1034,7 @@ export class GlyphView {
             }
             const rgb = f[level]
             const o = texel(wx - cx, wy - cy, level)
-            put(i, rgb[o], rgb[o + 1], rgb[o + 2], LID * rowLight[row] * (g < 0 ? 1 : dims[g]), g)
+            put(i, rgb[o], rgb[o + 1], rgb[o + 2], LID * rowLight[row] * (g < 0 ? 1 : dims[g]), fg)
           }
           continue
         }
@@ -1055,7 +1058,7 @@ export class GlyphView {
             ;(mark[0] = ringRgb[0]), (mark[1] = ringRgb[1]), (mark[2] = ringRgb[2])
           }
         }
-        put(i, rgb[o], rgb[o + 1], rgb[o + 2], rowLight[row] * dims[g], g, mark, oa)
+        put(i, rgb[o], rgb[o + 1], rgb[o + 2], rowLight[row] * dims[g], fg, mark, oa)
       }
     }
 
@@ -1161,30 +1164,25 @@ export class GlyphView {
 
   /** The same, packed (encode.ts `pack`) into `out`. */
   bandInto(p: Prepared, ra: number, rb: number, out: Int32Array) {
-    const { enc, cols, rows } = p
+    const { enc, cols } = p
     const r = this.draw(p.look, ra * enc.SY, rb * enc.SY, true)
     enc.encodeInto(r, cols, rb - ra, out)
-    this.overlay(out, cols, rows, r, ra, rb)
+    this.overlay(out, cols, r, ra, rb)
   }
 
-  /** then what is named rather than drawn, and the names of what is near: in `out`, the rows ra up to rb, each cell changed as a `Cell` (`cellOf`) */
-  private overlay(cells: Int32Array, cols: number, rows: number, r: Raster, ra: number, rb: number) {
+  /** then what is named rather than drawn: in `out`, the rows ra up to rb, each cell changed as a `Cell` (`cellOf`) */
+  private overlay(cells: Int32Array, cols: number, r: Raster, ra: number, rb: number) {
     const { glyphs, zbuf, SX } = r
     this.lastSY = r.SY
-    const labels: { name: string; sx: number; row: number; depth: number }[] = []
     for (const g of glyphs) {
       const floorRow = g.floorY
-      if (g.label) {
-        labels.push({ name: g.t.name!, sx: g.sx, row: Math.floor(floorRow) + 1, depth: g.depth })
-        continue
-      }
       const fg = g.t.colour
-      if (g.tall >= (this.opts.glyphRows ?? GLYPH_ROWS) && g.t.alive) {
+      if (!g.far && g.t.alive) {
         this.bigLetter(cells, cols, ra, rb, g.t.glyph, fg, g.sx, floorRow, g.tall * 0.92, g.depth, zbuf, SX)
-        if (g.t.name && g.tall > 5) labels.push({ name: g.t.name, sx: g.sx, row: Math.floor(floorRow) + 1, depth: g.depth })
         continue
       }
-      const row = Math.floor(floorRow - Math.max(0.5, g.tall / 2))
+      // on its foot, the row whose bottom is nearest the floor it stands on, as its sprite would have stood there
+      const row = Math.round(floorRow) - 1
       const col = Math.floor(g.sx)
       if (row < ra || row >= rb || col < 0 || col >= cols || this.hidden(zbuf, col, row, SX, r.SY, cols, g.depth)) continue
       const at = (row - ra) * cols + col
@@ -1205,23 +1203,6 @@ export class GlyphView {
       o.bg = seenColour(o).map((v) => Math.round(v * 0.4)) as RGB
       o.fg = fg
       packCell(o, cells, at * 3)
-    }
-    const placed: [number, number, number][] = []
-    for (const l of labels.sort((a, b) => a.depth - b.depth)) {
-      const c0 = Math.round(l.sx - l.name.length / 2)
-      if (l.row >= rows || placed.some(([r, a, b]) => r === l.row && c0 <= b && c0 + l.name.length >= a)) continue
-      placed.push([l.row, c0, c0 + l.name.length])
-      if (l.row < ra || l.row >= rb) continue
-      for (let i = 0; i < l.name.length; i++) {
-        const col = c0 + i
-        if (col < 0 || col >= cols || this.hidden(zbuf, col, l.row, SX, r.SY, cols, l.depth)) continue
-        const at = (l.row - ra) * cols + col
-        const o = cellOf(cells, at)
-        o.bg = seenColour(o).map((v) => Math.round(v * 0.35)) as RGB
-        o.ch = l.name[i]
-        o.fg = [220, 215, 205]
-        packCell(o, cells, at * 3)
-      }
     }
   }
 

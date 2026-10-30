@@ -5,7 +5,7 @@
  * (`~/.config/orbrun/config.toml`), or `--config <file>`:
  *
  *   name = "Ada"            # the player
- *   dcss = "stable"         # crawl: stable, trunk, or a release (0.34)
+ *   dcss = "stable"         # crawl to play straight away: stable, trunk, or a release (0.34); none for the menu
  *   fps = 60
  *   reduced_motion = false
  *
@@ -20,8 +20,7 @@
  *   viewmodel = false
  *
  * The game's settings are written over what it has saved at the start, so
- * the file says how a game begins and the Settings menu still changes it
- * for the session.
+ * the file has the last word over the front screen's Settings.
  */
 import fs from 'node:fs'
 import os from 'node:os'
@@ -32,11 +31,13 @@ import { defaultSettings, type Settings } from '../../../apps/orbrun/src/servers
 export interface TermConfig {
   /** the player, whose saves these are */
   name: string
-  /** the crawl to play: `stable`, `trunk`, or a release (`0.34`) */
-  dcss: string
+  /** the name was said (the file or the command line), not taken from the login: the account last played as doesn't stand in for it */
+  nameSaid?: boolean
+  /** the crawl to play straight away: `stable`, `trunk`, or a release (`0.34`); none for the menu of those built */
+  dcss?: string
   /** most frames a second */
   fps: number
-  /** the page prefers reduced motion: turns and steps land at once, nothing glides */
+  /** the player prefers reduced motion: turns and steps land at once, nothing glides */
   reducedMotion: boolean
   /** startup steps, messages and frame rates to `<state>/trace.log` */
   trace: boolean
@@ -69,10 +70,13 @@ const CHOICES: Partial<Record<keyof Settings, readonly string[]>> = {
 export const USAGE = `Play Orbrun in this terminal.
 
   npm run term -- [options]
-  orbrun-term [options]
+  orbrun [options]
 
-  --name NAME          play as NAME (default: your login name)
-  --dcss VERSION       stable (default), trunk, or a release such as 0.34
+With no --dcss, it starts at the front screen, as the browser's: continue the game saved in
+a version, or start a new one. The name is the character's, one to a version.
+
+  --name NAME          the player whose saves these are, and the name to start with (default: your login name)
+  --dcss VERSION       play NAME in VERSION straight away: stable, trunk, or a release such as 0.34
   --set KEY=VALUE      a game setting, as the Settings menu has it (repeat for more)
   --config FILE        read options from FILE (default: ~/.config/orbrun/config.toml)
   --fps N              most frames a second (60)
@@ -80,7 +84,7 @@ export const USAGE = `Play Orbrun in this terminal.
   --mosaic KIND        the view's glyphs: octant (default) or sextant, for a font without octants
   --letters            monsters as crawl's letters rather than their sprites
   --threads N          threads that draw the view (0 for none)
-  --trace              write frame rates and messages to ~/.cache/orbrun-term/trace.log
+  --trace              write frame rates and messages to ~/.cache/orbrun/trace.log
   --settings           list the game's settings and their defaults
   --help
 
@@ -103,7 +107,6 @@ export class ConfigError extends Error {}
 export function resolveConfig(argv: string[], env: NodeJS.ProcessEnv = process.env): TermConfig & { help?: 'usage' | 'settings' } {
   const c: TermConfig = {
     name: os.userInfo().username.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 20) || 'Player',
-    dcss: 'stable',
     fps: 60,
     reducedMotion: false,
     trace: false,
@@ -154,7 +157,7 @@ export function resolveConfig(argv: string[], env: NodeJS.ProcessEnv = process.e
     if (a === '--help' || a === '-h') help = 'usage'
     else if (a === '--settings') help = 'settings'
     else if (a === '--config') next()
-    else if (a === '--name') c.name = next()
+    else if (a === '--name') (c.name = next()), (c.nameSaid = true)
     else if (a === '--dcss') c.dcss = next()
     // as it was before --dcss
     else if (a === '--trunk') c.dcss = 'trunk'
@@ -178,7 +181,8 @@ export function resolveConfig(argv: string[], env: NodeJS.ProcessEnv = process.e
 }
 
 function setTop(c: TermConfig, k: string, v: unknown, where: string) {
-  if (k === 'name' || k === 'dcss') c[k] = string(v, where)
+  if (k === 'name') (c.name = string(v, where)), (c.nameSaid = true)
+  else if (k === 'dcss') c.dcss = string(v, where)
   else if (k === 'fps') c.fps = number(v, where)
   else if (k === 'reduced_motion' || k === 'reducedMotion') c.reducedMotion = boolean(v, where)
   else if (k === 'trace') c.trace = boolean(v, where)

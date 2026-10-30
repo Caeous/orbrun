@@ -8,20 +8,20 @@
  *
  * Anyone who can reach the port plays without a password, so it listens on
  * 127.0.0.1 unless HOST says otherwise (PORT for the port). The host key is
- * made on the first run and kept in ~/.cache/orbrun-term.
+ * made on the first run and kept in ~/.cache/orbrun.
  */
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
-import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ssh2 from 'ssh2'
+import { stateDir } from './state.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const HOST = process.env.HOST || '127.0.0.1'
 const PORT = Number(process.env.PORT || 2222)
-const STATE_DIR = path.join(os.homedir(), '.cache', 'orbrun-term')
+const STATE_DIR = stateDir()
 
 // a node that runs crawl: Node 24 or later, for WebAssembly JSPI (game/run.mjs picks the same way)
 const jspi = (bin) => spawnSync(bin, ['-e', 'process.exit(typeof WebAssembly.Suspending === "function" ? 0 : 1)']).status === 0
@@ -35,7 +35,7 @@ const viteNode = createRequire(import.meta.url).resolve('vite-node/vite-node.mjs
 const keyFile = path.join(STATE_DIR, 'host_ed25519')
 if (!fs.existsSync(keyFile)) {
   fs.mkdirSync(STATE_DIR, { recursive: true })
-  execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'orbrun-term', '-f', keyFile])
+  execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'orbrun', '-f', keyFile])
 }
 
 /** a player's name from an SSH user name: what crawl takes in a name */

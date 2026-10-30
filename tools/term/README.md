@@ -1,11 +1,13 @@
 # Orbrun in a terminal
 
-The whole game in a terminal, here or over SSH, with no browser: the app's
-own `Session` and `GameScreen` run in node on the offline engine, and the
-screen is laid out as the browser lays the game out.
+The whole game in a terminal, here or over SSH, with no browser and no page:
+the app's own `Session` and its rules for the eye and the keys (pilot.ts,
+runner.ts, keys.ts) run in node on the offline engine, the screen is laid
+out as the browser lays the game out, and crawl's menus are drawn as console
+crawl draws them.
 
 ```
-npm run term                  # play here; -- --help for the options (--name Ada, --dcss trunk, --set fov=90…)
+npm run term                  # play here (or `orbrun`); -- --help for the options (--name Ada, --dcss trunk, --set fov=90…)
 npm run term:ssh              # serve it, then: ssh -p 2222 localhost (or ada@localhost to play as Ada)
 npm run term:walk [place]     # just the renderer: walk a frozen level of the front room's
 npm run term:snap -- [place] [out.png]                 # a frame of the renderer as a PNG
@@ -15,6 +17,20 @@ npm run term:glyph [place]    # the glyph view (glyph/): the view as cells, in s
 npm run term:glyph -- [place] --bench [cols rows frames]   # how fast it draws, without a terminal
 npm run term:gym -- [--monsters goblin,ogre] [--variants best,base]   # the glyph view's monsters near to far, beside the truth
 ```
+
+The game starts at the front screen, as the browser's (game/home.ts): a
+place of the front room's standing still behind it in the view's glyphs,
+the next of the browser's cycle each start, under its tinted veil; the
+logo in the view's glyphs; and the rows: each version built
+(`engine/build.sh`), its game to continue or a new one; the account;
+Settings; and Quit. Arrows (or j and k) move, Enter takes a row, q leaves,
+and the screen comes back when a game ends. `--dcss trunk` (or `dcss` in
+the config) skips it and plays in that version straight away.
+
+As in the browser, an account is its character: crawl plays it by the
+account's name (`--name`, or the SSH user), one character to a version, so
+a second character is a second account. Over SSH, each user has their
+own.
 
 Ctrl-\ saves and quits. Crawl's engine needs Node 24 or later (WebAssembly
 JSPI); `npm run term` finds one (Homebrew's, the system's, or `ORBRUN_NODE`)
@@ -31,7 +47,7 @@ command line (game/config.ts):
 
 ```toml
 name = "Ada"            # the player (default: your login name)
-dcss = "stable"         # stable, trunk, or a release built (0.34)
+dcss = "trunk"          # play it straight away, with no menu: stable, trunk, or a release built (0.34)
 fps = 60
 reduced_motion = false
 
@@ -45,8 +61,15 @@ fov = 90
 eye_height = 0.6
 ```
 
-The game's settings are written over what it saved when it starts, so the
-file says how a game begins and the Settings menu still changes it.
+The game's settings (the browser's Settings menu's) are set on the front
+screen's Settings, those the terminal draws by, and kept; any the file names
+are written over them when it starts, so the file has the last word.
+
+Accounts, from the player at the foot of the front screen, are the players
+with saves here: play as another, add one by its name, or delete one and
+every game saved as it (not the one in use). Without `--name` (or `name` in
+the config), the game starts as the account last picked there, kept in
+`~/.cache/orbrun/account`; over SSH it starts as the SSH user.
 
 - **The view** is the glyph view's cells (glyph/, below), drawn as the
   prototype draws them, with what the browser's view has besides: a ray a
@@ -84,56 +107,66 @@ file says how a game begins and the Settings menu still changes it.
   the weapon lifting for a swing, and the net or the web round a trapped
   player (hud.ts `renderTrapped`). The view is drawn on threads in bands of
   rows (glyph/threads.ts; `ORBRUN_TERM_THREADS`, 0 for none), and again only
-  when what it is drawn from changes. `--reduced-motion` has the page prefer
-  reduced motion, as a player may ask a browser to (game/env.ts): turns and
-  steps land at once and nothing glides or swings. Frames are drawn only
+  when what it is drawn from changes. `--reduced-motion` prefers reduced
+  motion, as a player may ask a browser to: turns and steps land at once
+  and nothing glides or swings. Frames are drawn only
   while something changes or moves, up to 60 a second (`FPS` to change it),
   each written as the cells that changed since the last (glyph/render.ts
   `ansiInto`).
 - **The HUD** lies over the view as the browser's does, its text on the
   view darkened under it, a cell's padding either side: the stats pane at
-  the top-left (grid/stats.ts) with the portrait (the player's cell) in the
-  view's glyphs; the action panel's consumables beside it, each its tile
-  with its count; the status badges left of the minimap; the minimap at
-  the top-right, a level cell to a column and half a row (half blocks), in
-  the level's own colours, the cone the view faces lit over it; the monster
-  list under it, always (its bearing, crawl's letter where the browser shows
+  the top-left (grid/stats.ts) (no portrait or action panel: their tiles
+  are too small to read in cells); the status badges left of the minimap; the minimap at
+  the top-right, the level in crawl's own glyphs and colours as the level
+  map draws it, what isn't known the view darkened, the player always in
+  the middle as the browser's minimap has it, an arrow where crawl has its
+  @, pointing the way the view faces, and the server's cursor on gold; the
+  monster list under it (its bearing, crawl's letter where the browser shows
   the sprite, and its name; the `nearby` setting's edge pips are not drawn);
   the messages
   (grid/messages.ts) along the bottom, with what a prompt has typed. The
   level map (X) is crawl's glyphs in the clear part of the view (left of
-  the monster list, above the messages, the stats pane over its corner, as
-  the browser's `levelMapSplit` has it), its cursor lit gold, the map still
+  the right column, above the messages, the stats pane over its corner, as
+  the browser's `levelMapSplit` has it; the minimap and the monster list
+  stand down while it is open, as the browser's do), its cursor lit gold, the map still
   as the cursor moves and moved only near its edges.
-- **Menus, popups and prompts** are boxes over the view as the browser's
-  popups are (styles.css `.popup`): hung from near the top, each one a
-  stack deep a row lower, as wide as their widest line; in the middle where
-  crawl centres them (before a game) and for a yes/no or a choice prompt,
-  its keys named `[Y]`. The row under the cursor is lit gold across the box
-  and kept in view as the box scrolls, and a pack's current tab is lit.
-  They are laid out from the overlay DOM (game/text.ts): happy-dom does no
-  layout, so block elements start lines, crawl's grids become columns, a
-  console table (the `%` overview, a monster's stats) keeps crawl's column
-  widths, a hanging line wraps under its words, and `fgN` classes are its
-  colours. The browser's item tiles in a menu's rows are left out.
-- **Keys** go to the page as the keydown events a browser fires (game/input.ts),
-  so every binding is the app's.
+- **Menus, popups and prompts** are crawl's, drawn as console crawl draws
+  them, from the game's state (game/screens.ts): a menu its title, its rows
+  (`a - a +0 dagger`) and its more line; a description its title, its text
+  and its keys; the new-game choices crawl's columns under their headings;
+  a CRT screen (the skills) crawl's own lines; a line typed at a prompt
+  after its question. The one on top is a box over the view, eighty columns
+  at most as crawl's console is: hung from near the top, or in the middle
+  where crawl centres it; its title and keys stand while what is between
+  them scrolls, the row under the cursor lit gold and kept in view. A yes/no
+  or a --more-- is in the messages, as in console crawl.
+- **Keys** go to crawl as console crawl takes them, as the official client
+  sends them (keys.ts `keydownMessage`), but for a direction in the dungeon
+  or while aiming, which is the app's: a step, a run, an attack or a turn,
+  taken as the way the view faces (runner.ts). What the official client keeps
+  for itself is kept here: a menu's cursor and its pages (menu-nav.ts), a
+  popup's scroll, the new-game cursor, and a line being typed (text-entry.ts).
 
-Saves, settings and the SSH host key live in `~/.cache/orbrun-term` (saves by
-player and game). The SSH server lets anyone who reaches it play without a
+Saves, settings and the SSH host key live in `~/.cache/orbrun` (saves by
+player and game; it was `~/.cache/orbrun-term`, and is moved on the first run). The SSH server lets anyone who reaches it play without a
 password, so it listens on 127.0.0.1 only unless `HOST` says otherwise
 (`PORT` for the port); each connection is a game process of its own.
 `ORBRUN_TERM_TRACE=1` writes startup steps, messages and frame rates to
-`~/.cache/orbrun-term/trace.log`.
+`~/.cache/orbrun/trace.log`.
 
-- `game/main.ts`, `game/run.mjs`: play here; `ssh.mjs`: the SSH server.
-- `game/client.ts`: the screen: layout, panes, overlays, the frame loop.
-- `game/env.ts`: the page the app runs in (happy-dom, gamedata from disk).
-- `game/engine.ts`, `game/engine-worker.mjs`: crawl in a worker, saves on disk.
-- `game/view.ts`: the MapRenderer GameScreen draws through, and the view
-  as the glyph view's cells, with what stands and the hands; the portrait,
-  badges and items in the view's glyphs.
-- `game/text.ts`, `game/input.ts`: overlays as text, keys as events.
+- `game/main.ts`, `game/run.mjs`: play here (the `orbrun` command); `ssh.mjs`: the SSH server;
+  `state.mjs`: where both keep their state.
+- `game/client.ts`: the game (the session, the eye, the keys) and the
+  screen: layout, panes, the box on top, the frame loop.
+- `game/env.ts`: what the app asks of a browser in node (localStorage in a
+  file, gamedata from disk).
+- `game/engine.ts`, `game/engine-worker.mjs`: crawl in a worker, saves on disk,
+  and what the menu says of them (`savedCharacters`).
+- `game/view.ts`: the view as the glyph view's cells, with what stands and
+  the hands; badges and items in the view's glyphs.
+- `game/screens.ts`, `game/text.ts`: crawl's menus, popups and prompts as
+  console crawl draws them, and its formatted text as coloured lines.
+- `game/input.ts`: terminal keys as a browser's keydowns say them.
 - `raster.ts`, `raster-worker.ts`: render-term on threads, for `walk.ts`.
 - `frame.mjs`: a frame written whole (`synced`), and the kitty images
   `walk.ts` shows its picture in; `keys.mjs`: terminal input sequences.

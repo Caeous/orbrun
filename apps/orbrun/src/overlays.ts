@@ -20,6 +20,7 @@ import { Osk, oskPrompts, type OskOp, type OskTarget } from './osk'
 import commands from '../data/commands.json'
 import { FocusNav, focusStep, tapLights, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
 import { crtPlainText, scrapeCrt, stackSkills } from './crt-scrape'
+import { EntryHistory, entryKey, submitMessages } from './text-entry'
 import { focusFallback, numberPrompt, promptButtons, submitOnStartOnly, typedInLog, type Action, type BindingLabel } from './bindings'
 import { CHARACTER_COMMANDS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandMenu } from './command-menu'
 import { VIEW_OPTIONS } from './servers'
@@ -544,10 +545,6 @@ function splitColumns(el: HTMLElement, starts: number[]) {
   el.replaceChildren(...cells)
   el.classList.add('cols')
 }
-
-/** Official textinput.js keeps the last ten entries per historyId (up/down recall). */
-const HISTORY_SIZE = 10
-const histories: Record<string, string[]> = {}
 
 // ------------------------------------------------------------------ overlays
 
@@ -2833,51 +2830,17 @@ export class Overlays {
     const seed = ti.type === 'seed-selection'
     input.disabled = false
     input.value = ti.text || ''
-    let history: string[] | undefined
-    let historyPos = 0
-    if (ti.historyId) {
-      history = histories[ti.historyId] || (histories[ti.historyId] = [])
-      historyPos = history.length
-    }
+    const history = new EntryHistory(ti.historyId)
     const send = (finalChar: number) => {
-      if (history && input.value.length > 0) {
-        const at = history.indexOf(input.value)
-        if (at !== -1) history.splice(at, 1)
-        history.push(input.value)
-        if (history.length > HISTORY_SIZE) history.shift()
-      }
+      history.sent(input.value)
       this.submitText(input.value, tag, finalChar)
     }
+    // textinput.js: the characters the prompt takes as keys rather than text (text-entry.ts)
     const special = (ch: string): boolean => {
-      if (tag === 'stash_search') {
-        if (ch === '?' && input.value.length === 0) {
-          this.hooks.send(cm.key(63))
-          return true
-        }
-      } else if (tag === 'repeat') {
-        if (!/^\d$/.test(ch)) {
-          send(ch.charCodeAt(0))
-          return true
-        }
-      } else if (tag === 'travel_depth') {
-        if ('<>?$^-p'.includes(ch)) {
-          send(ch.charCodeAt(0))
-          return true
-        }
-      } else if (tag === 'skill_target') {
-        if (ch === '-') {
-          send(ch.charCodeAt(0))
-          return true
-        }
-      } else if (seed) {
-        // '-' clears, '?' helps, 'd' picks the daily seed; anything but a digit is refused (keyfunc on the crawl side)
-        if (ch === '-' || ch === '?' || ch === 'd') {
-          this.hooks.send(cm.key(ch.charCodeAt(0)))
-          return true
-        }
-        if (!/^\d$/.test(ch)) return true
-      }
-      return false
+      const k = entryKey(ti, ch, input.value)
+      if (k.kind === 'submit') send(k.final)
+      else if (k.kind === 'key') this.hooks.send(cm.key(k.code))
+      return k.kind !== 'type'
     }
     const target: OskTarget = {
       input,
@@ -2900,11 +2863,8 @@ export class Overlays {
       } else if (ev.key === 'Enter') {
         ev.preventDefault()
         target.submit()
-      } else if (history && history.length > 0 && (ev.key === 'ArrowUp' || ev.key === 'ArrowDown')) {
-        historyPos += ev.key === 'ArrowUp' ? -1 : 1
-        if (historyPos < 0) historyPos = history.length - 1
-        if (historyPos >= history.length) historyPos = 0
-        input.value = history[historyPos]
+      } else if ((ev.key === 'ArrowUp' || ev.key === 'ArrowDown') && history.has) {
+        input.value = history.recall(ev.key === 'ArrowUp' ? -1 : 1)!
         input.setSelectionRange(input.value.length, input.value.length)
         ev.preventDefault()
       } else if (ev.key.length === 1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey && special(ev.key)) ev.preventDefault()
@@ -2941,12 +2901,7 @@ export class Overlays {
   }
 
   private submitText(text: string, tag?: string, finalChar = 13) {
-    // ctrl-u + ctrl-k wipe any prefill on the crawl side; 'repeat' has none
-    if (tag !== 'repeat') {
-      this.hooks.send(cm.key(21))
-      this.hooks.send(cm.key(11))
-    }
-    this.hooks.send(cm.textInput(text + String.fromCharCode(finalChar)))
+    for (const m of submitMessages(text, tag, finalChar)) this.hooks.send(m)
   }
 
   /**

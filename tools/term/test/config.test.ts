@@ -19,7 +19,7 @@ function home(toml?: string): NodeJS.ProcessEnv {
 describe('config', () => {
   it('starts from the defaults where nothing is said', () => {
     const c = resolveConfig([], home())
-    expect(c.dcss).toBe('stable')
+    expect(c.dcss).toBeUndefined()
     expect(c.fps).toBe(60)
     expect(c.view).toEqual({ mosaic: 'octant', letters: false })
     expect(c.settings).toEqual({})

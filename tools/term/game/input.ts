@@ -1,9 +1,11 @@
 /**
- * Terminal keys as the keydown events a US-layout browser fires: the e2e
- * harness's `keyEventInit` (apps/orbrun/test/e2e/client.ts), so every key
- * takes the app's own route (keys.ts reads `keyCode` first, as the official
- * client reads `which`).
+ * Terminal keys as what a US-layout browser's keydown says of them (the e2e
+ * harness's `keyEventInit`, apps/orbrun/test/e2e/client.ts): plain objects
+ * the app's key rules read (keys.ts `KeyLike`, which reads `keyCode` first,
+ * as the official client reads `which`), so every key means what it does in
+ * the browser.
  */
+import type { KeyLike } from '../../../apps/orbrun/src/keys'
 // @ts-expect-error: plain JS, shared with the browser bridge
 import { parseKeys } from '../keys.mjs'
 
@@ -20,13 +22,13 @@ const NAMED: Record<string, [string, number]> = {
   PageUp: ['PageUp', 33], PageDown: ['PageDown', 34], Home: ['Home', 36], End: ['End', 35], Delete: ['Delete', 46], Insert: ['Insert', 45],
 }
 
-export interface Mods {
+interface Mods {
   shift?: boolean
   ctrl?: boolean
   alt?: boolean
 }
 
-function keyEventInit(key: string, mods: Mods): KeyboardEventInit & { keyCode: number } {
+function keyLike(key: string, mods: Mods): KeyLike {
   let code = key
   let keyCode = 0
   let shift = !!mods.shift
@@ -44,51 +46,15 @@ function keyEventInit(key: string, mods: Mods): KeyboardEventInit & { keyCode: n
       if (row[1] === key) shift = true
     }
   }
-  return { key, code, keyCode, shiftKey: shift, ctrlKey: !!mods.ctrl, altKey: !!mods.alt, bubbles: true, cancelable: true }
+  return { key, code, keyCode, shiftKey: shift, ctrlKey: !!mods.ctrl, altKey: !!mods.alt, metaKey: false }
 }
 
-/** The keys in one read of terminal input, as key names and modifiers. */
-export function terminalKeys(data: Buffer | string): { key: string; mods: Mods }[] {
+/** The keys in one read of terminal input. */
+export function terminalKeys(data: Buffer | string): KeyLike[] {
   return (parseKeys(data) as { key: string; modifiers?: number }[]).map((k) => {
     const m = k.modifiers ?? 0
     // a shifted letter comes as its capital, with shift already said by the letter
     const key = k.key === 'Space' ? ' ' : k.key
-    return { key, mods: { alt: !!(m & 1), ctrl: !!(m & 2), shift: !!(m & 8) && !/^[A-Z]$/.test(key) } }
+    return keyLike(key, { alt: !!(m & 1), ctrl: !!(m & 2), shift: !!(m & 8) && !/^[A-Z]$/.test(key) })
   })
-}
-
-/**
- * Fire `key` at the page as a keydown and a keyup, at the focused element.
- * A browser types into a focused field as the keydown's default action, and
- * happy-dom does not: so an unhandled printable key or Backspace edits the
- * field here, and the field hears an `input` event, as it would.
- */
-export function press(key: string, mods: Mods) {
-  const init = keyEventInit(key, mods)
-  const active = document.activeElement
-  const target = active && active !== document.body ? active : window
-  for (const type of ['keydown', 'keyup'] as const) {
-    const ev = new KeyboardEvent(type, init)
-    // happy-dom leaves the legacy field at 0 whatever the init says
-    if (ev.keyCode !== init.keyCode) Object.defineProperty(ev, 'keyCode', { value: init.keyCode })
-    const go = target.dispatchEvent(ev)
-    if (type === 'keydown' && go && !ev.defaultPrevented && (active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA')) typeInto(active as HTMLInputElement, key, mods)
-  }
-}
-
-function typeInto(input: HTMLInputElement, key: string, mods: Mods) {
-  if (mods.ctrl || mods.alt) return
-  const v = input.value
-  let from = input.selectionStart ?? v.length
-  let to = input.selectionEnd ?? v.length
-  if (key === 'Backspace') {
-    if (from === to) from = Math.max(0, from - 1)
-  } else if (key === 'Delete') {
-    if (from === to) to = Math.min(v.length, to + 1)
-  } else if (key.length !== 1) return
-  const text = key.length === 1 ? key : ''
-  input.value = v.slice(0, from) + text + v.slice(to)
-  const at = from + text.length
-  input.setSelectionRange(at, at)
-  input.dispatchEvent(new Event('input', { bubbles: true }))
 }
