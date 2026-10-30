@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { Pixels } from '@orbrun/render-term'
 import { cellKey, REST_PITCH, type Camera, type Scene, type SceneCell, type TileRect, type TileSource } from '@orbrun/scene'
-import { coverage, INVERSE, OCTANTS, SEXTANTS, SHAPE_OF, SHAPES } from '../glyph/shapes'
+import { coverage, inked, INVERSE, OCTANTS, SEXTANTS, SHAPE_OF, SHAPES } from '../glyph/shapes'
 import { encoders, q, unpack } from '../glyph/encode'
 import { SpriteTex } from '../glyph/sprite'
 import { drawSprite, gridFor } from '../glyph/sampling'
@@ -120,6 +120,16 @@ describe('palette sampling', () => {
     // the art covers 24 of 32 texels each way: 6 of 8 pixels, with the corners of the ink at most besides
     expect(got.filter((c) => c).length).toBeLessThanOrEqual(7 * 7)
     expect(got[0]).toBeNull()
+  })
+})
+
+describe("a cell's colour as the eye takes it", () => {
+  it('weighs its foreground by as much of the cell as its glyph inks, so text over a sprite stands on the sprite', () => {
+    expect(inked(32)).toBe(0)
+    expect(inked(0x2588)).toBe(1)
+    expect(inked(OCTANTS[0x7f].codePointAt(0)!)).toBeCloseTo(7 / 8)
+    expect(inked(OCTANTS[0x01].codePointAt(0)!)).toBeCloseTo(1 / 8)
+    expect(inked('▀'.codePointAt(0)!)).toBeCloseTo(1 / 2)
   })
 })
 
