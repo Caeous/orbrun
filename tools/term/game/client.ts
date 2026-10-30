@@ -32,6 +32,7 @@ import type { TermConfig } from './config'
 import { PALETTE, cut, layout, lineLength, type Line, type RGB } from './text'
 import { press, terminalKeys } from './input'
 import { ANSI_BAND, ANSI_CELL, ansiInto } from '../glyph/render'
+import { inked } from '../glyph/shapes'
 // @ts-expect-error: plain JS
 import { synced } from '../frame.mjs'
 import type { Dir8 } from '@orbrun/scene'
@@ -106,8 +107,7 @@ const CONE_ALPHA = 0.25
 const VIEW = 0
 const SOLID = 1
 const SHADE = 2
-/** a cell's glyph a full block, and a half block's upper half (for the minimap, two of its cells to a terminal cell) */
-const FULL = 0x2588
+/** a half block's upper half (for the minimap, two of its cells to a terminal cell) */
 const UPPER = 0x2580
 
 export async function runGame(io: Io, o: ClientOptions) {
@@ -578,7 +578,8 @@ export async function runGame(io: Io, o: ClientOptions) {
   function shadeOf(vc: Int32Array | null, i: number): RGB {
     if (!vc) return PANE_BG
     const cp = vc[i * 3], f = vc[i * 3 + 1], b = vc[i * 3 + 2]
-    const c = cp === 32 ? 0 : cp === FULL ? 1 : 0.5
+    // as much of the foreground as the glyph inks: a cell a sprite all but fills is the sprite's, not half the wall's
+    const c = inked(cp)
     const m = (s: number) => ((b >> s) & 255) * (1 - c) + ((f >> s) & 255) * c
     const r = m(16), g = m(8), bl = m(0)
     const lum = 0.3 * r + 0.59 * g + 0.11 * bl

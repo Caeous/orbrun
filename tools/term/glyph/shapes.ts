@@ -121,3 +121,21 @@ export function coverage(shape: Shape, w: number, h: number): Float32Array {
     }
   return m
 }
+
+/**
+ * How much of its cell each glyph inks, 0..1, by code point: a cell's
+ * colour as the eye takes it from its two is its foreground over this much
+ * of it and its background over the rest. A glyph not among the shapes (a
+ * letter) is taken as half.
+ */
+const INK = new Map(
+  SHAPES.map((s) => {
+    // 24 points each way: whole numbers of them in a half, a third and a quarter
+    let n = 0
+    for (let j = 0; j < 24; j++) for (let i = 0; i < 24; i++) if (s.inside((i + 0.5) / 24, (j + 0.5) / 24)) n++
+    return [s.ch.codePointAt(0)!, n / 576]
+  }),
+)
+export function inked(cp: number): number {
+  return INK.get(cp) ?? 0.5
+}

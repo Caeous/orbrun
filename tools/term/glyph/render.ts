@@ -23,7 +23,7 @@
 import { keyToXY, type Camera, type CellKey, type Scene, type SceneCell, type SceneCursor, type TileId, type TileRect, type TileSource } from '@orbrun/scene'
 import type { Pixels } from '@orbrun/render-term'
 import { bigGlyph } from './font'
-import { INVERSE, OCTANTS } from './shapes'
+import { INVERSE, OCTANTS, inked } from './shapes'
 import { setChroma, setDark, SpriteTex } from './sprite'
 import { encoders, q, unpack, type Encoder, type EncoderName, type FitOptions } from './encode'
 import { drawSprite, gridFor, type SpriteColumns } from './sampling'
@@ -1202,7 +1202,7 @@ export class GlyphView {
         continue
       }
       // the glyph on what is behind it, evened out and darkened so it reads
-      o.bg = o.bg.map((v, k) => Math.round(((v + o.fg[k]) / 2) * 0.4)) as RGB
+      o.bg = seenColour(o).map((v) => Math.round(v * 0.4)) as RGB
       o.fg = fg
       packCell(o, cells, at * 3)
     }
@@ -1217,7 +1217,7 @@ export class GlyphView {
         if (col < 0 || col >= cols || this.hidden(zbuf, col, l.row, SX, r.SY, cols, l.depth)) continue
         const at = (l.row - ra) * cols + col
         const o = cellOf(cells, at)
-        o.bg = o.bg.map((v, k) => Math.round(((v + o.fg[k]) / 2) * 0.35)) as RGB
+        o.bg = seenColour(o).map((v) => Math.round(v * 0.35)) as RGB
         o.ch = l.name[i]
         o.fg = [220, 215, 205]
         packCell(o, cells, at * 3)
@@ -1261,7 +1261,7 @@ export class GlyphView {
         const o = cellOf(cells, at)
         const lit = 1.12 - 0.3 * (cy / hCells)
         // a half-block cell under the letter: its two halves evened out, as the letter takes the cell's glyph
-        const behind = o.bg.map((v, k) => Math.round((v + o.fg[k]) / 2)) as RGB
+        const behind = seenColour(o).map((v) => Math.round(v)) as RGB
         if (bits) {
           o.ch = OCTANTS[bits]
           o.fg = fg.map((v) => Math.min(255, Math.round(v * lit))) as RGB
@@ -1275,6 +1275,12 @@ export class GlyphView {
       }
     }
   }
+}
+
+/** a cell's colour as the eye takes it from its two: its foreground over as much of it as its glyph inks (`inked`) */
+const seenColour = (o: Cell): RGB => {
+  const c = inked(o.ch.codePointAt(0)!)
+  return [0, 1, 2].map((k) => o.bg[k] * (1 - c) + o.fg[k] * c) as RGB
 }
 
 /** whether two cells look the same: their glyph, background, and foreground where the glyph shows it */
