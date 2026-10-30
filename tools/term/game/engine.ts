@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
-import { channelOf, type EngineInfo, type EngineLauncher, type OfflineChannel } from '@orbrun/offline'
+import { channelOf, saveDesc, type EngineInfo, type EngineLauncher, type OfflineChannel, type SaveBook } from '@orbrun/offline'
 import { ConfigError } from './config'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -31,6 +31,65 @@ export function pickChannel(channels: OfflineChannel[], want: string): OfflineCh
   return ch
 }
 
+/**
+ * What the menu says of a player's saves (offline saves.ts), kept beside
+ * them in `hostDir` (the player's, as it is now): each character as crawl last named it in a milestone,
+ * in `<channel>.characters.json` by its name. Whether a character is
+ * waiting is crawl's save file's to say: it is deleted when the character
+ * dies, wins or quits.
+ */
+export function saveBook(hostDir: () => string, channels: OfflineChannel[]): SaveBook {
+  // a game's save directory to its channel: the channel's own, or it and `~profile` (offline channels `profileSaveDir`)
+  const of = (dir: string) => channels.find((c) => dir === c.saveDir || dir.startsWith(c.saveDir + '~'))
+  return {
+    note(dir, fields) {
+      const c = of(dir)
+      const desc = saveDesc(fields)
+      if (!c || !desc) return
+      fs.mkdirSync(hostDir(), { recursive: true })
+      fs.writeFileSync(notesFile(hostDir(), c), JSON.stringify({ ...notes(hostDir(), c), [String(fields.name)]: desc }))
+    },
+    info: async (dir) => {
+      const c = of(dir)
+      return (c && savedCharacters(hostDir(), c)[0]?.desc) ?? null
+    },
+  }
+}
+
+/** A character waiting in a channel's saves: its name, and it as a server's lobby words it ("Kai, a level 3 Minotaur Berserker"). */
+export interface SavedCharacter {
+  name: string
+  desc: string
+}
+
+/** The characters waiting in a channel's saves, the one played last first, as console crawl lists its saved games. */
+export function savedCharacters(hostDir: string, c: OfflineChannel): SavedCharacter[] {
+  // crawl keeps its saves in the save directory's `saves/`
+  const dir = path.join(hostDir, c.id, 'saves')
+  if (!fs.existsSync(dir)) return []
+  const said = notes(hostDir, c)
+  return fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith('.cs'))
+    .map((f) => ({ f, at: fs.statSync(path.join(dir, f)).mtimeMs }))
+    .sort((a, b) => b.at - a.at)
+    .map(({ f }) => {
+      const name = f.slice(0, -'.cs'.length)
+      // a save from before the words were kept: its name alone
+      return { name, desc: said[name] ?? name }
+    })
+}
+
+const notesFile = (hostDir: string, c: OfflineChannel) => path.join(hostDir, `${c.id}.characters.json`)
+
+function notes(hostDir: string, c: OfflineChannel): Record<string, string> {
+  try {
+    return JSON.parse(fs.readFileSync(notesFile(hostDir, c), 'utf8')) as Record<string, string>
+  } catch {
+    return {}
+  }
+}
+
 const modules = new Map<string, Promise<WebAssembly.Module>>()
 function wasm(dir: string) {
   let m = modules.get(dir)
@@ -44,32 +103,56 @@ export interface Engine {
   log: string[]
   /** write what crawl has saved to disk now */
   sync(): Promise<void>
+  /** the game's worker gone, what crawl saved on disk first; at once when none is running, or after `ms` */
+  stopped(ms: number): Promise<void>
+  /** keep the next game's saves in `dir`: another player's */
+  setHostDir(dir: string): void
+}
+
+/** what crawl has saved in `w`'s file system (`saveDir`), written to `host` on disk; or after two seconds */
+function flush(w: Worker, saveDir: string, host: string): Promise<void> {
+  return new Promise((resolve) => {
+    const done = (m: { type: string }) => {
+      if (m.type !== 'synced') return
+      w.off('message', done)
+      resolve()
+    }
+    w.on('message', done)
+    w.postMessage({ type: 'sync', saveDir, hostDir: host })
+    setTimeout(resolve, 2000)
+  })
 }
 
 export function engine(hostDir: string): Engine {
   let worker: Worker | null = null
   let saveDir = ''
   let chHost = ''
+  /** the last worker's save, on its way to disk before it is terminated */
+  let stopping: Promise<void> = Promise.resolve()
+  /** who waits for the running worker to stop (`stopped`) */
+  const waiting = new Set<() => void>()
   const e: Engine = {
     log: [],
-    sync: () =>
-      new Promise((resolve) => {
-        if (!worker) return resolve()
-        const w = worker
-        const done = (m: { type: string }) => {
-          if (m.type !== 'synced') return
-          w.off('message', done)
-          resolve()
-        }
-        w.on('message', done)
-        w.postMessage({ type: 'sync', saveDir, hostDir: chHost })
-        setTimeout(resolve, 2000)
-      }),
+    setHostDir: (dir) => (hostDir = dir),
+    sync: () => (worker ? flush(worker, saveDir, chHost) : stopping),
+    stopped: (ms) =>
+      worker
+        ? new Promise((resolve) => {
+            const done = () => {
+              waiting.delete(done)
+              clearTimeout(timer)
+              void stopping.then(resolve)
+            }
+            const timer = setTimeout(done, ms)
+            waiting.add(done)
+          })
+        : stopping,
     launch: (ch, args, events, rootFiles) => {
       const w = new Worker(path.join(here, 'engine-worker.mjs'))
       worker = w
+      const host = path.join(hostDir, ch.id)
       saveDir = ch.saveDir
-      chHost = path.join(hostDir, ch.id)
+      chHost = host
       w.on('message', (m: { type: string; text?: string; code?: number; message?: string; line?: string }) => {
         if (worker !== w) return
         switch (m.type) {
@@ -103,9 +186,13 @@ export function engine(hostDir: string): Engine {
       return {
         control,
         keys: (text) => control(JSON.stringify({ msg: 'text_input', text })),
+        // the server stops a game once crawl has saved it (offline server.ts `stop`), but only in crawl's memory: it
+        // goes to disk before the worker does
         terminate: () => {
-          if (worker === w) worker = null
-          void w.terminate()
+          if (worker !== w) return void w.terminate()
+          worker = null
+          stopping = flush(w, ch.saveDir, host).then(() => void w.terminate())
+          for (const done of [...waiting]) done()
         },
       }
     },

@@ -1,6 +1,5 @@
 import { cm, mapKey, MouseMode, MSGCH, UiState, formattedStringToText, keyMessage, topMenu, type ClientMessage, type GameMessage, type GameState } from '@orbrun/webtiles'
-import { autofightTarget, cellKey, dirFromDelta, isThreat, type Billboard, type CellKey, type MapRenderer, type Scene, type SceneCursor } from '@orbrun/scene'
-import { ExploreDone, linesSince, namedInWarnings, namedMonster } from './warnings'
+import { autofightTarget, cellKey, dirFromDelta, type Billboard, type CellKey, type MapRenderer, type SceneCursor } from '@orbrun/scene'
 import { Render3d } from '@orbrun/render-3d'
 import { viewmodelFor } from '@orbrun/scene-webtiles'
 import { Render2d } from '@orbrun/render-2d'
@@ -8,7 +7,8 @@ import { RendererPark } from './park'
 import { escapeHtml, h, onDprChange } from './dom'
 import type { Session } from './session'
 import { CameraController } from './camera'
-import { deriveContext, deriveMode, type Context, type Mode } from './context'
+import { Pilot, serverCursor, type PilotHooks } from './pilot'
+import { deriveMode, type Context, type Mode } from './context'
 import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchExtraAction, touchLabels, typedInLog, type TouchLabel, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
 import type { CommandMenu } from './command-menu'
 import { ORBIT_WINDOW_MS, Runner, type LastStep } from './runner'
@@ -132,6 +132,8 @@ export class GameScreen {
   private session: Session
   private cam = new CameraController()
   private runner: Runner
+  /** the eye after the feet, and the context: what the screen makes of the server's word before drawing (pilot.ts) */
+  private pilot: Pilot
   private hud: Hud
   private chat: Chat
   private overlays: Overlays
@@ -158,11 +160,6 @@ export class GameScreen {
   private settingsCache: Settings | null = null
   /** the Explore delay this device's engine has, which a change sends on; null online or when the rc file says */
   private exploreDelay: number | null = null
-  /** the context as last derived, and the key of what it was derived from */
-  private ctxBase: Context | null = null
-  private ctxKey = ''
-  /** whether crawl last said explore has nowhere to go, and the level has given it nowhere since (warnings.ts) */
-  private exploreDone = new ExploreDone()
   /** the revisions a frame was last drawn for: only a change to what is drawn (the map, the player, the UI stack) asks for a frame */
   private drawnRev = { map: -1, player: -1, ui: -1 }
   /** A game on this device has no one watching and no one to talk to: no chat box, no Chat row, F12 does nothing. */
@@ -198,27 +195,6 @@ export class GameScreen {
   /** the safety tick while the loop sleeps (IDLE_TICK_MS) */
   private idleTimer = 0
   private destroyed = false
-  private lastPos = { x: NaN, y: NaN }
-  /**
-   * The player's position as of the last server message, and every hop it
-   * made since the scene was last rebuilt. The scene is rebuilt once per
-   * frame, so a fast explore or travel (a busy frame, or `travel_delay -1`)
-   * arrives as several cells at once: the hops keep the path the feet took,
-   * and the camera can face the way the last step went instead of mistaking
-   * the batch for a teleport. `jumped` marks a hop that was not one cell.
-   */
-  private hopPos = { x: NaN, y: NaN }
-  private hops: { dx: number; dy: number }[] = []
-  private jumped = false
-  /** place and depth the player was last seen on, so a level change is known even when the coordinates barely move */
-  private lastLevel = ''
-  /** arrived somewhere new before its cells came through: face again once they do */
-  private arrivalPending = false
-  private lastMonsters = new Set<number>()
-  /** the newest message line the warning rule has read (warnings.ts), so each line is judged once */
-  private lastWarningLine: GameMessage | undefined
-  /** a turn a warning or newcomer earned while the server was not taking commands (a --more--), paid when it does */
-  private owedTurn: { names: string[]; newcomer: boolean } | null = null
   private loading = h('div', { class: 'loading' })
   private pressTimes = new Map<string, number>()
   /** A tap-or-hold button down and short of HOLD_MS: its corner prompt fills its hold ring (hud.ts showHold). */
@@ -421,7 +397,8 @@ export class GameScreen {
         setTimeout(() => this.wake(), 1600)
       },
     })
-    this.ctx = deriveContext(session.state, session.scene, this.cam.camera, 'micro')
+    this.pilot = new Pilot(session, this.cam, this.runner, this.pilotHooks())
+    this.ctx = this.pilot.context()
     this.spellBook = new SpellBook({
       send: (m) => this.session.send(m, true),
       changed: () => {
@@ -958,7 +935,7 @@ export class GameScreen {
     // over the screen. A veil that swallowed the click would strand the player,
     // so while anything of the server's is up it stands behind the overlays.
     this.loading.classList.toggle('behind', !!(st.dialog || st.menus.length || st.ui.length || st.textInput))
-    this.ctx = this.deriveContext(st)
+    this.ctx = this.pilot.context()
     const walking = this.is3d && this.ctx.mode === 'command'
     this.hooks.gamepad.fourWay = walking
     this.fireHolds(now)
@@ -1084,23 +1061,6 @@ export class GameScreen {
   private advancePresentation(dt: number, now: number): boolean {
     this.renderer.setScene(this.session.scene, now)
     return this.cam.update(dt, now)
-  }
-
-  /**
-   * The context of the frame (context.ts `deriveContext`): scans of the
-   * scene's billboards and the message log, so it is derived once per change
-   * of what it reads (every message bumps `rev.any`; a scene rebuild bumps
-   * `scene.revision`; a turn changes the facing) and copied for the fields
-   * the frame fills in afterwards (`examining`, `popupActions`, `focus`).
-   */
-  private deriveContext(st: GameState): Context {
-    const key = `${st.rev.any}|${this.session.scene.revision}|${this.cam.camera.facing}`
-    if (!this.ctxBase || key !== this.ctxKey) {
-      this.ctxKey = key
-      this.ctxBase = deriveContext(st, this.session.scene, this.cam.camera, 'micro')
-      if (this.exploreDone.update(st, this.session.scene)) this.ctxBase.exploreDone = true
-    }
-    return { ...this.ctxBase }
   }
 
   /** The safety tick: a frame after IDLE_TICK_MS asleep, so anything that changed without waking the loop is seen. */
@@ -1295,31 +1255,18 @@ export class GameScreen {
    * spectated player's aim faces the cell itself.
    */
   private faceCursor(c: SceneCursor) {
-    if (c.mode === 'map' || this.cam.steering || this.viewHeld) return
-    if (cellKey(c.x, c.y) === this.lastTargetSent) return
-    const scene = this.session.scene
-    if (!scene.playerOnLevel) return
-    if (this.ctx.examining || !this.session.watching) this.cam.faceCursorBehind(scene, c.x, c.y)
-    else this.cam.faceCell(scene, c.x, c.y)
+    this.pilot.faceCursor(c, { examining: this.ctx.examining, viewHeld: this.viewHeld, aimed: cellKey(c.x, c.y) === this.lastTargetSent })
   }
 
   private cursorFor(): SceneCursor | null {
-    const st = this.session.state
-    // cursor ids: 0 mouse/targeting, 1 tutorial, 2 level map
-    const c = st.cursors[0] || st.cursors[2] || st.cursors[1]
+    const server = serverCursor(this.session.state, (name) => this.session.gamedata?.icons.id(name))
     this.cursorIsOurs = false
-    if (!c) {
-      // dungeon_renderer.js handle_mouse: with nothing else up, the pointer's cell wears CURSOR_MOUSE
-      const key = this.pointerCell()
-      if (key === null) return null
-      this.cursorIsOurs = true
-      return { x: (key & 1023) - 512, y: (key >> 10) - 512, mode: 'examine', tile: this.session.gamedata?.icons.id('CURSOR') }
-    }
-    const mode: SceneCursor['mode'] = st.uiState === UiState.VIEW_MAP ? 'map' : st.inputMode === MouseMode.COMMAND ? 'examine' : 'target'
-    // WebTiles paints icons.CURSOR for the mouse and map cursors, TUTORIAL_CURSOR for the tutorial one
-    const tutorial = !st.cursors[0] && !st.cursors[2] && !!st.cursors[1]
-    const tile = this.session.gamedata?.icons.id(tutorial ? 'TUTORIAL_CURSOR' : 'CURSOR')
-    return { x: c.x, y: c.y, mode, tile }
+    if (server) return server
+    // dungeon_renderer.js handle_mouse: with nothing else up, the pointer's cell wears CURSOR_MOUSE
+    const key = this.pointerCell()
+    if (key === null) return null
+    this.cursorIsOurs = true
+    return { x: (key & 1023) - 512, y: (key >> 10) - 512, mode: 'examine', tile: this.session.gamedata?.icons.id('CURSOR') }
   }
 
   /**
@@ -1372,124 +1319,30 @@ export class GameScreen {
 
   /** A server message came in: note the step the player made, if any (see `hops`). */
   private trackHop() {
-    const pos = this.session.state.player.pos
-    if (!pos) return
-    const { x, y } = this.hopPos
-    if (pos.x === x && pos.y === y) return
-    const dx = pos.x - x
-    const dy = pos.y - y
-    if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) this.hops.push({ dx, dy })
-    else this.jumped = true
-    this.hopPos = { x: pos.x, y: pos.y }
+    this.pilot.trackHop()
   }
 
   private onScene() {
     const now = this.sceneTime ?? performance.now() / 1000
-    const scene = this.session.scene
-    const st = this.session.state
-    const p = scene.player
-    const hops = this.hops
-    const jumped = this.jumped
-    this.hops = []
-    this.jumped = false
-    if (scene.playerOnLevel) {
-      const level = `${st.player.place}:${st.player.depth}`
-      const newLevel = level !== this.lastLevel
-      if (newLevel && this.renderer instanceof Render3d) this.renderer.resetMotion()
-      this.lastLevel = level
-      const moved = p.x !== this.lastPos.x || p.y !== this.lastPos.y
-      if (moved || newLevel) {
-        // the feet moved on: whatever turn was owed is about the old spot
-        this.owedTurn = null
+    this.pilot.onScene(now)
+    this.renderer?.setScene(this.session.scene, now)
+    this.needsRender = true
+  }
+
+  /** What the pilot tells this screen: a level's motion forgotten, and the tabs and the pad's lesson after a move. */
+  private pilotHooks(): PilotHooks {
+    return {
+      newLevel: () => {
+        if (this.renderer instanceof Render3d) this.renderer.resetMotion()
+      },
+      moved: (own, sameLevel, hops) => {
         this.forgetTabs()
-        const dx = p.x - this.lastPos.x
-        const dy = p.y - this.lastPos.y
-        // Attribute all hops, including replies to older commands still in
-        // flight after the player turned and sent a new direction.
-        const ownStep = this.runner.stepForMove(dx, dy, performance.now(), jumped ? [] : hops)
-        const wasOurs = ownStep !== null
-        const sameLevel = !newLevel && !Number.isNaN(this.lastPos.x) && !(dx === 0 && dy === 0)
-        const single = Math.abs(dx) <= 1 && Math.abs(dy) <= 1
-        if (sameLevel && ownStep && this.padStep === ownStep && !this.session.watching) {
+        if (sameLevel && own && this.padStep === own && !this.session.watching) {
           this.padHints.moved(Math.max(1, hops.length))
           this.padStep = null
         }
-        // Several cells in one frame is still a walk when every hop the server
-        // sent was one cell: travel, explore, a spectated player. The last hop
-        // is the way the feet went. A single position update spanning several
-        // cells (`travel_delay -1`, a blink, a teleport) has no hops: the
-        // travel trail tells the last step, else the displacement stands in.
-        const walk = sameLevel && hops.length > 0 && !jumped
-        // the eye glides after a walk, by the hops the server drew (the rc's
-        // `travel_delay`: a positive one sends every step, -1 sends the
-        // arrival alone, which is a jump here as it is a jump there)
-        if (walk || (sameLevel && single)) this.cam.walkTo(p.x, p.y, walk ? hops : [{ dx, dy }], now)
-        else this.cam.snapTo(p.x, p.y)
-        if (!sameLevel) {
-          // level change: never nose-to-wall
-          if (!this.cam.steering) this.arrivalPending = !this.cam.faceAfterArrival(scene)
-        } else if (this.cam.steering) {
-          // the player is looking around: leave the view alone
-        } else if (wasOurs) {
-          // Align our forward step only if no newer turn or look superseded
-          // it. The reply confirms the feet, not a heading the player has
-          // since changed (even if the drag/stick has already been released).
-          if (ownStep === this.runner.lastStep && ownStep.turned && ownStep.steeringRevision === this.cam.steeringRevision) {
-            const h = hops.at(-1) ?? { dx, dy }
-            this.cam.faceStep(h.dx, h.dy)
-          }
-        } else if (walk || single) {
-          // path-driven movement: face the way the last step went
-          const h = walk ? hops[hops.length - 1] : { dx, dy }
-          this.cam.faceAfterMove(scene, h.dx, h.dy)
-        } else {
-          this.cam.faceAfterJump(scene, dx, dy)
-        }
-        this.lastPos = { x: p.x, y: p.y }
-      } else if (this.arrivalPending) {
-        // the new level's cells have arrived: now the heading can be judged
-        if (this.cam.steering) this.arrivalPending = false
-        else this.arrivalPending = !this.cam.faceAfterArrival(scene)
-      } else if (this.session.watching && !this.cam.steering) {
-        // the spectated player stood their ground with a hostile beside them: a fight, face it
-        this.cam.faceAdjacentHostile(scene)
-      }
-      // discovery: a monster newly in view turns the camera
-      const ids = new Set<number>()
-      let newest: Billboard | null = null
-      for (const b of scene.billboards) {
-        if (b.kind !== 'monster' || !b.ref) continue
-        const id = (b.ref as { id?: number }).id
-        if (id === undefined) continue
-        ids.add(id)
-        // a plant coming into view is no discovery: it is firewood, not a threat (scene `isThreat`)
-        if (!this.lastMonsters.has(id) && isThreat(b)) newest = newest ?? b
-      }
-      // a step or a wait of the player's own: the turn they chose is not taken from them
-      const keyedAt = Math.max(this.runner.lastStep?.t ?? -Infinity, this.runner.lastWaitAt)
-      const keyedJustNow = performance.now() - keyedAt < 400
-      this.lastMonsters = ids
-      // the server's own word wins: a walk it refused ("X is nearby!") or
-      // stopped ("You encounter X.", "X comes into view.") names the monster,
-      // and that one is faced, or failing a match the nearest blocker, hostile
-      // or neutral (warnings.ts). Read once the batch's cells are in, so the
-      // named monster is on the scene to be found.
-      const lines = st.messages.lines
-      const fresh = linesSince(lines, this.lastWarningLine, st.player.turn)
-      this.lastWarningLine = lines[lines.length - 1]
-      const names = namedInWarnings(fresh)
-      if ((newest || names.length) && !this.cam.steering && !keyedJustNow) {
-        // A newcomer or a warning turns the camera, but only once the server
-        // takes commands: a walk stopped under a --more-- ends its batch in
-        // `input_mode 5` (fixtures/explore-more.json), and the line, read
-        // once, would otherwise be spent before the prompt is dismissed. The
-        // turn is owed instead and paid when input_mode returns to command.
-        if (st.inputMode === MouseMode.COMMAND) this.faceEvent(scene, names, newest !== null)
-        else this.owedTurn = { names: [...(this.owedTurn?.names ?? []), ...names], newcomer: (this.owedTurn?.newcomer ?? false) || newest !== null }
-      }
+      },
     }
-    this.renderer?.setScene(scene, now)
-    this.needsRender = true
   }
 
   // ------------------------------------------------------------------ input
@@ -2378,19 +2231,9 @@ export class GameScreen {
    * newcomer points at (the closest hostile, which may be one already in
    * view). rendering-3d.md III.2.
    */
-  private faceEvent(scene: Scene, names: readonly string[], newcomer: boolean) {
-    if (names.length) this.cam.faceBlocker(scene, namedMonster(scene, names))
-    else if (newcomer) this.cam.faceHostile(scene)
-  }
-
   /** The server takes commands again: pay the turn owed from under a --more--. */
   private payOwedTurn() {
-    const owed = this.owedTurn
-    if (!owed || this.session.state.inputMode !== MouseMode.COMMAND) return
-    this.owedTurn = null
-    if (this.cam.steering) return
-    this.faceEvent(this.session.scene, owed.names, owed.newcomer)
-    this.needsRender = true
+    if (this.pilot.payOwedTurn()) this.needsRender = true
   }
 
   private faceBillboard(b: Billboard) {

@@ -1,14 +1,16 @@
 /**
- * Play Orbrun in this terminal, no browser: `npm run term [-- --name Ada --dcss trunk]`,
+ * Play Orbrun in this terminal, no browser: `npm run term [-- --name Ada --dcss trunk]` (or `orbrun`),
  * `--help` for the rest; options also come from ~/.config/orbrun/config.toml
  * (config.ts). Ctrl-\ saves and quits. Needs Node 24 or later (crawl's
  * WebAssembly uses JSPI, `WebAssembly.Suspending`).
  */
-import os from 'node:os'
+import fs from 'node:fs'
 import path from 'node:path'
 import { runGame } from './client'
 import { ConfigError, USAGE, resolveConfig, settingsList } from './config'
 import { builtChannels, pickChannel } from './engine'
+// @ts-expect-error: plain JS
+import { stateDir } from '../state.mjs'
 
 if (typeof (WebAssembly as unknown as { Suspending?: unknown }).Suspending !== 'function') {
   console.error(`Orbrun's engine needs Node 24 or later (WebAssembly JSPI); this is ${process.version}.`)
@@ -17,7 +19,7 @@ if (typeof (WebAssembly as unknown as { Suspending?: unknown }).Suspending !== '
 
 // what to play and how: told wrong, say so and stop, before the screen is taken
 let config: ReturnType<typeof resolveConfig>
-let channel: ReturnType<typeof pickChannel>
+let channel: ReturnType<typeof pickChannel> | undefined
 try {
   config = resolveConfig(process.argv.slice(2))
   if (config.help === 'usage') {
@@ -28,11 +30,25 @@ try {
     console.log(`The game's settings, for --set KEY=VALUE or [settings] in ${config.file ?? '~/.config/orbrun/config.toml'}:\n\n${settingsList()}`)
     process.exit(0)
   }
-  channel = pickChannel(builtChannels(), config.dcss)
+  // a crawl named is played straight away; else the menu offers those built, of which there must be one
+  const built = builtChannels()
+  const named = pickChannel(built, config.dcss ?? 'stable')
+  channel = config.dcss ? named : undefined
 } catch (e) {
   if (!(e instanceof ConfigError)) throw e
   console.error(`orbrun: ${e.message}`)
   process.exit(2)
+}
+// the account last played as on the front screen, where no name was said (the SSH server always says one)
+const state = stateDir() as string
+const accountFile = path.join(state, 'account')
+if (!config.nameSaid) {
+  try {
+    const last = fs.readFileSync(accountFile, 'utf8').trim()
+    if (/^[A-Za-z0-9_-]{1,20}$/.test(last)) config.name = last
+  } catch {
+    /* none picked yet */
+  }
 }
 const out = process.stdout
 const input = process.stdin
@@ -57,5 +73,10 @@ await runGame(
       process.exit(code)
     },
   },
-  { ...config, stateDir: path.join(os.homedir(), '.cache', 'orbrun-term'), channel },
+  {
+    ...config,
+    stateDir: state,
+    channel,
+    remember: config.nameSaid ? undefined : (name) => fs.writeFileSync(accountFile, name),
+  },
 )

@@ -126,7 +126,7 @@ await warmGlyphs(Object.values(GLYPHS).map((g) => g[0]))
 
 const view = new GlyphView(tiles, (name) => (tiles.atlasNames().includes(name) ? atlas : undefined))
 view.setScene(scene)
-const defaults = { ...view.opts, labels: false }
+const defaults = { ...view.opts }
 
 /** where the monster stands on the screen at distance d, in cells: its middle, its floor, how tall and wide */
 function footprint(d: number, size: number, reach: number) {
