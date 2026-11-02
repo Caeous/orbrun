@@ -15,13 +15,21 @@ npm run term:bench -- [place…]                         # how fast the view is 
 npm run term:compare -- <render-3d frames> <out.png>   # the renderer beside render-3d, pose by pose
 npm run term:glyph [place]    # the glyph view (glyph/): the view as cells, in sextants or octants
 npm run term:glyph -- [place] --bench [cols rows frames]   # how fast it draws, without a terminal
-npm run term:gym -- [--monsters goblin,ogre] [--variants best,base]   # the glyph view's monsters near to far, beside the truth
+npm run term:gym -- [--monsters goblin,ogre] [--term 160x48] [--motion]   # the glyph view's monsters as the game sees them, beside the truth
 ```
 
 The game starts at the front screen, as the browser's (game/home.ts): a
 place of the front room's standing still behind it in the view's glyphs,
 the next of the browser's cycle each start, under its tinted veil; the
-logo in the view's glyphs; and the rows: each version built
+logo as the browser's, laid out in the mosaic's dots as the page lays it
+out (game/home.ts `lockup`): the Orb of Zot's tile a texel to a dot (or
+two to one, 16 dots a side; 32 on a very wide screen), the name in the
+wordmark's face in the page's proportion and place beside it, cut sharp
+on the dots (a dot inked where its ink covers most of it), and the page's shadows under them, the orb's
+gold and purple glow and the name's dark cloud, as Chrome draws them; a
+cell of either is the two colours and the glyph nearest its dots, and the shadows past them shade
+the room's own cells (or, where a cell is one colour, are drawn by the
+dot); and the rows: each version built
 (`engine/build.sh`), its game to continue or a new one; the account;
 Settings; and Quit. Arrows (or j and k) move, Enter takes a row, q leaves,
 and the screen comes back when a game ends. `--dcss trunk` (or `dcss` in
@@ -46,7 +54,7 @@ or `--config <file>`), the environment (`ORBRUN_TERM_*`, `FPS`), and the
 command line (game/config.ts):
 
 ```toml
-name = "Ada"            # the player (default: your login name)
+name = "Ada"            # the player (default: Player, as in the browser)
 dcss = "trunk"          # play it straight away, with no menu: stable, trunk, or a release built (0.34)
 fps = 60
 reduced_motion = false
@@ -98,16 +106,28 @@ the config), the game starts as the account last picked there, kept in
   stacks them, a missile lifted off the floor, a feature render-3d's
   height, the damage bar over its head, washed with
   its flash, gliding as world's movers glide it, its name under it close
-  up, crawl's letter for it when too far to make out; a cloud, or what is
-  submerged or seen invisible, shows what is behind it. A monster near
-  enough that its texels fill a dot stands on the dots and is read on the
-  coarsest of a cell's grids its texels fill (glyph/sampling.ts `gridFor`),
-  so its texels' edges fall where a glyph draws them. Over all, in a lens of
+  up, crawl's letter for it where it would stand a cell tall or less; a cloud, or what is
+  submerged or seen invisible, shows what is behind it. What stands is
+  steady (glyph/render.ts `steady`): its picture is drawn once at a size
+  and kept, its size whole cells and its foot and middle on the cells'
+  edges (half cells, or dots, for what is too small for a cell to be little
+  of it), so wherever it stands, glides, or is seen from, turning or
+  stepping, it is the same picture on the same glyphs, moved, and changes
+  only when its size does; near enough that its texels fill a dot, it is
+  read a dot at a time, crisp; farther, its texels are averaged as the
+  truth averages them, each pixel then the art's own colour nearest it
+  (`farSampling`, `farSnap`), so its colours are its own far off as near,
+  and each cell it is in is drawn in two of its own pixels' colours, the
+  glyph chosen as seen from a step back. The hands are a whole number of dots a texel, on the
+  dots. Over all, in a lens of
   their own, the hands, posed and sized as render-3d poses them (world hands.ts),
   the weapon lifting for a swing, and the net or the web round a trapped
   player (hud.ts `renderTrapped`). The view is drawn on threads in bands of
   rows (glyph/threads.ts; `ORBRUN_TERM_THREADS`, 0 for none), and again only
-  when what it is drawn from changes. `--reduced-motion` prefers reduced
+  when what it is drawn from changes. A turn's easing, once within a cell's
+  width of its heading at the middle of the view, lands on it (game/view.ts
+  `shownCamera`): its long tail, where the browser's view drifts by less
+  than a pixel, would redraw every wall cell for each sliver of a cell. `--reduced-motion` prefers reduced
   motion, as a player may ask a browser to: turns and steps land at once
   and nothing glides or swings. Frames are drawn only
   while something changes or moves, up to 60 a second (`FPS` to change it),
@@ -173,15 +193,28 @@ password, so it listens on 127.0.0.1 only unless `HOST` says otherwise
 - `glyph/`, `glyph-walk.ts`: the view as terminal cells, a ray a column
   through crawl's grid, for the game and alone (`glyph-walk.ts`,
   GLYPH_OPTS='{"wallInset":0.375}' for the game's walls); `glyph-gym.ts`:
-  its gym. A monster is stood in an open room at a
-  ladder of distances, from filling the view to a speck, and drawn by each
-  variant of the glyph view (`VARIANTS`) beside what the same view shows in
-  true pixels (8x16 a cell), each panel cropped to it, a sheet a monster
-  (`--zoom 3`, `--across` for a column a variant); with how far each is
-  from the truth, both blurred (which favours a blur: look at the sheets),
-  `--motion lateral|depth|turn` how much more each shimmers than the truth
-  as the monster glides or the view turns, `--sizes` how much of the view
-  each covers, `--time [--at 8]` how long a frame takes.
+  its gym, the view as the game sets it (game/view.ts `gameLens`,
+  `GAME_GLYPH`: its field of view the height's, 85° as the terminal's Auto,
+  across as wide as the terminal makes it; its eye, its pitch) at each
+  terminal size asked for (`--term 120x36,160x48`), in an open room. At
+  rest, the eye on a cell's middle facing north or north-east and a monster
+  on each cell in view out to five cells (`--reach`), at each height asked
+  for (`--heights 0.4,0.55,0.85`, as crawl's hit points stand them), each
+  variant of the glyph view (`VARIANTS`) against what the same view shows in
+  true pixels (8x16 a cell): how far apart, both blurred; how like, within
+  the cell the cells may move it, from a step back and close up; how much
+  more or less colourful; and how many dots its height, foot and middle are
+  off; with a sheet of the poses ahead. `--sample 40 --items 8` stands
+  monsters and items evenly through the game's tiles rather than a few
+  named, for what holds for almost everything (the median, the worst tenth,
+  and the subjects each does worst on); `--shard i/n` runs a share of them
+  on each of n processes and `--merge` reports them as one; `--hands`
+  draws the hands as the game holds them. `--motion`: a monster
+  gliding across, toward and on the diagonal, the eye stepping toward it
+  and aside and turning a heading, a frame at a time (`--steps`, `--at`
+  for how far), each variant scored by how much the monster changes from
+  frame to frame besides moving, and how often its height changes and
+  changes back.
   The glyph view draws on threads (glyph/threads.ts, glyph/worker.ts;
   `ORBRUN_TERM_THREADS`, 0 for none): what a frame is drawn from (each
   column's wall, what stands where) is found once a thread, then bands of

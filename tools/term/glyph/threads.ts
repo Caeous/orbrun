@@ -135,10 +135,7 @@ export class GlyphThreads {
       if (p.left <= 0) p.done(true)
     })
     // a worker that fails takes the others with it: the view is drawn here from then on
-    const fail = () => {
-      this.destroy()
-      for (const p of this.pending.values()) p.done(false)
-    }
+    const fail = () => this.destroy()
     worker.on('error', fail)
     worker.on('exit', fail)
     worker.unref()
@@ -273,11 +270,18 @@ export class GlyphThreads {
     s.inks = inks.length
   }
 
+  /**
+   * The threads, let go. A frame still waiting on them (the view given new
+   * tiles while the last was drawn: a game begun from the front screen) is
+   * drawn again here, not waited on for ever.
+   */
   destroy() {
     for (const t of this.threads) {
       t.removeAllListeners('exit')
       void t.terminate()
     }
     this.threads = []
+    for (const p of this.pending.values()) p.done(false)
+    this.pending.clear()
   }
 }
