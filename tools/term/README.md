@@ -124,10 +124,10 @@ the config), the game starts as the account last picked there, kept in
   the weapon lifting for a swing, and the net or the web round a trapped
   player (hud.ts `renderTrapped`). The view is drawn on threads in bands of
   rows (glyph/threads.ts; `ORBRUN_TERM_THREADS`, 0 for none), and again only
-  when what it is drawn from changes. A turn's easing, once within a cell's
-  width of its heading at the middle of the view, lands on it (game/view.ts
-  `shownCamera`): its long tail, where the browser's view drifts by less
-  than a pixel, would redraw every wall cell for each sliver of a cell. `--reduced-motion` prefers reduced
+  when what it is drawn from changes. A turn's easing, once within 6° of its
+  heading, lands on it (game/view.ts `shownCamera`): its long tail, drawn a
+  few dots at a time, was seen as the whole view crawling and what stands
+  hopping up and down as it slowed. `--reduced-motion` prefers reduced
   motion, as a player may ask a browser to: turns and steps land at once
   and nothing glides or swings. Frames are drawn only
   while something changes or moves, up to 60 a second (`FPS` to change it),
