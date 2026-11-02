@@ -23,9 +23,9 @@
 import { keyToXY, type Camera, type CellKey, type Scene, type SceneCell, type SceneCursor, type TileId, type TileRect, type TileSource } from '@orbrun/scene'
 import type { Pixels } from '@orbrun/render-term'
 import { bigGlyph } from './font'
-import { INVERSE, OCTANTS, inked } from './shapes'
+import { INVERSE, OCTANTS, SHAPE_OF, coverage, inked } from './shapes'
 import { setChroma, setDark, SpriteTex } from './sprite'
-import { encoders, q, unpack, type Encoder, type EncoderName, type FitOptions } from './encode'
+import { encoders, fromOklab, oklab, q, unpack, type Encoder, type EncoderName, type FitOptions } from './encode'
 import { drawSprite, gridFor, type SpriteColumns } from './sampling'
 import {
   CURSOR_ALPHA,
@@ -123,8 +123,8 @@ export interface GlyphViewOptions {
   mean?: 'oklab' | 'linear'
   /** how much a pixel that stands out (a goblin's eye) counts for, over one that does not */
   stand?: number
-  /** what stands farther than this, in cells, is named by its glyph instead of drawn (GLYPH_DIST) */
-  glyphDist?: number
+  /** what would stand this many cells tall or less on the screen, seen from as far as it is, is named by its glyph instead of drawn (GLYPH_CELLS) */
+  glyphCells?: number
   /** what lives too far to draw is its glyph on a cell of its own colour, not on what is behind it */
   farTint?: boolean
   /** for the `fit` encoder */
@@ -135,10 +135,33 @@ export interface GlyphViewOptions {
   cursor?: { x: number; y: number; mode?: SceneCursor['mode']; tile?: TileId } | null
   /**
    * what stands near enough that its texels fill a dot stood on the dots and
-   * read on the coarsest of a cell's grids its texels fill (sampling.ts
-   * `gridFor`), so its texels' edges fall on a cell's, a half's or a dot's
+   * read a dot at a time, each dot the texel under its middle, so its
+   * texels' edges fall on the dots' and none is more than a dot wider than
+   * the next; `cells`, read on the coarsest of a cell's grids its texels
+   * fill (sampling.ts `gridFor`), each a texel, which doubles a texel by as
+   * much as a cell here and there and shimmers more as it moves
    */
-  grid?: boolean
+  grid?: boolean | 'cells'
+  /**
+   * what stands, and the hands, steady: each sprite's picture drawn once at
+   * a size and kept, so wherever it stands, glides or is seen from it is the
+   * same picture moved, changing only when its size does. `cells`: its size
+   * whole cells, the nearest its true size, and its foot and middle on the
+   * cells' edges, so it falls the same on its cells wherever it stands and
+   * the glyphs they are drawn in are the same too (the gym, glyph-gym.ts:
+   * as like the truth as at its true place, and as steady as the truth or
+   * steadier as it glides, steps and turns); `true`, the same on the dots.
+   * The hands, either way, a whole number of dots a texel, on the dots.
+   */
+  steady?: boolean | 'cells'
+  /** with `steady: 'cells'`, how many dots tall a sprite must be to fall on whole cells; half that, on half cells; less, on the dots (STEADY_CELLS) */
+  steadyCells?: number
+  /** with `steady`, how a sprite whose texels are smaller than a dot is shrunk, where not as `sampling` says: `area`, its texels averaged as the truth averages them */
+  farSampling?: Sampling
+  /** with `farSampling`, how much more colourful its averaged pixels are made (their OKLab chroma times this), so the two colours each cell is drawn in, averages again, are as colourful as the truth (1 for as they are) */
+  farChroma?: number
+  /** with `farSampling`, how far each averaged pixel is drawn toward the art's own colour nearest it (OKLab), 0 to 1: averaged, a strip of yellow fur a dot wide among grey and dark is a brown no part of the art is */
+  farSnap?: number
 }
 
 /** The view as the gym (glyph-gym.ts) found it looks best. */
@@ -172,6 +195,29 @@ export interface RasterOptions {
   allSprites?: boolean
   /** only the pixel rows from the first up to the second (multiples of `coarse`), the raster's rows those */
   rows?: [number, number]
+  /** every sprite at its true size and place, never `steady`: the truth the gym holds the view to */
+  exact?: boolean
+}
+
+/** a sprite drawn once at a size (`steady`): its pixels from the top of what reaches highest, straight linear rgb, coverage, how much each stands out */
+interface SteadyImage {
+  w: number
+  h: number
+  rgb: Float32Array
+  a: Float32Array
+  stand: Float32Array
+  /** each row 1 once drawn: a picture is drawn a band's rows at a time, as they are first drawn on the screen (`steadyRows`) */
+  done: Uint8Array
+  /** what it is drawn from: the layers, the rows over the cell for what reaches above it, its cell's height, how it is sampled, its grid, how much more colourful */
+  texs: SpriteTex[]
+  up: number
+  cellH: number
+  sampling: Sampling
+  grid?: [number, number]
+  chroma: number
+  /** how far toward the art's own colours (`farSnap`) */
+  snap: number
+  columns: SpriteColumns
 }
 
 /** something named rather than drawn */
@@ -182,7 +228,7 @@ interface Mark {
   sx: number
   floorY: number
   tall: number
-  /** whether it is past `glyphDist`: named small, rather than drawn, or its letter drawn large */
+  /** whether it is too small to draw (`glyphCells`): named small, rather than drawn, or its letter drawn large */
   far: boolean
 }
 
@@ -217,7 +263,7 @@ export interface Look {
   boardG: Int32Array
   boardTex: (Texture | null)[]
   wall: Float32Array[]
-  sprites: { texs: SpriteTex[]; x0: number; y0: number; sideX: number; side: number; c0: number; c1: number; r0: number; r1: number; depth: number; k: number; alpha: number; flash?: [number, number, number, number]; grid?: [number, number]; columns: SpriteColumns }[]
+  sprites: { texs: SpriteTex[]; x0: number; y0: number; sideX: number; side: number; c0: number; c1: number; r0: number; r1: number; depth: number; k: number; alpha: number; flash?: [number, number, number, number]; grid?: [number, number]; columns: SpriteColumns; img?: SteadyImage }[]
   glyphs: Mark[]
 }
 
@@ -243,9 +289,43 @@ export interface Raster {
   thing: Float32Array
   /** each cell (SX x SY pixels) 1 where half a pixel of it or more is something standing (else 0 or 2), if it is known */
   standing?: Uint8Array
+  /** each pixel 1 where the hands cover half of it or more */
+  hand?: Uint8Array
   /** each pixel column's depth */
   zbuf: Float32Array
   glyphs: Mark[]
+}
+
+let nextTexId = 0
+/** how many dots tall a sprite `steady` on the cells must be to fall on whole cells (the gym, glyph-gym.ts) */
+const STEADY_CELLS = 32
+/** the pixels of sprites drawn `steady` a view keeps, at most */
+const STEADY_PIXELS = 4_000_000
+/** depths that hide nothing, for a steady sprite's picture drawn alone, kept by width */
+const steadyZbufs = new Map<number, Float32Array>()
+const STEADY_ZBUF = (w: number) => steadyZbufs.get(w) ?? steadyZbufs.set(w, new Float32Array(w).fill(Infinity)).get(w)!
+
+/** a dot of the mosaic in pixels across and down: a cell is 2 dots across and 4 (octants) or 3 (sextants) down */
+export function dotOf(SX: number, SY: number, mosaic: GlyphViewOptions['mosaic']) {
+  return { DX: Math.max(1, SX / 2), DY: Math.max(1, SY / (mosaic === 'sextant' ? 3 : 4)) }
+}
+
+/**
+ * A sprite's size `steady` (`side` x `sideX` pixels true): whole dots,
+ * `growY` of them at a time down and `growX` across, the nearest its true
+ * height and as wide as that makes it; where its texels fill a dot and a
+ * whole number of dots a texel is within `whole` of its true size (a share
+ * of it), that. Pixels across and down.
+ */
+export function steadySize(side: number, sideX: number, DX: number, DY: number, whole: number, growY = 1, growX = 1): { w: number; h: number } {
+  const ratio = (sideX / DX) / (side / DY)
+  const tex = side / 32 / DY
+  if (whole > 0 && tex >= 0.75) {
+    const m = Math.max(1, Math.round(tex))
+    if (Math.abs(m - tex) <= whole * tex) return { w: 32 * DX * Math.max(1, Math.round(m * ratio)), h: 32 * DY * m }
+  }
+  const ny = growY * Math.max(1, Math.round(side / DY / growY))
+  return { w: DX * growX * Math.max(1, Math.round((ny * ratio) / growX)), h: DY * ny }
 }
 
 const FOG = 16
@@ -254,8 +334,8 @@ const NEAR = 0.15
 const LID = 0.32
 /** the most open doors a column sees through */
 const BOARDS = 3
-/** what stands farther than this, in cells, is named by its glyph */
-const GLYPH_DIST = 5
+/** what would stand this many cells tall or less is named by its glyph: a sprite a cell tall is a cell's two colours, which its letter says more with */
+const GLYPH_CELLS = 1
 
 /** crawl's sixteen colours, bright enough to read on the dark. */
 export const CRAWL: RGB[] = [
@@ -796,10 +876,11 @@ export class GlyphView {
   /**
    * What stands, into `L`: each thing where `place` puts it on the screen
    * (its depth, the middle of its foot across, and the row of its foot), the
-   * farthest first; a sprite within `glyphDist` cells, else its glyph. Which
-   * is by how far it is (`dist`) alone, not its depth, which shrinks as it
-   * moves off the middle of the view, nor the size of the view, so turning
-   * or resizing doesn't change it.
+   * farthest first; a sprite, else its glyph where it would stand no more
+   * than `glyphCells` cells tall. That is told by how far it is (`dist`),
+   * not its depth, which shrinks as it moves off the middle of the view, so
+   * turning doesn't change it: by its size, how far it is, and how many rows
+   * the view is.
    */
   private stand(L: Look, ro: RasterOptions, place: (t: Thing) => { depth: number; dist: number; sx: number; floorY: number }) {
     const { W, H, SX, SY, fx, fy, glyphs } = L
@@ -814,7 +895,7 @@ export class GlyphView {
       // a cell's sprite: 32 texels, `size` cells tall and as wide
       const side = (t.size * fy) / depth
       const tall = side / SY // in rows
-      const far = v.dist > (this.opts.glyphDist ?? GLYPH_DIST)
+      const far = (t.size * fy) / Math.max(v.dist, 1e-6) / SY <= (this.opts.glyphCells ?? GLYPH_CELLS)
       const letter = t.alive && this.opts.letters
       // far, what has no glyph to be named by is still drawn
       if (!ro.allSprites && (letter || !t.art.length || (far && t.glyph))) {
@@ -824,6 +905,18 @@ export class GlyphView {
       const texs = t.art.map((a) => this.spriteTex(a))
       // as wide as tall on the screen, whatever the shape of a pixel
       const sideX = (t.size * fx) / depth
+      if (this.opts.steady && !ro.exact) {
+        // its size whole dots, its middle and its foot on the dots: the picture of that size, moved by whole dots
+        const { DX, DY } = dotOf(SX, SY, this.opts.mosaic)
+        // on the cells (`cells`), as near the truth as its size lets it: a cell at a time where that is little of it, half a cell where it is more, a dot where it is small
+        const tall = side / DY, from = this.opts.steadyCells ?? STEADY_CELLS, cellH = SY / DY
+        const my = this.opts.steady !== 'cells' ? 1 : tall >= from ? cellH : tall >= from / 2 ? Math.max(1, Math.floor(cellH / 2)) : 1
+        const mx = my > 1 ? SX / DX : 1
+        const s = steadySize(side, sideX, DX, DY, 0, my)
+        const k = t.light ?? (t.alive ? 1.1 : light(depth)) * this.dimmed(this.cell(Math.round(t.x), Math.round(t.y)))
+        this.pushSteady(L, texs, mx * DX * Math.round((v.sx - s.w / 2) / (mx * DX)), my * DY * Math.round(floorY / (my * DY)) - s.h, s.w, s.h, DX, DY, depth, k, t)
+        continue
+      }
       let x0 = v.sx - sideX / 2
       let y0 = floorY - side
       // near, on the dots (2 pixels a side), read on its grid
@@ -832,7 +925,7 @@ export class GlyphView {
         x0 = 2 * Math.round(x0 / 2)
         y0 = 2 * Math.round(y0 / 2)
         floorY = y0 + side
-        grid = [gridFor(sideX / 32, SX), gridFor(side / 32, SY)]
+        grid = this.opts.grid === 'cells' ? [gridFor(sideX / 32, SX), gridFor(side / 32, SY)] : [2, 2]
       }
       const k = t.light ?? (t.alive ? 1.1 : light(depth)) * this.dimmed(this.cell(Math.round(t.x), Math.round(t.y)))
       const c0 = Math.max(0, Math.floor(x0)), c1 = Math.min(W - 1, Math.ceil(x0 + sideX))
@@ -860,20 +953,36 @@ export class GlyphView {
         mid = (bx0 + bx1) / 2
         foot = by1 - Math.max(...texs.map((tx) => tx.top * 32))
       }
-      const side = ((h.size * unit) * 32) / span, sideX = side * pixelAspect
+      let side = ((h.size * unit) * 32) / span, sideX = side * pixelAspect
       const aspect = W / (H * pixelAspect)
+      if (this.opts.steady && !ro.exact) {
+        // a whole number of dots a texel, the nearest its true size, its pose's point on the dots
+        const { DX, DY } = dotOf(SX, SY, this.opts.mosaic)
+        const s = steadySize(side, sideX, DX, DY, Infinity)
+        side = s.h
+        sideX = s.w
+      }
       let x0 = W / 2 + h.x * aspect * unit * pixelAspect - (mid / 32) * sideX
       let y0 = H / 2 - h.y * unit - (foot / 32) * side
       let grid: [number, number] | undefined
-      if (this.opts.grid && sideX >= 64 && side >= 64) {
+      if (this.opts.steady && !ro.exact) {
+        const { DX, DY } = dotOf(SX, SY, this.opts.mosaic)
+        x0 = DX * Math.round(x0 / DX)
+        y0 = DY * Math.round(y0 / DY)
+        const before = L.sprites.length
+        this.pushSteady(L, texs, x0, y0, sideX, side, DX, DY, 0, t.light ?? 1, t)
+        if (L.sprites.length === before) continue
+      } else if (this.opts.grid && sideX >= 64 && side >= 64) {
         x0 = 2 * Math.round(x0 / 2)
         y0 = 2 * Math.round(y0 / 2)
-        grid = [gridFor(sideX / 32, SX), gridFor(side / 32, SY)]
+        grid = this.opts.grid === 'cells' ? [gridFor(sideX / 32, SX), gridFor(side / 32, SY)] : [2, 2]
       }
-      const c0 = Math.max(0, Math.floor(x0)), c1 = Math.min(W - 1, Math.ceil(x0 + sideX))
-      const r0 = Math.max(0, Math.floor(y0)), r1 = Math.min(H - 1, Math.ceil(y0 + side))
-      if (c0 > c1 || r0 > r1) continue
-      L.sprites.push({ texs, x0, y0, sideX, side, c0, c1, r0, r1, depth: 0, k: t.light ?? 1, alpha: t.alpha ?? 1, flash: t.flash, grid, columns: {} })
+      if (!(this.opts.steady && !ro.exact)) {
+        const c0 = Math.max(0, Math.floor(x0)), c1 = Math.min(W - 1, Math.ceil(x0 + sideX))
+        const r0 = Math.max(0, Math.floor(y0)), r1 = Math.min(H - 1, Math.ceil(y0 + side))
+        if (c0 > c1 || r0 > r1) continue
+        L.sprites.push({ texs, x0, y0, sideX, side, c0, c1, r0, r1, depth: 0, k: t.light ?? 1, alpha: t.alpha ?? 1, flash: t.flash, grid, columns: {} })
+      }
       // its art's own box, in cells
       const bs = texs.map((tx) => tx.box()).filter((b) => !!b)
       if (bs.length) {
@@ -884,12 +993,151 @@ export class GlyphView {
     }
   }
 
+  /**
+   * A sprite `steady`: its picture `w` x `h` pixels (whole dots) with what
+   * reaches above its cell over it, drawn once and kept, its cell's top
+   * left at x0, y0 (on the dots), into `L`.
+   */
+  private pushSteady(L: Look, texs: SpriteTex[], x0: number, y0: number, w: number, h: number, DX: number, DY: number, depth: number, k: number, t: Thing) {
+    const reach = Math.max(1, ...texs.map((tx) => tx.top + 1))
+    const up = DY * Math.ceil((h * (reach - 1)) / DY - 1e-9)
+    const top = y0 - up
+    const c0 = Math.max(0, x0), c1 = Math.min(L.W - 1, x0 + w - 1)
+    const r0 = Math.max(0, top), r1 = Math.min(L.H - 1, top + up + h - 1)
+    if (c0 > c1 || r0 > r1) return
+    // nothing of it in front of the walls: not drawn, nor its picture made
+    let seen = false
+    for (let col = c0; col <= c1 && !seen; col++) seen = L.zbuf[col] >= depth - 0.5
+    if (!seen) return
+    const img = this.steadyImage(texs, w, h, up, DX, DY, L.sampling)
+    L.sprites.push({ texs, x0, y0: top, sideX: w, side: h, c0, c1, r0, r1, depth, k, alpha: t.alpha ?? 1, flash: t.flash, columns: {}, img })
+  }
+
+  private steadyImages = new Map<string, SteadyImage>()
+  private steadyPixels = 0
+  private texIds = new WeakMap<SpriteTex, number>()
+  /** the layers drawn as one picture `w` x `h` pixels, `up` more over it for what reaches above the cell: on the dots where a texel fills one, each dot the texel under its middle */
+  private steadyImage(texs: SpriteTex[], w: number, h: number, up: number, DX: number, DY: number, sampling: Sampling): SteadyImage {
+    const o = this.opts
+    const ids = texs.map((tx) => {
+      let id = this.texIds.get(tx)
+      if (id === undefined) this.texIds.set(tx, (id = nextTexId++))
+      return id
+    })
+    const key = `${ids.join(',')}|${w}x${h}+${up}|${DX},${DY}|${sampling}|${o.farSampling}|${o.farChroma}|${o.farSnap}|${o.standsOut}|${o.mean}|${o.feature}|${o.ink}|${o.snap}|${o.dark}|${o.chroma}`
+    let img = this.steadyImages.get(key)
+    if (img) return img
+    const H = up + h
+    const grid: [number, number] | undefined = w >= 32 * DX && h >= 32 * DY ? [DX, DY] : undefined
+    img = {
+      w, h: H, rgb: new Float32Array(w * H * 3), a: new Float32Array(w * H), stand: new Float32Array(w * H), done: new Uint8Array(H),
+      texs, up, cellH: h, sampling: grid ? sampling : (o.farSampling ?? sampling), grid,
+      // far off, its averages made as colourful again as two colours a cell leave less of
+      chroma: !grid && o.farSampling ? (o.farChroma ?? 1) : 1,
+      snap: !grid && o.farSampling ? (o.farSnap ?? 0) : 0,
+      columns: {},
+    }
+    // kept up to a few million pixels' worth, the oldest let go first
+    this.steadyPixels += w * H
+    this.steadyImages.set(key, img)
+    for (const [k, old] of this.steadyImages) {
+      if (this.steadyPixels <= STEADY_PIXELS) break
+      this.steadyImages.delete(k)
+      this.steadyPixels -= old.w * old.h
+    }
+    return img
+  }
+
+  /**
+   * The rows a up to b (the picture's) of a steady sprite drawn, those not
+   * drawn yet: a thread draws only what its band shows of a picture, and
+   * only once.
+   */
+  private steadyRows(im: SteadyImage, a: number, b: number) {
+    const o = this.opts
+    a = Math.max(0, a)
+    b = Math.min(im.h - 1, b)
+    while (a <= b && im.done[a]) a++
+    while (b >= a && im.done[b]) b--
+    if (a > b) return
+    setDark(o.dark ?? 0.7)
+    setChroma(o.chroma ?? 0)
+    const { w } = im
+    drawSprite(im.texs, im.sampling, o.standsOut, o.mean, o.feature, o.ink, o.snap, 0, im.up, w, im.cellH, 0, w - 1, a, b, 0, STEADY_ZBUF(w), w, (i, r, g, bl, al, stand) => {
+      if (im.done[(i / w) | 0]) return
+      im.rgb[i * 3] = r
+      im.rgb[i * 3 + 1] = g
+      im.rgb[i * 3 + 2] = bl
+      im.a[i] = al
+      im.stand[i] = stand
+    }, im.columns, im.grid)
+    if (im.chroma !== 1 || im.snap) {
+      const lab = new Float32Array(3)
+      // the art's own colours, every layer's, in OKLab, and which is nearest each colour as it is met (`snapTo`)
+      const near = im.snap ? this.snapTo(im.texs) : null
+      for (let row = a; row <= b; row++) {
+        if (im.done[row]) continue
+        for (let i = row * w; i < (row + 1) * w; i++) {
+          if (!im.a[i]) continue
+          oklab(im.rgb[i * 3], im.rgb[i * 3 + 1], im.rgb[i * 3 + 2], lab, 0)
+          if (near) {
+            const at = near(im.rgb[i * 3], im.rgb[i * 3 + 1], im.rgb[i * 3 + 2])
+            const L = near.lab[at], A = near.lab[at + 1], B = near.lab[at + 2]
+            lab[0] += (L - lab[0]) * im.snap
+            lab[1] += (A - lab[1]) * im.snap
+            lab[2] += (B - lab[2]) * im.snap
+          }
+          fromOklab(lab[0], lab[1] * im.chroma, lab[2] * im.chroma, im.rgb, i * 3)
+          for (let k = 0; k < 3; k++) im.rgb[i * 3 + k] = Math.min(1, Math.max(0, im.rgb[i * 3 + k]))
+        }
+      }
+    }
+    im.done.fill(1, a, b + 1)
+  }
+
+  private snaps = new Map<string, ((r: number, g: number, b: number) => number) & { lab: Float32Array }>()
+  /**
+   * The art's own colours, every layer's (OKLab, three numbers each), and a
+   * finder of the nearest of them to a colour (linear rgb): the place in
+   * `lab` of its first number. Colours are told apart by 5 bits a channel
+   * (encoded), each found once, for the middle of its 5 bits, not for
+   * whichever colour came first: what the threads draw, in whatever order,
+   * must be the same picture each time.
+   */
+  private snapTo(texs: SpriteTex[]) {
+    const key = texs.map((tx) => this.texIds.get(tx)).join(',')
+    let f = this.snaps.get(key)
+    if (f) return f
+    const pals = texs.map((tx) => tx.palette().lab)
+    const lab = new Float32Array(pals.reduce((n, p) => n + p.length, 0))
+    let o = 0
+    for (const p of pals) lab.set(p, (o += p.length) - p.length)
+    const seen = new Int32Array(1 << 15).fill(-1)
+    const c = new Float32Array(3)
+    const mid = (v: number) => DECODE[Math.min(255, v * 8 + 4)]
+    f = Object.assign((r: number, g: number, b: number) => {
+      const r5 = q(r) >> 3, g5 = q(g) >> 3, b5 = q(b) >> 3
+      const k = (r5 << 10) | (g5 << 5) | b5
+      if (seen[k] >= 0) return seen[k]
+      oklab(mid(r5), mid(g5), mid(b5), c, 0)
+      let best = Infinity, at = 0
+      for (let i = 0; i < lab.length; i += 3) {
+        const d = (lab[i] - c[0]) ** 2 + (lab[i + 1] - c[1]) ** 2 + (lab[i + 2] - c[2]) ** 2
+        if (d < best) (best = d), (at = i)
+      }
+      return (seen[k] = at)
+    }, { lab })
+    if (this.snaps.size > 256) this.snaps.clear()
+    this.snaps.set(key, f)
+    return f
+  }
+
   private dimmed(c: SceneCell | undefined) {
     return this.dimRemembered && c && c.visibility !== 'visible' ? 0.45 : 1
   }
 
   /** memory a band is drawn in, kept from band to band (`band`), so drawing makes no garbage of pictures */
-  private scratch = { pix: new Float32Array(0), weight: new Float32Array(0), thing: new Float32Array(0), standing: new Uint8Array(0) }
+  private scratch = { pix: new Float32Array(0), weight: new Float32Array(0), thing: new Float32Array(0), standing: new Uint8Array(0), hand: new Uint8Array(0) }
 
   /**
    * The pixel rows ya up to yb (multiples of the look's `step`) of what
@@ -901,12 +1149,14 @@ export class GlyphView {
     const BH = yb - ya
     const n = W * BH
     const sc = this.scratch
-    if (reuse && sc.weight.length < n) this.scratch = { pix: new Float32Array(n * 3), weight: new Float32Array(n), thing: new Float32Array(n), standing: new Uint8Array(n) }
+    if (reuse && sc.weight.length < n) this.scratch = { pix: new Float32Array(n * 3), weight: new Float32Array(n), thing: new Float32Array(n), standing: new Uint8Array(n), hand: new Uint8Array(n) }
     // every pixel is drawn over by the walls, floors and lid, so the memory needs no clearing first
     const pix = reuse ? this.scratch.pix.subarray(0, n * 3) : new Float32Array(n * 3)
     // how much each pixel counts when a cell's dots are split in two
     const weight = reuse ? this.scratch.weight.subarray(0, n).fill(1) : new Float32Array(n).fill(1)
     const thing = reuse ? this.scratch.thing.subarray(0, n).fill(0) : new Float32Array(n)
+    // each pixel 1 where the hands cover half of it or more
+    const hand = reuse ? this.scratch.hand.subarray(0, n).fill(0) : new Uint8Array(n)
     // the cells something stands in (below)
     const cw = W / SX
     const standing = reuse ? this.scratch.standing.subarray(0, (n / (SX * SY)) | 0).fill(0) : new Uint8Array((n / (SX * SY)) | 0)
@@ -1085,7 +1335,9 @@ export class GlyphView {
       if (r0 > r1) continue
       const { k, flash } = sp
       const alpha = sp.alpha
-      drawSprite(sp.texs, L.sampling, this.opts.standsOut, this.opts.mean, this.opts.feature, this.opts.ink, this.opts.snap, sp.x0, sp.y0, sp.sideX, sp.side, sp.c0, sp.c1, r0, r1, sp.depth, zbuf, W, (at, r, g, b, a, stand) => {
+      // the hands' pixels, marked (`handEdges`)
+      const isHand = sp.depth === 0
+      const put = (at: number, r: number, g: number, b: number, a: number, stand: number) => {
         a *= alpha
         if (flash) {
           r += (flash[0] - r) * flash[3]
@@ -1094,6 +1346,7 @@ export class GlyphView {
         }
         const i = at - ya * W
         weight[i] = 1 + standK * stand * stand
+        if (isHand && a >= 0.5) hand[i] = 1
         if (a === 1) {
           // all of the pixel: what is behind left out, as by coverage it would be
           pix[i * 3] = r * k * tr
@@ -1107,7 +1360,23 @@ export class GlyphView {
         pix[i * 3 + 1] = pix[i * 3 + 1] * (1 - a) + g * k * tint.g * a
         pix[i * 3 + 2] = pix[i * 3 + 2] * (1 - a) + b * k * tint.b * a
         thing[i] = thing[i] * (1 - a) + a
-      }, sp.columns, sp.grid)
+      }
+      const im = sp.img
+      if (!im) {
+        drawSprite(sp.texs, L.sampling, this.opts.standsOut, this.opts.mean, this.opts.feature, this.opts.ink, this.opts.snap, sp.x0, sp.y0, sp.sideX, sp.side, sp.c0, sp.c1, r0, r1, sp.depth, zbuf, W, put, sp.columns, sp.grid)
+        continue
+      }
+      // a steady sprite's picture, as it was drawn at its size: what this band shows of it drawn first, if it is not yet
+      this.steadyRows(im, r0 - sp.y0, r1 - sp.y0)
+      for (let row = r0; row <= r1; row++) {
+        const iy = (row - sp.y0) * im.w - sp.x0
+        for (let col = sp.c0; col <= sp.c1; col++) {
+          if (zbuf[col] < sp.depth - 0.5) continue
+          const o = iy + col
+          const a = im.a[o]
+          if (a > 0.004) put(row * W + col, im.rgb[o * 3], im.rgb[o * 3 + 1], im.rgb[o * 3 + 2], a, im.stand[o])
+        }
+      }
     }
     // the cells something stands in: those where it covers half a pixel, looked for only where it is (2 for a cell looked at and not)
     for (const sp of L.sprites) {
@@ -1128,7 +1397,7 @@ export class GlyphView {
           }
         }
     }
-    return { W, H: BH, SX, SY, pix, weight, thing, standing, zbuf, glyphs: L.glyphs }
+    return { W, H: BH, SX, SY, pix, weight, thing, standing, hand, zbuf, glyphs: L.glyphs }
   }
 
   /** pixels a cell, across and down, as the options' encoder draws them */
@@ -1167,7 +1436,70 @@ export class GlyphView {
     const { enc, cols } = p
     const r = this.draw(p.look, ra * enc.SY, rb * enc.SY, true)
     enc.encodeInto(r, cols, rb - ra, out)
+    this.handEdges(out, cols, ra, rb, r, enc)
     this.overlay(out, cols, r, ra, rb)
+  }
+
+  /**
+   * The cells along the hands' edges, part hand and part what is behind
+   * them: their glyph and the hands' colour in them fitted as any cell's,
+   * but with what is behind the hands as black, so they are the same
+   * whatever the view shows behind (fitted from all a cell's pixels, they
+   * changed as the view turned behind the hands, the hands standing still);
+   * then the side of the glyph that is mostly what is behind, the colour of
+   * what is behind it there, the hands' own pixels on that side with it.
+   */
+  private handEdges(out: Int32Array, cols: number, ra: number, rb: number, r: Raster, enc: Encoder) {
+    const { pix, hand, weight, W, SX, SY } = r
+    if (!hand) return
+    const n = SX * SY
+    const cell = { W: SX, H: SY, SX, SY, pix: new Float32Array(n * 3), weight: new Float32Array(n), thing: new Float32Array(n).fill(1), standing: Uint8Array.of(1), zbuf: new Float32Array(SX), glyphs: [] as Mark[] }
+    const one = new Int32Array(3)
+    const done = new Set<number>()
+    // each hand's cells in this band's rows (`handCells`), the band's own rows from 0
+    for (const [c0, c1, q0, q1] of this.handCells)
+      for (let cy = Math.max(q0, ra) - ra; cy <= Math.min(q1, rb - 1) - ra; cy++)
+        for (let cx = Math.max(0, c0); cx <= Math.min(cols - 1, c1); cx++) {
+          if (done.has(cy * cols + cx)) continue
+          done.add(cy * cols + cx)
+          let on = 0
+          for (let j = 0; j < SY; j++)
+            for (let i = 0; i < SX; i++) {
+              const p = (cy * SY + j) * W + cx * SX + i, k = j * SX + i
+              const h = hand[p]
+              on += h
+              cell.pix[k * 3] = h ? pix[p * 3] : 0
+              cell.pix[k * 3 + 1] = h ? pix[p * 3 + 1] : 0
+              cell.pix[k * 3 + 2] = h ? pix[p * 3 + 2] : 0
+              cell.weight[k] = h ? weight[p] : 1
+            }
+          if (!on || on === n) continue
+          enc.encodeInto(cell, 1, 1, one)
+          const cp = one[0], mask = glyphMask(cp, SX, SY)
+          // which side of the glyph is mostly what is behind: its colour what is there, as it is
+          let bgOn = 0, bgOff = 0, onN = 0
+          for (let k = 0; k < n; k++) {
+            const p = (cy * SY + ((k / SX) | 0)) * W + cx * SX + (k % SX)
+            if (mask[k] >= 0.5) (onN++, hand[p] || bgOn++)
+            else hand[p] || bgOff++
+          }
+          const offN = n - onN
+          const side = bgOn / Math.max(1, onN) > bgOff / Math.max(1, offN) ? 1 : 2
+          let s0 = 0, s1 = 0, s2 = 0, m = 0
+          for (let k = 0; k < n; k++) {
+            if ((mask[k] >= 0.5) !== (side === 1)) continue
+            const p = (cy * SY + ((k / SX) | 0)) * W + cx * SX + (k % SX)
+            s0 += pix[p * 3]
+            s1 += pix[p * 3 + 1]
+            s2 += pix[p * 3 + 2]
+            m++
+          }
+          const at = (cy * cols + cx) * 3
+          out[at] = cp
+          out[at + 1] = one[1]
+          out[at + 2] = one[2]
+          if (m) out[at + side] = (q(s0 / m) << 16) | (q(s1 / m) << 8) | q(s2 / m)
+        }
   }
 
   /** then what is named rather than drawn: in `out`, the rows ra up to rb, each cell changed as a `Cell` (`cellOf`) */
@@ -1256,6 +1588,18 @@ export class GlyphView {
       }
     }
   }
+}
+
+const glyphMasks = new Map<string, Float32Array>()
+/** how much of each of a cell's `SX` x `SY` pixels a glyph inks (a space none), kept */
+function glyphMask(cp: number, SX: number, SY: number): Float32Array {
+  const key = `${cp}:${SX}x${SY}`
+  let m = glyphMasks.get(key)
+  if (m) return m
+  const shape = SHAPE_OF.get(String.fromCodePoint(cp))
+  m = shape ? coverage(shape, SX, SY) : new Float32Array(SX * SY).fill(cp === 0x2588 ? 1 : 0)
+  glyphMasks.set(key, m)
+  return m
 }
 
 /** a cell's colour as the eye takes it from its two: its foreground over as much of it as its glyph inks (`inked`) */

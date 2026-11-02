@@ -26,6 +26,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { parse } from 'smol-toml'
+import { DEFAULT_PROFILE } from '@orbrun/offline'
 import { defaultSettings, type Settings } from '../../../apps/orbrun/src/servers'
 
 export interface TermConfig {
@@ -75,7 +76,7 @@ export const USAGE = `Play Orbrun in this terminal.
 With no --dcss, it starts at the front screen, as the browser's: continue the game saved in
 a version, or start a new one. The name is the character's, one to a version.
 
-  --name NAME          the player whose saves these are, and the name to start with (default: your login name)
+  --name NAME          the player whose saves these are, and the name to start with (default: Player, as in the browser)
   --dcss VERSION       play NAME in VERSION straight away: stable, trunk, or a release such as 0.34
   --set KEY=VALUE      a game setting, as the Settings menu has it (repeat for more)
   --config FILE        read options from FILE (default: ~/.config/orbrun/config.toml)
@@ -106,7 +107,7 @@ export class ConfigError extends Error {}
  */
 export function resolveConfig(argv: string[], env: NodeJS.ProcessEnv = process.env): TermConfig & { help?: 'usage' | 'settings' } {
   const c: TermConfig = {
-    name: os.userInfo().username.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 20) || 'Player',
+    name: DEFAULT_PROFILE,
     fps: 60,
     reducedMotion: false,
     trace: false,

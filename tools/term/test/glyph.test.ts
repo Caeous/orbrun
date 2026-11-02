@@ -160,7 +160,8 @@ function room() {
   view.setScene(scene)
   view.things = [
     { x: 0, y: -2, art: [{ px, rect: rect(3) }], glyph: 'g', colour: [200, 200, 200], size: 0.95, name: 'goblin', alive: true },
-    { x: 2, y: -6, art: [{ px, rect: rect(3) }], glyph: 'o', colour: [255, 90, 90], size: 0.95, name: 'orc', alive: true },
+    // small and far enough to stand less than a cell tall: named by its letter
+    { x: 2, y: -6, art: [{ px, rect: rect(3) }], glyph: 'o', colour: [255, 90, 90], size: 0.2, name: 'orc', alive: true },
   ]
   const cam = (yaw: number): Camera => ({ x: 0, y: 1, eyeX: 0, eyeY: 1, yaw, pitch: REST_PITCH, facing: 0 })
   return { view, cam }
@@ -178,6 +179,24 @@ describe('the view in bands', () => {
     // something stands in it, fitted finer than the dots, and the far monster is named by its letter
     expect(whole.some((o) => OCTANTS.indexOf(o.ch) < 0 && o.ch !== ' ' && o.ch !== 'o')).toBe(true)
     expect(whole.some((o) => o.ch === 'o')).toBe(true)
+  })
+
+  it('draws the same picture whatever it drew before and whatever order its bands are drawn in, its far sprites steady', () => {
+    // far sprites are drawn once a size and kept, their rows as a band first shows them, their colours the art's own
+    // nearest (kept as each is found): a view that drew other frames first, or draws its bands in another order (as
+    // threads take them), must draw the same cells
+    const steady = { steady: 'cells' as const, farSampling: 'area' as const, farSnap: 1 }
+    const a = room(), b = room()
+    Object.assign(a.view.opts, steady)
+    Object.assign(b.view.opts, steady)
+    const cols = 40, rows = 15
+    const whole = a.view.render(a.cam(0.2), cols, rows)
+    // the monster nearer and farther first, as walking up to it would draw it
+    for (const y of [0.4, -0.3, 0.8, -0.6]) b.view.render({ ...b.cam(0.25), eyeY: y }, cols, rows)
+    const p = b.view.prepare(b.cam(0.2), cols, rows)
+    const bands = [[11, 15], [5, 11], [4, 5], [0, 4]]
+    const parts = new Map(bands.map(([ra, rb]) => [ra, b.view.band(p, ra, rb)]))
+    expect([...parts.keys()].sort((x, y) => x - y).flatMap((ra) => parts.get(ra)!)).toEqual(whole)
   })
 })
 

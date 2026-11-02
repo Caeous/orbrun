@@ -28,7 +28,7 @@ import {
   occupiedFeatures,
   type HandPose,
 } from '@orbrun/world'
-import { cellKey } from '@orbrun/scene'
+import { cellKey, dirToYaw, yawDelta } from '@orbrun/scene'
 import type { Camera, CellKey, HandItem, Scene, SceneCursor, TileRect, TileSource, Viewmodel } from '@orbrun/scene'
 import { isRgbaBitmap } from './env'
 import { GlyphThreads, glyphThreads } from '../glyph/threads'
@@ -63,6 +63,57 @@ export interface ViewSettings {
   viewmodel?: boolean
   /** things move: glides and the swing */
   motion?: boolean
+}
+
+/**
+ * The glyph view's options the game draws by, over its defaults (render.ts
+ * GLYPH_DEFAULTS), as the gym (glyph-gym.ts) found them across the
+ * bestiary: what stands steady on the cells and the hands on the dots
+ * (render.ts `steady`); what stands too far for its texels to fill a dot,
+ * its texels averaged as the truth averages them (`farSampling`), each
+ * pixel then the art's own colour nearest it (`farSnap`), so a gnoll's
+ * yellow fur among its grey and dark is yellow far off as near, not the
+ * brown their mean is; and each cell something stands in drawn in two of
+ * its own pixels' colours, the glyph as seen from a step back (`blur`).
+ */
+export const GAME_GLYPH: Partial<GlyphViewOptions> = {
+  grid: true,
+  steady: 'cells',
+  farSampling: 'area',
+  farSnap: 1,
+  fit: { ...GLYPH_DEFAULTS.fit, blur: 1 },
+}
+
+/**
+ * The glyph view's lens set, in `o`, as the game's for a view `cols` x
+ * `rows` cells each `aspect` times as tall as wide: its field of view
+ * the height's, `fov` degrees, as render-3d's is, and across as wide as
+ * the cells make the view. The view's width over its height.
+ */
+export function gameLens(o: GlyphViewOptions, cols: number, rows: number, aspect: number, fov: number, eye: number, wallInset: number): number {
+  const lensAspect = cols / (rows * aspect)
+  o.aspect = aspect
+  o.fov = (2 * Math.atan(Math.tan((fov * Math.PI) / 360) * lensAspect) * 180) / Math.PI
+  o.eye = Math.max(EYE_MIN, Math.min(EYE_MAX, eye))
+  o.wallInset = wallInset
+  return lensAspect
+}
+
+/**
+ * The camera as the terminal draws it: as the camera is, but once a turn's
+ * easing is within a cell's width (at the middle of the view) of its
+ * heading, the heading. The easing's tail is long (half a turn's time is its
+ * last two degrees), and drawn a fraction of a cell at a time it was seen as
+ * the whole view crawling, the walls' and floor's texels falling on their
+ * cells anew each frame, after the view had all but stopped; the turn
+ * before it is drawn as it was. `fov` the height's, in degrees.
+ */
+export function shownCamera(cam: Camera, cols: number, rows: number, aspect: number, fov: number): Camera {
+  // a cell's width at the middle of the view, as a turn: the view's width across is twice tan(half its field of view)
+  const halfX = Math.tan((fov * Math.PI) / 360) * (cols / (rows * aspect))
+  const cell = Math.atan((2 * halfX) / cols)
+  const heading = dirToYaw(cam.facing)
+  return cam.yaw !== heading && Math.abs(yawDelta(heading, cam.yaw)) < cell ? { ...cam, yaw: heading } : cam
 }
 
 export class TermView {
@@ -108,7 +159,7 @@ export class TermView {
     // the glyph view's threads keep the tiles they were asked for: new ones for new tiles
     this.glyph?.destroy()
     const t = this.opts.threads
-    this.glyph = new GlyphThreads(tiles, (name) => this.pixels(name), { ...GLYPH_DEFAULTS, mosaic: this.opts.mosaic ?? GLYPH_DEFAULTS.mosaic, letters: !!this.opts.letters, grid: true }, t === undefined ? glyphThreads() : Math.min(t, glyphThreads()))
+    this.glyph = new GlyphThreads(tiles, (name) => this.pixels(name), { ...GLYPH_DEFAULTS, mosaic: this.opts.mosaic ?? GLYPH_DEFAULTS.mosaic, letters: !!this.opts.letters, ...GAME_GLYPH }, t === undefined ? glyphThreads() : Math.min(t, glyphThreads()))
     if (this.scene) this.glyph.setScene(this.scene)
     this.changed()
   }
@@ -163,19 +214,15 @@ export class TermView {
    * cells are the view's until it draws again.
    */
   async cells(cols: number, rows: number, aspect: number): Promise<Int32Array | null> {
-    const cam = this.camera, sc = this.scene, g = this.glyph
-    if (!cam || !sc || !g || cols <= 0 || rows <= 0) return null
+    const sc = this.scene, g = this.glyph
+    if (!this.camera || !sc || !g || cols <= 0 || rows <= 0) return null
+    const cam = shownCamera(this.camera, cols, rows, aspect, this.fov)
     // the last cells again, where nothing they are drawn from has changed since and nothing moves: the terminal asks
     // for frames for the HUD's sake as often as the view's
     const key = `${this.changes}|${cam.eyeX},${cam.eyeY},${cam.yaw},${cam.pitch}|${sc.revision},${sc.layoutRevision}|${cols}x${rows}|${aspect}|${this.warmed.size}`
     if (this.last?.key === key && !this.animating) return this.last.cells
-    // the game's lens, its field of view the height's as render-3d's is: across, as wide as the cells make the view
-    this.lensAspect = cols / (rows * aspect)
     const o = g.opts
-    o.aspect = aspect
-    o.fov = (2 * Math.atan(Math.tan((this.fov * Math.PI) / 360) * this.lensAspect) * 180) / Math.PI
-    o.eye = Math.max(EYE_MIN, Math.min(EYE_MAX, this.eye))
-    o.wallInset = this.wallInset
+    this.lensAspect = gameLens(o, cols, rows, aspect, this.fov, this.eye, this.wallInset)
     o.cursor = this.cursor ? { x: this.cursor.x, y: this.cursor.y, mode: this.cursor.mode, tile: this.cursor.tile } : null
     g.things = this.things(sc, performance.now() / 1000)
     const cells = await g.cellsOnly(cam, cols, rows)
@@ -352,23 +399,6 @@ export class TermView {
       }
       return any ? this.artCells(art, cols, rows) : null
     })
-  }
-
-  /**
-   * An image (`w` x `h`, RGBA) as `cols` x `rows` cells of the view's mosaic, as a badge is, laid over `under`
-   * (0xRRGGBB) where it is clear: the front screen's logo. `key` names the image, for the cells kept of it.
-   */
-  imageCells(key: string, rgba: Uint8Array, w: number, h: number, cols: number, rows: number, under = 0): Int32Array {
-    return this.cached(`image|${key}|${cols}x${rows}|${under}`, () => {
-      const art = new Uint8Array(w * h * 4)
-      const ground = [under >> 16, (under >> 8) & 255, under & 255]
-      for (let i = 0; i < w * h; i++) {
-        const a = rgba[i * 4 + 3] / 255
-        for (let ch = 0; ch < 3; ch++) art[i * 4 + ch] = ground[ch] * (1 - a) + rgba[i * 4 + ch] * a
-        art[i * 4 + 3] = 255
-      }
-      return this.artCells(art, cols, rows, w, h)
-    })!
   }
 
   /** what the cells made of art were, by what they were made from: a few at a time */

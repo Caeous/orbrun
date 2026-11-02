@@ -29,7 +29,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { installNode } from './env'
 import type { OfflineChannel } from '@orbrun/offline'
-import type { CrispCell, Home as HomeScreen, Logo } from './home'
+import type { CrispCell, Home as HomeScreen, Logo, LogoArt, LogoFit, Lockup } from './home'
 import type { TermConfig } from './config'
 import { PALETTE, cut, lineLength, type Line, type RGB } from './text'
 import { terminalKeys } from './input'
@@ -87,6 +87,8 @@ const SCRIM_EDGE = 0.55
 /** the level map's cursor, and how near an edge it may come before the map moves */
 const MAP_CURSOR: RGB = [255, 200, 60]
 const MAP_EDGE = 4
+/** how far apart (in any channel) a view cell's two colours may be for the logo to take it as one colour, its glow then drawn on it by the dot */
+const PLAIN_APART = 6
 /** monster_list.js: at most this many rows */
 const MONSTER_ROWS = 5
 /** the attitude colours of the monster list's names (styles.css `.monsters .name`) */
@@ -137,7 +139,7 @@ export async function runGame(io: Io, o: ClientOptions) {
   const { paneRows } = await import('../../../apps/orbrun/src/grid/messages')
   const { bearingTo, cellKey, rotateDir } = await import('@orbrun/scene')
   const { monsterGroups } = await import('@orbrun/scene-webtiles')
-  const { Home, loadRoom, loadLogo, loadTitle, crisp, veilAt, veiled, barAt, LOGO_GROUND } = await import('./home')
+  const { Home, loadRoom, loadLogo, loadTitle, crisp, fitLogo, lockup, logoCells, LOGO_SHARE, veilAt, veiled, barAt } = await import('./home')
   const { exploreOptions } = await import('../../../apps/orbrun/src/settings-rows')
   trace('modules')
 
@@ -400,7 +402,9 @@ export async function runGame(io: Io, o: ClientOptions) {
   const frame = (vc: Int32Array | null): Int32Array => {
     const n = cols * rows
     // the front room under its veil (home.ts `veilAt`), the words' shade taken from it as it shows
+    let ownView = false
     if (vc && home && room) {
+      ownView = true
       const v = new Int32Array(vc)
       for (let i = 0; i < n; i++) {
         const at = veilAt(room.tint, ((i % cols) + 0.5) / cols, (Math.floor(i / cols) + 0.5) / rows)
@@ -625,25 +629,63 @@ export async function runGame(io: Io, o: ClientOptions) {
     // what is up over the game (screens.ts), a box over the view; or, out of a game, the menu of what to play
     const box = home ? null : screens.box(st, Math.min(POPUP_MAX_W, cols - 6), rows - 2 * Math.min(POPUP_TOP, Math.floor(rows / 4)) - 2)
     if (home) {
-      // the front screen (home.ts): the logo (or the screen's title) cut sharp on the mosaic's dots, the room behind
-      // the dots it leaves, and a cell it all but fills in the view's two colours, for the orb's shading; the words on
-      // the room shaded, the focused row on its bar
-      const art = home.title === null ? logo : titleArt(home.title)
-      const L = home.layout(cols, rows, (w) => (art ? Math.max(1, Math.round((w * art.h) / art.w / aspect())) : 0))
-      if (L.art && art) {
-        const { x, y, cols: lc, rows: lr } = L.art
-        const name = home.title ?? 'logo'
-        const sextant = o.view.mosaic === 'sextant'
-        const dots = crispOf(name, art, lc, lr, sextant ? 3 : 4)
-        const cells = view.imageCells(name, art.rgba, art.w, art.h, lc, lr, LOGO_GROUND)
-        for (let r = 0; r < lr; r++)
-          for (let c = 0; c < lc; c++) {
-            const at = (y + r) * cols + x + c, k = (r * lc + c) * 3, cell = dots[r * lc + c]
-            if (!cell || x + c >= cols || y + r >= rows) continue
-            inked[at] = 1
-            if (cell.full) packed.set(at, [cells[k], cells[k + 1], cells[k + 2]])
-            else packed.set(at, [(sextant ? SEXTANTS : OCTANTS)[cell.mask].codePointAt(0)!, cell.rgb, rgb(seenOf(vc, at))])
+      // the front screen (home.ts): the logo's orb as the page shows it and its word (or the screen's title) cut
+      // sharp on the mosaic's dots, the room behind the dots they leave; the words on the room shaded, the focused
+      // row on its bar
+      const sextant = o.view.mosaic === 'sextant'
+      const sy = sextant ? 3 : 4
+      const glyphs = sextant ? SEXTANTS : OCTANTS
+      const front = home.title === null
+      const title = front ? null : titleArt(home.title!)
+      const fitOf = (w: number, most: number): LogoFit | null => logo && fitLogo(logo, w, Math.round(cols * LOGO_SHARE), most, sy, aspect())
+      const titleRows = (w: number) => (title ? Math.max(1, Math.round((w * title.h) / title.w / aspect())) : 0)
+      const L = home.layout(cols, rows, (w, most) => (front ? fitOf(w, most)?.rows ?? 0 : titleRows(w) <= most ? titleRows(w) : 0))
+      if (L.art) {
+        const { x, y } = L.art
+        const shows = (cx: number, cy: number) => cx < cols && cy < rows
+        /** art cut sharp at (`ax`, `y`), `lc` x `lr` cells */
+        const sharp = (name: string, art: Logo, ax: number, lc: number, lr: number) => {
+          const dots = crispOf(name, art, lc, lr, sy)
+          for (let r = 0; r < lr; r++)
+            for (let c = 0; c < lc; c++) {
+              const cell = dots[r * lc + c], at = (y + r) * cols + ax + c
+              if (!cell || !shows(ax + c, y + r)) continue
+              inked[at] = 1
+              packed.set(at, [glyphs[cell.mask].codePointAt(0)!, cell.rgb, rgb(seenOf(vc, at))])
+            }
+        }
+        if (!front && title) sharp(home.title!, title, x, L.art.cols, L.art.rows)
+        else if (logo) {
+          // laid on the room behind it, each frame (home.ts `logoCells`): the orb's glow and the name's shadow are seen
+          // through, and reach past the art onto the room round it
+          const lk = lockupOf(logo, fitOf(L.art.cols, L.art.rows)!)
+          const at = (c: number, r: number) => {
+            const cx = x + lk.x + c, cy = y + lk.y + r
+            return cx >= 0 && cy >= 0 && cx < cols && cy < rows ? cy * cols + cx : -1
           }
+          const cells = logoCells(
+            lk,
+            (c, r) => {
+              const [cr, cg, cb] = seenOf(vc, Math.max(0, at(c, r)))
+              return (cr << 16) | (cg << 8) | cb
+            },
+            (c, r) => !vc || plainAt(vc, Math.max(0, at(c, r))),
+          )
+          if (vc && !ownView) {
+            vc = new Int32Array(vc)
+            ownView = true
+          }
+          for (let r = 0; r < lk.rows; r++)
+            for (let c = 0; c < lk.cols; c++) {
+              const cell = cells[r * lk.cols + c], i = at(c, r)
+              if (!cell || i < 0) continue
+              if ('shade' in cell) {
+                if (vc) for (const k of [1, 2]) vc[i * 3 + k] = shaded(vc[i * 3 + k], cell.shade, cell.a)
+                continue
+              }
+              packed.set(i, [glyphs[cell.mask].codePointAt(0)!, cell.fg, cell.bg])
+            }
+        }
       }
       for (const l of L.lines) {
         if (!l.bar) {
@@ -722,6 +764,27 @@ export async function runGame(io: Io, o: ClientOptions) {
     const c = inked(cp)
     const m = (s: number) => Math.round(((b >> s) & 255) * (1 - c) + ((f >> s) & 255) * c)
     return [m(16), m(8), m(0)]
+  }
+
+  /** the logo laid out in dots with its shadows (home.ts `lockup`), for the size it is drawn at */
+  let laid: { key: string; lk: Lockup } | null = null
+  function lockupOf(art: LogoArt, f: LogoFit): Lockup {
+    const key = `${f.dots}|${f.sy}|${f.aspect}`
+    if (laid?.key !== key) laid = { key, lk: lockup(art, f) }
+    return laid.lk
+  }
+
+  /** Whether the view's cell `i` is one colour, its glyph none of it or all of it, or its two colours as good as the same. */
+  function plainAt(vc: Int32Array, i: number): boolean {
+    const c = inked(vc[i * 3]), f = vc[i * 3 + 1], b = vc[i * 3 + 2]
+    if (c < 0.02 || c > 0.98) return true
+    return [16, 8, 0].every((s) => Math.abs(((f >> s) & 255) - ((b >> s) & 255)) <= PLAIN_APART)
+  }
+
+  /** A packed colour (0xRRGGBB) with a premultiplied shade (`shade`, `a` of it) laid over it. */
+  function shaded(c: number, shade: number, a: number): number {
+    const ch = (s: number) => Math.min(255, Math.round(((c >> s) & 255) * (1 - a) + ((shade >> s) & 255)))
+    return (ch(16) << 16) | (ch(8) << 8) | ch(0)
   }
 
   /** the front screen's art cut sharp (home.ts `crisp`), for the size it is drawn at */
