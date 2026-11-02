@@ -99,21 +99,24 @@ export function gameLens(o: GlyphViewOptions, cols: number, rows: number, aspect
   return lensAspect
 }
 
+/** how near its heading a turn's easing is when the terminal lands it there, radians */
+export const TURN_LAND = (6 * Math.PI) / 180
+
 /**
  * The camera as the terminal draws it: as the camera is, but once a turn's
- * easing is within a cell's width (at the middle of the view) of its
- * heading, the heading. The easing's tail is long (half a turn's time is its
- * last two degrees), and drawn a fraction of a cell at a time it was seen as
- * the whole view crawling, the walls' and floor's texels falling on their
- * cells anew each frame, after the view had all but stopped; the turn
- * before it is drawn as it was. `fov` the height's, in degrees.
+ * easing is within TURN_LAND of its heading (or a cell's width at the
+ * middle of the view, where that is more), the heading. The easing's tail
+ * is long, and drawn a few dots at a time it was seen as the whole view
+ * crawling and what stands hopping up and down as it slowed, after the
+ * turn had all but ended: landed at once, it is one step. The turn before
+ * it is drawn as it was. `fov` the height's, in degrees.
  */
 export function shownCamera(cam: Camera, cols: number, rows: number, aspect: number, fov: number): Camera {
   // a cell's width at the middle of the view, as a turn: the view's width across is twice tan(half its field of view)
   const halfX = Math.tan((fov * Math.PI) / 360) * (cols / (rows * aspect))
-  const cell = Math.atan((2 * halfX) / cols)
+  const land = Math.max(TURN_LAND, Math.atan((2 * halfX) / cols))
   const heading = dirToYaw(cam.facing)
-  return cam.yaw !== heading && Math.abs(yawDelta(heading, cam.yaw)) < cell ? { ...cam, yaw: heading } : cam
+  return cam.yaw !== heading && Math.abs(yawDelta(heading, cam.yaw)) < land ? { ...cam, yaw: heading } : cam
 }
 
 export class TermView {
