@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { initialState, reduce, MouseMode, MenuFlag, type ClientMessage, type GameState } from '@orbrun/webtiles'
 import { Overlays } from '../src/overlays'
-import { deriveContext, type Context } from '../src/context'
+import { deriveContext, type Context } from '@orbrun/client/context'
 
 /**
  * Orbrun's own row on the game menu (main.cc `GameMenu`): the server's list is

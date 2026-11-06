@@ -1,4 +1,5 @@
-import type { Button, PadKind } from './gamepad'
+import type { Button } from '@orbrun/client/pad'
+import type { PadKind } from './gamepad'
 
 /**
  * Controller button glyphs as inline SVG, in the style each platform's own

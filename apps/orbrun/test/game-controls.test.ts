@@ -3,9 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cm, initialState } from '@orbrun/webtiles'
 import { GamepadHints } from '../src/gamepad-hints'
 import { GameScreen } from '../src/game'
-import { HOLD_MS, LEVEL_MAP, type Action } from '../src/bindings'
-import type { Context } from '../src/context'
-import type { Button, PadEvent } from '../src/gamepad'
+import { HOLD_MS, LEVEL_MAP, type Action } from '@orbrun/client/bindings'
+import type { Context } from '@orbrun/client/context'
+import type { Button, PadEvent } from '@orbrun/client/pad'
 
 /** X from the map: crawl's spell menu, `z` (its `*` follows once `z` asks, game.ts trackActions) */
 const SPELLS: Action = { kind: 'keys', label: 'Spells', seq: [{ text: 'z' }] }

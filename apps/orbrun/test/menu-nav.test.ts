@@ -1,22 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { MenuFlag, type MenuState } from '@orbrun/webtiles'
-import {
-  itemSelectable,
-  lineDownTarget,
-  lineUpTarget,
-  menuHasCustomDash,
-  menuKeyIntent,
-  nextHoverableItem,
-  parseMoreSwitches,
-  rawArrowKeys,
-  relativeHover,
-  relativeHoverTarget,
-  scrollKeyIntent,
-  snapHoverTarget,
-  SCROLLER_POPUPS,
-  type NavKeyLike,
-  printedSwitch,
-} from '../src/menu-nav'
+import { itemSelectable, lineDownTarget, lineUpTarget, menuHasCustomDash, menuKeyIntent, nextHoverableItem, parseMoreSwitches, rawArrowKeys, relativeHover, relativeHoverTarget, scrollKeyIntent, snapHoverTarget, SCROLLER_POPUPS, type NavKeyLike, printedSwitch } from '@orbrun/client/menu-nav'
 import useItem from './fixtures/menus/menu-use_item-1.json'
 import pickup from './fixtures/menus/menu-pickup-1.json'
 import travel from './fixtures/menus/menu-travel-1.json'

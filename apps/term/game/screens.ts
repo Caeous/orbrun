@@ -14,10 +14,10 @@
  * and the line typed at a prompt (text-entry.ts, textinput.js).
  */
 import { cm, type ClientMessage, type GameState, type MenuState, type Popup, type TextInputState } from '@orbrun/webtiles'
-import type { KeyLike } from '../../../apps/orbrun/src/keys'
-import { lineDownTarget, lineUpTarget, menuClientHover, menuKeyIntent, nextHoverableItem, scrollKeyIntent, snapHoverTarget, type ScrollKey, type Visible } from '../../../apps/orbrun/src/menu-nav'
-import { typedInLog } from '../../../apps/orbrun/src/bindings'
-import { EntryHistory, entryKey, submitMessages } from '../../../apps/orbrun/src/text-entry'
+import type { KeyLike } from '@orbrun/client/keys'
+import { lineDownTarget, lineUpTarget, menuClientHover, menuKeyIntent, nextHoverableItem, scrollKeyIntent, snapHoverTarget, type ScrollKey, type Visible } from '@orbrun/client/menu-nav'
+import { typedInLog } from '@orbrun/client/bindings'
+import { EntryHistory, entryKey, submitMessages } from '@orbrun/client/text-entry'
 import { PALETTE, formatted, htmlLines, lineText, lit, tinted, wrap, wrapAll, type Line } from './text'
 
 /** A screen as a box of lines: the head and foot stand, the body scrolls from `scroll`, `lit` its lit lines. */

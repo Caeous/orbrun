@@ -11,6 +11,8 @@
     { "path": "packages/render-term" },
     { "path": "packages/vault" },
     { "path": "packages/offline" },
+    { "path": "packages/client" },
+    { "path": "packages/room" },
     { "path": "apps/orbrun" }
   ]
 }

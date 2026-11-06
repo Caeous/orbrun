@@ -1,18 +1,23 @@
 {
-  "name": "@orbrun/tools-term",
+  "name": "orbrun-term",
   "version": "0.1.0",
   "private": true,
+  "description": "Orbrun in a terminal, here or over SSH: the game client (@orbrun/client) in node on the offline engine, the view drawn in glyphs",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "bin": {
     "orbrun": "./game/run.mjs",
     "orbrun-ssh": "./ssh.mjs"
   },
   "dependencies": {
+    "@orbrun/client": "*",
     "@orbrun/offline": "*",
     "@orbrun/render-3d": "*",
     "@orbrun/render-term": "*",
+    "@orbrun/room": "*",
     "@orbrun/scene": "*",
     "@orbrun/scene-webtiles": "*",
+    "@orbrun/webtiles": "*",
     "@orbrun/world": "*",
     "esbuild": "^0.28.2",
     "sharp": "^0.35.5",

@@ -4,7 +4,7 @@ import { initialState, reduce, UiState } from '@orbrun/webtiles'
 import { emptyScene, type SceneCursor } from '@orbrun/scene'
 import { GameScreen } from '../src/game'
 import { RendererPark } from '../src/park'
-import { deriveContext, deriveMode } from '../src/context'
+import { deriveContext, deriveMode } from '@orbrun/client/context'
 
 /**
  * A level map opened from the ctrl-f results (stash.cc `on_single_selection`

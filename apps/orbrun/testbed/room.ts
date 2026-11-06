@@ -12,7 +12,7 @@ import { Render2d } from '@orbrun/render-2d'
 import { dirToYaw, normalizeYaw, shadeOf, type Camera, type Scene } from '@orbrun/scene'
 import { parseDes, vaultCamera, vaultScene, DesError, type Vault } from '@orbrun/vault'
 import desText from '../src/room/antechamber.des?raw'
-import { loadRoomTiles, type RoomTiles } from '../src/room/tiles'
+import { loadRoomTiles, type RoomTiles } from '@orbrun/room/tiles'
 /** the Antechamber's eye, as the front end drew it: the game's defaults of the day */
 const ROOM_FOV = 80
 const ROOM_EYE_HEIGHT = 0.6

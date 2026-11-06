@@ -21,7 +21,7 @@
 import type { ClientMessage } from '@orbrun/webtiles'
 import { startReplay, type E2e, type Input, type Recording } from './client'
 import { screen, type Screen } from './screen'
-import { isExtraButton, isSwitchButton, isTouchCell } from '../../src/bindings'
+import { isExtraButton, isSwitchButton, isTouchCell } from '@orbrun/client/bindings'
 
 type Probe = { id: string; inputs: Input[] }
 

@@ -1,0 +1,28 @@
+{
+  "name": "@orbrun/room",
+  "version": "0.1.0",
+  "description": "The front room's places: the levels frozen from play that the front screen stands in, their cycle, and their tiles",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Caeous/orbrun.git",
+    "directory": "packages/room"
+  },
+  "homepage": "https://github.com/Caeous/orbrun/tree/main/packages/room",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "@orbrun/scene": "*",
+    "@orbrun/scene-webtiles": "*",
+    "@orbrun/vault": "*"
+  }
+}

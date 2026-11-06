@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { emptyScene } from '@orbrun/scene'
 import { initialState, MouseMode } from '@orbrun/webtiles'
-import { CameraController } from '../src/camera'
+import { CameraController } from '@orbrun/client/camera'
 import { GameScreen } from '../src/game'
-import { Pilot, type PilotHooks } from '../src/pilot'
-import { OWN_STEP_WINDOW_MS, Runner, type RunnerHooks } from '../src/runner'
-import type { Session } from '../src/session'
+import { Pilot, type PilotHooks } from '@orbrun/client/pilot'
+import { OWN_STEP_WINDOW_MS, Runner, type RunnerHooks } from '@orbrun/client/runner'
+import type { Session } from '@orbrun/client/session'
 
 /** Real input, hop tracking and scene-to-camera routing; no socket, DOM or renderer. */
 function harness() {

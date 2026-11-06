@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
 import { Hud } from '../src/hud'
-import type { Context } from '../src/context'
+import type { Context } from '@orbrun/client/context'
 import type { PadKind } from '../src/gamepad'
 
 const ctx = (over: Partial<Context>): Context => ({

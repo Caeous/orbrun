@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest'
-import { GamepadInput, installPadKeys, type PadEvent } from '../src/gamepad'
+import { GamepadInput, installPadKeys } from '../src/gamepad'
+import type { PadEvent } from '@orbrun/client/pad'
 
 let uninstall: (() => void) | null = null
 

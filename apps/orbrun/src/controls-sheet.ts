@@ -1,5 +1,5 @@
-import { controlSheet, type SheetCell } from './bindings'
-import { getSettings, leftRightTurns } from './servers'
+import { controlSheet, type SheetCell } from '@orbrun/client/bindings'
+import { getSettings, leftRightTurns } from '@orbrun/client/servers'
 import { h } from './dom'
 import type { PadKind } from './gamepad'
 import { glyph, glyphName, type GlyphName } from './glyphs'

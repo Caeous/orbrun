@@ -5,7 +5,7 @@
  * as the official client reads `which`), so every key means what it does in
  * the browser.
  */
-import type { KeyLike } from '../../../apps/orbrun/src/keys'
+import type { KeyLike } from '@orbrun/client/keys'
 // @ts-expect-error: plain JS, shared with the browser bridge
 import { parseKeys } from '../keys.mjs'
 

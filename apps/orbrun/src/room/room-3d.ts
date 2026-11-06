@@ -1,8 +1,8 @@
 import { Render3d } from '@orbrun/render-3d'
 import type { Camera } from '@orbrun/scene'
-import { CHAMFER, getSettings, WALL_INSET, type Settings } from '../servers'
-import { fovOf } from '../settings-rows'
-import { loadPlace, type LoadedPlace } from './places'
+import { CHAMFER, getSettings, WALL_INSET, type Settings } from '@orbrun/client/servers'
+import { fovOf } from '@orbrun/client/settings-rows'
+import { loadPlace, type LoadedPlace } from './load'
 
 /**
  * The room's renderer: three.js and the level renderer, in the chunk the

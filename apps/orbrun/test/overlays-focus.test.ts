@@ -2,9 +2,9 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { initialState, reduce, cm, MouseMode, Keys, type ClientMessage, type GameState } from '@orbrun/webtiles'
 import { Overlays } from '../src/overlays'
-import { deriveContext, type Context } from '../src/context'
-import { bindingTable, actionLabel, buttonAction, resolve, screenKey, type Action } from '../src/bindings'
-import { isTextEntry } from '../src/keys'
+import { deriveContext, type Context } from '@orbrun/client/context'
+import { bindingTable, actionLabel, buttonAction, resolve, screenKey, type Action } from '@orbrun/client/bindings'
+import { isTextEntry } from '../src/dom'
 import skills from './fixtures/skills-crt.json'
 
 /**

@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { Hud } from '../src/hud'
-import { CONTINUE, type TouchLabel } from '../src/bindings'
+import { CONTINUE, type TouchLabel } from '@orbrun/client/bindings'
 import { GameScreen } from '../src/game'
-import type { PadEvent } from '../src/gamepad'
+import type { PadEvent } from '@orbrun/client/pad'
 
 /**
  * The touch bar's buttons under a finger (hud.ts renderTouchBar): a press

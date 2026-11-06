@@ -30,7 +30,7 @@
  * it, and the two together make one verdict (`verdict`) — the one line that
  * says whether what is on the screen is good.
  */
-import type { Session } from './session'
+import type { Session } from '@orbrun/client/session'
 
 
 /** most frames kept for the percentiles */

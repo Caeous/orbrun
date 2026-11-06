@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "resolveJsonModule": true
+  },
+  "include": [
+    "src",
+    "src/*.json"
+  ],
+  "references": [
+    {
+      "path": "../scene"
+    },
+    {
+      "path": "../scene-webtiles"
+    },
+    {
+      "path": "../vault"
+    }
+  ]
+}

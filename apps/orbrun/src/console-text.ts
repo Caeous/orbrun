@@ -32,7 +32,7 @@
  * each of these from the offline engine (test/fixtures/describes.json).
  */
 import { formattedStringToSpans, type FormattedSpan } from '@orbrun/webtiles'
-import { escapeHtml } from './dom'
+import { escapeHtml } from '@orbrun/client/html'
 
 /** a line of the text, in the colours crawl gave it */
 type Line = FormattedSpan[]

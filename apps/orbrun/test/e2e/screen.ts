@@ -4,7 +4,7 @@
  * does. Read off the client exactly as the player sees it.
  */
 import { formattedStringToText } from '@orbrun/webtiles'
-import { barLabels, touchLabels } from '../../src/bindings'
+import { barLabels, touchLabels } from '@orbrun/client/bindings'
 import type { E2e } from './client'
 
 export interface Screen {

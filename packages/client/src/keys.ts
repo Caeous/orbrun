@@ -297,15 +297,3 @@ export function keydownMessage(e: KeyLike): ClientMessage | null {
   if (e.key === '{') return cm.inputBytes([123])
   return cm.input(e.key)
 }
-
-/**
- * A field the keys belong to: the chat line, a menu filter, the seed box.
- * A button is not one. The browser leaves a clicked button focused, so a test
- * as broad as "any `input`" costs the keyboard the screen it just clicked on —
- * the save-transfer dialog's buttons (overlays.ts, `show_dialog`) among them.
- */
-export function isTextEntry(el: HTMLElement): boolean {
-  if (el instanceof HTMLTextAreaElement || el.isContentEditable) return true
-  if (!(el instanceof HTMLInputElement)) return false
-  return !['button', 'submit', 'reset', 'checkbox', 'radio'].includes(el.type)
-}

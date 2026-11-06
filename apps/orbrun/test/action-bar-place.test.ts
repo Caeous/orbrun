@@ -2,10 +2,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Hud, footerPlaces, type HudHooks } from '../src/hud'
 import { GridHost } from '../src/grid/host'
-import { gameSplit } from '../src/grid/console'
-import type { Context } from '../src/context'
-import type { BindingLabel } from '../src/bindings'
-import type { BindingLabel } from '../src/bindings'
+import { gameSplit } from '@orbrun/client/grid/console'
+import type { Context } from '@orbrun/client/context'
+import type { BindingLabel } from '@orbrun/client/bindings'
 
 const context: Context = {
   mode: 'command', layer: 'micro',

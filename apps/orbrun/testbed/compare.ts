@@ -18,7 +18,7 @@ import { Render3d, type Render3dOptions } from '@orbrun/render-3d'
 import { dirToYaw, type Camera, type Dir8 } from '@orbrun/scene'
 import { HANDS, LENS, POSES, populate, type Pose } from './compare-scene'
 import { antechamberScene } from '../src/room/scene'
-import { loadRoomTiles } from '../src/room/tiles'
+import { loadRoomTiles } from '@orbrun/room/tiles'
 
 const canvas = document.getElementById('view') as HTMLCanvasElement
 const tiles = await loadRoomTiles()

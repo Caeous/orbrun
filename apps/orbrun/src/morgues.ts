@@ -1,5 +1,5 @@
 import { profileMorgues, readSaveFile } from '@orbrun/offline'
-import { getMorgueDir, setMorgueDir, type ServerInfo } from './servers'
+import { getMorgueDir, setMorgueDir, type ServerInfo } from '@orbrun/client/servers'
 import { morgueDirGuesses, whereisVersion } from './whereis'
 
 /**

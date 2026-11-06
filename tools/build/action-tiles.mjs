@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * The art of crawl's spells and abilities, by name, for the touch bar's
- * Fire (apps/orbrun/src/bindings.ts `touchShot`): the server's quiver line
+ * Fire (packages/client/src/bindings.ts `touchShot`): the server's quiver line
  * names a quivered spell or ability ("Cast: Magic Dart", "Abil: Combustion
  * Breath") but sends no tile for it, as it does an item's. Crawl draws them
  * with `get_spell_tile` (the spell's TILEG_ in spl-data.h) and
@@ -10,7 +10,7 @@
  *
  *   node tools/build/action-tiles.mjs
  *
- * writes apps/orbrun/data/action-tiles.json: `{ spells: { "<name>": [tile] },
+ * writes packages/client/data/action-tiles.json: `{ spells: { "<name>": [tile] },
  * abilities: { ... } }`, each a GUI atlas tile name, newest branch's first
  * where branches differ (the app takes the first its gamedata has). An
  * ordinary build never runs this; it ships what this wrote.
@@ -20,7 +20,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-const out = path.join(root, 'apps/orbrun/data/action-tiles.json')
+const out = path.join(root, 'packages/client/data/action-tiles.json')
 // newest first
 const REFS = ['master', ...Array.from({ length: 34 - 27 + 1 }, (_, i) => `stone_soup-0.${34 - i}`)]
 

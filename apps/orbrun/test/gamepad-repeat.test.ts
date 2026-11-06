@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { GamepadInput, type PadEvent } from '../src/gamepad'
+import { GamepadInput } from '../src/gamepad'
+import type { PadEvent } from '@orbrun/client/pad'
 
 /** A standard-mapping pad with `down` held (RT is button 7) and the sticks centred. */
 function fakePad(down: number | null): Gamepad {

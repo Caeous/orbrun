@@ -2,9 +2,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { initialState, reduce, type GameState } from '@orbrun/webtiles'
 import { Render2d } from '@orbrun/render-2d'
-import { Hud, STATUS_BADGE_ROWS, TRAPPED_FRACTION } from '../src/hud'
+import { Hud, TRAPPED_FRACTION } from '../src/hud'
+import { STATUS_BADGE_ROWS } from '@orbrun/client/hud-sizes'
 import { GridHost } from '../src/grid/host'
-import { gameSplit } from '../src/grid/console'
+import { gameSplit } from '@orbrun/client/grid/console'
 import type { Gamedata } from '@orbrun/gamedata'
 import type { Billboard, Camera, Scene } from '@orbrun/scene'
 

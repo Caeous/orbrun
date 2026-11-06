@@ -21,7 +21,8 @@
  * to the screen's edges (game.ts relayout). The foot is the touch bar's,
  * which pads itself clear of the home indicator (styles.css .touchbar).
  */
-import { MIN_COLS, MIN_ROWS, fitGrid, type CellRect, type Grid } from './console'
+import { MIN_COLS, MIN_ROWS, fitGrid, type CellRect, type Grid } from '@orbrun/client/grid/console'
+import { isPhone } from '@orbrun/client/device'
 
 /** the cell's height as a multiple of the font size: a console cell is about twice as tall as it is wide */
 const LINE_HEIGHT = 1.2
@@ -34,13 +35,6 @@ const MIN_PX = 8
 export const PHONE_COLS = 58
 /** on a phone on its side, tall enough for the stats pane, a few messages and the dungeon between them, over the touch bar */
 export const PHONE_ROWS = 28
-
-/** A phone: a finger for a pointer, on a screen no more than `PHONE_SIDE` css px across its short side (not a tablet, nor a Steam Deck). */
-const PHONE_SIDE = 600
-export function isPhone(): boolean {
-  if (!(window.matchMedia?.('(pointer: coarse)').matches ?? false)) return false
-  return Math.min(window.screen?.width || Infinity, window.screen?.height || Infinity) < PHONE_SIDE
-}
 
 /**
  * The font px for a `w`×`h` host whose characters advance `adv` of the

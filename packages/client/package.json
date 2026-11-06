@@ -1,0 +1,34 @@
+{
+  "name": "@orbrun/client",
+  "version": "0.1.0",
+  "description": "The Orbrun game client with no page: the session, the camera and keys that drive it, the bindings, the settings and the text panes, for the browser app and the terminal alike",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Caeous/orbrun.git",
+    "directory": "packages/client"
+  },
+  "homepage": "https://github.com/Caeous/orbrun/tree/main/packages/client",
+  "type": "module",
+  "exports": {
+    "./*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    },
+    "./data/*": "./data/*"
+  },
+  "files": [
+    "src",
+    "data"
+  ],
+  "dependencies": {
+    "@orbrun/gamedata": "*",
+    "@orbrun/offline": "*",
+    "@orbrun/scene": "*",
+    "@orbrun/scene-webtiles": "*",
+    "@orbrun/webtiles": "*"
+  },
+  "devDependencies": {
+    "@orbrun/world": "*"
+  }
+}

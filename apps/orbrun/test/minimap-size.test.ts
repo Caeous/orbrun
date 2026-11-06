@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
-import { Hud, minimapFit, MINIMAP_TILES_UPRIGHT, MINIMAP_CELL_DEFAULT, MINIMAP_CELL_LEAST, MINIMAP_CELL_LEAST_PHONE, MINIMAP_CELL_MOST, MINIMAP_REF_SHORT, MINIMAP_SHARE, MINIMAP_SHARE_PHONE, MINIMAP_TILES_DEFAULT, MINIMAP_TILES_LEAST } from '../src/hud'
-import { MINIMAP_AUTO, MINIMAP_CELLS, MINIMAP_TILES_MAX } from '../src/settings-rows'
+import { Hud, MINIMAP_TILES_UPRIGHT } from '../src/hud'
+import { minimapFit, MINIMAP_CELL_DEFAULT, MINIMAP_CELL_LEAST, MINIMAP_CELL_LEAST_PHONE, MINIMAP_CELL_MOST, MINIMAP_REF_SHORT, MINIMAP_SHARE, MINIMAP_SHARE_PHONE, MINIMAP_TILES_DEFAULT, MINIMAP_TILES_LEAST } from '@orbrun/client/hud-sizes'
+import { MINIMAP_AUTO, MINIMAP_CELLS, MINIMAP_TILES_MAX } from '@orbrun/client/settings-rows'
 import { GridHost } from '../src/grid/host'
-import { gameSplit, isPortrait, touchBeside, touchColumn } from '../src/grid/console'
+import { gameSplit, isPortrait, touchBeside, touchColumn } from '@orbrun/client/grid/console'
 
 // a 1280x720 screen with a 42-cell, 336px sidebar column (game.js stat_width at a 8px cell): the room hud.ts layout gives
 // the map there is half the screen across and 0.7 of the column down

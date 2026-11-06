@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { addServer, formatRoute, openPage, parseRoute, setChosenAccount, setRoute, type Account, type Route } from '../src/servers'
+import { addServer, setChosenAccount, type Account } from '@orbrun/client/servers'
+import { formatRoute, openPage, parseRoute, setRoute, type Route } from '../src/routes'
 
 const base = 'http://localhost:5173/'
 

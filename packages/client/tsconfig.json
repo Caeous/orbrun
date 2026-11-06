@@ -1,0 +1,35 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "resolveJsonModule": true,
+    "types": [
+      "vite/client"
+    ]
+  },
+  "include": [
+    "src",
+    "src/*.json",
+    "data/*.json"
+  ],
+  "references": [
+    {
+      "path": "../gamedata"
+    },
+    {
+      "path": "../offline"
+    },
+    {
+      "path": "../scene"
+    },
+    {
+      "path": "../scene-webtiles"
+    },
+    {
+      "path": "../webtiles"
+    }
+  ]
+}

@@ -27,7 +27,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { parse } from 'smol-toml'
 import { DEFAULT_PROFILE } from '@orbrun/offline'
-import { defaultSettings, type Settings } from '../../../apps/orbrun/src/servers'
+import { defaultSettings, type Settings } from '@orbrun/client/servers'
 
 export interface TermConfig {
   /** the player, whose saves these are */

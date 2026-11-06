@@ -2,7 +2,7 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { Hud } from '../src/hud'
 import { GridHost } from '../src/grid/host'
-import { gameSplit } from '../src/grid/console'
+import { gameSplit } from '@orbrun/client/grid/console'
 
 /**
  * A turn of the view draws nothing on the minimap (hud.ts renderMinimap): the

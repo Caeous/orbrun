@@ -1,4 +1,4 @@
-import servers from '../data/servers.json' with { type: 'json' }
+import servers from '@orbrun/client/data/servers.json' with { type: 'json' }
 
 /**
  * Anonymous counts of how people come to play, posted by the app (count.ts)

@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TouchHints, touchHints, type TouchHintEvidence } from '../src/touch-hints'
-import type { Context } from '../src/context'
-import { defaultSettings, getSettings, saveSettings } from '../src/servers'
+import type { Context } from '@orbrun/client/context'
+import { defaultSettings, getSettings, saveSettings } from '@orbrun/client/servers'
 import { settingsPanel } from '../src/settings-panel'
 
 const ctx = (over: Partial<Context> = {}): Context => ({

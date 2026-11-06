@@ -1,4 +1,4 @@
-import type { ServerInfo } from './servers'
+import type { ServerInfo } from '@orbrun/client/servers'
 
 /** how long a reading stands before the server list asks again */
 const FRESH_MS = 60_000

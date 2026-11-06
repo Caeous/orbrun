@@ -1,4 +1,4 @@
-import type { Mode } from './context'
+import type { Mode } from '@orbrun/client/context'
 
 /** How long the map waits on the screen a key leaves it for, as the runner's `awaitPrompt` waits on a prompt. */
 const PATIENCE_MS = 1500

@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import { Hud } from '../src/hud'
 import { GridHost } from '../src/grid/host'
-import { gameSplit } from '../src/grid/console'
+import { gameSplit } from '@orbrun/client/grid/console'
 
 /** the HUD on a 1600×900 screen, and where it put the action panel: its left edge is the strip's own left edge */
 function place(opts: { minimapTiles?: number; hideStats?: boolean; hideSidebar?: boolean; mapView?: boolean; phone?: boolean } = {}) {

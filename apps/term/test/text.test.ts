@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { initialState, type MenuState, type Popup } from '@orbrun/webtiles'
 import { PALETTE, formatted, htmlLines, wrapAll, type Line } from '../game/text'
 import { Screens } from '../game/screens'
-import type { KeyLike } from '../../../apps/orbrun/src/keys'
+import type { KeyLike } from '@orbrun/client/keys'
 
 const text = (lines: Line[]) => lines.map((l) => l.map((s) => s.text).join(''))
 const key = (k: string, mods: Partial<KeyLike> = {}): KeyLike => ({ key: k, code: '', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, ...mods })

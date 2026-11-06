@@ -4,9 +4,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cellKey, emptyScene, type Scene } from '@orbrun/scene'
-import { readScene, sceneTileIds, writeScene, type PlaceFile, type PlaceScene } from '../src/room/place-data'
-import { nextHomePlace, placeCamera, PLACES } from '../src/room/places'
-import { RoomTiles } from '../src/room/tiles'
+import { readScene, sceneTileIds, writeScene, type PlaceFile, type PlaceScene } from '@orbrun/room/place-data'
+import { nextHomePlace, placeCamera, PLACES } from '@orbrun/room/places'
+import { RoomTiles } from '@orbrun/room/tiles'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const dir = path.join(here, '../public/room/places')

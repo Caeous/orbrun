@@ -69,8 +69,9 @@ and works offline; a computer can install it the same way. [INSTALL.md](INSTALL.
 
 ## DCSS as a library
 
-Orbrun is an npm workspace. The game lives in `apps/orbrun`. What it knows
-about DCSS lives in small packages under `packages/`. Each does one job and
+Orbrun is an npm workspace. The game lives in `apps/orbrun`, and in a
+terminal in `apps/term`. What it knows about DCSS lives in small packages
+under `packages/`. Each does one job and
 depends on neither the app nor the DOM, so a different client, a bot, a
 recorder or a viewer can use it on its own. Each has a README.
 
@@ -85,6 +86,8 @@ recorder or a viewer can use it on its own. Each has a README.
 | [`@orbrun/render-3d`](packages/render-3d) | First-person three.js renderer of a `Scene` | scene, world, three |
 | [`@orbrun/vault`](packages/vault) | A subset of DCSS's `.des` vault format, compiled to a `Scene` | scene, scene-webtiles |
 | [`@orbrun/offline`](packages/offline) | Runs the WebAssembly engine in a Web Worker behind a WebTiles connection, and stands in for the server's lobby | webtiles |
+| [`@orbrun/client`](packages/client) | The game client with no page: the session, the camera and keys that drive it, the bindings, the settings and the text panes, which the app and the terminal share | webtiles, gamedata, scene, scene-webtiles, offline |
+| [`@orbrun/room`](packages/room) | The front room's places, their cycle and their tiles | scene, scene-webtiles, vault |
 
 `apps/orbrun` is the game itself: the server picker, lobby, login, HUD, menus
 and popups, on-screen keyboard, gamepad layers, command menus, settings and

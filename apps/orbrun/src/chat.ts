@@ -1,9 +1,10 @@
 import { cm, type ClientMessage, type GameState } from '@orbrun/webtiles'
-import { h, clear, escapeHtml } from './dom'
+import { h, clear } from './dom'
+import { escapeHtml } from '@orbrun/client/html'
 import { Osk, oskPrompts } from './osk'
 import { glyph, glyphName, type GlyphName } from './glyphs'
 import type { PadKind } from './gamepad'
-import type { PadEvent } from './gamepad'
+import type { PadEvent } from '@orbrun/client/pad'
 
 type Rect = { left: number; top: number; width: number; height: number }
 

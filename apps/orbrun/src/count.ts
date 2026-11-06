@@ -1,5 +1,5 @@
 import { COUNT_PATH, SETTING_KEYS, countedHost, serverTag, settingParam, sideParam, versionTag, type CountedEvent } from './count-events'
-import type { Settings } from './servers'
+import type { Settings } from '@orbrun/client/servers'
 
 /**
  * The client half of the anonymous counts (count-events.ts has the rules both

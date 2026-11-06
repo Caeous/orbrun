@@ -17,8 +17,8 @@
   ],
   "scripts": {
     "dev": "npm run dev -w apps/orbrun",
-    "term": "node tools/term/game/run.mjs",
-    "term:ssh": "node tools/term/ssh.mjs",
+    "term": "node apps/term/game/run.mjs",
+    "term:ssh": "node apps/term/ssh.mjs",
     "prebuild": "node tools/build/ensure-dev-deps.mjs",
     "build": "npm run build -w apps/orbrun",
     "preview": "npm run preview -w apps/orbrun",
