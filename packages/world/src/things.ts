@@ -4,6 +4,12 @@ import { monsterId } from './motion.js'
 
 /** A cloud's opacity: how much of what is behind it it hides. */
 export const CLOUD_ALPHA = 0.55
+/**
+ * How far what stands on the floor (`grounded`) stands forward of its cell's middle, toward the eye, in cells: at its
+ * cell's middle it read as standing at the back of its cell, as its foot is the lowest of it the eye sees of it, a
+ * little nearer than the middle reads as on it.
+ */
+export const STAND_FORWARD = 0.1
 /** How far a projectile in flight is lifted off the floor, in cells. */
 export const PROJECTILE_LIFT = 0.1
 /** How tall an upright feature stands, in cells; stairs lower, a mouth in the floor. */
@@ -52,6 +58,13 @@ export interface Standing {
   ghost: boolean
   /** the radius of the shadow round its foot, where it casts one */
   shadow?: number
+  /**
+   * stood on its art's foot: the lowest row its art reaches stood on the floor, not its tile's bottom edge. Crawl
+   * centres a small thing in its square (a rat's art is five texels short of its tile's foot, a potion's three), which
+   * stood by its tile's edge floats; so what stands on the floor (a monster, a plant, an item) stands on its foot. Not
+   * what is `afloat`, lies, flies as a missile, or is a cloud. Each renderer finds the foot in its tiles (`footGap`).
+   */
+  grounded?: boolean
   /** a feature's: how it stands (`featureStance`) */
   stance?: FeatureStance
   /** a monster's name, for a label under it */
@@ -100,6 +113,7 @@ export function crowd(scene: Scene): Standing[] {
       visible,
       ghost: !b.scenery,
       shadow: b.lying ? undefined : Math.max(0.6, b.height),
+      grounded: (b.kind === 'monster' || b.kind === 'item') && !b.lying && !b.afloat ? true : undefined,
       name: alive ? ((b.ref as { name?: string } | undefined)?.name ?? b.name) : undefined,
       glyph: named(cell, /^[\s.]$/),
       colour: cell?.colour,
@@ -134,4 +148,19 @@ export function fixtures(scene: Scene, framed: ReadonlyMap<CellKey, number>, occ
     })
   }
   return out
+}
+
+/**
+ * How far the foot of what stands is above its tile's bottom edge, as a share of its tile: the gap under the lowest
+ * row its art reaches (a layer's art from `top`, its tile's rows from the cell's top plus the layer's own offset,
+ * `h` rows down, in a tile `cell` rows tall), the least of its layers'. None where a layer is `cut` short (its
+ * `ymax`, a doll at a waterline), whose foot is where the cut is drawn.
+ */
+export function footGap(layers: readonly { top: number; h: number; cell: number; cut?: boolean }[]): number {
+  let gap = Infinity
+  for (const l of layers) {
+    if (l.cut) return 0
+    gap = Math.min(gap, (l.cell - (l.top + l.h)) / l.cell)
+  }
+  return Number.isFinite(gap) ? Math.max(0, gap) : 0
 }

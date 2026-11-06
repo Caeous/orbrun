@@ -1268,6 +1268,8 @@ function addBillboards(scene: Scene, mc: MapCell, cell: SceneCell, gd: Gamedata,
       attitude: ATTITUDE[mon.att] || 'hostile',
       threat: THREAT[mon.threat ?? 0],
       damage: damageLevel(fgw),
+      // in the air, or a piece of what joins its neighbours: drawn where crawl draws it in its square, not stood on its foot
+      afloat: !!fgw.FLYING || JOINED.test(mon.name || '') || undefined,
       ref: mon,
       alpha,
     }
@@ -1387,6 +1389,9 @@ const RUBBLE = /pile of debris|briar patch|pillar of salt|block of ice/i
 export function isScenery(name: string | undefined): boolean {
   return isVegetation(name) || RUBBLE.test(name || '')
 }
+
+/** a tentacle's or a vine's piece (crawl's kraken, eldritch and starspawn tentacles, a snaplasher's vine, and their segments), which joins the pieces beside it */
+const JOINED = /\b(tentacle|vine)\b/i
 
 function monsterHeight(mon: Monster, tile: number, gd: Gamedata): number {
   const hp = mon.typedata?.avghp ?? 20

@@ -61,6 +61,19 @@ const FONT = path.join(root, 'assets/fonts/GrenzeGotisch-Bold.ttf')
 const ORB_EM = 0.71, ORB_DROP = 0.055, ORB_GAP = 0.16
 const W = 576, H = 168, PAD = 36
 
+/** a glyph's outline as SVG path data: not opentype.js 2.0's `toPathData`, which writes some numbers (938.0000000001, say) as NaN */
+const pathData = (commands) => {
+  const n = (v) => (v ?? 0).toFixed(2)
+  return commands
+    .map((c) =>
+      c.type === 'M' || c.type === 'L' ? `${c.type}${n(c.x)} ${n(c.y)}`
+      : c.type === 'Q' ? `Q${n(c.x1)} ${n(c.y1)} ${n(c.x)} ${n(c.y)}`
+      : c.type === 'C' ? `C${n(c.x1)} ${n(c.y1)} ${n(c.x2)} ${n(c.y2)} ${n(c.x)} ${n(c.y)}`
+      : 'Z',
+    )
+    .join('')
+}
+
 /** the name as outlines, glyph by glyph with the font's kerning (opentype.js can't shape this font's GSUB, and we need no ligatures) */
 function outline(text, size) {
   const buf = fs.readFileSync(FONT)
@@ -70,7 +83,7 @@ function outline(text, size) {
   for (const ch of text) {
     const g = font.charToGlyph(ch)
     if (prev) x += font.getKerningValue(prev, g) * k
-    d += g.getPath(x, 0, size).toPathData(2)
+    d += pathData(g.getPath(x, 0, size).commands)
     x += g.advanceWidth * k
     prev = g
   }

@@ -82,9 +82,14 @@ export interface Thing {
   flash?: [number, number, number, number]
   /** how much of it shows, 0..1: a cloud, or what is submerged or seen invisible */
   alpha?: number
-  /** how far off the floor it stands, in cells: a missile in flight */
+  /** how far off the floor it stands, in cells: a missile in flight; under it, what is sunk to stand on its art's foot (world `grounded`) */
   lift?: number
-  /** how much nearer the eye than its cell's middle it is drawn, in cells: a cloud, over whatever stands in its cell (render-3d's CLOUD_FORWARD) */
+  /**
+   * the radius its shadow is cast at round its foot (world things.ts `shadow`): render-3d's disc, SHADOW_DISC of
+   * it in cells, darkening the floor under it, which stands it on the floor where crawl's art leaves air under its feet
+   */
+  shadow?: number
+  /** how much nearer the eye than its cell's middle it is drawn, along the view's heading, in cells: a cloud, over whatever stands in its cell (render-3d's CLOUD_FORWARD), and what stands on the floor (world's STAND_FORWARD), with its shadow */
   forward?: number
   /**
    * a way up, folded into its steps as render-3d folds it (sprites.ts
@@ -360,6 +365,9 @@ export function steadySize(side: number, sideX: number, DX: number, DY: number, 
   return { w: DX * growX * Math.max(1, Math.round((ny * ratio) / growX)), h: DY * ny }
 }
 
+/** render-3d's shadow under what stands: a disc this many cells across a unit of `shadow`, black laid over the floor at SHADOW_ALPHA, on the encoded colour (index.ts `shadowMat`) */
+const SHADOW_DISC = 0.22
+const SHADOW_ALPHA = 0.35
 const FOG = 16
 const TORCH = 3.2
 const NEAR = 0.15
@@ -946,8 +954,10 @@ export class GlyphView {
     // what stands: sprites facing the eye, the farthest first
     const det = 1 / (px * dy - dx * py)
     this.stand(L, ro, (t) => {
-      const rx = t.x + 0.5 - ex
-      const ry = t.y + 0.5 - ey
+      // forward of its cell's middle (`forward`), toward the eye along the view's heading, as render-3d stands it in its frame
+      const f = t.forward ?? 0
+      const rx = t.x + 0.5 - ex - f * dx
+      const ry = t.y + 0.5 - ey - f * dy
       const across = det * (dy * rx - dx * ry)
       const depth = det * (-py * rx + px * ry)
       return { depth, dist: Math.hypot(rx, ry), sx: (W / 2) * (1 + across / depth), floorY: horizon + ((eye - (t.lift ?? 0)) * fy) / depth }
@@ -970,7 +980,7 @@ export class GlyphView {
       .filter((t) => !t.hand)
       .map((t) => ({ t, ...place(t) }))
       .filter((v) => v.depth > 0.3)
-      .sort((a, b) => b.depth - (b.t.forward ?? 0) - (a.depth - (a.t.forward ?? 0)))
+      .sort((a, b) => b.depth - a.depth)
     for (const v of seen) {
       const { t, depth } = v
       let floorY = v.floorY
@@ -1004,7 +1014,9 @@ export class GlyphView {
         const mx = my > 1 ? SX / DX : 1
         const s = steadySize(side, sideX, DX, DY, 0, my)
         const k = t.light ?? (t.alive ? 1.1 : light(depth)) * this.dimmed(this.cell(Math.round(t.x), Math.round(t.y)))
-        this.pushSteady(L, texs, mx * DX * Math.round((v.sx - s.w / 2) / (mx * DX)), my * DY * Math.round(floorY / (my * DY)) - s.h, s.w, s.h, DX, DY, depth, k, t)
+        // its foot on the nearest dot, not the nearest cell's edge: on the floor, where it stands is how far off it is,
+        // and half a row's rounding stood a monster near the eye a fifth of a cell back from where it is
+        this.pushSteady(L, texs, mx * DX * Math.round((v.sx - s.w / 2) / (mx * DX)), DY * Math.round(floorY / DY) - s.h, s.w, s.h, DX, DY, depth, k, t)
         continue
       }
       let x0 = v.sx - sideX / 2
@@ -1419,6 +1431,8 @@ export class GlyphView {
     const cursorTex = cursor?.tile !== undefined ? this.tex(cursor.tile) : null
     const ringRgb = linear(cursorColour({ mode: cursor?.mode ?? 'target' }))
     const mark: RGB = [0, 0, 0]
+    // the shadows round the feet of what stands, where on the floor and how far round
+    const shadows = this.things.filter((t) => t.shadow && !t.hand).map((t) => ({ x: t.x + 0.5 - (t.forward ?? 0) * L.dx, y: t.y + 0.5 - (t.forward ?? 0) * L.dy, r: SHADOW_DISC * t.shadow! }))
     for (let col = 0, b = 0; col < W; col += step, b++) {
       const rx = L.rx[b], ry = L.ry[b], u = L.u[b], top = L.top[b], bot = L.bot[b]
       const wallRgb = L.wall[b], wallLevel = L.wallLevel[b], wallK = L.wallK[b], wallG = L.wallG[b]
@@ -1520,6 +1534,18 @@ export class GlyphView {
             fgr = lv.rgba[t + 1] / a
             fb = lv.rgba[t + 2] / a
           }
+        }
+        // a shadow round a foot, laid over the floor as render-3d lays it: black over the encoded colour, which in
+        // linear light is the encoded share left to the power of the curve; its edge as much of the pixel as it covers
+        for (const sh of shadows) {
+          const ox = wx - sh.x, oz = wy - sh.y
+          if (Math.abs(ox) > sh.r + rowFoot[row] || Math.abs(oz) > sh.r + rowFoot[row]) continue
+          const c = Math.max(0, Math.min(1, (sh.r - Math.hypot(ox, oz)) / Math.max(rowFoot[row], 1e-3) + 0.5))
+          if (c <= 0) continue
+          const keep = (1 - SHADOW_ALPHA * c) ** 2.2
+          fr *= keep
+          fgr *= keep
+          fb *= keep
         }
         put(i, fr, fgr, fb, rowLight[row] * dims[g], fg, mark, oa)
       }

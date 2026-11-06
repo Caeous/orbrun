@@ -16,15 +16,24 @@ place of the front room's standing still behind it in the view's glyphs,
 the next of the browser's cycle each start, under its tinted veil; the
 logo as the browser's, laid out in the mosaic's dots as the page lays it
 out (game/home.ts `lockup`): the Orb of Zot's tile a texel to a dot (or
-two to one, 16 dots a side; 32 on a very wide screen), the name in the
+two to one, 16 dots a side), whichever brings the logo nearest the
+browser's share of the width (32 from about 145 columns), the name in the
 wordmark's face in the page's proportion and place beside it, cut sharp
-on the dots (a dot inked where its ink covers most of it), and the page's shadows under them, the orb's
-gold and purple glow and the name's dark cloud, as Chrome draws them; a
-cell of either is the two colours and the glyph nearest its dots, and the shadows past them shade
+on the dots (a dot inked where its ink covers 0.42 of it, as heavy as
+Chrome sets it), and the page's shadows under them, the orb's
+gold and purple glow and the name's dark cloud, as Chrome draws them; the
+whole moved by a dot or so on the cells where they draw it best; a cell
+of either is the two colours and the glyph nearest its dots in OKLab
+(every way of parting its dots tried, each part its mean), and the shadows past them shade
 the room's own cells (or, where a cell is one colour, are drawn by the
 dot); and the rows: each version built
 (`engine/build.sh`), its game to continue or a new one; the account;
-Settings; and Quit. Arrows (or j and k) move, Enter takes a row, q leaves,
+Settings; and Quit. The other screens' titles (Settings, Accounts, an
+account's name) are set as the browser's, in the wordmark's face in its
+gold, the browser's size for the screen's width (3.2rem on a wide one) but
+never under 12 dots to the em, where its letters are read, with its shadow
+and drawn as the logo is; a title too wide for that is written in words,
+and the lede under it in capitals. Arrows (or j and k) move, Enter takes a row, q leaves,
 and the screen comes back when a game ends. `--dcss trunk` (or `dcss` in
 the config) skips it and plays in that version straight away.
 
@@ -104,7 +113,13 @@ the config), the game starts as the account last picked there, kept in
   the plants) is each its own sprite, as `@orbrun/world` lists it
   (things.ts `crowd`, `fixtures`): its layers and badges as render-3d
   stacks them, a missile lifted off the floor, a feature render-3d's
-  height, a way up folded into its steps as render-3d folds them
+  height, what is on the floor (a monster, a plant, an item) stood on its
+  art's foot as render-3d stands it, not its tile's edge, and a tenth of a
+  cell forward of its cell's middle (world `STAND_FORWARD`), crawl centring a
+  small thing in its square (world `grounded`: not what flies, by crawl's
+  flying flag, nor a tentacle's piece), its shadow round its foot on the floor as render-3d lays its disc
+  (0.22 of a cell a unit of world's `shadow`, black at 0.35 over the
+  encoded colour), a way up folded into its steps as render-3d folds them
   (sprites.ts `foldedStairs`: the stairs' side a board, each step laid
   back flat at its height over a block of the side reaching under it, the
   whole turned a quarter of the way from facing the eye to the way it
@@ -114,9 +129,10 @@ the config), the game starts as the account last picked there, kept in
   submerged or seen invisible, shows what is behind it, a cloud a texel
   nearer than its cell's middle so its smoke is over what stands in it. What stands is
   steady (glyph/render.ts `steady`): its picture is drawn once at a size
-  and kept, its size whole cells and its foot and middle on the cells'
-  edges (half cells, or dots, for what is too small for a cell to be little
-  of it), so wherever it stands, glides, or is seen from, turning or
+  and kept, its size whole cells and its middle on the cells' edges (half
+  cells, or dots, for what is too small for a cell to be little of it), its
+  foot on the nearest dot, so it stands on its cell's middle (a cell's edge
+  stood it as much as a fifth of a cell back), so wherever it stands, glides, or is seen from, turning or
   stepping, it is the same picture on the same glyphs, moved, and changes
   only when its size does; near enough that its texels fill a dot, it is
   read a dot at a time, crisp; farther, its texels are averaged as the
@@ -156,9 +172,10 @@ the config), the game starts as the account last picked there, kept in
   map draws it, what isn't known the view darkened, the player always in
   the middle as the browser's minimap has it, an arrow where crawl has its
   @, pointing the way the view faces, and the server's cursor on gold, a
-  level cell two columns wide (square, as many rows of the level as
-  columns) where a quarter of the width and half the height have room for
-  as many tiles so, else one; the
+  column a level cell, half as many rows as columns; where a quarter of the
+  width and half the height have room for twice as many columns, and the
+  tiles are the settings' Auto, twice as many cells across rather than the
+  same cells spread wider; the
   monster list under it, a blank row between (its bearing, crawl's letter where the browser shows
   the sprite, and its name; the `nearby` setting's edge pips are not drawn);
   the messages

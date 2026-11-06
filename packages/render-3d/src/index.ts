@@ -314,7 +314,7 @@ export class Render3d implements MapRenderer {
   // ---- what stands
   private fixtures: SpriteInstance[] = []
   private crowd: SpriteInstance[] = []
-  private shadows: { x: number; y: number; r: number; moverId?: number }[] = []
+  private shadows: { x: number; y: number; r: number; moverId?: number; forward?: number }[] = []
   private batches = new Map<string, Batch>()
   private shadowBatch: Batch
   private shadowMat: THREE.RawShaderMaterial
@@ -1146,9 +1146,13 @@ export class Render3d implements MapRenderer {
       blend.sort((p, q) => far(q) - far(p))
       for (const inst of blend) write(inst)
     }
+    // a shadow forward of its cell's middle as what casts it is (`back`): toward the eye along the camera's heading,
+    // as a sprite facing the camera stands forward in its frame
+    const yaw = this.cam.rotation.y, fx = Math.sin(yaw), fz = Math.cos(yaw)
     for (const s of this.shadows) {
       const o = offsetOf(s.moverId)
-      this.shadowBatch.push([[s.x + 0.5 + (o?.x ?? 0), 0, s.y + 0.5 + (o?.y ?? 0)], [s.r]])
+      const f = s.forward ?? 0
+      this.shadowBatch.push([[s.x + 0.5 + (o?.x ?? 0) + f * fx, 0, s.y + 0.5 + (o?.y ?? 0) + f * fz], [s.r]])
     }
     for (const b of this.batches.values()) b.end()
     this.shadowBatch.end()

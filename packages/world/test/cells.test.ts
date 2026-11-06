@@ -3,7 +3,7 @@ import { cellKey, emptyScene, type Scene, type SceneCell, type TileRect } from '
 import { bodyRect, inPoly, type ClassAt } from '../src/footprint.js'
 import { faceTile, floorLayers, insetStrips, stripAt } from '../src/cells.js'
 import { boardAlong, boardTexel, doorBoard, featureStance, framedDoors, occupiedFeatures } from '../src/doors.js'
-import { CLOUD_ALPHA, FIXTURE_H, PROJECTILE_LIFT, STAIR_H, crowd, fixtures } from '../src/things.js'
+import { CLOUD_ALPHA, FIXTURE_H, PROJECTILE_LIFT, STAIR_H, crowd, fixtures, footGap } from '../src/things.js'
 import { cursorColour, ringCover } from '../src/marks.js'
 
 const cell = (x: number, y: number, o: Partial<SceneCell> = {}): SceneCell => ({
@@ -144,6 +144,30 @@ describe('what stands', () => {
     expect(missile.lift).toBe(PROJECTILE_LIFT)
     expect(corpse.lie).toBe(true)
     expect(corpse.shadow).toBeUndefined()
+  })
+
+  it('stands what is on the floor on its foot: a monster, a plant, an item; not a flyer, a tentacle, a corpse, a missile or a cloud', () => {
+    const s = scene([0, 1, 2, 3, 4, 5, 6].map((x) => cell(x, 0)))
+    s.billboards.push(
+      mon(0, 0),
+      mon(1, 0, { scenery: true }),
+      { kind: 'item', x: 2, y: 0, tile: 13, height: 0.6 } as Scene['billboards'][number],
+      mon(3, 0, { afloat: true }),
+      { kind: 'item', x: 4, y: 0, tile: 13, height: 0.6, lying: true } as Scene['billboards'][number],
+      { kind: 'projectile', x: 5, y: 0, tile: 12, height: 0.5 } as Scene['billboards'][number],
+      { kind: 'cloud', x: 6, y: 0, tile: 11, height: 1 } as Scene['billboards'][number],
+    )
+    expect(crowd(s).map((t) => !!t.grounded)).toEqual([true, true, true, false, false, false, false])
+  })
+
+  it("finds the gap under the art's foot: the least of its layers', none where one is cut at a waterline", () => {
+    // a rat: 21 rows from row 6 of 32, five short of its tile's foot
+    expect(footGap([{ top: 6, h: 21, cell: 32 }])).toBeCloseTo(5 / 32, 9)
+    // a doll's layers: the one that reaches lowest
+    expect(footGap([{ top: 6, h: 21, cell: 32 }, { top: 2, h: 28, cell: 32 }])).toBeCloseTo(2 / 32, 9)
+    expect(footGap([{ top: 0, h: 32, cell: 32 }])).toBe(0)
+    expect(footGap([{ top: 6, h: 21, cell: 32, cut: true }])).toBe(0)
+    expect(footGap([])).toBe(0)
   })
 
   it("stands the level's features by their stance, stairs lower", () => {

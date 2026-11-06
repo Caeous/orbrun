@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { settle, stubbed, shadowsWritten, written, type Guts } from './bed.js'
-import { STEP_SECONDS } from '@orbrun/world'
+import { STAND_FORWARD, STEP_SECONDS } from '@orbrun/world'
 import { Render3d } from '../src/index.js'
 import { cellKey, emptyScene, makeCamera, type Billboard, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
@@ -39,7 +39,8 @@ const monster = (x: number, y: number): Billboard => ({ x, y, tile: 1, kind: 'mo
 /** Where the sprite, its ghost and its shadow were written this frame, in world x and z. */
 function drawn(g: Guts): { x: number; z: number }[] {
   const out = [...written(g, 'main', 'opaque'), ...written(g, 'main', 'ghostVisible')].map((i) => ({ x: i.anchor[0], z: i.anchor[2] }))
-  for (const [x, z] of shadowsWritten(g)) out.push({ x, z })
+  // the shadow stands forward with what casts it (STAND_FORWARD), toward the eye: the camera faces north, so in z
+  for (const [x, z] of shadowsWritten(g)) out.push({ x, z: z - STAND_FORWARD })
   return out
 }
 
@@ -62,7 +63,10 @@ describe('a monster stepping', () => {
     r.setScene(s)
     r.render()
     expect(drawn(g)).toHaveLength(3) // the sprite, its ghost and its shadow
-    for (const p of drawn(g)) expect([p.x, p.z]).toEqual([5.5, 5.5])
+    for (const p of drawn(g)) {
+      expect(p.x).toBeCloseTo(5.5, 6)
+      expect(p.z).toBeCloseTo(5.5, 6)
+    }
     expect(r.animating).toBe(false)
 
     step(r, s, monster(6, 5))

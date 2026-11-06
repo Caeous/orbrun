@@ -33,6 +33,7 @@ import { SETTING_ROWS, fovOf, rowHint, rowOff, settingGroups, settingValue, type
 import type { KeyLike } from '../../../apps/orbrun/src/keys'
 import type { SavedCharacter } from './engine'
 import { PALETTE, type Line, type RGB, type Span } from './text'
+import { fromOklab, oklab } from '../glyph/encode'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const APP = path.resolve(here, '../../../apps/orbrun')
@@ -52,6 +53,8 @@ const GREY = PALETTE[8]
 const BAR_GROUND: RGB = [12, 11, 14]
 /** the longest name a character takes (offline server `profileName`) */
 const NAME_MAX = 20
+/** the front's lede, in letters a line at the most: the browser's 34rem of its 1.1rem mono */
+const LEDE_WIDTH = 49
 /** the blank lines between the head and the rows at the least, as the browser's head stands apart from them */
 const HEAD_GAP = 2
 /** the screen's words stand this far in from the left edge, the rows' marks with them and their words a mark further */
@@ -193,8 +196,8 @@ const WORD_SHADOW: Shadow = { dy: 2, dev: 12, rgb: [0, 0, 0], a: 1 }
 const SHADOW_REACH = 3
 /** how much of a dot the orb or the name must cover for its cell to be drawn as glyphs: less, and the cell is the room's, shaded */
 const LOGO_INK = 0.2
-/** how much of a dot the name's ink must cover for the dot to be inked: the name is cut sharp on the dots */
-const WORD_CUT = 0.5
+/** how much of a dot the name's ink must cover for the dot to be inked: the name is cut sharp on the dots, as heavy as Chrome sets it (its edges drawn a little heavier than they cover: at a half, the strokes come out lighter than the page's) */
+const WORD_CUT = 0.42
 /** how much a shadow must lay on a dot for a plain cell of the room's to be drawn as glyphs, to show it by the dot */
 const LOGO_GLOW = 0.04
 
@@ -240,8 +243,8 @@ function wordSpan(word: Logo, ex: number, dots: number) {
 }
 
 /**
- * The logo in at most `width` cells across and `most` rows down: the orb at its larger size (ORB_SIZES) where that
- * is within `want` cells (the browser's share of the screen, LOGO_SHARE), else its smaller; the name in the page's
+ * The logo in at most `width` cells across and `most` rows down: the orb at the size (ORB_SIZES) that makes it
+ * nearest `want` cells (the browser's share of the screen, LOGO_SHARE); the name in the page's
  * proportion to it. `sy`: the mosaic's dots down a cell; `aspect`: a cell's height over its width. Null where not
  * even the smaller fits.
  */
@@ -251,8 +254,11 @@ export function fitLogo(logo: LogoArt, width: number, want: number, most: number
     const { x1 } = wordSpan(logo.word, emOf(dots, sy, aspect).x, dots)
     return { dots, rows, orbCols: dots / 2, cols: Math.ceil(x1 / 2), sy, aspect }
   })
+  // the one nearest the browser's share by how many times one is the other, as the page's grows smoothly with its
+  // window: the orb's texels only fall crisp on the dots at a texel or two to a dot
   const fits = sizes.filter((f) => f.cols <= width && f.rows <= most)
-  return fits.find((f) => f.cols <= want) ?? fits[fits.length - 1] ?? null
+  const off = (f: LogoFit) => Math.abs(Math.log(f.cols / Math.max(1, want)))
+  return fits.reduce<LogoFit | null>((b, f) => (!b || off(f) < off(b) ? f : b), null)
 }
 
 /**
@@ -271,18 +277,47 @@ export interface Lockup {
 }
 
 /**
- * The logo as the page sets it, in dots: the orb's tile a texel to a dot (or two to one, the smaller), the name its
- * ink's proportion and place by the page's lockup (`.place::before`: the orb 0.71em a side, 0.16em before the name,
- * 0.055em under its baseline), a dot inked where the ink covers most of it (WORD_CUT); then the page's shadows, each blurred from
- * what casts it and laid under it (ORB_SHADOWS, WORD_SHADOW), the name over the orb's.
+ * The logo as the page sets it, in dots (`layOut`), where on the cells' dots it leaves the least between them and
+ * the cells drawn of it (`fitCell`): moved right by a dot or down by up to a cell less one, so the orb's texels and
+ * the name's strokes fall in the cells as best they can be drawn two colours a cell. Each is as crisp as the next.
  */
 export function lockup(logo: LogoArt, fit: LogoFit): Lockup {
+  // laid out once: moved by whole dots, the name's cut and the shadows are the same, only further on
+  return bestShift(layOut(logo, fit))
+}
+
+/** what is lost of a lockup in drawing its orb and its name as cells, over the dark the room is under the veil */
+export function fitError(lk: Lockup): number {
+  return logoCells(lk, () => 0x07070b).reduce((e, c) => e + (c && 'mask' in c ? c.err ?? 0 : 0), 0)
+}
+
+/** A lockup moved `dx` dots right and `dy` down in its cells, which have room for it (`layOut`'s cell more each way). */
+export function shifted(lk: Lockup, dx: number, dy: number): Lockup {
+  if (!dx && !dy) return lk
+  const W = lk.cols * 2, H = lk.rows * lk.sy
+  const rgba = new Float32Array(lk.rgba.length), ink = new Float32Array(lk.ink.length)
+  for (let y = 0; y + dy < H; y++) {
+    rgba.set(lk.rgba.subarray(y * W * 4, (y * W + W - dx) * 4), ((y + dy) * W + dx) * 4)
+    ink.set(lk.ink.subarray(y * W, y * W + W - dx), (y + dy) * W + dx)
+  }
+  return { ...lk, rgba, ink }
+}
+
+/**
+ * The logo as the page sets it, in dots: the orb's tile a
+ * texel to a dot (or two to one, the smaller), the name its ink's proportion and place by the page's lockup
+ * (`.place::before`: the orb 0.71em a side, 0.16em before the name, 0.055em under its baseline), a dot inked where
+ * the ink covers enough of it (WORD_CUT); then the page's shadows, each blurred from what casts it and laid under it
+ * (ORB_SHADOWS, WORD_SHADOW), the name over the orb's.
+ */
+export function layOut(logo: LogoArt, fit: LogoFit): Lockup {
   const { dots, sy, aspect } = fit
   const em = emOf(dots, sy, aspect)
   const dev = (s: Shadow) => ({ x: (s.dev / PAGE_EM) * em.x, y: (s.dev / PAGE_EM) * em.y })
   const reach = Math.max(...[...ORB_SHADOWS, WORD_SHADOW].map((s) => SHADOW_REACH * dev(s).y + (s.dy / PAGE_EM) * em.y))
   const mx = Math.ceil((reach * em.x) / em.y / 2), my = Math.ceil(reach / sy)
-  const cols = fit.cols + 2 * mx, rows = fit.rows + 2 * my
+  // a cell more right and down, for it to be moved into (`shifted`)
+  const cols = fit.cols + 2 * mx + 1, rows = fit.rows + 2 * my + 1
   const W = cols * 2, H = rows * sy
   const ox = mx * 2, oy = my * sy + Math.floor((fit.rows * sy - dots) / 2)
 
@@ -299,58 +334,19 @@ export function lockup(logo: LogoArt, fit: LogoFit): Lockup {
           orb[o + 3] += a
         }
     }
-  // the name: each of its pixels shared among the dots it overlaps, by how much of each it covers
+  // the name, cut sharp on the dots
   const word = logo.word, m = word.metrics!
   const { x0, x1 } = wordSpan(word, em.x, dots)
   const base = oy + dots - ORB_DROP_EM * em.y
   const y1 = base + (m.base / m.em) * em.y, y0 = y1 - (word.h / m.em) * em.y
-  const cover = new Float32Array(W * H)
-  /** the dots a pixel from `a` to `b` (in dots) overlaps, and how much of each */
-  const spans = (a: number, b: number) => {
-    const out: [number, number][] = []
-    for (let d = Math.floor(a); d < b; d++) out.push([d, Math.min(b, d + 1) - Math.max(a, d)])
-    return out
-  }
-  const sx = (x1 - x0) / word.w, sy_ = (y1 - y0) / word.h
-  const across = Array.from({ length: word.w }, (_, x) => spans(ox + x0 + x * sx, ox + x0 + (x + 1) * sx))
-  for (let y = 0; y < word.h; y++) {
-    const down = spans(y0 + y * sy_, y0 + (y + 1) * sy_)
-    for (let x = 0; x < word.w; x++) {
-      const a = word.rgba[(y * word.w + x) * 4 + 3] / 255
-      if (!a) continue
-      for (const [dy, wy] of down) if (dy >= 0 && dy < H) for (const [dx, wx] of across[x]) cover[dy * W + dx] += a * wx * wy
-    }
-  }
-  // cut sharp on the dots: a dot is the ink's where it covers most of it, else none of it, so the letters' edges
-  // fall on the dots (its shadow is still cast from the smooth ink, as the page casts it)
-  const smooth = cover.slice()
-  for (let i = 0; i < W * H; i++) cover[i] = cover[i] >= WORD_CUT ? 1 : 0
+  const { cover, smooth } = wordCover(word, W, H, ox + x0, ox + x1, y0, y1)
   const ink = new Float32Array(W * H)
-  for (let i = 0; i < W * H; i++) ink[i] = Math.max(orb[i * 4 + 3], Math.min(1, cover[i]))
+  for (let i = 0; i < W * H; i++) ink[i] = Math.max(orb[i * 4 + 3], cover[i])
 
-  /** what a shadow lays under `alpha`: it blurred, moved down, in the shadow's colour */
-  const cast = (alpha: Float32Array, s: Shadow) => {
-    const d = dev(s)
-    const a = blur(alpha, W, H, d.x, d.y, (s.dy / PAGE_EM) * em.y)
-    return (i: number) => a[i] * s.a
-  }
-  /** `over` laid on the shadow `s` casts from it, in place */
-  const under = (over: Float32Array, alpha: Float32Array, s: Shadow) => {
-    const sa = cast(alpha, s)
-    for (let i = 0; i < W * H; i++) {
-      const a = sa(i), keep = 1 - over[i * 4 + 3]
-      for (let c = 0; c < 3; c++) over[i * 4 + c] += (s.rgb[c] / 255) * a * keep
-      over[i * 4 + 3] += a * keep
-    }
-  }
-  for (const s of ORB_SHADOWS) under(orb, Float32Array.from({ length: W * H }, (_, i) => orb[i * 4 + 3]), s)
-  const name = new Float32Array(W * H * 4)
-  for (let i = 0; i < W * H; i++) {
-    const a = Math.min(1, cover[i])
-    for (let c = 0; c < 3; c++) name[i * 4 + c] = (INK[c] / 255) * a
-    name[i * 4 + 3] = a
-  }
-  under(name, smooth.map((v) => Math.min(1, v)), WORD_SHADOW)
+  const shade = (over: Float32Array, alpha: Float32Array, s: Shadow) => castUnder(over, alpha, s, W, H, { x: (s.dev / PAGE_EM) * em.x, y: (s.dev / PAGE_EM) * em.y }, (s.dy / PAGE_EM) * em.y)
+  for (const s of ORB_SHADOWS) shade(orb, Float32Array.from({ length: W * H }, (_, i) => orb[i * 4 + 3]), s)
+  const name = painted(cover, INK)
+  shade(name, smooth, WORD_SHADOW)
   // the name over the orb's shadows, as the page paints its text after the orb before it
   const rgba = new Float32Array(W * H * 4)
   for (let i = 0; i < W * H; i++) {
@@ -358,6 +354,133 @@ export function lockup(logo: LogoArt, fit: LogoFit): Lockup {
     for (let c = 0; c < 4; c++) rgba[i * 4 + c] = name[i * 4 + c] + orb[i * 4 + c] * keep
   }
   return { x: -mx, y: -my, cols, rows, sy, rgba, ink }
+}
+
+/**
+ * Art set in the font (`loadTitle`) in a `W` x `H` field of dots, its ink from `x0` to `x1` across and `y0` to `y1`
+ * down (in dots): each of its pixels shared among the dots it overlaps, by how much of each it covers (`smooth`,
+ * what its shadow is cast from, as the page casts it), and then cut sharp on the dots (`cover`): a dot is the ink's
+ * where it covers enough of it (WORD_CUT), else none of it, so the letters' edges fall on the dots.
+ */
+function wordCover(word: Logo, W: number, H: number, x0: number, x1: number, y0: number, y1: number): { cover: Float32Array; smooth: Float32Array } {
+  const smooth = new Float32Array(W * H)
+  /** the dots a pixel from `a` to `b` (in dots) overlaps, and how much of each */
+  const spans = (a: number, b: number) => {
+    const out: [number, number][] = []
+    for (let d = Math.floor(a); d < b; d++) out.push([d, Math.min(b, d + 1) - Math.max(a, d)])
+    return out
+  }
+  const sx = (x1 - x0) / word.w, sy = (y1 - y0) / word.h
+  const across = Array.from({ length: word.w }, (_, x) => spans(x0 + x * sx, x0 + (x + 1) * sx))
+  for (let y = 0; y < word.h; y++) {
+    const down = spans(y0 + y * sy, y0 + (y + 1) * sy)
+    for (let x = 0; x < word.w; x++) {
+      const a = word.rgba[(y * word.w + x) * 4 + 3] / 255
+      if (!a) continue
+      for (const [dy, wy] of down) if (dy >= 0 && dy < H) for (const [dx, wx] of across[x]) if (dx >= 0 && dx < W) smooth[dy * W + dx] += a * wx * wy
+    }
+  }
+  const cover = new Float32Array(W * H)
+  for (let i = 0; i < W * H; i++) {
+    smooth[i] = Math.min(1, smooth[i])
+    cover[i] = smooth[i] >= WORD_CUT ? 1 : 0
+  }
+  return { cover, smooth }
+}
+
+/** dots inked in a colour where `cover` is (premultiplied RGBA, 0 to 1) */
+function painted(cover: Float32Array, rgb: RGB): Float32Array {
+  const out = new Float32Array(cover.length * 4)
+  for (let i = 0; i < cover.length; i++) {
+    for (let c = 0; c < 3; c++) out[i * 4 + c] = (rgb[c] / 255) * cover[i]
+    out[i * 4 + 3] = cover[i]
+  }
+  return out
+}
+
+/** `over` (premultiplied RGBA, `W` x `H`) laid on the shadow `s` casts from `alpha`, in place: it blurred by `dev` dots, moved `down` */
+function castUnder(over: Float32Array, alpha: Float32Array, s: Shadow, W: number, H: number, dev: { x: number; y: number }, down: number) {
+  const a = blur(alpha, W, H, dev.x, dev.y, down)
+  for (let i = 0; i < W * H; i++) {
+    const sa = a[i] * s.a, keep = 1 - over[i * 4 + 3]
+    for (let c = 0; c < 3; c++) over[i * 4 + c] += (s.rgb[c] / 255) * sa * keep
+    over[i * 4 + 3] += sa * keep
+  }
+}
+
+/** the best of a lockup's places on the cells' dots (`lockup`) */
+function bestShift(at: Lockup): Lockup {
+  let best: { lk: Lockup; err: number } | null = null
+  for (let dy = 0; dy < at.sy; dy++)
+    for (let dx = 0; dx < 2; dx++) {
+      const lk = shifted(at, dx, dy)
+      const err = fitError(lk)
+      if (!best || err < best.err - 1e-6) best = { lk, err }
+    }
+  return best!.lk
+}
+
+// ---- a screen's title
+
+/**
+ * A screen's title as the browser sets it (styles.css `.menu-frame:not(.home-list) .brand .head .place`): its font
+ * `clamp(2.4rem, 6vw, 3.2rem)`, in the page's pixels, on a terminal of eight to a cell across (as the logo is
+ * measured, a dot four of them); its
+ * `text-shadow: 0 2px 18px #000`, a deviation of half the blur.
+ */
+const TITLE_PX = { least: 38.4, vw: 0.06, most: 51.2 }
+const TITLE_SHADOW: Shadow = { dy: 2, dev: 9, rgb: [0, 0, 0], a: 1 }
+/**
+ * the smallest the title is set at, in dots down its em: the browser's least, 2.4rem, is too few dots for its
+ * letters to be read (a gothic face's small letters four dots tall), so none is smaller than this, where they read
+ * (about the browser's most on a wide terminal); where it does not fit, the title is written in words instead
+ */
+const TITLE_LEAST_DOTS = 12
+
+/** How a screen's title stands in cells: `em`, the font's size in the page's pixels; its ink `cols` x `rows`. */
+export interface TitleFit {
+  em: number
+  cols: number
+  rows: number
+  sy: number
+  aspect: number
+}
+
+/** a page pixel in dots, across and down: a cell eight across, `aspect` times that down */
+const pxDots = (sy: number, aspect: number) => ({ x: 2 / 8, y: sy / (8 * aspect) })
+
+/**
+ * The title in at most `width` cells across and `most` rows down, on a screen `screen` columns wide: at the
+ * browser's size for that width, or smaller to fit, but never too small to read (TITLE_LEAST_DOTS); null where it
+ * would be, or is too tall.
+ */
+export function fitTitle(title: Logo, width: number, most: number, screen: number, sy: number, aspect: number): TitleFit | null {
+  const m = title.metrics!, d = pxDots(sy, aspect)
+  const least = TITLE_LEAST_DOTS / d.y
+  const want = Math.max(least, TITLE_PX.least, Math.min(TITLE_PX.most, TITLE_PX.vw * screen * 8))
+  // as wide as its ink is, and no wider than it may be
+  const em = Math.min(want, (width * 2) / ((title.w / m.em) * d.x))
+  if (em < least - 1e-9) return null
+  const cols = Math.ceil(((title.w / m.em) * em * d.x) / 2), rows = Math.ceil(((title.h / m.em) * em * d.y) / sy)
+  return rows <= most ? { em, cols, rows, sy, aspect } : null
+}
+
+/**
+ * The title laid out in dots as the page sets it, in the gold of the page's titles, cut sharp on the dots, its shadow
+ * under it, as the logo is (`lockup`): `cols` x `rows` cells from (`x`, `y`) off the fit's top-left.
+ */
+export function titleLockup(title: Logo, fit: TitleFit): Lockup {
+  const { em, sy, aspect } = fit, d = pxDots(sy, aspect), m = title.metrics!
+  const dev = { x: TITLE_SHADOW.dev * d.x, y: TITLE_SHADOW.dev * d.y }
+  const reach = SHADOW_REACH * dev.y + TITLE_SHADOW.dy * d.y
+  const mx = Math.ceil((reach * dev.x) / dev.y / 2), my = Math.ceil(reach / sy)
+  const cols = fit.cols + 2 * mx + 1, rows = fit.rows + 2 * my + 1
+  const W = cols * 2, H = rows * sy
+  const x0 = mx * 2, y0 = my * sy
+  const { cover, smooth } = wordCover(title, W, H, x0, x0 + (title.w / m.em) * em * d.x, y0, y0 + (title.h / m.em) * em * d.y)
+  const rgba = painted(cover, GOLD_BRIGHT)
+  castUnder(rgba, smooth, TITLE_SHADOW, W, H, dev, TITLE_SHADOW.dy * d.y)
+  return bestShift({ x: -mx, y: -my, cols, rows, sy, rgba, ink: cover })
 }
 
 /** `a` (`w` x `h`) blurred, a Gaussian of deviation `dx` across and `dy` down, and moved `down` (all in its pixels). */
@@ -385,19 +508,17 @@ function blur(a: Float32Array, w: number, h: number, dx: number, dy: number, dow
 }
 
 /** A cell of the logo: two of its colours and the dots of the first (as `CrispCell`'s); or a shade to lay on the room's cell, premultiplied (0xRRGGBB, 0 to 1). */
-export type LogoCell = { mask: number; fg: number; bg: number } | { shade: number; a: number }
+export type LogoCell = { mask: number; fg: number; bg: number; err?: number } | { shade: number; a: number }
 
 /**
  * The lockup as cells over the room, `room(col, row)` the colour behind each (0xRRGGBB, cells from the lockup's
  * top-left): a cell the orb or the name covers is its dots laid on the room, then the two colours and the glyph that
- * leave the least between them and the dots (the pair of its dots' colours that does, then each the mean of the dots
- * it takes); so is a cell the shadows reach where the room's
+ * leave the least between them and the dots, as the eye sees it (`fitCell`); so is a cell the shadows reach where the room's
  * is `plain` (one colour), so a glow fades by dots, not cells; one where the room's has glyphs, a shade laid on it,
  * so they stay; null for a cell with nothing.
  */
 export function logoCells(lk: Lockup, room: (col: number, row: number) => number, plain?: (col: number, row: number) => boolean): (LogoCell | null)[] {
   const { cols, rows, sy, rgba, ink } = lk, W = cols * 2
-  const apart = (a: number[], b: number[]) => 0.3 * (a[0] - b[0]) ** 2 + 0.59 * (a[1] - b[1]) ** 2 + 0.11 * (a[2] - b[2]) ** 2
   const out: (LogoCell | null)[] = []
   for (let r = 0; r < rows; r++)
     for (let c = 0; c < cols; c++) {
@@ -418,31 +539,66 @@ export function logoCells(lk: Lockup, room: (col: number, row: number) => number
         continue
       }
       const u = room(c, r), under = [(u >> 16) & 255, (u >> 8) & 255, u & 255]
-      const ds = idx.map((i) => [0, 1, 2].map((ch) => rgba[i * 4 + ch] * 255 + under[ch] * (1 - rgba[i * 4 + 3])))
-      // the pair of its dots' colours that leaves the least between them and the dots
-      let best = { e: Infinity, mask: 0 }
-      for (let a = 0; a < ds.length; a++)
-        for (let b = a; b < ds.length; b++) {
-          let e = 0, mask = 0
-          ds.forEach((d, i) => {
-            const ea = apart(d, ds[a]), eb = apart(d, ds[b])
-            if (ea <= eb) mask |= 1 << i
-            e += Math.min(ea, eb)
-          })
-          if (e < best.e) best = { e, mask }
-        }
-      // each colour the mean of the dots it takes
-      const mean = (on: boolean) => {
-        const sel = ds.filter((_, i) => !!(best.mask & (1 << i)) === on)
-        if (!sel.length) return 0
-        const m = [0, 1, 2].map((ch) => Math.round(sel.reduce((s, d) => s + d[ch], 0) / sel.length))
-        return (m[0] << 16) | (m[1] << 8) | m[2]
-      }
-      const fg = mean(true), bg = mean(false)
-      const all = (1 << ds.length) - 1
-      out.push(best.mask === all ? { mask: all, fg, bg: fg } : { mask: best.mask, fg, bg })
+      out.push(fitCell(idx.map((i) => [0, 1, 2].map((ch) => rgba[i * 4 + ch] * 255 + under[ch] * (1 - rgba[i * 4 + 3])))))
     }
   return out
+}
+
+/** sRGB's 0-255 in linear light */
+const LINEAR = Float32Array.from({ length: 256 }, (_, i) => (i / 255 <= 0.04045 ? i / 255 / 12.92 : ((i / 255 + 0.055) / 1.055) ** 2.4))
+/** linear light (0 to 1) in sRGB's 0-255 */
+const srgb = (v: number) => Math.round(255 * (v <= 0 ? 0 : v >= 1 ? 1 : v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055))
+const lab = new Float32Array(3)
+
+/**
+ * A cell's dots (sRGB, 0-255, as `logoCells` numbers them) in the two colours and the glyph that leave the least
+ * between them and the dots in OKLab, where the eye's differences are: every way of parting the dots in two, each
+ * part its mean there, which is nearest all of it (so a part's error is how far its dots spread round it, from their
+ * sums alone); and that error.
+ */
+export function fitCell(ds: number[][]): { mask: number; fg: number; bg: number; err: number } {
+  const n = ds.length, all = (1 << n) - 1
+  const L = new Float32Array(n * 3)
+  const at = (v: number) => LINEAR[v <= 0 ? 0 : v >= 255 ? 255 : Math.round(v)]
+  for (let i = 0; i < n; i++) oklab(at(ds[i][0]), at(ds[i][1]), at(ds[i][2]), L, i * 3)
+  let t0 = 0, t1 = 0, t2 = 0, sq = 0
+  for (let i = 0; i < n; i++) {
+    sq += L[i * 3] ** 2 + L[i * 3 + 1] ** 2 + L[i * 3 + 2] ** 2
+    t0 += L[i * 3]
+    t1 += L[i * 3 + 1]
+    t2 += L[i * 3 + 2]
+  }
+  // a parting's error is the dots' sum of squares less each part's sum squared over its count, so the best parting
+  // is the one where that is most; one colour for all of them (`all`) unless a parting does better. Each parting is
+  // tried once, the last dot always in the second part.
+  let best = { gain: (t0 * t0 + t1 * t1 + t2 * t2) / n, mask: all }
+  for (let mask = 1; mask < 1 << (n - 1); mask++) {
+    let a0 = 0, a1 = 0, a2 = 0, na = 0
+    for (let i = 0; i < n; i++)
+      if (mask & (1 << i)) {
+        a0 += L[i * 3]
+        a1 += L[i * 3 + 1]
+        a2 += L[i * 3 + 2]
+        na++
+      }
+    const gain = (a0 * a0 + a1 * a1 + a2 * a2) / na + ((t0 - a0) ** 2 + (t1 - a1) ** 2 + (t2 - a2) ** 2) / (n - na)
+    if (gain > best.gain + 1e-9) best = { gain, mask }
+  }
+  /** the mean in OKLab of the dots in the part (`on`) or out of it, in sRGB */
+  const mean = (on: boolean) => {
+    let m0 = 0, m1 = 0, m2 = 0, k = 0
+    for (let i = 0; i < n; i++)
+      if (!!(best.mask & (1 << i)) === on) {
+        m0 += L[i * 3]
+        m1 += L[i * 3 + 1]
+        m2 += L[i * 3 + 2]
+        k++
+      }
+    fromOklab(m0 / k, m1 / k, m2 / k, lab, 0)
+    return (srgb(lab[0]) << 16) | (srgb(lab[1]) << 8) | srgb(lab[2])
+  }
+  const fg = mean(true), err = Math.max(0, sq - best.gain)
+  return best.mask === all ? { mask: all, fg, bg: fg, err } : { mask: best.mask, fg, bg: mean(false), err }
 }
 
 /** An RGBA image cut to its ink; null for none. */
@@ -464,6 +620,25 @@ function trimmed({ data, info }: { data: Buffer; info: { width: number; height: 
   return { rgba, w, h, x0, y0 }
 }
 
+/** A path command of opentype.js's: its letter and its points. */
+type PathCommand = { type: string; x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number }
+
+/**
+ * A glyph's outline as SVG path data. Not opentype.js's own `toPathData`, which in 2.0 writes some numbers (938.0000000001,
+ * say) as NaN, where the renderer stops drawing: a long name was cut off part way through a letter.
+ */
+export function pathData(commands: PathCommand[]): string {
+  const n = (v: number | undefined) => (v ?? 0).toFixed(2)
+  return commands
+    .map((c) =>
+      c.type === 'M' || c.type === 'L' ? `${c.type}${n(c.x)} ${n(c.y)}`
+      : c.type === 'Q' ? `Q${n(c.x1)} ${n(c.y1)} ${n(c.x)} ${n(c.y)}`
+      : c.type === 'C' ? `C${n(c.x1)} ${n(c.y1)} ${n(c.x2)} ${n(c.y2)} ${n(c.x)} ${n(c.y)}`
+      : 'Z',
+    )
+    .join('')
+}
+
 /**
  * A screen's title as the browser sets it (styles.css `h1.place`): Grenze Gotisch Bold in the ink, as outlines glyph by glyph with the font's kerning (tools/build/brand.mjs `outline`). Null where
  * it cannot be set.
@@ -480,7 +655,7 @@ export async function loadTitle(text: string): Promise<Logo | null> {
     for (const ch of text) {
       const g = font.charToGlyph(ch)
       if (prev) x += font.getKerningValue(prev, g) * k
-      d += g.getPath(x, 0, size).toPathData(2)
+      d += pathData(g.getPath(x, 0, size).commands)
       x += (g.advanceWidth ?? 0) * k
       prev = g
     }
@@ -494,47 +669,6 @@ export async function loadTitle(text: string): Promise<Logo | null> {
   }
 }
 
-/** A cell of art drawn crisp: its dots (bit row * 2 + col, as shapes.ts numbers them), all of them or not, and the colour that inks them (0xRRGGBB). */
-export interface CrispCell {
-  mask: number
-  full: boolean
-  rgb: number
-}
-
-/**
- * Art as `cols` x `rows` cells of the mosaic (`sx` x `sy` dots a cell), cut sharp rather than shaded: a dot is inked
- * where the art covers most of it, in the colour of what inks the cell, and the rest of the cell is left to what is
- * behind it (the room), so the letters' edges fall on the dots with nothing round them. Null where a cell has none.
- */
-export function crisp(art: Logo, cols: number, rows: number, sx: number, sy: number): (CrispCell | null)[] {
-  const W = cols * sx, H = rows * sy
-  const cover = new Float32Array(W * H)
-  const sums = new Float64Array(cols * rows * 4)
-  for (let y = 0; y < art.h; y++)
-    for (let x = 0; x < art.w; x++) {
-      const i = (y * art.w + x) * 4, a = art.rgba[i + 3] / 255
-      if (!a) continue
-      const dx = Math.floor((x * W) / art.w), dy = Math.floor((y * H) / art.h)
-      cover[dy * W + dx] += a
-      const c = (Math.floor(dy / sy) * cols + Math.floor(dx / sx)) * 4
-      sums[c] += art.rgba[i] * a
-      sums[c + 1] += art.rgba[i + 1] * a
-      sums[c + 2] += art.rgba[i + 2] * a
-      sums[c + 3] += a
-    }
-  const per = (art.w / W) * (art.h / H)
-  const all = (1 << (sx * sy)) - 1
-  const out: (CrispCell | null)[] = []
-  for (let r = 0; r < rows; r++)
-    for (let c = 0; c < cols; c++) {
-      let mask = 0
-      for (let j = 0; j < sy; j++)
-        for (let i = 0; i < sx; i++) if (cover[(r * sy + j) * W + c * sx + i] / per >= 0.45) mask |= 1 << (j * 2 + i)
-      const k = (r * cols + c) * 4, n = sums[k + 3]
-      out.push(mask ? { mask, full: mask === all, rgb: (Math.round(sums[k] / n) << 16) | (Math.round(sums[k + 1] / n) << 8) | Math.round(sums[k + 2] / n) } : null)
-    }
-  return out
-}
 
 
 // ---- the menu
@@ -644,7 +778,7 @@ export class Home {
     rows.push({ id: 'account', label: player, marker: '#', hint: 'Switch accounts, add one, or remove one.', take: () => this.showAccounts() })
     rows.push({ id: 'settings', label: 'Settings', marker: '?', hint: 'Camera, controls, the HUD: kept on this device.', take: () => this.showSettings() })
     rows.push({ id: 'quit', label: 'Quit', marker: '<', hint: 'Close Orbrun. Your games are kept on this device.', take: () => ({ kind: 'quit' }) })
-    this.show({ id: 'home', title: null, lede: 'An unofficial first-person client for Dungeon Crawl Stone Soup.', rows })
+    this.show({ id: 'home', title: null, lede: 'An unofficial first-person client for Dungeon\u00a0Crawl\u00a0Stone\u00a0Soup.', rows })
   }
 
   private showSettings() {
@@ -791,8 +925,15 @@ export class Home {
     const sc = this.screen
     const lines: HomeLayout['lines'] = []
     // the head: the title's art (or its words), the lede, and Xom's word
-    const lede: Line = [pad, { text: sc.lede, fg: INK_DIM }]
-    const quote: Line | null = sc.id === 'home' ? [pad, { text: `“${this.splash}” — Xom`, fg: INK_DIM }] : null
+    // a screen's lede in capitals, as the browser's under a title
+    // the front's lede and Xom's word wrapped as the browser's (styles.css `.home-list .brand .head .lede`, `.splash`):
+    // the lede to 34rem of its 1.1rem type, a cell to a letter (about 49 of them), the game's name never split (its
+    // spaces no-break, as the browser's: menu.ts), so it breaks after "for"; Xom's word
+    // on a line of its own as long as the words' column lets it be, and a blank line between them, as the browser's stand apart; a screen's lede in capitals, as the
+    // browser's under a title
+    const home = sc.id === 'home'
+    const ledes: Line[] = (home ? wrap(sc.lede, Math.min(width, LEDE_WIDTH)) : [sc.lede.toUpperCase()]).map((t) => [pad, { text: t, fg: INK_DIM }])
+    const quote: Line[] | null = home ? [[], ...wrap(`“${this.splash}” — Xom`, width).map((t): Line => [pad, { text: t, fg: INK_DIM }])] : null
     // the body, on the screen's foot: how the last game ended, the rows, and the focused row's hint
     const body: { line: Line; bar?: boolean }[] = []
     if (this.why && sc.id === 'home') body.push({ line: [pad, { text: this.why, fg: GOLD_BRIGHT }] }, { line: [] })
@@ -832,7 +973,10 @@ export class Home {
     // then the lede, then the title's art at a smaller size (the logo's size the client's to choose, `fitLogo`; a
     // screen's title narrower, and so shorter), then the title in words, then nothing
     const space = top - HEAD_GAP
-    const artW0 = sc.id === 'home' ? width : Math.min(width, Math.max(16, Math.round(cols * 0.25)), 36)
+    // the logo or the title as wide as the screen lets it be, as the browser's reach past the words' column under them:
+    // their size the client's to choose, the logo's by the browser's share (`fitLogo`), a title's by the browser's
+    // font size for the screen's width (`fitTitle`)
+    const artW0 = Math.max(1, cols - INDENT - 1)
     const full = artRows(artW0, Infinity)
     /** the largest art in `most` rows: the width it is drawn at and its rows, else none */
     const shrunk = (most: number): [number, number] => {
@@ -848,13 +992,13 @@ export class Home {
     if (full) titles.push({ art: [artW0, full], words: [] })
     const less = shrunk(full ? full - 1 : space)
     if (less[1]) titles.push({ art: less, words: [] })
-    titles.push({ art: [0, 0], words: [[pad, { text: sc.title ?? 'Orbrun', fg: INK }]] })
+    titles.push({ art: [0, 0], words: [[pad, { text: sc.title ?? 'Orbrun', fg: sc.title ? GOLD_BRIGHT : INK }]] })
     const [first, ...smaller] = titles
     // the title in words stands a line apart from the lede, as its art does
     const under = first.words.length ? [[] as Line] : []
     const heads: Title[] = [
-      ...(quote ? [{ art: first.art, words: [...first.words, ...under, lede, quote] }] : []),
-      { art: first.art, words: [...first.words, ...under, lede] },
+      ...(quote ? [{ art: first.art, words: [...first.words, ...under, ...ledes, ...quote] }] : []),
+      { art: first.art, words: [...first.words, ...under, ...ledes] },
       first,
       ...smaller,
     ]
@@ -889,7 +1033,8 @@ export interface HomeLayout {
 function wrap(text: string, width: number): string[] {
   const out: string[] = []
   let line = ''
-  for (const w of text.split(' ')) {
+  // broken at spaces only, not at no-break spaces, which are written as spaces
+  for (const w of text.split(' ').map((w) => w.replace(/\u00a0/g, ' '))) {
     if (line && line.length + 1 + w.length > width) {
       out.push(line)
       line = w

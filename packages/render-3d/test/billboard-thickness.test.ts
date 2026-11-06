@@ -15,6 +15,7 @@ import {
   crowdInstances,
   type SpriteInstance,
 } from '../src/sprites.js'
+import { STAND_FORWARD } from '@orbrun/world'
 import { emptyScene, makeCamera, type Scene, type TileRect, type TileSource } from '@orbrun/scene'
 
 /**
@@ -64,7 +65,8 @@ describe('billboard thickness', () => {
     expect(mode & MODE_BILLBOARD).toBeTruthy()
     expect(mode & MODE_SHADE_MAP).toBeTruthy()
     // the front of the block is the sprite's own plane, and it is BB_DEPTH texels deep behind it
-    expect(body.z).toEqual([0, BB_DEPTH * K])
+    // its front face a little forward of its cell's middle, as what stands on the floor stands (STAND_FORWARD)
+    expect(body.z).toEqual([STAND_FORWARD, BB_DEPTH * K])
     // the texel size the shader marches at is the tile's own
     expect(body.misc[2]).toBe(K)
     // and the ink round it is a texel wide
@@ -82,11 +84,20 @@ describe('billboard thickness', () => {
     // half sizes: the tile's own width and height in world units
     expect(body.quad[2]).toBeCloseTo((RECT.w * K) / 2, 9)
     expect(body.quad[3]).toBeCloseTo((RECT.h * K) / 2, 9)
-    // the art's rect inside the cell puts its centre here, and its foot that far off the floor
+    // the art's rect inside the cell puts its centre here; a monster on the floor stands on its art's foot, the gap
+    // crawl leaves under it in its square (centring it there) taken away (world things.ts `grounded`)
     expect(body.quad[0]).toBeCloseTo((RECT.ox + RECT.w / 2 - RECT.cell / 2) * K, 9)
-    expect(body.quad[1] - body.quad[3]).toBeCloseTo((RECT.cell - (RECT.oy + RECT.h)) * K, 9)
+    expect(body.quad[1] - body.quad[3]).toBeCloseTo(0, 9)
     expect(body.anchor).toEqual([3.5, 0, 3.5])
     expect(body.cell).toEqual([3, 3])
+  })
+
+  /** What is in the air (crawl's TILE_FLAG_FLYING) stands where its art lies in its square, its foot that far off the floor. */
+  it('keeps a flyer where crawl draws it in its square', () => {
+    const s = scene()
+    s.billboards[0].afloat = true
+    const [body] = instances(s).get('opaque')!
+    expect(body.quad[1] - body.quad[3]).toBeCloseTo((RECT.cell - (RECT.oy + RECT.h)) * K, 9)
   })
 
   /** The shades the march gives the block's faces are the ones the rest of the renderer works in. */
@@ -141,7 +152,8 @@ describe('billboard thickness', () => {
     const [body] = by.get('opaque')!
     const [cloud] = by.get('blend')!
     expect(cloud.cell).toEqual(body.cell)
-    expect(cloud.z[0]).toBeCloseTo(CLOUD_FORWARD, 9)
+    // a texel in front of where what stands on the floor stands
+    expect(cloud.z[0]).toBeCloseTo(STAND_FORWARD + CLOUD_FORWARD, 9)
     expect(cloud.z[0]).toBeGreaterThanOrEqual(body.z[0] + BB_DEPTH * K)
     // and it is the flat, blended board it has always been
     expect(cloud.misc[0] & MODE_THICK).toBe(0)

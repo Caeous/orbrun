@@ -20,7 +20,9 @@ import {
   VM_SIZE,
   VM_WEAPON_REST,
   WALL_INSET,
+  STAND_FORWARD,
   crowd,
+  footGap,
   fixtures,
   framedDoors,
   liftEnvelope,
@@ -318,6 +320,11 @@ export class TermView {
       }
       const alive = t.kind === 'monster' && !t.scenery
       const o = t.moverId === undefined ? undefined : glides.get(t.moverId)
+      // what stands on the floor, on its art's foot (world things.ts `grounded`): sunk by the gap under it, as render-3d sinks it
+      const drop = t.grounded ? footGap(t.layers.flatMap((l) => {
+        const r = l.badge ? undefined : this.tiles?.tile(l.tile)
+        return r ? [{ top: r.oy + l.oy, h: r.h, cell: r.cell, cut: l.ymax !== undefined && l.ymax < r.oy + r.h }] : []
+      })) * t.height : 0
       const glyph = t.glyph ?? ''
       if (glyph && alive && !this.warmed.has(glyph)) cold.push(glyph)
       out.push({
@@ -330,9 +337,11 @@ export class TermView {
         name: t.name,
         alive,
         alpha: t.alpha,
-        lift: t.lift,
-        // a cloud a texel nearer than its cell's middle, over whatever stands in its cell, as render-3d stands it
-        forward: t.kind === 'cloud' ? CLOUD_FORWARD : undefined,
+        lift: drop ? (t.lift ?? 0) - drop : t.lift,
+        // the shadow round its foot on the floor, as render-3d lays it (world things.ts `shadow`)
+        shadow: t.shadow,
+        // a cloud a texel nearer than its cell's middle, over whatever stands in its cell, and what stands on the floor a little forward of it, as render-3d stands them
+        forward: t.kind === 'cloud' ? STAND_FORWARD + CLOUD_FORWARD : t.grounded ? STAND_FORWARD : undefined,
         flash: flashOf(t.x, t.y),
       })
     }

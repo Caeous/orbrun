@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { OfflineChannel } from '@orbrun/offline'
 import type { KeyLike } from '../../../apps/orbrun/src/keys'
 import { installNode } from '../game/env'
-import { Home, fitLogo, loadLogo, loadTitle, lockup, logoCells, veilAt, veiled, type HomeGame, type HomeHost, type LogoCell } from '../game/home'
+import { Home, fitCell, fitError, fitLogo, fitTitle, layOut, loadLogo, pathData, shifted, loadTitle, titleLockup, lockup, logoCells, veilAt, veiled, type HomeGame, type HomeHost, type LogoCell } from '../game/home'
 import { getSettings } from '../../../apps/orbrun/src/servers'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -77,14 +77,21 @@ describe('the front screen', () => {
     }
     // the body: Play, the account, Settings, Quit, a blank and the hint, over the version's row: 6 + 1 rows
     const body = 7, gap = 2
-    expect(head(body + gap + 8 + 1 + 2)).toEqual([8, false, true, true])
-    expect(head(body + gap + 8 + 1 + 1)).toEqual([8, false, true, false])
+    // the lede in two lines, as the browser breaks it; Xom's word a blank line under it, in as many as it wraps to
+    const tallL = h.layout(80, 40, art).lines, text = (l: (typeof tallL)[0]) => l.line.map((s) => s.text).join('').trim()
+    const ledeAt = tallL.filter((l) => text(l).startsWith('An unofficial') || text(l).startsWith('Dungeon Crawl'))
+    expect(ledeAt.map(text)).toEqual(['An unofficial first-person client for', 'Dungeon Crawl Stone Soup.'])
+    const quoteFoot = tallL.find((l) => text(l).endsWith('— Xom'))!.y
+    const lede = 2, quote = quoteFoot - ledeAt[1].y
+    expect(tallL.some((l) => l.y === ledeAt[1].y + 1 && text(l))).toBe(false)
+    expect(head(body + gap + 8 + 1 + lede + quote)).toEqual([8, false, true, true])
+    expect(head(body + gap + 8 + 1 + lede)).toEqual([8, false, true, false])
     expect(head(body + gap + 8)).toEqual([8, false, false, false])
     expect(head(body + gap + 7)).toEqual([4, false, false, false])
     expect(head(body + gap + 3)).toEqual([0, true, false, false])
     expect(head(body + gap)).toEqual([0, false, false, false])
     // with no art to draw, the title in words over the lede and Xom's word
-    expect(h.layout(80, 40, () => 0).lines.map((l) => l.line.map((s) => s.text).join('')).filter((t) => t.trim()).slice(0, 3).map((t) => t.trim().slice(0, 8))).toEqual(['Orbrun', 'An unoff', '“' + (h.splash.slice(0, 7))])
+    expect(h.layout(80, 40, () => 0).lines.map((l) => l.line.map((s) => s.text).join('')).filter((t) => t.trim()).slice(0, 4).map((t) => t.trim().slice(0, 8))).toEqual(['Orbrun', 'An unoff', 'Dungeon ', '“' + (h.splash.slice(0, 7))])
   })
 
   it('keeps its rows where they are as the cursor moves onto a row whose hint takes more lines', () => {
@@ -149,15 +156,79 @@ describe('the front screen', () => {
     expect(logo!.tile).toHaveLength(32 * 32 * 4)
   })
 
-  it('sizes the logo: the larger orb in the browser\'s share of the screen, else the smaller in the words\' width', async () => {
+  it('sets a long name whole: its outline written without opentype.js\'s NaN, which cut it off part way', async () => {
+    const short = (await loadTitle('mangersmi'))!, long = (await loadTitle('mangersmiovisioncom'))!
+    // nineteen letters to nine: about twice as wide, not cut off where the first NaN fell
+    expect(long.w / short.w).toBeGreaterThan(1.8)
+    expect(pathData([{ type: 'M', x: 938.0000000001, y: -71 }, { type: 'Q', x1: 1, y1: 2, x: 3, y: 4 }, { type: 'Z' }])).toBe('M938.00 -71.00Q1.00 2.00 3.00 4.00Z')
+  })
+
+  it('sizes a screen\'s title as the browser does for the width, never too small to read, else in words', async () => {
+    const t = (await loadTitle('mangersmiovisioncom'))!
+    // a wide screen: the browser's most, 3.2rem
+    expect(fitTitle(t, 175, 40, 180, 4, 2)!.em).toBeCloseTo(51.2, 3)
+    // 80 columns: the least that reads, its ink within the width
+    const f80 = fitTitle(t, 75, 40, 80, 4, 2)!
+    expect(f80.em * (4 / 16)).toBeCloseTo(12, 6)
+    expect(f80.cols).toBeLessThanOrEqual(75)
+    // too narrow, or too short, to read it: none, so it is written in words
+    expect(fitTitle(t, 45, 40, 50, 4, 2)).toBeNull()
+    expect(fitTitle(t, 175, 1, 180, 4, 2)).toBeNull()
+  })
+
+  it('lays a screen\'s title in the gold of the page\'s titles, its shadow round it', async () => {
+    const t = (await loadTitle('Accounts'))!
+    const lk = titleLockup(t, fitTitle(t, 100, 40, 180, 4, 2)!)
+    const cells = logoCells(lk, () => 0x101010)
+    const golds = cells.filter((c): c is { mask: number; fg: number; bg: number } => !!c && 'mask' in c).flatMap((c) => [c.fg, c.bg])
+    expect(golds).toContain(0xf3d98a)
+    // the shadow darkens the room round it
+    expect(cells.some((c) => c && 'shade' in c && c.a > 0.1)).toBe(true)
+  })
+
+  it('sizes the logo: the orb whose lockup is nearest the browser\'s share of the screen, within the room it has', async () => {
     const logo = (await loadLogo())!
-    const big = fitLogo(logo, 200, 200, 40, 4, 2)!, small = fitLogo(logo, 200, big.cols - 1, 40, 4, 2)!
+    const big = fitLogo(logo, 200, 200, 40, 4, 2)!, small = fitLogo(logo, 200, 20, 40, 4, 2)!
     expect([big.dots, big.rows, big.orbCols]).toEqual([32, 8, 16])
     expect([small.dots, small.rows, small.orbCols]).toEqual([16, 4, 8])
+    // a share a little short of the larger lockup is nearer it than the smaller, as the page's grows with its window
+    expect(fitLogo(logo, 200, big.cols - 8, 40, 4, 2)!.dots).toBe(32)
+    expect(fitLogo(logo, 200, small.cols + 8, 40, 4, 2)!.dots).toBe(16)
+    // 180 columns' share (72) comes nearer the larger (81) than the smaller (41)
+    expect(fitLogo(logo, 180, 72, 40, 4, 2)!.dots).toBe(32)
     expect(fitLogo(logo, 200, 200, 7, 4, 2)!.dots).toBe(16)
+    expect(fitLogo(logo, big.cols - 1, 200, 40, 4, 2)!.dots).toBe(16)
     expect(fitLogo(logo, small.cols - 1, 0, 40, 4, 2)).toBeNull()
     // a terminal's cells taller than two to one, an 80-column screen's share of it too narrow: the smaller, in the words' width
     expect(fitLogo(logo, 72, 32, 40, 4, 2.4)!.dots).toBe(16)
+  })
+
+  it('fits a cell of the logo in the two colours nearest its dots, every parting of them tried', () => {
+    const gold = [0xd8, 0xb4, 0x5f], glass = [0x8b, 0x1e, 0x5a], dark = [0x10, 0x08, 0x10]
+    // two colours: drawn exactly, the parting as they lie
+    const two = fitCell([gold, gold, glass, glass, gold, gold, glass, glass])
+    expect(two.err).toBeLessThan(1e-6)
+    expect([two.fg, two.bg].sort()).toEqual([0xd8b45f, 0x8b1e5a].sort())
+    expect(two.mask === 0b00110011 || two.mask === 0b11001100).toBe(true)
+    // one colour: the whole cell, one glyph
+    expect(fitCell(Array(8).fill(gold))).toMatchObject({ mask: 255, fg: 0xd8b45f, bg: 0xd8b45f })
+    // three: the odd one with the nearer of the others, never a parting that splits a colour
+    const three = fitCell([gold, gold, gold, gold, glass, glass, dark, dark])
+    const part = (i: number) => !!(three.mask & (1 << i))
+    expect(part(0) === part(3) && part(4) === part(5) && part(6) === part(7)).toBe(true)
+    // a sextant's six dots as well
+    expect(fitCell([gold, glass, gold, glass, gold, glass]).err).toBeLessThan(1e-6)
+  })
+
+  it('lays the logo where on the cells it draws best, a dot or so from where it starts', async () => {
+    const logo = (await loadLogo())!
+    for (const f of [fitLogo(logo, 200, 200, 40, 4, 2)!, fitLogo(logo, 200, 20, 40, 3, 2)!]) {
+      const laid = layOut(logo, f)
+      const all = Array.from({ length: f.sy * 2 }, (_, i) => fitError(shifted(laid, i % 2, Math.floor(i / 2))))
+      expect(fitError(lockup(logo, f))).toBeCloseTo(Math.min(...all), 6)
+      // and where it lands matters: the best is better than the worst
+      expect(Math.min(...all)).toBeLessThan(Math.max(...all))
+    }
   })
 
   const glyph = (c: LogoCell | null | undefined) => (c && 'mask' in c ? c : null)
