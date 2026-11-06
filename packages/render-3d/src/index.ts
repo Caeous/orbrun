@@ -40,15 +40,17 @@ import {
 } from '@orbrun/world'
 import { LevelGrid } from './grid.js'
 import { LevelMesher, MARK_MARGIN, uvFor, type ChunkGeometry, type LevelStats, type MeshContext, type TileDraw } from './level-mesh.js'
-import { INK_LEVEL, distanceField, peelInk } from './peel.js'
+import { distanceField, peelInk } from './peel.js'
 import type { PeelReply, PeelRequest } from './peel.worker.js'
 import {
   BLOCK_SHADE,
   MODE_FLASH_OVERRIDE,
   MODE_HULL_FRONT,
   MODE_THICK,
+  OPAQUE_ALPHA,
   crowdInstances,
   fixtureInstances,
+  stairColumnsOf,
   type SpriteInstance,
   type SpritePass,
 } from './sprites.js'
@@ -88,8 +90,6 @@ export interface Render3dOptions {
 const EYE = 0.6
 const EYE_MIN = 0.25
 const EYE_MAX = 0.9
-/** Texel alpha at or above which a texel is opaque. */
-const OPAQUE_ALPHA = 26
 /** How long one frame may spend building level chunks, in milliseconds; the rest go out over the frames after. At least one is built a frame, and a phone takes about this long for one. */
 const LEVEL_BUDGET_MS = 1
 /** How long a frame leaves out the sprites of an atlas a worker is peeling (`warmAtlases`) before it peels the atlas itself. */
@@ -1017,38 +1017,7 @@ export class Render3d implements MapRenderer {
       try {
         if (ctx) {
           ctx.drawImage(img as CanvasImageSource, r.sx, r.sy, r.w, r.h, 0, 0, r.w, r.h)
-          const d = ctx.getImageData(0, 0, r.w, r.h).data
-          const lum = (x: number, y: number) => {
-            const i = (y * r.w + x) * 4
-            return 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]
-          }
-          const body = (x: number, y: number) => {
-            const i = (y * r.w + x) * 4
-            return d[i + 3] >= OPAQUE_ALPHA && !(d[i] < INK_LEVEL && d[i + 1] < INK_LEVEL && d[i + 2] < INK_LEVEL)
-          }
-          art = { top: [], side: [], open: [] }
-          for (let x = 0; x < r.w; x++) {
-            let top = -1
-            for (let y = 0; y < r.h && top < 0; y++) if (body(x, y)) top = y
-            // body to body: the clear row under the tile and the ink between are no edge
-            let side = r.h
-            let fall = 0
-            let last = top >= 0 ? lum(x, top) : 0
-            for (let y = top + 1; top >= 0 && y < r.h; y++) {
-              if (!body(x, y)) continue
-              const l = lum(x, y)
-              if (last - l > fall) {
-                fall = last - l
-                side = y
-              }
-              last = l
-            }
-            let open = side
-            while (open < r.h && body(x, open)) open++
-            art.top.push(top)
-            art.side.push(side)
-            art.open.push(open)
-          }
+          art = stairColumnsOf(ctx.getImageData(0, 0, r.w, r.h).data, r.w, r.h)
         }
       } catch {
         art = null

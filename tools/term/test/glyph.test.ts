@@ -271,6 +271,91 @@ describe('walls as render-3d stands them', () => {
     expect(floor()).not.toEqual(before)
   })
 
+  it('draws a cloud over what stands in its cell, as render-3d stands it a texel forward', () => {
+    const { view, cam } = room()
+    const goblin = view.things[0]
+    const W = 160, H = 60
+    const frame = () => view.raster(cam(0), W, H, 4, 4)
+    view.things = [goblin]
+    const alone = frame()
+    // the goblin's pixels: how many of them are as they are alone
+    const same = (r: Raster) => {
+      let n = 0, of = 0
+      for (let i = 0; i < W * H; i++) {
+        if (alone.thing[i] < 1) continue
+        of++
+        if ([0, 1, 2].every((c) => r.pix[i * 3 + c] === alone.pix[i * 3 + c])) n++
+      }
+      return n / of
+    }
+    // the cloud first, as the scene lists it: drawn after all the same
+    const cloud = { ...goblin, art: [{ ...goblin.art[0], rect: { ...goblin.art[0].rect, sx: 32 } }], alive: false, alpha: 0.55, forward: 1 / 32 }
+    view.things = [cloud, goblin]
+    expect(same(frame())).toBe(0)
+    view.things = [{ ...cloud, forward: undefined }, goblin]
+    expect(same(frame())).toBe(1)
+  })
+
+  it('lays a corpse with its top away from the eye whichever way the eye looks', () => {
+    const { view, cam } = room()
+    view.things = []
+    const scene = (view as unknown as { scene: Scene }).scene
+    view.setScene({ ...scene, billboards: [{ kind: 'item', x: 0, y: -1, tile: 3, lying: true, height: 0.6 }] } as unknown as Scene)
+    const yellow = (pix: Float32Array, i: number) => pix[i * 3] > 0.3 && pix[i * 3 + 2] < 0.1 && pix[i * 3 + 1] > 0.2
+    const W = 160, H = 60
+    // the eye's row and how far down the corpse's middle is, looking at it from south and from north
+    for (const c of [cam(0), { ...cam(Math.PI), y: -3, eyeY: -3 }]) {
+      const r = view.raster(c, W, H, 4, 4)
+      let eye = 0, n = 0, body = 0, m = 0
+      for (let i = 0; i < W * H; i++) {
+        const row = Math.floor(i / W)
+        if (row < H / 2) continue
+        if (yellow(r.pix, i)) (eye += row), n++
+        else if (r.pix[i * 3] > 2 * r.pix[i * 3 + 2] + 0.05) (body += row), m++
+      }
+      expect(n).toBeGreaterThan(0)
+      // farther from the eye is nearer the horizon
+      expect(eye / n).toBeLessThan(body / m)
+    }
+  })
+
+  it('folds a way up into its steps as render-3d folds it, and draws them', () => {
+    const { view, cam } = room()
+    // five steps climbing to the left: each a lit tread over the stairs' dark side
+    const data = new Uint8Array(32 * 32 * 4)
+    for (let x = 1; x < 31; x++) {
+      const top = 4 + 5 * Math.floor((x - 1) / 6)
+      for (let y = top; y < 32; y++) data.set(y < top + 3 ? [220, 200, 120, 255] : [80, 70, 50, 255], (y * 32 + x) * 4)
+    }
+    const px = { width: 32, height: 32, data }
+    const stairs = { x: 0, y: -1, art: [{ px, rect: { atlas: 's', sx: 0, sy: 0, w: 32, h: 32, ox: 0, oy: 0, cell: 32 } }], glyph: '<', colour: [200, 200, 200] as [number, number, number], size: 0.7, fold: { steps: 5, solid: true } }
+    view.things = [stairs]
+    const lit = (c: Camera) => {
+      const L = view.look(c, 320, 160, 4, 8)
+      expect(L.sprites).toHaveLength(1)
+      const r = view.draw(L, 0, 160)
+      let n = 0
+      for (let i = 0; i < 320 * 160; i++) if (r.pix[i * 3] > 0.3 && r.pix[i * 3 + 2] < 0.2) n++
+      return { n, faces: L.sprites[0].faces?.length ?? 0 }
+    }
+    // the treads seen from the eye's height, from ahead and from aside: laid back flat, they are thin edges of what
+    // stood as bands three texels tall
+    const whole = lit(cam(0)).n
+    view.things = [{ ...stairs, fold: undefined }]
+    const upright = lit(cam(0)).n
+    view.things = [stairs]
+    for (const c of [cam(0), { ...cam(-Math.PI / 4), x: 1, eyeX: 1 }]) {
+      const { n, faces } = lit(c)
+      expect(faces).toBeGreaterThan(10)
+      expect(n).toBeGreaterThan(0)
+      expect(n).toBeLessThan(upright / 2)
+    }
+    expect(whole).toBeGreaterThan(0)
+    // art that doesn't climb stands whole
+    view.things = [{ ...stairs, fold: { steps: 6, solid: true } }]
+    expect(view.look(cam(0), 160, 60, 4, 4).sprites[0].faces).toBeUndefined()
+  })
+
   it('finds an eye alone in a face, and not the ink round the art', () => {
     const { view } = room()
     const tx = new SpriteTex(view.things[0].art[0])

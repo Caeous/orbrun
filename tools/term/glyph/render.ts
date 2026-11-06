@@ -28,6 +28,7 @@ import { setChroma, setDark, SpriteTex } from './sprite'
 import { encoders, fromOklab, oklab, q, unpack, type Encoder, type EncoderName, type FitOptions } from './encode'
 import { drawSprite, gridFor, type Put, type SpriteColumns } from './sampling'
 import { features, type Feature } from './features'
+import { BLOCK_SHADE, MODE_LIE, MODE_THICK, foldedStairs, stairColumnsOf, type SpriteInstance } from '@orbrun/render-3d/sprites'
 import {
   CURSOR_ALPHA,
   VM_FILL,
@@ -83,6 +84,15 @@ export interface Thing {
   alpha?: number
   /** how far off the floor it stands, in cells: a missile in flight */
   lift?: number
+  /** how much nearer the eye than its cell's middle it is drawn, in cells: a cloud, over whatever stands in its cell (render-3d's CLOUD_FORWARD) */
+  forward?: number
+  /**
+   * a way up, folded into its steps as render-3d folds it (sprites.ts
+   * `foldedStairs`): `steps` the fewest its art must climb in to be folded
+   * (else it stands whole), `solid` the stairs' side reaching back under
+   * every step, rather than the escape hatch's legs
+   */
+  fold?: { steps: number; solid: boolean }
   /**
    * one of the player's hands (render-3d hands.ts): not in the world but in a
    * lens of its own over the view, two units tall, its art a `size` square
@@ -280,7 +290,12 @@ export interface Look {
   boardG: Int32Array
   boardTex: (Texture | null)[]
   wall: Float32Array[]
-  sprites: { texs: SpriteTex[]; x0: number; y0: number; sideX: number; side: number; c0: number; c1: number; r0: number; r1: number; depth: number; k: number; alpha: number; flash?: [number, number, number, number]; grid?: [number, number]; columns: SpriteColumns; img?: SteadyImage }[]
+  sprites: { texs: SpriteTex[]; x0: number; y0: number; sideX: number; side: number; c0: number; c1: number; r0: number; r1: number; depth: number; k: number; alpha: number; flash?: [number, number, number, number]; grid?: [number, number]; columns: SpriteColumns; img?: SteadyImage; faces?: Face[] }[]
+  /** the eye's heading, and across the view to its right edge (a ray is the one plus the other times -1..1) */
+  dx: number
+  dy: number
+  px: number
+  py: number
   glyphs: Mark[]
 }
 
@@ -366,6 +381,9 @@ const DECODE = new Float32Array(256).map((_, i) => {
 })
 /** an sRGB colour (0xRRGGBB) in linear light */
 const linear = (hex: number): RGB => [DECODE[hex >> 16], DECODE[(hex >> 8) & 255], DECODE[hex & 255]]
+/** the sky where it is open, and dark (the Abyss's), as render-3d clears to it */
+const SKY_OPEN = linear(0x0b1220)
+const SKY_DARK = linear(0x120818)
 const enc = (v: number) => {
   const c = v <= 0 ? 0 : v >= 1 ? 1 : v
   return Math.round(255 * (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055))
@@ -486,6 +504,44 @@ const light = (d: number) => 0.75 * Math.exp(-d / FOG) + 0.4 * Math.exp(-d / TOR
 /** the mip a texture is sampled at where a pixel spans `texels` texels: each has the same six, 32 texels a side to 1 */
 const mip = (texels: number) => Math.max(0, Math.min(5, Math.floor(Math.log2(Math.max(1, texels)))))
 
+type V3 = [number, number, number]
+const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+
+/**
+ * A flat face of a folded way up (`stairFaces`), in the world (x east, up, z
+ * south): its corner `o`, and `u` and `v` along its two sides from it, its
+ * normal `n`; where a point a share `a` along u and `b` along v falls in its
+ * tile's 32-texel cell (`map`: x at the corner, and per share along u and
+ * along v; then y the same); how it is shaded, how many cells a texel is,
+ * and the texels.
+ */
+interface Face {
+  o: V3
+  u: V3
+  v: V3
+  n: V3
+  iu: number
+  iv: number
+  map: [number, number, number, number, number, number]
+  shade: number
+  texel: number
+  tex?: Texture
+  /** the pixels it may cover, across and down */
+  c0?: number
+  c1?: number
+  r0?: number
+  r1?: number
+}
+
+/** a face from its corner and the corners along its two sides from it */
+function face(o: V3, ou: V3, ov: V3, map: Face['map'], shade: number, texel: number): Face {
+  const u = sub(ou, o), v = sub(ov, o)
+  const n: V3 = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+  const uu = u[0] ** 2 + u[1] ** 2 + u[2] ** 2, vv = v[0] ** 2 + v[1] ** 2 + v[2] ** 2
+  return { o, u, v, n, iu: uu > 0 ? 1 / uu : 0, iv: vv > 0 ? 1 / vv : 0, map, shade, texel }
+}
+
 export class GlyphView {
   private textures = new Map<string, Texture | null>()
   private scene!: Scene
@@ -542,15 +598,23 @@ export class GlyphView {
       const f = this.grid[g]?.flash
       if (f && f.a > 0) this.flashes.set([f.r / 255, f.g / 255, f.b / 255, Math.min(1, f.a / 255)], g * 4)
     }
-    this.lying = new Map()
+    // what lies (render-3d sprites.ts `stand`, `lie`): each layer moved in its cell and cut off as it stands, the tile
+    // `height` cells a side about the cell's middle, its top away from the eye whichever way the eye looks
+    this.lying = new Array(this.gw * this.gh)
     for (const b of scene.billboards ?? []) {
       if (!b.lying) continue
-      const gx = b.x - this.gx0, gy = b.y - this.gy0
-      if (gx < 0 || gy < 0 || gx >= this.gw || gy >= this.gh) continue
-      const at = gy * this.gw + gx
-      const list = this.lying.get(at) ?? []
-      list.push(...(b.layers?.length ? b.layers.map((l) => l.tile) : [b.tile]))
-      this.lying.set(at, list)
+      const g = this.index(b.x, b.y)
+      if (g < 0) continue
+      const layers = b.layers?.length ? b.layers : [{ tile: b.tile, ox: 0, oy: 0 }]
+      for (const l of layers) {
+        const a = this.art(l.tile)
+        if (!a) continue
+        const oy = a.rect.oy + (l.oy || 0)
+        const h = l.ymax === undefined ? a.rect.h : Math.max(0, Math.min(a.rect.h, l.ymax - oy))
+        if (h <= 0) continue
+        const tex = new Texture({ px: a.px, rect: { ...a.rect, ox: a.rect.ox + (l.ox || 0), oy, h } })
+        ;(this.lying[g] ??= []).push({ tex, k: b.height / 32 })
+      }
     }
     // how each cell's feature stands (world doors.ts `featureStance`): a door in its doorway, or what something stands on, lies
     this.framed = framedDoors(scene)
@@ -559,7 +623,8 @@ export class GlyphView {
   private framed: ReadonlyMap<CellKey, number> = new Map()
   private occupied: ReadonlySet<CellKey> = new Set()
   private flashes = new Float32Array(0)
-  private lying = new Map<number, TileId[]>()
+  /** by the grid's index, what lies there: each layer's texels, and how many cells a texel is */
+  private lying: ({ tex: Texture; k: number }[] | undefined)[] = []
   /** each cell's wall body by the grid's index (`bodyRect`), null where the wall is the whole cell or there is none */
   private bodies: (BodyRect | null)[] = []
   /** the inset the bodies were worked out for */
@@ -665,7 +730,7 @@ export class GlyphView {
       const stance = featureStance(fc, this.framed, this.occupied)
       const { under, feature, over, marks } = floorLayers(fc, stance, (this.opts.wallInset ?? 0) <= 0)
       const flat = feature ?? (stance === 'lying' ? fc.featureTile : undefined)
-      this.floors[g] = f = this.flat(0, [fc.floorTile, ...under, ...(flat !== undefined ? [flat] : []), ...over, ...(this.lying.get(g) ?? []), ...marks])
+      this.floors[g] = f = this.flat(0, [fc.floorTile, ...under, ...(flat !== undefined ? [flat] : []), ...over, ...marks])
     }
     return f
   }
@@ -743,7 +808,7 @@ export class GlyphView {
     const step = ro.coarse ?? 1
     const n = Math.ceil(W / step)
     const L: Look = {
-      W, H, SX, SY, step, sampling: ro.sampling ?? this.opts.sampling, ex, ey, fx, fy, horizon,
+      W, H, SX, SY, step, sampling: ro.sampling ?? this.opts.sampling, ex, ey, fx, fy, horizon, dx, dy, px, py,
       zbuf: new Float32Array(W), rx: new Float64Array(n), ry: new Float64Array(n), u: new Float64Array(n),
       top: new Float64Array(n), bot: new Float64Array(n), wallK: new Float64Array(n), wallLevel: new Uint8Array(n), wallG: new Int32Array(n), wall: new Array(n),
       boards: new Uint8Array(n), boardT: new Float64Array(n * BOARDS), boardU: new Float64Array(n * BOARDS), boardG: new Int32Array(n * BOARDS), boardTex: new Array(n * BOARDS),
@@ -905,7 +970,7 @@ export class GlyphView {
       .filter((t) => !t.hand)
       .map((t) => ({ t, ...place(t) }))
       .filter((v) => v.depth > 0.3)
-      .sort((a, b) => b.depth - a.depth)
+      .sort((a, b) => b.depth - (b.t.forward ?? 0) - (a.depth - (a.t.forward ?? 0)))
     for (const v of seen) {
       const { t, depth } = v
       let floorY = v.floorY
@@ -917,6 +982,14 @@ export class GlyphView {
       // far, what has no glyph to be named by is still drawn
       if (!ro.allSprites && (letter || !t.art.length || (far && t.glyph))) {
         if (t.glyph) glyphs.push({ t, depth, sx: v.sx / SX, floorY: floorY / SY, tall, far })
+        continue
+      }
+      // a way up folded into its steps, as render-3d folds it
+      const folded = t.fold && this.folded(t)
+      if (folded) {
+        const k = t.light ?? light(depth) * this.dimmed(this.cell(t.x, t.y))
+        const sp = this.stairFaces(L, folded, t, depth, k)
+        if (sp) L.sprites.push(sp)
         continue
       }
       const texs = t.art.map((a) => this.spriteTex(a))
@@ -1008,6 +1081,99 @@ export class GlyphView {
         this.handCells.push([Math.floor(ax0 / SX), Math.floor(ax1 / SX), Math.floor(ay0 / SY), Math.floor(ay1 / SY)])
       }
     }
+  }
+
+  private folds = new Map<string, { instances: SpriteInstance[]; tex: Texture } | null>()
+  /**
+   * A way up's art folded into its steps (render-3d sprites.ts
+   * `foldedStairs`), its parts about the middle of cell (0, 0), and its
+   * texels; null where the art does not climb in enough steps, to stand
+   * whole.
+   */
+  private folded(t: Thing): { instances: SpriteInstance[]; tex: Texture } | null {
+    const a = t.art[0], f = t.fold!
+    if (!a || t.art.length > 1 || a.mirror) return null
+    const r = a.rect
+    const key = `${r.atlas}:${r.sx},${r.sy},${r.w},${r.h}:${r.ox},${r.oy}:${t.size}:${f.steps}:${f.solid}`
+    let got = this.folds.get(key)
+    if (got === undefined) {
+      const columns = stairColumnsOf(a.px.data, r.w, r.h, r.sy * a.px.width + r.sx, a.px.width)
+      const instances = foldedStairs(0, 0, r, columns, { r: 1, g: 1, b: 1 }, t.size, f.steps, f.solid)
+      got = instances ? { instances, tex: new Texture(a) } : null
+      this.folds.set(key, got)
+    }
+    return got
+  }
+
+  /**
+   * A folded way up as render-3d stands it, for this eye: each part turned
+   * from facing the eye `STAIR_SWAY` of the way on to the way the eye looks
+   * (shaders.ts SPRITE_VERT, MODE_FACE_EYE), each board its face and, for a
+   * block, its ends and its top, each step laid flat at its height; as the
+   * faces a ray meets (`Face`), and the pixels they may cover. Undefined
+   * where none of it is on the screen.
+   */
+  private stairFaces(L: Look, fold: { instances: SpriteInstance[]; tex: Texture }, t: Thing, depth: number, k: number): Look['sprites'][number] | undefined {
+    const { W, H, ex, ey, fy, horizon, dx, dy } = L
+    const eye = this.opts.eye
+    const r = fold.instances[0]
+    // the turn: from facing the eye, the instances' share of the way on to the eye's heading (render-3d's yaw is the
+    // negative of the camera's here: its sprites' +z toward the eye)
+    const ax = t.x + r.anchor[0], az = t.y + r.anchor[2]
+    const toEye = Math.atan2(ex - ax, ey - az)
+    let turn = -Math.atan2(dx, -dy) - toEye
+    turn -= 2 * Math.PI * Math.floor((turn + Math.PI) / (2 * Math.PI))
+    const yaw = toEye + r.misc[3] * turn
+    const c = Math.cos(yaw), s = Math.sin(yaw)
+    const rect = t.art[0].rect
+    const faces: Face[] = []
+    for (const inst of fold.instances) {
+      const [qx, qy, hw, hh] = inst.quad
+      const [z1, deep] = inst.z
+      const lie = (inst.misc[0] & MODE_LIE) !== 0, thick = (inst.misc[0] & MODE_THICK) !== 0
+      const A: V3 = [t.x + inst.anchor[0], inst.anchor[1], t.y + inst.anchor[2]]
+      // the sprite's frame to the world's (x east, up, z south): lying, its y along the floor away from the eye and its z up
+      const at = (x: number, y: number, z: number): V3 => {
+        const [ux, uy, uz] = lie ? [x, z, -y] : [x, y, z]
+        return [A[0] + c * ux + s * uz, A[1] + uy, A[2] + c * uz - s * ux]
+      }
+      // the instance's texels in the tile's own 32-texel cell
+      const gx = inst.texel[0] - rect.sx + rect.ox, gy = inst.texel[1] - rect.sy + rect.oy, gw = inst.texel[2], gh = inst.texel[3]
+      const x0 = qx - hw, x1 = qx + hw, y0 = qy - hh, y1 = qy + hh
+      const texel = inst.misc[2]
+      faces.push(face(at(x0, y1, z1), at(x1, y1, z1), at(x0, y0, z1), [gx, gw, 0, gy, 0, gh], BLOCK_SHADE.front, texel))
+      if (thick && !lie) {
+        const z0 = z1 - deep
+        // its ends, the end column of its texels drawn back the block's depth, and its top, its first row
+        faces.push(face(at(x0, y1, z0), at(x0, y1, z1), at(x0, y0, z0), [gx + 0.5, 0, 0, gy, 0, gh], BLOCK_SHADE.side, texel))
+        faces.push(face(at(x1, y1, z1), at(x1, y1, z0), at(x1, y0, z1), [gx + gw - 0.5, 0, 0, gy, 0, gh], BLOCK_SHADE.side, texel))
+        faces.push(face(at(x0, y1, z0), at(x1, y1, z0), at(x0, y1, z1), [gx, gw, 0, gy + 0.5, 0, 0], BLOCK_SHADE.top, texel))
+      }
+    }
+    // the pixels each face's corners fall in, and all of them; all of the view where a corner is behind the eye
+    const det = 1 / (L.px * dy - dx * L.py)
+    let c0 = Infinity, c1 = -Infinity, r0 = Infinity, r1 = -Infinity
+    for (const f of faces) {
+      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity
+      for (const p of [f.o, add(f.o, f.u), add(f.o, f.v), add(add(f.o, f.u), f.v)]) {
+        const rx = p[0] - ex, rz = p[2] - ey
+        const d = det * (-L.py * rx + L.px * rz)
+        if (d < NEAR) {
+          ;(a0 = 0), (a1 = W - 1), (b0 = 0), (b1 = H - 1)
+          break
+        }
+        const sx = (W / 2) * (1 + (det * (dy * rx - dx * rz)) / d), sy = horizon - ((p[1] - eye) * fy) / d
+        ;(a0 = Math.min(a0, sx)), (a1 = Math.max(a1, sx)), (b0 = Math.min(b0, sy)), (b1 = Math.max(b1, sy))
+      }
+      f.c0 = Math.max(0, Math.floor(a0) - 1)
+      f.c1 = Math.min(W - 1, Math.ceil(a1) + 1)
+      f.r0 = Math.max(0, Math.floor(b0) - 1)
+      f.r1 = Math.min(H - 1, Math.ceil(b1) + 1)
+      ;(c0 = Math.min(c0, a0)), (c1 = Math.max(c1, a1)), (r0 = Math.min(r0, b0)), (r1 = Math.max(r1, b1))
+    }
+    const C0 = Math.max(0, Math.floor(c0)), C1 = Math.min(W - 1, Math.ceil(c1)), R0 = Math.max(0, Math.floor(r0)), R1 = Math.min(H - 1, Math.ceil(r1))
+    if (C0 > C1 || R0 > R1) return
+    return { texs: [], x0: C0, y0: R0, sideX: C1 - C0 + 1, side: R1 - R0 + 1, c0: C0, c1: C1, r0: R0, r1: R1, depth, k, alpha: t.alpha ?? 1, flash: t.flash, columns: {}, faces: faces.map((f) => ({ ...f, tex: fold.tex })) }
   }
 
   /**
@@ -1213,6 +1379,10 @@ export class GlyphView {
         G += (over[1] - G) * oa
         B += (over[2] - B) * oa
       }
+      paint(i, R, G, B)
+    }
+    /** a pixel of the level as it is, a block of `step` of them where it is drawn a block at a time */
+    const paint = (i: number, R: number, G: number, B: number) => {
       if (once) {
         pix[i * 3] = R
         pix[i * 3 + 1] = G
@@ -1229,7 +1399,7 @@ export class GlyphView {
     }
     const lid = sky === 'open' || sky === 'dark' ? null : this.flat(0, [lidId])
     // what of a pixel of the floor or lid is the same along its row: how far it is, its mip and its light
-    const rowD = new Float64Array(H), rowLevel = new Uint8Array(H), rowLight = new Float64Array(H)
+    const rowD = new Float64Array(H), rowLevel = new Uint8Array(H), rowLight = new Float64Array(H), rowFoot = new Float64Array(H)
     for (let row = ya; row < yb; row += step) {
       const yc = row + step / 2
       const above = yc < horizon
@@ -1237,11 +1407,13 @@ export class GlyphView {
       const d = ((above ? 1 - eye : eye) * fy) / yo
       rowD[row] = d
       // the footprint: across, a column's worth of the floor; down, a row's, which grows fast toward the horizon
-      rowLevel[row] = mip(32 * Math.max(d / fx, (d * d) / ((above ? 1 - eye : eye) * fy)) * 0.7)
+      rowFoot[row] = Math.max(d / fx, (d * d) / ((above ? 1 - eye : eye) * fy)) * 0.7
+      rowLevel[row] = mip(32 * rowFoot[row])
       rowLight[row] = light(d)
     }
 
     const dims = this.dims
+    const lying = this.lying
     const cursor = this.opts.cursor
     // the cursor: its icon where the tiles have it (premultiplied, its mips), else the ring in its mode's colour
     const cursorTex = cursor?.tile !== undefined ? this.tex(cursor.tile) : null
@@ -1296,11 +1468,9 @@ export class GlyphView {
           }
         }
         if (above) {
-          if (sky === 'open') {
-            const yo = Math.abs(yc - horizon) || 1e-3
-            const t = Math.min(1, yo / (H / 2))
-            put(i, 0.02 + 0.12 * t, 0.05 + 0.2 * t, 0.12 + 0.4 * t, 1)
-          } else if (sky === 'dark') put(i, 0.004, 0.002, 0.008, 1)
+          // the sky as render-3d clears to it, neither lit nor tinted
+          if (sky === 'open') paint(i, SKY_OPEN[0], SKY_OPEN[1], SKY_OPEN[2])
+          else if (sky === 'dark') paint(i, SKY_DARK[0], SKY_DARK[1], SKY_DARK[2])
           else {
             let f = lid!
             if (fc?.ceilingTile != null) {
@@ -1333,7 +1503,25 @@ export class GlyphView {
             ;(mark[0] = ringRgb[0]), (mark[1] = ringRgb[1]), (mark[2] = ringRgb[2])
           }
         }
-        put(i, rgb[o], rgb[o + 1], rgb[o + 2], rowLight[row] * dims[g], fg, mark, oa)
+        let fr = rgb[o], fgr = rgb[o + 1], fb = rgb[o + 2]
+        // what lies on it, over it
+        const lies = fg >= 0 ? lying[fg] : undefined
+        if (lies) {
+          const ox = wx - cx - 0.5, oz = wy - cy - 0.5
+          const lx = ox * -L.dy + oz * L.dx, ly = ox * L.dx + oz * L.dy
+          for (const { tex, k } of lies) {
+            const lv = tex.levels[mip(rowFoot[row] / k)], n = lv.n
+            const tx = 16 + lx / k, ty = 16 - ly / k
+            if (tx < 0 || ty < 0 || tx >= 32 || ty >= 32) continue
+            const t = (Math.floor((ty * n) / 32) * n + Math.floor((tx * n) / 32)) * 4
+            const a = lv.rgba[t + 3]
+            if (a < 0.5) continue
+            fr = lv.rgba[t] / a
+            fgr = lv.rgba[t + 1] / a
+            fb = lv.rgba[t + 2] / a
+          }
+        }
+        put(i, fr, fgr, fb, rowLight[row] * dims[g], fg, mark, oa)
       }
     }
 
@@ -1386,6 +1574,10 @@ export class GlyphView {
         pix[i * 3 + 2] = pix[i * 3 + 2] * (1 - a) + b * k * tint.b * a
         thing[i] = thing[i] * (1 - a) + a
       }
+      if (sp.faces) {
+        this.drawFaces(L, sp.faces, sp.c0, sp.c1, r0, r1, put)
+        continue
+      }
       const im = sp.img
       if (!im) {
         drawSprite(sp.texs, L.sampling, this.opts.standsOut, this.opts.mean, this.opts.feature, this.opts.ink, this.opts.snap, sp.x0, sp.y0, sp.sideX, sp.side, sp.c0, sp.c1, r0, r1, sp.depth, zbuf, W, put, sp.columns, sp.grid)
@@ -1424,6 +1616,58 @@ export class GlyphView {
     }
     return { W, H: BH, SX, SY, pix, weight, thing, standing, hand, zbuf, glyphs: L.glyphs }
   }
+
+  /**
+   * Faces (`Face`) into the pixels c0..c1 across and r0..r1 down: at each,
+   * the nearest a ray through its middle meets where its texel is solid,
+   * nearer than the wall, its texel at the mip its size there asks for,
+   * shaded as its side of a block is.
+   */
+  private drawFaces(L: Look, faces: Face[], c0: number, c1: number, r0: number, r1: number, put: (at: number, r: number, g: number, b: number, a: number, stand: number) => void) {
+    const { W, ex, ey, fx, fy, horizon, zbuf, dx, dy, px, py } = L
+    const eye = this.opts.eye
+    const w = c1 - c0 + 1, n = w * (r1 - r0 + 1)
+    // each pixel's nearest so far (the wall's, to begin), and its colour there
+    if (this.faceDepth.length < n) (this.faceDepth = new Float32Array(n)), (this.faceRgb = new Float32Array(n * 3))
+    const depth = this.faceDepth, rgb = this.faceRgb
+    for (let row = r0; row <= r1; row++) for (let col = c0; col <= c1; col++) depth[(row - r0) * w + col - c0] = zbuf[col]
+    for (const f of faces) {
+      const fr0 = Math.max(r0, f.r0!), fr1 = Math.min(r1, f.r1!), fc0 = Math.max(c0, f.c0!), fc1 = Math.min(c1, f.c1!)
+      const [gx, gxa, gxb, gy, gya, gyb] = f.map
+      const near = (f.o[0] - ex) * f.n[0] + (f.o[1] - eye) * f.n[1] + (f.o[2] - ey) * f.n[2]
+      for (let row = fr0; row <= fr1; row++) {
+        const dh = (horizon - row - 0.5) / fy
+        for (let col = fc0; col <= fc1; col++) {
+          const cx = (2 * (col + 0.5)) / W - 1
+          const rx = dx + px * cx, rz = dy + py * cx
+          const den = rx * f.n[0] + dh * f.n[1] + rz * f.n[2]
+          if (Math.abs(den) < 1e-12) continue
+          const lam = near / den
+          const at = (row - r0) * w + col - c0
+          if (!(lam > NEAR && lam < depth[at])) continue
+          const qx = ex + lam * rx - f.o[0], qy = eye + lam * dh - f.o[1], qz = ey + lam * rz - f.o[2]
+          const a = (qx * f.u[0] + qy * f.u[1] + qz * f.u[2]) * f.iu, b = (qx * f.v[0] + qy * f.v[1] + qz * f.v[2]) * f.iv
+          if (a < 0 || a >= 1 || b < 0 || b >= 1) continue
+          const lv = f.tex!.levels[mip(lam / fx / f.texel)], ln = lv.n
+          const tx = Math.floor(((gx + a * gxa + b * gxb) * ln) / 32), ty = Math.floor(((gy + a * gya + b * gyb) * ln) / 32)
+          if (tx < 0 || ty < 0 || tx >= ln || ty >= ln) continue
+          const o = (ty * ln + tx) * 4, al = lv.rgba[o + 3]
+          if (al < 0.5) continue
+          depth[at] = lam
+          rgb[at * 3] = (lv.rgba[o] / al) * f.shade
+          rgb[at * 3 + 1] = (lv.rgba[o + 1] / al) * f.shade
+          rgb[at * 3 + 2] = (lv.rgba[o + 2] / al) * f.shade
+        }
+      }
+    }
+    for (let row = r0; row <= r1; row++)
+      for (let col = c0; col <= c1; col++) {
+        const at = (row - r0) * w + col - c0
+        if (depth[at] < zbuf[col]) put(row * W + col, rgb[at * 3], rgb[at * 3 + 1], rgb[at * 3 + 2], 1, 0)
+      }
+  }
+  private faceDepth = new Float32Array(0)
+  private faceRgb = new Float32Array(0)
 
   /** pixels a cell, across and down, as the options' encoder draws them */
   get cellPx(): { SX: number; SY: number } {

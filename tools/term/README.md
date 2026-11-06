@@ -33,6 +33,10 @@ account's name (`--name`, or the SSH user), one character to a version, so
 a second character is a second account. Over SSH, each user has their
 own.
 
+Both start the client from one script esbuild makes of it (launch.mjs), kept in
+`dist/` and made again, in about half a second, only when a file it was made
+of has changed; the front screen is up in under half a second.
+
 Ctrl-\ saves and quits. Crawl's engine needs Node 24 or later (WebAssembly
 JSPI); `npm run term` finds one (Homebrew's, the system's, or `ORBRUN_NODE`)
 when the node on the path is older. Everything on the screen is the
@@ -89,18 +93,26 @@ the config), the game starts as the account last picked there, kept in
   The walls, floors and lid are
   crawl's own tiles, a texel a dot near and their averages (mips) as they
   recede, lit by the eye's torch, what is remembered dimmer, and a cell's
-  flash washed over all of it; what lies (a corpse) is laid on its floor,
-  with a cell's marks (travel arrows, exclusion, badges) over it, and the
+  flash washed over all of it, an open or dark sky the colour render-3d
+  clears to; a cell's marks (travel arrows, exclusion, badges) on its
+  floor, and what lies there (a corpse) over them, as render-3d lays it:
+  its layers moved in its cell, as long as crawl's corpses lie (0.6 of a
+  cell), its top away from the eye whichever way the eye looks; and the
   blood and the rest crawl paints on a wall on its faces; the cursor is
   WebTiles' icon for it on its floor, or render-3d's ring in its mode's
   colour. What stands (the monsters, the items, the missiles, the features,
   the plants) is each its own sprite, as `@orbrun/world` lists it
   (things.ts `crowd`, `fixtures`): its layers and badges as render-3d
   stacks them, a missile lifted off the floor, a feature render-3d's
-  height, the damage bar over its head, washed with
+  height, a way up folded into its steps as render-3d folds them
+  (sprites.ts `foldedStairs`: the stairs' side a board, each step laid
+  back flat at its height over a block of the side reaching under it, the
+  whole turned a quarter of the way from facing the eye to the way it
+  looks), the damage bar over its head, washed with
   its flash, gliding as world's movers glide it, its name under it close
   up, crawl's letter for it where it would stand a cell tall or less; a cloud, or what is
-  submerged or seen invisible, shows what is behind it. What stands is
+  submerged or seen invisible, shows what is behind it, a cloud a texel
+  nearer than its cell's middle so its smoke is over what stands in it. What stands is
   steady (glyph/render.ts `steady`): its picture is drawn once at a size
   and kept, its size whole cells and its foot and middle on the cells'
   edges (half cells, or dots, for what is too small for a cell to be little
@@ -143,8 +155,11 @@ the config), the game starts as the account last picked there, kept in
   the top-right, the level in crawl's own glyphs and colours as the level
   map draws it, what isn't known the view darkened, the player always in
   the middle as the browser's minimap has it, an arrow where crawl has its
-  @, pointing the way the view faces, and the server's cursor on gold; the
-  monster list under it (its bearing, crawl's letter where the browser shows
+  @, pointing the way the view faces, and the server's cursor on gold, a
+  level cell two columns wide (square, as many rows of the level as
+  columns) where a quarter of the width and half the height have room for
+  as many tiles so, else one; the
+  monster list under it, a blank row between (its bearing, crawl's letter where the browser shows
   the sprite, and its name; the `nearby` setting's edge pips are not drawn);
   the messages
   (grid/messages.ts) along the bottom, with what a prompt has typed. The

@@ -116,7 +116,7 @@ export async function runGame(io: Io, o: ClientOptions) {
   const trace = (what: string) => {
     if (o.trace) fs.appendFileSync(path.join(o.stateDir, 'trace.log'), `${(performance.now() - t0).toFixed(0).padStart(6)} ms  ${what}\n`)
   }
-  trace('start')
+  trace(`start, ${t0.toFixed(0)} ms after node did`)
   const storage = installNode(o.stateDir)
   const { engine, builtChannels, saveBook, savedCharacters, DIST } = await import('./engine')
   const { TermView } = await import('./view')
@@ -381,6 +381,7 @@ export async function runGame(io: Io, o: ClientOptions) {
   })
   await io.write('\x1b[?1049h\x1b[?25l\x1b[2J' + PROBE)
   await Promise.race([probed, new Promise((r) => setTimeout(r, PROBE_WAIT_MS))])
+  trace('terminal probed')
   /** how many times taller than wide a cell is: as said, or as the terminal says */
   const aspect = () => o.view.cellAspect ?? cellPx.h / cellPx.w
 
@@ -527,7 +528,7 @@ export async function runGame(io: Io, o: ClientOptions) {
       // the stats pane at the top-left, a share of the width as the phone's narrower column is (console.ts `gameSplit`):
       // under 36 cells its rows print the short captions (stats.ts `compactStats`), so a small terminal keeps its view
       const statsW = Math.min(STAT_WIDTH + 2, Math.max(24, Math.round(cols * STATS_SHARE)), cols - 22)
-      // the right column: the minimap at the top, a level cell a column and half a row, the monster list under it
+      // the right column: the minimap at the top, a level cell two columns and a row where there is room (else one column), the monster list under it
       let sideW = Math.min(34, Math.max(20, Math.floor(cols * 0.22)))
       let mapH = 0
       /** the minimap's first column */
@@ -540,28 +541,33 @@ export async function runGame(io: Io, o: ClientOptions) {
         const set = getSettings()
         const room = { w: Math.max(0, Math.min(Math.floor(cols * 0.25), cols - statsW - 2)), h: Math.floor(rows * 0.5) * 2 }
         const fit = minimapFit(room, 0, set.minimapTiles, 1)
+        // where there is room for as many tiles two columns a cell, that: a level cell as square as the terminal's two
+        // cells make it, and as many rows of the level as columns
+        const wide = minimapFit({ w: Math.floor(room.w / 2), h: Math.floor(rows * 0.5) }, 0, set.minimapTiles, 1)
+        const scale = fit.w > 0 && wide.w > 0 && wide.tiles >= fit.tiles ? 2 : 1
         if (fit.w > 0) {
           const tiles = fit.tiles
-          const mapW = tiles
+          const mapW = tiles * scale
           // an odd count down too, so the player has a middle row as a middle column
-          mapH = Math.ceil(tiles / 2) | 1
+          mapH = scale === 2 ? tiles : Math.ceil(tiles / 2) | 1
           sideW = Math.max(sideW, mapW + 2)
           // the level as crawl's console draws it, as the level map (X) does: each known cell crawl's glyph in its
           // colour, what is remembered dimmer, on black, and what is not known the view darkened, as the browser's
           // glyph minimap leaves it; the player in the middle, as the browser's minimap follows the player, an arrow
           // pointing the way the view faces where crawl has its @; the server's cursor (targeting, `x`) on gold, as
           // on the level map
-          const left = sc.player.x - (mapW - 1) / 2, top = sc.player.y - (mapH - 1) / 2
+          const left = sc.player.x - (tiles - 1) / 2, top = sc.player.y - (mapH - 1) / 2
           const x0 = (mapLeft = cols - mapW - 1)
           const cur = st.cursors.find((c) => c)
           for (let r = 0; r < mapH; r++)
             for (let c = 0; c < mapW; c++) {
               const i = r * cols + x0 + c
               inked[i] = 1
-              const x = left + c, y = top + r
+              // two columns a cell: its glyph in the first, the second its ground
+              const x = left + Math.floor(c / scale), y = top + r
               const cell = sc.cells.get(cellKey(x, y))
               const player = sc.playerOnLevel && x === sc.player.x && y === sc.player.y
-              const g = player ? facingArrow(view.camera?.yaw ?? 0) : cell?.glyph || ' '
+              const g = c % scale ? ' ' : player ? facingArrow(view.camera?.yaw ?? 0) : cell?.glyph || ' '
               if (cur && x === cur.x && y === cur.y) put(x0 + c, r, g, BLACK, MAP_CURSOR)
               else if (player) put(x0 + c, r, g, PALETTE[15], BLACK)
               else if (cell && cell.kind !== 'unknown') {
@@ -606,14 +612,16 @@ export async function runGame(io: Io, o: ClientOptions) {
       if (mapShown) drawMap(put, fill, 0, 0, sideX - 1, rows - msgH)
       // the monster list, but for while the level map is open, as the browser hides it with the minimap: crawl's letter
       // for each where the browser has its sprite, and no edge pips, which a terminal's few cells could not show
-      const monH = mapShown ? 0 : drawMonsters(sideX, mapH + under, sideW, rows - mapH - under, over_)
+      // a blank row between the minimap (and the badges under it) and the list
+      const gap = mapH > 0 ? 1 : 0
+      const monH = mapShown ? 0 : drawMonsters(sideX, mapH + under + gap, sideW, rows - mapH - under - gap, over_)
       const s = statsRows(st.player, st.options, statsPrev, statsW - 2)
       statsPrev = s.prev
       const statsH = Math.min(s.rows.length, rows)
       // a cell in from the edge: the padding either side of the text is the edge's
       s.rows.slice(0, statsH).forEach((row, i) => over_(1, i, fromRow(row), statsW - 2))
       // the messages along the bottom, as wide as the right column leaves them
-      const reach = mapH + under + monH
+      const reach = mapH + under + (monH ? gap + monH : 0)
       const msgW = rows - msgH < reach ? sideX - 1 : cols
       // a line crawl reads typed in the log itself, as the browser has it (bindings.ts typedInLog)
       const typed = typedInLog(st.textInput) ? st.textInput!.text : undefined
@@ -952,7 +960,7 @@ export async function runGame(io: Io, o: ClientOptions) {
   /** what a frame's output is written into, as long as the worst frame of its size */
   let buf = new Uint8Array(0)
   // ORBRUN_TERM_TRACE=1 also counts the frames: how many, how long one took to make, how long it waited on the terminal, and the bytes
-  const stats = { frames: 0, make: 0, send: 0, bytes: 0, since: performance.now() }
+  const stats = { frames: 0, make: 0, send: 0, bytes: 0, since: performance.now(), drawn: false }
   const tick = async () => {
     next = null
     const start = performance.now()
@@ -978,6 +986,8 @@ export async function runGame(io: Io, o: ClientOptions) {
       shown = cells
       const out = Buffer.from(buf.subarray(0, end)).toString('utf8')
       const made = performance.now()
+      if (!stats.drawn) trace('first frame')
+      stats.drawn = true
       stats.frames++
       stats.make += made - start
       const before = writing
