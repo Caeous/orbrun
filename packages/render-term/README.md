@@ -35,10 +35,6 @@ handed to `render` each frame as `Motion`).
 - `linearAtlas(pixels)`: an atlas in linear light; `spriteAtlas(pixels,
   spriteRects?)`: the same with its ink peeled and its distance field.
 
-`npm run term:compare -- <dir> <out.png>` sets it beside render-3d on the
-comparison bed's poses, `<dir>` being a `node tools/build/render-compare.mjs
-capture` run.
-
 Depends on `@orbrun/scene`, `@orbrun/world` and `@orbrun/render-3d` (its
 three-free modules).
 Part of [Orbrun](https://github.com/Caeous/orbrun). AGPL-3.0-or-later.

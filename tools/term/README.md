@@ -9,13 +9,6 @@ crawl draws them.
 ```
 npm run term                  # play here (or `orbrun`); -- --help for the options (--name Ada, --dcss trunk, --set fov=90…)
 npm run term:ssh              # serve it, then: ssh -p 2222 localhost (or ada@localhost to play as Ada)
-npm run term:walk [place]     # just the renderer: walk a frozen level of the front room's
-npm run term:snap -- [place] [out.png]                 # a frame of the renderer as a PNG
-npm run term:bench -- [place…]                         # how fast the view is drawn, without a terminal
-npm run term:compare -- <render-3d frames> <out.png>   # the renderer beside render-3d, pose by pose
-npm run term:glyph [place]    # the glyph view (glyph/): the view as cells, in sextants or octants
-npm run term:glyph -- [place] --bench [cols rows frames]   # how fast it draws, without a terminal
-npm run term:gym -- [--monsters goblin,ogre] [--term 160x48] [--motion]   # the glyph view's monsters as the game sees them, beside the truth
 ```
 
 The game starts at the front screen, as the browser's (game/home.ts): a
@@ -117,8 +110,18 @@ the config), the game starts as the account last picked there, kept in
   read a dot at a time, crisp; farther, its texels are averaged as the
   truth averages them, each pixel then the art's own colour nearest it
   (`farSampling`, `farSnap`), so its colours are its own far off as near,
-  and each cell it is in is drawn in two of its own pixels' colours, the
-  glyph chosen as seen from a step back. The hands are a whole number of dots a texel, on the
+  and each cell it is in is drawn in the two colours that show its pixels
+  best, the glyph chosen as seen from a step back (any two, not two of the
+  cell's own pixels: nearer the truth at every height, most of all for
+  items, whose thin stripes and chains a cell's own two lost). So far off, what makes it itself
+  is kept (`farFeatures`, glyph/features.ts): the art's features, each a
+  small spot alone in it and unlike what is round it (a quokka's eyes, an
+  orc's red one, a cyclops's; not the black crawl draws between an arm and
+  a body, which runs on into the ink), are found once, and at each size the
+  dot each falls in is drawn toward its colour wherever shrinking lost it
+  (all the way where it is half a dot or more), the head's first and as
+  many as its size has room for, and counted for more where its cells are
+  fitted: an eye a quarter of a dot is no longer averaged into the fur. The hands are a whole number of dots a texel, on the
   dots. Over all, in a lens of
   their own, the hands, posed and sized as render-3d poses them (world hands.ts),
   the weapon lifting for a swing, and the net or the web round a trapped
@@ -187,34 +190,9 @@ password, so it listens on 127.0.0.1 only unless `HOST` says otherwise
 - `game/screens.ts`, `game/text.ts`: crawl's menus, popups and prompts as
   console crawl draws them, and its formatted text as coloured lines.
 - `game/input.ts`: terminal keys as a browser's keydowns say them.
-- `raster.ts`, `raster-worker.ts`: render-term on threads, for `walk.ts`.
-- `frame.mjs`: a frame written whole (`synced`), and the kitty images
-  `walk.ts` shows its picture in; `keys.mjs`: terminal input sequences.
-- `glyph/`, `glyph-walk.ts`: the view as terminal cells, a ray a column
-  through crawl's grid, for the game and alone (`glyph-walk.ts`,
-  GLYPH_OPTS='{"wallInset":0.375}' for the game's walls); `glyph-gym.ts`:
-  its gym, the view as the game sets it (game/view.ts `gameLens`,
-  `GAME_GLYPH`: its field of view the height's, 85° as the terminal's Auto,
-  across as wide as the terminal makes it; its eye, its pitch) at each
-  terminal size asked for (`--term 120x36,160x48`), in an open room. At
-  rest, the eye on a cell's middle facing north or north-east and a monster
-  on each cell in view out to five cells (`--reach`), at each height asked
-  for (`--heights 0.4,0.55,0.85`, as crawl's hit points stand them), each
-  variant of the glyph view (`VARIANTS`) against what the same view shows in
-  true pixels (8x16 a cell): how far apart, both blurred; how like, within
-  the cell the cells may move it, from a step back and close up; how much
-  more or less colourful; and how many dots its height, foot and middle are
-  off; with a sheet of the poses ahead. `--sample 40 --items 8` stands
-  monsters and items evenly through the game's tiles rather than a few
-  named, for what holds for almost everything (the median, the worst tenth,
-  and the subjects each does worst on); `--shard i/n` runs a share of them
-  on each of n processes and `--merge` reports them as one; `--hands`
-  draws the hands as the game holds them. `--motion`: a monster
-  gliding across, toward and on the diagonal, the eye stepping toward it
-  and aside and turning a heading, a frame at a time (`--steps`, `--at`
-  for how far), each variant scored by how much the monster changes from
-  frame to frame besides moving, and how often its height changes and
-  changes back.
+- `frame.mjs`: a frame written whole (`synced`); `keys.mjs`: terminal input
+  sequences.
+- `glyph/`: the view as terminal cells, a ray a column through crawl's grid.
   The glyph view draws on threads (glyph/threads.ts, glyph/worker.ts;
   `ORBRUN_TERM_THREADS`, 0 for none): what a frame is drawn from (each
   column's wall, what stands where) is found once a thread, then bands of
@@ -222,13 +200,3 @@ password, so it listens on 127.0.0.1 only unless `HOST` says otherwise
   slowest of late first; each band packs its cells (three numbers a cell,
   encode.ts `pack`) and writes its own terminal output against the frame
   before, into memory they share, so a frame is the bands' bytes joined.
-  `--bench` spins and walks a place (200x55 cells, 120 frames) and prints
-  how long a frame takes and a checksum of its cells, the same on threads
-  or not (GLYPH_OPTS='{"mosaic":"sextant"}' for other options than the
-  gym's best, GLYPH_LOCAL=1 for `render` and `toAnsi` on this thread,
-  GLYPH_ANSI_CHECK=1 to play the output on a screen and match it to the
-  cells, BENCH_GAP=<ms> for a pause between frames, BENCH_MOVE=1 to move
-  the monsters halfway).
-- `walk.ts`: render-term alone, as a kitty image; `snap.ts`: a frame of it as a PNG;
-  `bench.ts`: how long a frame takes to draw and ready, a place spun and
-  walked (BENCH_HASH=1 and BENCH_DUMP=<file> to tell a change draws the same).

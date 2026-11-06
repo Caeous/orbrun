@@ -7,13 +7,13 @@
  * wanted and answered here, each once, in memory they all share. With no
  * threads (ORBRUN_TERM_THREADS=0), the same on this one.
  */
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serialize } from 'node:v8'
 import { MessageChannel, Worker } from 'node:worker_threads'
 import type { Camera, Scene, TileSource } from '@orbrun/scene'
 import type { Pixels } from '@orbrun/render-term'
-import { defaultThreads } from '../raster'
 import { glyphInks } from './font'
 import { ANSI_BAND, ANSI_CELL, bandOut, cellsOut, GLYPH_DEFAULTS, GlyphView, type GlyphViewOptions, type Thing } from './render'
 import type { Frame, SentThing } from './worker'
@@ -23,14 +23,15 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const BANDS_PER_THREAD = Number(process.env.ORBRUN_TERM_BANDS) || 4
 
 /**
- * ORBRUN_TERM_THREADS, else raster.ts's, up to five: past that a frame is
- * slower, not faster (an M1 Pro's best is four to six, this thread
- * drawing too), each thread's share of it small beside what each must do
- * to begin (`prepare`) and the wait on the last.
+ * ORBRUN_TERM_THREADS, else as many as the machine has but two, from one
+ * up to five: past that a frame is slower, not faster (an M1 Pro's best is
+ * four to six, this thread drawing too), each thread's share of it small
+ * beside what each must do to begin (`prepare`) and the wait on the last.
  */
 export function glyphThreads(): number {
   const said = process.env.ORBRUN_TERM_THREADS
-  return said !== undefined && said !== '' ? defaultThreads() : Math.min(5, defaultThreads())
+  if (said !== undefined && said !== '') return Math.max(0, Number(said) | 0)
+  return Math.max(1, Math.min(5, os.availableParallelism() - 2))
 }
 
 let bundle: Promise<string> | null = null
