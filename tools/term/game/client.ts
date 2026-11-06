@@ -29,7 +29,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { installNode } from './env'
 import type { OfflineChannel } from '@orbrun/offline'
-import type { CrispCell, Home as HomeScreen, Logo, LogoArt, LogoFit, Lockup } from './home'
+import type { Home as HomeScreen, Logo, LogoArt, LogoFit, Lockup, TitleFit } from './home'
 import type { TermConfig } from './config'
 import { PALETTE, cut, lineLength, type Line, type RGB } from './text'
 import { terminalKeys } from './input'
@@ -132,14 +132,14 @@ export async function runGame(io: Io, o: ClientOptions) {
   const { viewmodelFor } = await import('@orbrun/scene-webtiles')
   const { UiState } = await import('@orbrun/webtiles')
   const { STATUS_BADGE_ROWS, minimapFit } = await import('../../../apps/orbrun/src/hud')
-  const { facingArrow } = await import('./minimap')
+  const { facingArrow, mapView } = await import('./minimap')
   const { typedInLog } = await import('../../../apps/orbrun/src/bindings')
   const { statsRows } = await import('../../../apps/orbrun/src/grid/stats')
   const { STAT_WIDTH } = await import('../../../apps/orbrun/src/grid/console')
   const { paneRows } = await import('../../../apps/orbrun/src/grid/messages')
   const { bearingTo, cellKey, rotateDir } = await import('@orbrun/scene')
   const { monsterGroups } = await import('@orbrun/scene-webtiles')
-  const { Home, loadRoom, loadLogo, loadTitle, crisp, fitLogo, lockup, logoCells, LOGO_SHARE, veilAt, veiled, barAt } = await import('./home')
+  const { Home, loadRoom, loadLogo, loadTitle, fitLogo, fitTitle, lockup, logoCells, titleLockup, LOGO_SHARE, veilAt, veiled, barAt } = await import('./home')
   const { exploreOptions } = await import('../../../apps/orbrun/src/settings-rows')
   trace('modules')
 
@@ -541,15 +541,15 @@ export async function runGame(io: Io, o: ClientOptions) {
         const set = getSettings()
         const room = { w: Math.max(0, Math.min(Math.floor(cols * 0.25), cols - statsW - 2)), h: Math.floor(rows * 0.5) * 2 }
         const fit = minimapFit(room, 0, set.minimapTiles, 1)
-        // where there is room for as many tiles two columns a cell, that: a level cell as square as the terminal's two
-        // cells make it, and as many rows of the level as columns
+        // where there is room for twice as many columns (as many tiles two columns a cell would take), and the tiles are
+        // the settings' Auto, twice as many tiles across, a column each: more of the level, not the same spread wider
         const wide = minimapFit({ w: Math.floor(room.w / 2), h: Math.floor(rows * 0.5) }, 0, set.minimapTiles, 1)
-        const scale = fit.w > 0 && wide.w > 0 && wide.tiles >= fit.tiles ? 2 : 1
+        const more = !(set.minimapTiles >= 1) && fit.w > 0 && wide.w > 0 && wide.tiles >= fit.tiles
         if (fit.w > 0) {
-          const tiles = fit.tiles
-          const mapW = tiles * scale
-          // an odd count down too, so the player has a middle row as a middle column
-          mapH = scale === 2 ? tiles : Math.ceil(tiles / 2) | 1
+          const tiles = more ? fit.tiles * 2 - 1 : fit.tiles
+          const mapW = tiles
+          // half as many down, a terminal cell being twice as tall as wide, an odd count so the player has a middle row
+          mapH = Math.ceil(tiles / 2) | 1
           sideW = Math.max(sideW, mapW + 2)
           // the level as crawl's console draws it, as the level map (X) does: each known cell crawl's glyph in its
           // colour, what is remembered dimmer, on black, and what is not known the view darkened, as the browser's
@@ -563,11 +563,10 @@ export async function runGame(io: Io, o: ClientOptions) {
             for (let c = 0; c < mapW; c++) {
               const i = r * cols + x0 + c
               inked[i] = 1
-              // two columns a cell: its glyph in the first, the second its ground
-              const x = left + Math.floor(c / scale), y = top + r
+              const x = left + c, y = top + r
               const cell = sc.cells.get(cellKey(x, y))
               const player = sc.playerOnLevel && x === sc.player.x && y === sc.player.y
-              const g = c % scale ? ' ' : player ? facingArrow(view.camera?.yaw ?? 0) : cell?.glyph || ' '
+              const g = player ? facingArrow(view.camera?.yaw ?? 0) : cell?.glyph || ' '
               if (cur && x === cur.x && y === cur.y) put(x0 + c, r, g, BLACK, MAP_CURSOR)
               else if (player) put(x0 + c, r, g, PALETTE[15], BLACK)
               else if (cell && cell.kind !== 'unknown') {
@@ -607,17 +606,20 @@ export async function runGame(io: Io, o: ClientOptions) {
       }
       const sideX = cols - sideW
       const msgH = Math.min(Math.max(3, st.messages.paneHeight || 5) + 1, Math.floor(rows / 3))
-      // the level map (X) in the clear part of the view, as the browser's (console.ts `levelMapSplit`): left of the right
-      // column and above the messages, the stats pane over its corner
-      if (mapShown) drawMap(put, fill, 0, 0, sideX - 1, rows - msgH)
+      const s = statsRows(st.player, st.options, statsPrev, statsW - 2)
+      statsPrev = s.prev
+      const statsH = Math.min(s.rows.length, rows)
+      // the level map (X) above the messages, the stats pane over its corner, which the level keeps clear of where it
+      // can: across the right column too, which stands empty while it is open (its minimap and monster list stand
+      // down, as the browser's with `tile_level_map_hide_sidebar`), a terminal's few cells being the more wanted
+      if (mapShown) drawMap(put, fill, 0, 0, cols, rows - msgH, { w: statsW, h: statsH })
+      // over the map, the stats pane on black, its words not read through the map's glyphs between them
+      if (mapShown) fill(0, 0, statsW, statsH, BLACK)
       // the monster list, but for while the level map is open, as the browser hides it with the minimap: crawl's letter
       // for each where the browser has its sprite, and no edge pips, which a terminal's few cells could not show
       // a blank row between the minimap (and the badges under it) and the list
       const gap = mapH > 0 ? 1 : 0
       const monH = mapShown ? 0 : drawMonsters(sideX, mapH + under + gap, sideW, rows - mapH - under - gap, over_)
-      const s = statsRows(st.player, st.options, statsPrev, statsW - 2)
-      statsPrev = s.prev
-      const statsH = Math.min(s.rows.length, rows)
       // a cell in from the edge: the padding either side of the text is the edge's
       s.rows.slice(0, statsH).forEach((row, i) => over_(1, i, fromRow(row), statsW - 2))
       // the messages along the bottom, as wide as the right column leaves them
@@ -646,27 +648,15 @@ export async function runGame(io: Io, o: ClientOptions) {
       const front = home.title === null
       const title = front ? null : titleArt(home.title!)
       const fitOf = (w: number, most: number): LogoFit | null => logo && fitLogo(logo, w, Math.round(cols * LOGO_SHARE), most, sy, aspect())
-      const titleRows = (w: number) => (title ? Math.max(1, Math.round((w * title.h) / title.w / aspect())) : 0)
-      const L = home.layout(cols, rows, (w, most) => (front ? fitOf(w, most)?.rows ?? 0 : titleRows(w) <= most ? titleRows(w) : 0))
+      const titleFit = (w: number, most: number): TitleFit | null => title && fitTitle(title, w, most, cols, sy, aspect())
+      const L = home.layout(cols, rows, (w, most) => (front ? fitOf(w, most)?.rows : titleFit(w, most)?.rows) ?? 0)
       if (L.art) {
         const { x, y } = L.art
-        const shows = (cx: number, cy: number) => cx < cols && cy < rows
-        /** art cut sharp at (`ax`, `y`), `lc` x `lr` cells */
-        const sharp = (name: string, art: Logo, ax: number, lc: number, lr: number) => {
-          const dots = crispOf(name, art, lc, lr, sy)
-          for (let r = 0; r < lr; r++)
-            for (let c = 0; c < lc; c++) {
-              const cell = dots[r * lc + c], at = (y + r) * cols + ax + c
-              if (!cell || !shows(ax + c, y + r)) continue
-              inked[at] = 1
-              packed.set(at, [glyphs[cell.mask].codePointAt(0)!, cell.rgb, rgb(seenOf(vc, at))])
-            }
-        }
-        if (!front && title) sharp(home.title!, title, x, L.art.cols, L.art.rows)
-        else if (logo) {
-          // laid on the room behind it, each frame (home.ts `logoCells`): the orb's glow and the name's shadow are seen
-          // through, and reach past the art onto the room round it
-          const lk = lockupOf(logo, fitOf(L.art.cols, L.art.rows)!)
+        // the logo, or the screen's title, laid on the room behind it, each frame (home.ts `logoCells`): the orb's
+        // glow and the shadows are seen through, and reach past the art onto the room round it
+        const tf = front ? null : titleFit(L.art.cols, L.art.rows)
+        const lk = front ? logo && lockupOf(logo, fitOf(L.art.cols, L.art.rows)!) : title && tf && titleLockupOf(home.title!, title, tf)
+        if (lk) {
           const at = (c: number, r: number) => {
             const cx = x + lk.x + c, cy = y + lk.y + r
             return cx >= 0 && cy >= 0 && cx < cols && cy < rows ? cy * cols + cx : -1
@@ -795,16 +785,16 @@ export async function runGame(io: Io, o: ClientOptions) {
     return (ch(16) << 16) | (ch(8) << 8) | ch(0)
   }
 
-  /** the front screen's art cut sharp (home.ts `crisp`), for the size it is drawn at */
-  const crisped = new Map<string, (CrispCell | null)[]>()
-  function crispOf(name: string, art: Logo, cols: number, rows: number, sy: number) {
-    const key = `${name}|${cols}x${rows}|${sy}`
-    let c = crisped.get(key)
-    if (!c) {
-      if (crisped.size > 16) crisped.clear()
-      crisped.set(key, (c = crisp(art, cols, rows, 2, sy)))
+  /** each screen's title laid out in dots with its shadow (home.ts `titleLockup`), for the size it is drawn at */
+  const titleLaid = new Map<string, Lockup>()
+  function titleLockupOf(name: string, art: Logo, f: TitleFit): Lockup {
+    const key = `${name}|${f.em}|${f.sy}|${f.aspect}`
+    let lk = titleLaid.get(key)
+    if (!lk) {
+      if (titleLaid.size > 16) titleLaid.clear()
+      titleLaid.set(key, (lk = titleLockup(art, f)))
     }
-    return c
+    return lk
   }
 
   let statsPrev = {}
@@ -818,17 +808,15 @@ export async function runGame(io: Io, o: ClientOptions) {
   /**
    * The level map (X) in (x0, y0, w, h): every known cell as crawl's glyph,
    * in crawl's colours, what is remembered dimmer; the map's cursor lit (the
-   * 2D view's own), the map centred on it when it opens and moved only when
-   * the cursor comes within MAP_EDGE cells of an edge, as a scrolled map.
+   * 2D view's own). Where all the level that is known fits, all of it, and it
+   * stays put; else as much of it as fits, scrolled with the cursor
+   * (minimap.ts `mapView`). `corner`: the stats pane over its top-left.
    */
-  function drawMap(put: Put, fill: Fill, x0: number, y0: number, w: number, h: number) {
+  function drawMap(put: Put, fill: Fill, x0: number, y0: number, w: number, h: number, corner: { w: number; h: number }) {
     fill(x0, y0, w, h, BLACK)
     const sc = session.scene
     const cur = session.state.cursors.find((c) => c) ?? sc.player
-    if (!mapAt) mapAt = { left: cur.x - Math.floor(w / 2), top: cur.y - Math.floor(h / 2) }
-    const mx = Math.min(MAP_EDGE, Math.floor(w / 4)), my = Math.min(MAP_EDGE, Math.floor(h / 4))
-    if (cur.x - mapAt.left < mx || cur.x - mapAt.left >= w - mx) mapAt.left = cur.x - Math.floor(w / 2)
-    if (cur.y - mapAt.top < my || cur.y - mapAt.top >= h - my) mapAt.top = cur.y - Math.floor(h / 2)
+    mapAt = mapView(sc.bounds, cur, mapAt, w, h, corner, MAP_EDGE)
     const { left, top } = mapAt
     for (let j = 0; j < h; j++)
       for (let i = 0; i < w; i++) {

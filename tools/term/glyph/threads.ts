@@ -63,7 +63,7 @@ function sameThings(now: Thing[], was: Thing[] | null): boolean {
     const a = now[i], b = was[i]
     if (a.x !== b.x || a.y !== b.y || a.size !== b.size || a.glyph !== b.glyph || a.name !== b.name || a.alive !== b.alive) return false
     if (a.colour[0] !== b.colour[0] || a.colour[1] !== b.colour[1] || a.colour[2] !== b.colour[2] || a.art.length !== b.art.length) return false
-    if (a.alpha !== b.alpha || a.light !== b.light || String(a.flash) !== String(b.flash) || JSON.stringify(a.hand) !== JSON.stringify(b.hand)) return false
+    if (a.alpha !== b.alpha || a.shadow !== b.shadow || a.light !== b.light || String(a.flash) !== String(b.flash) || JSON.stringify(a.hand) !== JSON.stringify(b.hand)) return false
     for (let k = 0; k < a.art.length; k++) if (a.art[k].px !== b.art[k].px || a.art[k].mirror !== b.art[k].mirror || JSON.stringify(a.art[k].rect) !== JSON.stringify(b.art[k].rect)) return false
   }
   return true

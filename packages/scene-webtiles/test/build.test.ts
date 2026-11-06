@@ -395,6 +395,28 @@ describe('buildScene on a recorded level', () => {
     }
   })
 
+  it("marks a monster in the air afloat, from crawl's flying flag, so it is not stood on its foot", () => {
+    const st = initialState()
+    let found: Scene['billboards'][number] | undefined
+    for (const m of fixtureMessages()) {
+      reduce(st, m)
+      found = buildScene(st, gd).billboards.find((b) => b.kind === 'monster' && !/tentacle|vine/i.test(b.name ?? ''))
+      if (found) break
+    }
+    const mc = st.map.cells.get(cellKey(found!.x, found!.y))!
+    const fg = (bit: boolean) => {
+      const w = Array.isArray(mc.t!.fg) ? [...mc.t!.fg] : [mc.t!.fg as number, 0]
+      w[0] = bit ? w[0] | 0x00080000 : w[0] & ~0x00080000
+      return w
+    }
+    const at = (bit: boolean) => {
+      st.map.cells.set(cellKey(mc.x, mc.y), { ...mc, t: { ...mc.t!, fg: fg(bit) } })
+      return buildScene(st, gd).billboards.find((b) => b.kind === 'monster' && b.x === mc.x && b.y === mc.y)!
+    }
+    expect(at(true).afloat).toBe(true)
+    expect(at(false).afloat).toBeUndefined()
+  })
+
   it('keeps the layout revision while only monsters, light and cursors change', () => {
     const st = initialState()
     let scene: Scene = emptyScene()

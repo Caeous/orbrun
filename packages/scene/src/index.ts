@@ -292,6 +292,13 @@ export interface Billboard {
   scenery?: boolean
   /** Wound level from the server's MDAM flags, in monster_list.js' class names (`uninjured` when unhurt). */
   damage?: WoundLevel
+  /**
+   * Not stood on the floor: drawn where its art lies in its tile, not on its
+   * art's foot. A monster in the air (crawl's TILE_FLAG_FLYING: flying or
+   * levitating, `monster::airborne`), or a piece of a tentacle or a vine,
+   * which joins the pieces beside it where crawl draws it in its square.
+   */
+  afloat?: boolean
   /** Opaque handle set by the builder (Orbrun stores the raw monster here). */
   ref?: unknown
 }

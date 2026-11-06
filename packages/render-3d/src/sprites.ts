@@ -1,8 +1,8 @@
 import { cellKey, shadeOf, type Scene, type TileRect } from '@orbrun/scene'
 import { INK_LEVEL } from './peel.js'
-import { CLOUD_ALPHA, FIXTURE_H, PROJECTILE_LIFT, STAIR_H, crowd, doorBoard, fixtures } from '@orbrun/world'
+import { CLOUD_ALPHA, FIXTURE_H, PROJECTILE_LIFT, STAIR_H, STAND_FORWARD, crowd, doorBoard, fixtures, footGap } from '@orbrun/world'
 
-export { CLOUD_ALPHA, FIXTURE_H, PROJECTILE_LIFT, STAIR_H }
+export { CLOUD_ALPHA, FIXTURE_H, PROJECTILE_LIFT, STAIR_H, STAND_FORWARD }
 
 /**
  * Standing sprites as instances (shaders.ts `SPRITE_VERT`): what a monster,
@@ -45,7 +45,7 @@ const BADGE_TINT = { r: 1, g: 1, b: 1 }
  * A board at the cell's middle is coplanar with the front face of the block
  * of whoever stands in that cell, and loses the depth test to it texel for
  * texel: the smoke over a monster drew nowhere but the gaps in its art. A
- * texel in front, the mirror of `FIXTURE_BACK`, and the smoke reads over
+ * texel in front of where it stands (STAND_FORWARD), the mirror of `FIXTURE_BACK`, and the smoke reads over
  * whatever it has drifted over.
  */
 export const CLOUD_FORWARD = BB_DEPTH / 32
@@ -136,6 +136,11 @@ export interface StandOptions {
   /** The block's depth in cells, where it is more than a texel (a folded way up's side, reaching back under its steps). */
   depth?: number
   moverId?: number
+  /**
+   * Stood on its art's foot (world things.ts `grounded`): every layer lowered by the gap under the lowest row the
+   * sprite's own layers reach (`footGap`), its badges with it.
+   */
+  ground?: boolean
 }
 
 /**
@@ -147,6 +152,8 @@ export function stand(x: number, y: number, layers: readonly SpriteLayer[], o: S
   const out: SpriteInstance[] = []
   const scale = o.height
   const back = o.back ?? 0
+  // the gap under its art's foot, in the tile's rows, which every layer comes down by
+  const drop = o.ground ? footGap(layers.filter((l) => !l.flat).map((l) => ({ top: l.r.oy + l.oy, h: l.r.h, cell: l.r.cell, cut: l.ymax !== undefined && l.ymax < l.r.oy + l.r.h }))) * scale : 0
   let i = 0
   for (const l of layers) {
     const cell = l.r.cell
@@ -158,7 +165,7 @@ export function stand(x: number, y: number, layers: readonly SpriteLayer[], o: S
     const wq = w * k
     const hq = hTex * k
     const cx = (l.r.ox + l.ox + w / 2 - cell / 2) * k
-    const bottom = (cell - (l.r.oy + l.oy + hTex)) * k
+    const bottom = (cell - (l.r.oy + l.oy + hTex)) * k - drop
     // lying, the frame's y runs along the floor from the cell's middle, and its z up off the floor
     const cy = o.lie ? bottom + hq / 2 - scale / 2 : bottom + hq / 2
     const depth = o.depth ?? BB_DEPTH * k
@@ -207,9 +214,9 @@ export type TileLookup = (id: number) => TileRect | undefined
  * shows through walls here), and its shadow. The player is the camera, and
  * whatever shares the cell underfoot is behind it.
  */
-export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: number; y: number } | null): { sprites: SpriteInstance[]; shadows: { x: number; y: number; r: number; moverId?: number }[] } {
+export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: number; y: number } | null): { sprites: SpriteInstance[]; shadows: { x: number; y: number; r: number; moverId?: number; forward?: number }[] } {
   const sprites: SpriteInstance[] = []
-  const shadows: { x: number; y: number; r: number; moverId?: number }[] = []
+  const shadows: { x: number; y: number; r: number; moverId?: number; forward?: number }[] = []
   const tint = scene.level.tint
   for (const b of crowd(scene)) {
     const cell = scene.cells.get(cellKey(b.x, b.y))
@@ -219,7 +226,7 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
       const r = tile(b.layers[0].tile)
       if (!r) continue
       // a cloud carries its light in its colour: it blends, and reads no map
-      sprites.push(...stand(b.x, b.y, [{ r, ox: 0, oy: 0 }], { height: b.height, shade, tint, shadeMap: false, thick: false, pass: 'blend', alpha: b.alpha, grow: 0, back: -CLOUD_FORWARD }))
+      sprites.push(...stand(b.x, b.y, [{ r, ox: 0, oy: 0 }], { height: b.height, shade, tint, shadeMap: false, thick: false, pass: 'blend', alpha: b.alpha, grow: 0, back: -(STAND_FORWARD + CLOUD_FORWARD) }))
       continue
     }
     const layers: SpriteLayer[] = []
@@ -239,6 +246,8 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
     const lift = b.lift ?? 0
     const lie = b.lie
     const moverId = b.moverId
+    // what stands on the floor, a little forward of its cell's middle (STAND_FORWARD)
+    const back = b.grounded ? -STAND_FORWARD : undefined
     const sel = selected && selected.x === b.x && selected.y === b.y
     sprites.push(
       ...stand(b.x, b.y, layers, {
@@ -254,6 +263,8 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
         lift,
         lie,
         moverId,
+        ground: b.grounded,
+        back,
       }),
     )
     if (b.ghost) {
@@ -271,10 +282,13 @@ export function crowdInstances(scene: Scene, tile: TileLookup, selected: { x: nu
           lift,
           lie,
           moverId,
+          ground: b.grounded,
+          back,
         }),
       )
     }
-    if (b.shadow !== undefined) shadows.push({ x: b.x, y: b.y, r: b.shadow, moverId })
+    // the shadow at its foot, forward with it
+    if (b.shadow !== undefined) shadows.push({ x: b.x, y: b.y, r: b.shadow, moverId, forward: back === undefined ? undefined : -back })
   }
   return { sprites, shadows }
 }

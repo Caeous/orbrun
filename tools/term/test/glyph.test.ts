@@ -201,6 +201,46 @@ describe('the view in bands', () => {
   })
 })
 
+describe('what stands, steady on the cells', () => {
+  it('stands each on its cell\'s middle, its foot a dot from it at the most, not a cell\'s edge', () => {
+    const { view, cam } = room()
+    Object.assign(view.opts, { steady: 'cells' })
+    const [g] = view.things
+    // 120 x 40 cells of octants: pixels 2 x 4 a cell, a dot a pixel
+    for (const y of [-1, -2, -3, -4]) {
+      for (const eyeY of [1, 0.8, 0.55, 0.3]) {
+        view.things = [{ ...g, y }]
+        const L = view.look({ ...cam(0), eyeY }, 240, 160, 2, 4, { allSprites: true })
+        const s = L.sprites[0]
+        const truth = L.horizon + (view.opts.eye * L.fy) / (eyeY - y)
+        expect(Math.abs(s.y0 + s.side - truth)).toBeLessThanOrEqual(0.5 + 1e-9)
+      }
+    }
+  })
+})
+
+describe('the shadow round a foot', () => {
+  it('darkens the floor round what stands as render-3d lays its disc, and only there', () => {
+    const { view, cam } = room()
+    // nothing drawn but the shadow: no art
+    const floorAt = (shadow?: number) => {
+      view.things = [{ x: 0, y: -2, art: [], glyph: '', colour: [0, 0, 0], size: 1, name: 'probe', alive: true, shadow }]
+      const r = view.raster(cam(0), 240, 160, 2, 4)
+      const L = view.look(cam(0), 240, 160, 2, 4)
+      // the floor at the cell's middle, 3 ahead of the eye's 1.5 (its middle at -1.5); and a cell nearer, out of the disc
+      const at = (depth: number) => {
+        const row = Math.floor(L.horizon + (view.opts.eye * L.fy) / depth), o = (row * 240 + 120) * 3
+        return r.pix[o] + r.pix[o + 1] + r.pix[o + 2]
+      }
+      return [at(3), at(2)]
+    }
+    const [lit, near] = floorAt()
+    const [shaded, nearShaded] = floorAt(1)
+    expect(shaded).toBeLessThan(lit * 0.5)
+    expect(nearShaded).toBeCloseTo(near, 6)
+  })
+})
+
 describe('walls as render-3d stands them', () => {
   it('stands a wall back from the floor by the inset, and a ray past its cut corner goes on', () => {
     const { view, cam } = room()
