@@ -67,21 +67,28 @@ export interface ViewSettings {
 
 /**
  * The glyph view's options the game draws by, over its defaults (render.ts
- * GLYPH_DEFAULTS), as the gym (glyph-gym.ts) found them across the
+ * GLYPH_DEFAULTS), as they look best across the
  * bestiary: what stands steady on the cells and the hands on the dots
  * (render.ts `steady`); what stands too far for its texels to fill a dot,
  * its texels averaged as the truth averages them (`farSampling`), each
  * pixel then the art's own colour nearest it (`farSnap`), so a gnoll's
  * yellow fur among its grey and dark is yellow far off as near, not the
- * brown their mean is; and each cell something stands in drawn in two of
- * its own pixels' colours, the glyph as seen from a step back (`blur`).
+ * brown their mean is; far off, its features kept (`farFeatures`): an
+ * eye, a glint, each on a dot of its own, so a quokka has its eyes however
+ * small it stands; and each cell something stands in drawn in the two
+ * colours that show its pixels best (`medoid` off: any two are nearer
+ * the truth at every height than two of
+ * the cell's own pixels, most of all for items, a candy cane's red and white
+ * stripes kept where its own two pixels were grey and green), the glyph as
+ * seen from a step back (`blur`).
  */
 export const GAME_GLYPH: Partial<GlyphViewOptions> = {
   grid: true,
   steady: 'cells',
   farSampling: 'area',
   farSnap: 1,
-  fit: { ...GLYPH_DEFAULTS.fit, blur: 1 },
+  fit: { ...GLYPH_DEFAULTS.fit, blur: 1, medoid: false },
+  farFeatures: 3,
 }
 
 /**

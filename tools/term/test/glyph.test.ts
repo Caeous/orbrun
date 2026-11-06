@@ -5,6 +5,7 @@ import { coverage, inked, INVERSE, OCTANTS, SEXTANTS, SHAPE_OF, SHAPES } from '.
 import { encoders, q, unpack } from '../glyph/encode'
 import { SpriteTex } from '../glyph/sprite'
 import { drawSprite, gridFor } from '../glyph/sampling'
+import { features } from '../glyph/features'
 import { ansiInto, GlyphView, toAnsi, type Cell, type Raster } from '../glyph/render'
 
 /** linear light of an encoded value */
@@ -268,6 +269,31 @@ describe('walls as render-3d stands them', () => {
     scene.cells.get(cellKey(0, -1))!.icons = [3]
     view.setScene(scene)
     expect(floor()).not.toEqual(before)
+  })
+
+  it('finds an eye alone in a face, and not the ink round the art', () => {
+    const { view } = room()
+    const tx = new SpriteTex(view.things[0].art[0])
+    const fs = features(tx)
+    expect(fs.length).toBe(1)
+    expect(fs[0].x).toBeCloseTo(12.5, 5)
+    expect(fs[0].y).toBeCloseTo(10.5, 5)
+  })
+
+  it('keeps an eye far off, on a dot of its own in its own colour, where shrinking would lose it', () => {
+    const { view, cam } = room()
+    const goblin = view.things[0]
+    const yellow = (c: number[]) => c[0] > 170 && c[1] > 150 && c[2] < 110
+    const seen = (farFeatures: number) => {
+      view.opts = { ...view.opts, steady: 'cells', farSampling: 'area', farSnap: 1, farFeatures }
+      view.things = [{ ...goblin, y: -5 }]
+      const p = view.prepare(cam(0), 40, 15)
+      // far enough that its texels are smaller than a dot
+      expect(p.look.sprites[0].side / 32).toBeLessThan(p.look.SY / 4)
+      return view.band(p, 0, 15).some((c) => yellow(c.fg) || yellow(c.bg))
+    }
+    expect(seen(0)).toBe(false)
+    expect(seen(1.5)).toBe(true)
   })
 
   it('draws a hand over all, in its own lens, its art filling its square as render-3d sizes it', () => {

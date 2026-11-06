@@ -1,8 +1,6 @@
 /**
  * The comparison bed's scene (compare.ts): the poses, and the crowd, decals,
- * flash and open door laid over the antechamber. Kept apart from the page so
- * the terminal's renderer can be shot from the same poses
- * (tools/term/compare.ts).
+ * flash and open door laid over the antechamber.
  */
 import { cellKey, type Billboard, type Scene, type SceneCell, type SceneCursor, type Viewmodel } from '@orbrun/scene'
 

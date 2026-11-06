@@ -13,7 +13,7 @@
  * too small to make out is named instead by crawl's glyph for it, on a cell
  * of the colour it is from far off, so a monster reads at any distance;
  * `letters` has everything that lives drawn that way, large in octants up
- * close. GLYPH_DEFAULTS is as the gym (glyph-gym.ts) found looks best.
+ * close. GLYPH_DEFAULTS is what looks best.
  *
  * For the game, the walls stand back from the floor as render-3d stands
  * them (`wallInset`), so a corner can be seen round; the cursor is a ring on
@@ -26,7 +26,8 @@ import { bigGlyph } from './font'
 import { INVERSE, OCTANTS, SHAPE_OF, coverage, inked } from './shapes'
 import { setChroma, setDark, SpriteTex } from './sprite'
 import { encoders, fromOklab, oklab, q, unpack, type Encoder, type EncoderName, type FitOptions } from './encode'
-import { drawSprite, gridFor, type SpriteColumns } from './sampling'
+import { drawSprite, gridFor, type Put, type SpriteColumns } from './sampling'
+import { features, type Feature } from './features'
 import {
   CURSOR_ALPHA,
   VM_FILL,
@@ -148,7 +149,7 @@ export interface GlyphViewOptions {
    * same picture moved, changing only when its size does. `cells`: its size
    * whole cells, the nearest its true size, and its foot and middle on the
    * cells' edges, so it falls the same on its cells wherever it stands and
-   * the glyphs they are drawn in are the same too (the gym, glyph-gym.ts:
+   * the glyphs they are drawn in are the same too (and it is
    * as like the truth as at its true place, and as steady as the truth or
    * steadier as it glides, steps and turns); `true`, the same on the dots.
    * The hands, either way, a whole number of dots a texel, on the dots.
@@ -162,9 +163,24 @@ export interface GlyphViewOptions {
   farChroma?: number
   /** with `farSampling`, how far each averaged pixel is drawn toward the art's own colour nearest it (OKLab), 0 to 1: averaged, a strip of yellow fur a dot wide among grey and dark is a brown no part of the art is */
   farSnap?: number
+  /**
+   * with `steady`, a sprite whose texels are smaller than a dot drawn with
+   * its features kept (features.ts: an eye, a nose, a glint, a spot of the
+   * art unlike the body round it): each on the dot its middle falls in, the
+   * whole dot in its own colour wherever shrinking lost it, and counted this
+   * much more where its cells' glyphs and colours are chosen (as `stand`
+   * counts what stands out). Shrunk as the truth shrinks it, an eye two
+   * texels across is a quarter of a dot, averaged into the fur round it,
+   * and no glyph shows it. 0 or none, as `farSampling` leaves it
+   */
+  farFeatures?: number
+  /** with `farFeatures`, the rest drawn a dot at a time too, each dot the mean of its texels, rather than finer than the dots */
+  farDots?: boolean
+  /** with `farFeatures`, its edge crisp as the art's is: a pixel (or dot) the art covers half of is all the art, else none of it, never the art and what is behind mixed */
+  farCrisp?: boolean
 }
 
-/** The view as the gym (glyph-gym.ts) found it looks best. */
+/** The view as it looks best. */
 export const GLYPH_DEFAULTS: GlyphViewOptions = {
   fov: 90,
   eye: 0.6,
@@ -195,8 +211,6 @@ export interface RasterOptions {
   allSprites?: boolean
   /** only the pixel rows from the first up to the second (multiples of `coarse`), the raster's rows those */
   rows?: [number, number]
-  /** every sprite at its true size and place, never `steady`: the truth the gym holds the view to */
-  exact?: boolean
 }
 
 /** a sprite drawn once at a size (`steady`): its pixels from the top of what reaches highest, straight linear rgb, coverage, how much each stands out */
@@ -218,6 +232,9 @@ interface SteadyImage {
   /** how far toward the art's own colours (`farSnap`) */
   snap: number
   columns: SpriteColumns
+  /** a dot, in pixels across and down */
+  DX: number
+  DY: number
 }
 
 /** something named rather than drawn */
@@ -297,7 +314,7 @@ export interface Raster {
 }
 
 let nextTexId = 0
-/** how many dots tall a sprite `steady` on the cells must be to fall on whole cells (the gym, glyph-gym.ts) */
+/** how many dots tall a sprite `steady` on the cells must be to fall on whole cells */
 const STEADY_CELLS = 32
 /** the pixels of sprites drawn `steady` a view keeps, at most */
 const STEADY_PIXELS = 4_000_000
@@ -905,7 +922,7 @@ export class GlyphView {
       const texs = t.art.map((a) => this.spriteTex(a))
       // as wide as tall on the screen, whatever the shape of a pixel
       const sideX = (t.size * fx) / depth
-      if (this.opts.steady && !ro.exact) {
+      if (this.opts.steady) {
         // its size whole dots, its middle and its foot on the dots: the picture of that size, moved by whole dots
         const { DX, DY } = dotOf(SX, SY, this.opts.mosaic)
         // on the cells (`cells`), as near the truth as its size lets it: a cell at a time where that is little of it, half a cell where it is more, a dot where it is small
@@ -955,7 +972,7 @@ export class GlyphView {
       }
       let side = ((h.size * unit) * 32) / span, sideX = side * pixelAspect
       const aspect = W / (H * pixelAspect)
-      if (this.opts.steady && !ro.exact) {
+      if (this.opts.steady) {
         // a whole number of dots a texel, the nearest its true size, its pose's point on the dots
         const { DX, DY } = dotOf(SX, SY, this.opts.mosaic)
         const s = steadySize(side, sideX, DX, DY, Infinity)
@@ -965,7 +982,7 @@ export class GlyphView {
       let x0 = W / 2 + h.x * aspect * unit * pixelAspect - (mid / 32) * sideX
       let y0 = H / 2 - h.y * unit - (foot / 32) * side
       let grid: [number, number] | undefined
-      if (this.opts.steady && !ro.exact) {
+      if (this.opts.steady) {
         const { DX, DY } = dotOf(SX, SY, this.opts.mosaic)
         x0 = DX * Math.round(x0 / DX)
         y0 = DY * Math.round(y0 / DY)
@@ -977,7 +994,7 @@ export class GlyphView {
         y0 = 2 * Math.round(y0 / 2)
         grid = this.opts.grid === 'cells' ? [gridFor(sideX / 32, SX), gridFor(side / 32, SY)] : [2, 2]
       }
-      if (!(this.opts.steady && !ro.exact)) {
+      if (!this.opts.steady) {
         const c0 = Math.max(0, Math.floor(x0)), c1 = Math.min(W - 1, Math.ceil(x0 + sideX))
         const r0 = Math.max(0, Math.floor(y0)), r1 = Math.min(H - 1, Math.ceil(y0 + side))
         if (c0 > c1 || r0 > r1) continue
@@ -1024,7 +1041,7 @@ export class GlyphView {
       if (id === undefined) this.texIds.set(tx, (id = nextTexId++))
       return id
     })
-    const key = `${ids.join(',')}|${w}x${h}+${up}|${DX},${DY}|${sampling}|${o.farSampling}|${o.farChroma}|${o.farSnap}|${o.standsOut}|${o.mean}|${o.feature}|${o.ink}|${o.snap}|${o.dark}|${o.chroma}`
+    const key = `${ids.join(',')}|${w}x${h}+${up}|${DX},${DY}|${sampling}|${o.farSampling}|${o.farChroma}|${o.farSnap}|${o.standsOut}|${o.mean}|${o.feature}|${o.ink}|${o.snap}|${o.dark}|${o.chroma}|${o.farFeatures}|${o.farDots}|${o.farCrisp}`
     let img = this.steadyImages.get(key)
     if (img) return img
     const H = up + h
@@ -1036,6 +1053,8 @@ export class GlyphView {
       chroma: !grid && o.farSampling ? (o.farChroma ?? 1) : 1,
       snap: !grid && o.farSampling ? (o.farSnap ?? 0) : 0,
       columns: {},
+      DX,
+      DY,
     }
     // kept up to a few million pixels' worth, the oldest let go first
     this.steadyPixels += w * H
@@ -1063,7 +1082,13 @@ export class GlyphView {
     setDark(o.dark ?? 0.7)
     setChroma(o.chroma ?? 0)
     const { w } = im
-    drawSprite(im.texs, im.sampling, o.standsOut, o.mean, o.feature, o.ink, o.snap, 0, im.up, w, im.cellH, 0, w - 1, a, b, 0, STEADY_ZBUF(w), w, (i, r, g, bl, al, stand) => {
+    // far, its features kept (`farFeatures`): the whole picture at once, it being small
+    if (!im.grid && o.farFeatures) {
+      a = 0
+      b = im.h - 1
+      featurePicture(im, o.farFeatures, !!o.farDots, !!o.farCrisp, (texs, x0, y0, sideX, sideY, c1, r1, W, put) =>
+        drawSprite(texs, im.sampling, o.standsOut, o.mean, o.feature, o.ink, o.snap, x0, y0, sideX, sideY, 0, c1, 0, r1, 0, STEADY_ZBUF(W), W, put, {}))
+    } else drawSprite(im.texs, im.sampling, o.standsOut, o.mean, o.feature, o.ink, o.snap, 0, im.up, w, im.cellH, 0, w - 1, a, b, 0, STEADY_ZBUF(w), w, (i, r, g, bl, al, stand) => {
       if (im.done[(i / w) | 0]) return
       im.rgb[i * 3] = r
       im.rgb[i * 3 + 1] = g
@@ -1792,4 +1817,109 @@ export function toAnsi(cells: Cell[], cols: number, rows: number, top = 1, prev?
     }
   }
   return diff && !s ? '' : s + '\x1b[0m'
+}
+
+/** how unlike the feature a dot must be (a share of how far the feature is from its ground) for the feature to be drawn on it */
+const LOST = 0.5
+/** `dotPicture`: a feature drawn for each this many dots of the sprite, at most (and two however small) */
+const DOTS_A_FEATURE = 40
+/** how far toward its colour a feature far smaller than its dot draws the dot; more as it is more of the dot */
+const LEAST = 0.5
+/** a feature below this share of its layer's art down from its top is ranked BODY times as standing out: not the head */
+const HEAD = 0.45
+const BODY = 0.6
+/** how far a feature must stand out, as ranked, to be drawn at all */
+const LEAST_RANK = 0.3
+
+/**
+ * A steady sprite's picture far off with its features kept (`farFeatures`),
+ * the whole of it: drawn by `draw` (the layers, the square's corner and
+ * size, the last column and row, the width, where each pixel goes) a dot
+ * at a time (`dots`) or a pixel at a time; each feature of each layer that
+ * shows (features.ts) on the dot its middle falls in, the whole dot in its
+ * own colour where the dot is unlike it, as many as the sprite's size
+ * gives room for (DOTS_A_FEATURE), the most standing out first; and every
+ * feature's dot counted `stand` more.
+ */
+function featurePicture(
+  im: SteadyImage, stand: number, dots: boolean, crisp: boolean,
+  draw: (texs: SpriteTex[], x0: number, y0: number, sideX: number, sideY: number, c1: number, r1: number, W: number, put: Put) => void,
+) {
+  const { w, h, DX, DY } = im
+  // the picture drawn at: a unit is a dot, or a pixel
+  const ux = dots ? DX : 1, uy = dots ? DY : 1
+  const wd = Math.round(w / ux), hd = Math.round(h / uy)
+  const rgb = new Float32Array(wd * hd * 3), al = new Float32Array(wd * hd), st = new Float32Array(wd * hd)
+  draw(im.texs, 0, im.up / uy, wd, im.cellH / uy, wd - 1, hd - 1, wd, (i, r, g, b, a, s) => {
+    rgb[i * 3] = r
+    rgb[i * 3 + 1] = g
+    rgb[i * 3 + 2] = b
+    al[i] = a
+    st[i] = s
+  })
+  // its edge crisp, as the art's is
+  if (crisp) for (let d = 0; d < wd * hd; d++) al[d] = al[d] >= 0.5 ? 1 : 0
+  // a dot of the picture: its units
+  const bx = DX / ux, by = DY / uy
+  const units = (dc: number, dr: number) => {
+    const out: number[] = []
+    for (let j = 0; j < by; j++) for (let i = 0; i < bx; i++) out.push((dr * by + j) * wd + dc * bx + i)
+    return out
+  }
+  const ndx = Math.floor(wd / bx), ndy = Math.floor(hd / by)
+  // as many features as the sprite has room for, its dots the art's
+  let solid = 0
+  for (let d = 0; d < wd * hd; d++) if (al[d] >= 0.5) solid++
+  let left = Math.max(2, Math.round(solid / (bx * by) / DOTS_A_FEATURE))
+  // the head's first, where the eyes are: a white claw on a kobold's belly is a spot too, but not what tells it from far off
+  const rank = (f: Feature, tx: SpriteTex) => {
+    const b = tx.box()
+    return f.contrast * (b && (f.y - b.y0) / (b.y1 + 1 - b.y0) > HEAD ? BODY : 1)
+  }
+  const all = im.texs.flatMap((tx, l) => features(tx).map((f) => ({ f, tx, l, rank: rank(f, tx) }))).sort((p, q) => q.rank - p.rank)
+  const lab = new Float32Array(3)
+  const taken = new Uint8Array(ndx * ndy)
+  for (const { f, tx, l, rank } of all) {
+    if (left <= 0 || rank < LEAST_RANK) break
+    const u = f.x / 32, v = (f.y - tx.row(0)) / 32
+    // hidden by a layer over it
+    if (im.texs.slice(l + 1).some((up) => {
+      const x = Math.floor(f.x), y = Math.floor(up.row(v))
+      return x >= 0 && y >= 0 && x < up.w && y < up.h && up.a[y * up.w + x] >= 0.5
+    })) continue
+    const dc = Math.floor((u * w) / DX), dr = Math.floor((im.up + v * im.cellH) / DY)
+    if (dc < 0 || dr < 0 || dc >= ndx || dr >= ndy || taken[dr * ndx + dc]) continue
+    const us = units(dc, dr)
+    // the dot as drawn: its mean, and how much of it is the art
+    let r = 0, g = 0, b = 0, a = 0
+    for (const o of us) (r += rgb[o * 3] * al[o]), (g += rgb[o * 3 + 1] * al[o]), (b += rgb[o * 3 + 2] * al[o]), (a += al[o])
+    if (a < 0.5 * us.length) continue
+    taken[dr * ndx + dc] = 1
+    for (const o of us) st[o] = Math.max(st[o], stand)
+    oklab(r / a, g / a, b / a, lab, 0)
+    if (Math.hypot(lab[0] - f.L, 2 * (lab[1] - f.A), 2 * (lab[2] - f.B)) < LOST * f.contrast) continue
+    // drawn toward its colour by how much of the dot it truly is: all the way where it is half a dot or more, half way where it is next to nothing of it
+    const texel = (w / 32 / DX) * (im.cellH / 32 / DY)
+    const t = Math.min(1, LEAST + f.size * texel)
+    const fr = tx.rgb[f.at * 3], fg = tx.rgb[f.at * 3 + 1], fb = tx.rgb[f.at * 3 + 2]
+    for (const o of us) {
+      rgb[o * 3] += (fr - rgb[o * 3]) * t
+      rgb[o * 3 + 1] += (fg - rgb[o * 3 + 1]) * t
+      rgb[o * 3 + 2] += (fb - rgb[o * 3 + 2]) * t
+      al[o] = 1
+    }
+    left--
+  }
+  // each unit its pixels
+  for (let y = 0; y < h; y++) {
+    const dr = Math.min(hd - 1, Math.floor(y / uy))
+    for (let x = 0; x < w; x++) {
+      const d = dr * wd + Math.min(wd - 1, Math.floor(x / ux)), i = y * w + x
+      im.rgb[i * 3] = rgb[d * 3]
+      im.rgb[i * 3 + 1] = rgb[d * 3 + 1]
+      im.rgb[i * 3 + 2] = rgb[d * 3 + 2]
+      im.a[i] = al[d]
+      im.stand[i] = st[d]
+    }
+  }
 }
