@@ -19,7 +19,7 @@
         "*.mjs"
       ]
     },
-    "tools/term": {
+    "apps/term": {
       "entry": [
         "game/main.ts",
         "game/engine-worker.mjs"

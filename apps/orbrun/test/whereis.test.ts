@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { morgueDirGuesses, morgueDirOf, parseWhereis, parseXlog, saveWaiting, whereisUrl, whereisVersion } from '../src/whereis'
-import { describeCharacter, describePlace, findServer } from '../src/servers'
+import { describeCharacter, describePlace, findServer } from '@orbrun/client/servers'
 
 const cdi = findServer('cdi')!
 

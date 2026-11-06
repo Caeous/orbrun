@@ -40,7 +40,7 @@ protocol-interoperability requirement.
 |------|---------------------|------|
 | `packages/webtiles/src/protocol.ts` | `key_conversion.js`, `cio.h` | Special keycodes sent to the server (arrows, F1–F19, keypad) |
 | `packages/webtiles/src/protocol.ts` | `tileweb.h`, `map-feature.h`, `enums.js` | Mouse-mode and minimap feature-category values |
-| `apps/orbrun/src/keys.ts` | `key_conversion.js` | Browser key → DCSS keycode tables, keyed by `which` |
+| `packages/client/src/keys.ts` | `key_conversion.js` | Browser key → DCSS keycode tables, keyed by `which` |
 | `packages/scene-webtiles/src/index.ts` | `enums.js` (`MF_*`, `HALO_*`, cell flag masks) | Fallback tables, cross-checked against the server's own `enums.js` at load and warned about on mismatch |
 | `packages/webtiles/src/format.ts`, `packages/render-2d/src/index.ts` | The official WebTiles stylesheet | The 16-colour terminal palette (the standard IBM CGA/VGA set, not specific to DCSS) |
 | `packages/render-2d/src/index.ts` | `minimap.js` — `init_options` | Default minimap colour palette, indexed by map-feature category |
@@ -81,15 +81,15 @@ official client's.
 | `packages/scene/src/index.ts` | `monster_list.js`, `map-feature.h` | Attitude and wound class names carried by the scene model |
 | `packages/render-2d/src/index.ts` | `cell_renderer.js` — `render_cell`; `minimap.js` — `update` | Top-down cell draw order; minimap feature → colour lookup |
 | `apps/orbrun/src/overlays.ts` | `menu.js` — `update_more`, `handle_size_change`, `update_visible_indices`, `scroll_to_item`, `snap_in_page`, `update_server_scroll`, `set_hovered`, `title_prompt`; `input.js` | Server menu layout, paging, hover, scroll reporting, title prompts, and key routing |
-| `apps/orbrun/src/menu-nav.ts` | `menu.js` — `menu_keydown_handler`, `menu_keypress_handler`, `item_selectable`, `next_hoverable_item`, `get_/set_relative_hover`, `line_up`, `line_down`, `snap_hover_in_page`, `raw_arrow_keys`, `menu_has_custom_dash`; `ui-layouts.js` — `scroller_handle_key` | Menu and popup key semantics |
-| `apps/orbrun/src/grid/stats.ts` | `player.js` — `update_bar`, `update_bar_noise`, `update_stat`, `update_defense`, `percentage_color`, `stat_class`, `stat_boosters`, `wielded_weapon` | The stats pane: row order, captions, bar segments, and colour rules |
-| `apps/orbrun/src/grid/console.ts` | `game.js` — `layout`, `handle_set_layout`, `toggle_full_window_dungeon_view`, `stat_width`, `show_diameter`; `messages.js` — `message_pane_height` | Console pane geometry and the level-map layout |
-| `apps/orbrun/src/grid/messages.ts`, `apps/orbrun/src/overlays.ts` | `messages.js` | Message-pane scroll behaviour and the `--more--` prompt |
+| `packages/client/src/menu-nav.ts` | `menu.js` — `menu_keydown_handler`, `menu_keypress_handler`, `item_selectable`, `next_hoverable_item`, `get_/set_relative_hover`, `line_up`, `line_down`, `snap_hover_in_page`, `raw_arrow_keys`, `menu_has_custom_dash`; `ui-layouts.js` — `scroller_handle_key` | Menu and popup key semantics |
+| `packages/client/src/grid/stats.ts` | `player.js` — `update_bar`, `update_bar_noise`, `update_stat`, `update_defense`, `percentage_color`, `stat_class`, `stat_boosters`, `wielded_weapon` | The stats pane: row order, captions, bar segments, and colour rules |
+| `packages/client/src/grid/console.ts` | `game.js` — `layout`, `handle_set_layout`, `toggle_full_window_dungeon_view`, `stat_width`, `show_diameter`; `messages.js` — `message_pane_height` | Console pane geometry and the level-map layout |
+| `packages/client/src/grid/messages.ts`, `apps/orbrun/src/overlays.ts` | `messages.js` | Message-pane scroll behaviour and the `--more--` prompt |
 | `apps/orbrun/src/hud.ts` | `monster_list.js` — `update`; `cell_renderer.js` — `render_cell`, `draw_quantity`; `player.js`; `mouse_control.js` — `show_tooltip`; `game.js` | Monster list rows and limits, the player/monster cell portrait, item quantity marks, cell tooltips |
 | `apps/orbrun/src/chat.ts` | `chat.js`, `client.html` — `receive_message`, `toggle`, `toggle_entire_chat`, `focus`, `chat_message_send`, history and linkify | The chat box: caption, history, send/close keys, link handling |
 | `apps/orbrun/src/game.ts` | `game.js` — `set_ui_state`, `init_custom_text_colours`, `layout`; `mouse_control.js`; `dungeon_renderer.js` — `handle_mouse`; `ui.js`; `menu.js` | UI-state layers, rc colour overrides, `tile_web_mouse_control` semantics, tooltip and popup pointer rules |
-| `apps/orbrun/src/runner.ts` | `mouse_control.js`; `tileweb.cc`; `travel.cc` — `_adjacent_cmd` | Cell-click message shape and button numbering; what a click-travel does not act on |
-| `apps/orbrun/src/keys.ts` | `key_conversion.js`, `client.js` | Which keys the browser keeps (F11, F12) and which reach the server |
+| `packages/client/src/runner.ts` | `mouse_control.js`; `tileweb.cc`; `travel.cc` — `_adjacent_cmd` | Cell-click message shape and button numbering; what a click-travel does not act on |
+| `packages/client/src/keys.ts` | `key_conversion.js`, `client.js` | Which keys the browser keeps (F11, F12) and which reach the server |
 
 ## Derived from the DCSS engine and server
 
@@ -97,7 +97,7 @@ official client's.
 |------|---------------------|------|
 | `packages/webtiles/src/state.ts` | `tileweb.cc` — `redraw`, `_send_cell`, `_send_item`, `push_ui_cutoff`; `messages.js`; `menu.js`; `game.js`; `ui.js`; `chat.js`; `travel.cc` | Reducer semantics: message ordering, the UI cutoff stack, item and cell field meanings, travel-trail rules |
 | `packages/scene-webtiles/src/index.ts` | `tileweb.cc` — `_send_cell` | Which fields a cell carries and what a missing field means |
-| `apps/orbrun/src/warnings.ts` | `tileweb.cc` — `_send_monster` (`monster_info::full_name`) | Monster naming for threat messages |
+| `packages/client/src/warnings.ts` | `tileweb.cc` — `_send_monster` (`monster_info::full_name`) | Monster naming for threat messages |
 | `packages/gamedata/src/index.ts` | `tileweb.h`; the server's `enums.js`, `tileinfo-*.js` and `status-icon-sizes.js` | UI-state values; the runtime loader for the server's own gamedata |
 
 ## Independently implemented

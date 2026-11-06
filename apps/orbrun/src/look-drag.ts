@@ -1,4 +1,4 @@
-import { VelocityTracker } from './fling'
+import { VelocityTracker } from '@orbrun/client/fling'
 
 /**
  * A press on the view read as a look drag, from down to up, apart from the

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { FocusNav, focusPage, focusSlots, focusStep, focusWrap, type Focusable } from '../src/focus'
+import { FocusNav, type Focusable } from '../src/focus'
+import { focusPage, focusSlots, focusStep, focusWrap } from '@orbrun/client/focus'
 
 /** A stand-in for an element: the nav only toggles a class and scrolls. */
 function fakeEl(): HTMLElement {

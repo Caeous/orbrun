@@ -1,10 +1,10 @@
 # Orbrun in a terminal
 
 The whole game in a terminal, here or over SSH, with no browser and no page:
-the app's own `Session` and its rules for the eye and the keys (pilot.ts,
-runner.ts, keys.ts) run in node on the offline engine, the screen is laid
-out as the browser lays the game out, and crawl's menus are drawn as console
-crawl draws them.
+the browser app's own `Session` and its rules for the eye and the keys
+(@orbrun/client: pilot.ts, runner.ts, keys.ts) run in node on the offline
+engine, the screen is laid out as the browser lays the game out, and
+crawl's menus are drawn as console crawl draws them.
 
 ```
 npm run term                  # play here (or `orbrun`); -- --help for the options (--name Ada, --dcss trunk, --set fov=90…)

@@ -15,49 +15,30 @@ import {
 import type { Gamedata } from '@orbrun/gamedata'
 import type { Dir8 } from '@orbrun/scene'
 import { controlsSheet } from './controls-sheet'
-import { h, clear, escapeHtml, onDprChange, snapToPixels } from './dom'
+import { h, clear, onDprChange, snapToPixels } from './dom'
+import { escapeHtml } from '@orbrun/client/html'
 import { Osk, oskPrompts, type OskOp, type OskTarget } from './osk'
 import commands from '../data/commands.json'
-import { FocusNav, focusStep, tapLights, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
+import { FocusNav, tapLights, type Focusable, type FocusOptions } from './focus'
+import { focusStep, type FocusInfo, type FocusOp } from '@orbrun/client/focus'
 import { crtPlainText, scrapeCrt, stackSkills } from './crt-scrape'
-import { EntryHistory, entryKey, submitMessages } from './text-entry'
-import { focusFallback, numberPrompt, promptButtons, submitOnStartOnly, typedInLog, type Action, type BindingLabel } from './bindings'
+import { EntryHistory, entryKey, submitMessages } from '@orbrun/client/text-entry'
+import { focusFallback, numberPrompt, promptButtons, submitOnStartOnly, typedInLog, type Action, type BindingLabel } from '@orbrun/client/bindings'
 import { CHARACTER_COMMANDS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandMenu } from './command-menu'
-import { VIEW_OPTIONS } from './servers'
-import { settingGroups, type SettingGroup } from './settings-rows'
+import { VIEW_OPTIONS } from '@orbrun/client/servers'
+import { settingGroups, type SettingGroup } from '@orbrun/client/settings-rows'
 import { glyph, glyphName } from './glyphs'
-import { packRows, packStrip, turnKeys, type PackStrip } from './pack-tabs'
+import { packRows, packStrip, turnKeys, type PackStrip } from '@orbrun/client/pack-tabs'
 import { fits, menuColumns } from './menu-columns'
 import { consoleHtml } from './console-text'
 import { attachSwipe } from './swipe'
 import { TabLean } from './tab-lean'
-import { ACTION_TABS, actionNeighbour, actionTabOf, type ActionTabId } from './action-tabs'
-import type { Button, PadKind } from './gamepad'
-import { DEFAULT_YESNO, isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt, type Switch } from './context'
+import { ACTION_TABS, actionNeighbour, actionTabOf, type ActionTabId } from '@orbrun/client/action-tabs'
+import type { Button } from '@orbrun/client/pad'
+import type { PadKind } from './gamepad'
+import { DEFAULT_YESNO, isFocusMode, promptLead, type Context, type Mode, type ParsedPrompt, type Switch } from '@orbrun/client/context'
 import type { InputDevice } from './game'
-import {
-  cycleHeadersTarget,
-  itemSelectable,
-  lineDownTarget,
-  lineUpTarget,
-  menuClientHover,
-  menuHasSections,
-  menuKeyIntent,
-  moreSwitchKeycode,
-  parseMoreSwitches,
-  pickSpendsTurn,
-  printedSwitch,
-  nextHoverableItem,
-  relativeHover,
-  relativeHoverTarget,
-  scrollKeyIntent,
-  snapHoverTarget,
-  SCROLLER_POPUPS,
-  type MenuNavKey,
-  type NavKeyLike,
-  type ScrollKey,
-  type Visible,
-} from './menu-nav'
+import { cycleHeadersTarget, itemSelectable, lineDownTarget, lineUpTarget, menuClientHover, menuHasSections, menuKeyIntent, moreSwitchKeycode, parseMoreSwitches, pickSpendsTurn, printedSwitch, nextHoverableItem, relativeHover, relativeHoverTarget, scrollKeyIntent, snapHoverTarget, SCROLLER_POPUPS, type MenuNavKey, type NavKeyLike, type ScrollKey, type Visible } from '@orbrun/client/menu-nav'
 
 /**
  * The game menu (main.cc `GameMenu`, opened by Esc and by the action panel's

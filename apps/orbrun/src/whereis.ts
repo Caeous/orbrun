@@ -1,4 +1,4 @@
-import { characterOf, type LastCharacter, type ServerInfo } from './servers'
+import { characterOf, type LastCharacter, type ServerInfo } from '@orbrun/client/servers'
 
 /**
  * `<player>.where`: what the server itself says is waiting in a player's save.

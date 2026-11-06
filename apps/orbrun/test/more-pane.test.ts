@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, it, expect } from 'vitest'
 import { initialState, reduce, type GameState } from '@orbrun/webtiles'
-import { paneRows } from '../src/grid/messages'
+import { paneRows } from '@orbrun/client/grid/messages'
 import { paintRow } from '../src/grid/paint'
 import { Hud } from '../src/hud'
 import { GridHost } from '../src/grid/host'
-import { gameSplit } from '../src/grid/console'
-import fixture from './fixtures/explore-more.json'
+import { gameSplit } from '@orbrun/client/grid/console'
+import fixture from '../../../packages/client/test/fixtures/explore-more.json'
 
 /**
  * A pending `--more--` on the message pane: the pane keeps its cells along

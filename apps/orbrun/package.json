@@ -11,10 +11,12 @@
     "preview": "vite preview --host"
   },
   "dependencies": {
+    "@orbrun/client": "*",
     "@orbrun/gamedata": "*",
     "@orbrun/offline": "*",
     "@orbrun/render-2d": "*",
     "@orbrun/render-3d": "*",
+    "@orbrun/room": "*",
     "@orbrun/scene": "*",
     "@orbrun/scene-webtiles": "*",
     "@orbrun/vault": "*",

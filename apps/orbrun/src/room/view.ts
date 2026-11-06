@@ -1,7 +1,7 @@
-import { CameraController } from '../camera'
+import { CameraController } from '@orbrun/client/camera'
 import { h } from '../dom'
-import { getSettings } from '../servers'
-import { placeById } from './places'
+import { getSettings } from '@orbrun/client/servers'
+import { placeById } from '@orbrun/room/places'
 import type { Room3d } from './room-3d'
 
 /**

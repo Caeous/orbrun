@@ -47,10 +47,6 @@ export function replace(el: Element, ...children: Child[]) {
   append(el, children)
 }
 
-export function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
-
 /**
  * Calls `cb` whenever the window's device pixel ratio changes: dragged to a
  * screen of another density, or zoomed. A canvas drawn for the old ratio is
@@ -88,4 +84,16 @@ export function snapToPixels(el: HTMLElement) {
   const dx = Math.round(r.left * dpr) / dpr - r.left
   const dy = Math.round(r.top * dpr) / dpr - r.top
   if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) el.style.translate = `${dx.toFixed(3)}px ${dy.toFixed(3)}px`
+}
+
+/**
+ * A field the keys belong to: the chat line, a menu filter, the seed box.
+ * A button is not one. The browser leaves a clicked button focused, so a test
+ * as broad as "any `input`" costs the keyboard the screen it just clicked on —
+ * the save-transfer dialog's buttons (overlays.ts, `show_dialog`) among them.
+ */
+export function isTextEntry(el: HTMLElement): boolean {
+  if (el instanceof HTMLTextAreaElement || el.isContentEditable) return true
+  if (!(el instanceof HTMLInputElement)) return false
+  return !['button', 'submit', 'reset', 'checkbox', 'radio'].includes(el.type)
 }

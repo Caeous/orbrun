@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { TOUCH_ANCHORS, TOUCH_CELLS, barLabels, isExtraButton, NO_ACTION, touchExtraAction, touchLabels, touchShot, type BindingLabel, type TouchCell, type TouchLabel } from '../src/bindings'
-import { TOUCH_GLYPHS } from '../src/touch-glyphs'
+import { TOUCH_ANCHORS, TOUCH_CELLS, barLabels, isExtraButton, NO_ACTION, touchExtraAction, touchLabels, touchShot, type BindingLabel, type TouchCell, type TouchLabel } from '@orbrun/client/bindings'
+import { TOUCH_GLYPHS } from '@orbrun/client/touch-glyphs'
 import { PHONE_COLS, PHONE_ROWS, fitPx } from '../src/grid/host'
-import { autofightRefused, type Context, type MenuContext } from '../src/context'
-import { STAT_WIDTH, TOUCH_SIDE_PX, fitGrid, gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from '../src/grid/console'
-import { GamepadInput, isPadActivity, type PadEvent } from '../src/gamepad'
+import { autofightRefused, type Context, type MenuContext } from '@orbrun/client/context'
+import { STAT_WIDTH, TOUCH_SIDE_PX, fitGrid, gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from '@orbrun/client/grid/console'
+import { GamepadInput } from '../src/gamepad'
+import { isPadActivity, type PadEvent } from '@orbrun/client/pad'
 
 const ctx = (over: Partial<Context>): Context => ({
   mode: 'command',

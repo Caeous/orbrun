@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Keys, MouseMode, initialState, reduce, type MenuState } from '@orbrun/webtiles'
-import { actionLabel, armsTapOrHold, barLabels, bindingTable, buttonAction, contextualLabel, controlSheet, HOLD_MS, holdAction, NO_ACTION, promptLabels, resolve, screenKey, touchLabels } from '../src/bindings'
-import { deriveMode, readiedAction, shopContext, type Context } from '../src/context'
+import { actionLabel, armsTapOrHold, barLabels, bindingTable, buttonAction, contextualLabel, controlSheet, HOLD_MS, holdAction, NO_ACTION, promptLabels, resolve, screenKey, touchLabels } from '@orbrun/client/bindings'
+import { deriveMode, readiedAction, shopContext, type Context } from '@orbrun/client/context'
 import commands from '../data/commands.json'
 
 const ctx = (over: Partial<Context>): Context => ({

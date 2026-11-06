@@ -1,5 +1,5 @@
 import { h } from '../dom'
-import type { Row } from './rows'
+import type { Row } from '@orbrun/client/grid/rows'
 
 /**
  * One row of grid text as a line of spans: `fg` and a numeric `bg` are the

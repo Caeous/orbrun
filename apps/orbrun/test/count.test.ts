@@ -2,8 +2,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { BLOB_COLUMNS, COUNTED_SETTINGS, COUNT_PATH, DOUBLE_COLUMNS, EVENTS, NUMBER_SETTINGS, SETTING_KEYS, WORD_SETTINGS, countedHost, dataPoint, parseCount, sideParam, versionTag } from '../src/count-events'
 import { countUrl } from '../src/count'
-import { ALL_SETTING_ROWS } from '../src/settings-rows'
-import { defaultSettings, type Settings } from '../src/servers'
+import { ALL_SETTING_ROWS } from '@orbrun/client/settings-rows'
+import { defaultSettings, type Settings } from '@orbrun/client/servers'
 import { countEvent, type EventsDataset } from '../worker/count'
 
 /**

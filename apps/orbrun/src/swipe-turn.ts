@@ -11,7 +11,7 @@
  * sets how quickly the view gets there (camera.ts endLean).
  */
 
-import { PROJECT_S } from './fling'
+import { PROJECT_S } from '@orbrun/client/fling'
 
 /** css px a finger moves before it is a drag at all (look-drag.ts TOUCH_SLOP): the view stands still under a tap */
 const SLOP_PX = 8

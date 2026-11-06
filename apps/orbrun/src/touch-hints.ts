@@ -1,5 +1,5 @@
-import type { Context } from './context'
-import type { HintMode } from './gamepad-hints'
+import type { Context } from '@orbrun/client/context'
+import type { HintMode } from '@orbrun/client/servers'
 
 /**
  * The finger's lessons: what a tap on the stats pane (the menu) and on the

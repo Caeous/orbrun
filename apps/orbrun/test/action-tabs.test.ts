@@ -2,9 +2,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { initialState, type GameState, type MenuState } from '@orbrun/webtiles'
 import { emptyScene } from '@orbrun/scene'
-import { ACTION_TABS, actionNeighbour, actionTabOf } from '../src/action-tabs'
-import { barLabels, bindingTable, promptLabels } from '../src/bindings'
-import { deriveContext } from '../src/context'
+import { ACTION_TABS, actionNeighbour, actionTabOf } from '@orbrun/client/action-tabs'
+import { barLabels, bindingTable, promptLabels } from '@orbrun/client/bindings'
+import { deriveContext } from '@orbrun/client/context'
 import { Overlays } from '../src/overlays'
 
 // the titles as crawl 0.34 sends them, read off the offline engine (spl-cast.cc, ability.cc, evoke, quiver.cc)

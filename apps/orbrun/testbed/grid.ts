@@ -13,7 +13,8 @@
  * The level, HUD and inventory are mock; the skills screen is a recorded
  * server fixture. `?pad` lets the keyboard stand in for a pad.
  */
-import { GamepadInput, type Button, type PadEvent } from '../src/gamepad'
+import { GamepadInput } from '../src/gamepad'
+import type { Button, PadEvent } from '@orbrun/client/pad'
 import { glyph } from '../src/glyphs'
 import { crtPlainText, scrapeSkills } from '../src/crt-scrape'
 import fixture from '../test/fixtures/skills-crt.json'

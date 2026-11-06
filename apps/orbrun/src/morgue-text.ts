@@ -1,5 +1,5 @@
 import { consoleHtml, consoleTable } from './console-text'
-import { escapeHtml } from './dom'
+import { escapeHtml } from '@orbrun/client/html'
 
 /**
  * A morgue file (chardump.cc) as HTML to read on any screen. The official

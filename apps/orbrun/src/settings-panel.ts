@@ -1,8 +1,8 @@
 import { h } from './dom'
 import { gamepadHints } from './gamepad-hints'
 import { touchHints } from './touch-hints'
-import { getSettings, saveSettings } from './servers'
-import { adjustSetting, groupAtDefaults, resetGroup, rowHint, rowOff, settingGroups, settingValue, type SettingGroup } from './settings-rows'
+import { defaultSettings, getSettings, saveSettings, type Settings } from '@orbrun/client/servers'
+import { rowHint, rowOff, settingGroups, settingValue, SETTING_ROWS, type SettingGroup, type SettingRow } from '@orbrun/client/settings-rows'
 
 /**
  * Orbrun's settings, one panel for the front end and the game: drawn as
@@ -120,4 +120,65 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
   panel.append(body)
   panel.append(h('div', { class: 'more' }, '[<] [>] change a setting  [Esc] back'))
   return { el: panel, rows }
+}
+
+// ------------------------------------------------- changing a setting
+
+/**
+ * Move `r` on by `d` steps (right is next, left is previous, wrapping),
+ * save, and apply what applies at once (the UI scale). Returns how the new
+ * value reads; a running game applies the rest through `onchange`. A row
+ * that is off under the current settings (`rowOff`) is left as it is. A
+ * value that is not one of the stops (a default between two, an old saved
+ * value) steps to the next stop in that direction (`offStop`).
+ */
+export function adjustSetting(r: SettingRow, d: number, onchange?: () => void): string {
+  const s = getSettings()
+  if (rowOff(r, s)) return settingValue(r, s)
+  const key = r.key
+  const values = r.values as readonly unknown[]
+  const cur = s[key]
+  const i = values.indexOf(cur)
+  const n = i >= 0 || typeof cur !== 'number' ? values[((((i < 0 ? 0 : i) + d) % values.length) + values.length) % values.length] : offStop(values as readonly number[], cur, d)
+  ;(s as unknown as Record<string, unknown>)[key] = n
+  saveSettings(s)
+  document.documentElement.style.setProperty('--ui-scale', String(s.uiScale))
+  onchange?.()
+  return settingValue(r, s)
+}
+
+/** Whether every row `group` offers is at its default. */
+export function groupAtDefaults(group: SettingGroup, s: Settings = getSettings()): boolean {
+  return SETTING_ROWS.every((r) => r.group !== group || s[r.key] === defaultSettings[r.key])
+}
+
+/**
+ * Put every row `group` offers back to its default, save, and apply what
+ * applies at once (the UI scale), as `adjustSetting` does. A row the build
+ * does not offer (`VIEW_OPTIONS`) keeps what it was.
+ */
+export function resetGroup(group: SettingGroup, onchange?: () => void) {
+  const s = getSettings()
+  for (const r of SETTING_ROWS) if (r.group === group) (s as unknown as Record<string, unknown>)[r.key] = defaultSettings[r.key]
+  saveSettings(s)
+  document.documentElement.style.setProperty('--ui-scale', String(s.uiScale))
+  onchange?.()
+}
+
+/**
+ * The stop `d` steps from `cur`, which is not itself a stop. On an ascending
+ * scale (the camera heights) one step right is the first stop above and one
+ * step left the first stop below, so 0.62 goes to 0.65 or 0.6 and no stop is
+ * skipped; on any other scale it is the nearest stop, then the step.
+ */
+function offStop(values: readonly number[], cur: number, d: number): number {
+  const ascending = values.every((v, k) => k === 0 || v > values[k - 1])
+  if (ascending) {
+    const above = values.findIndex((v) => v > cur)
+    const i = d > 0 ? (above < 0 ? values.length : above) + d - 1 : (above < 0 ? values.length : above) + d
+    return values[Math.max(0, Math.min(values.length - 1, i))]
+  }
+  let i = 0
+  for (let k = 1; k < values.length; k++) if (Math.abs(values[k] - cur) < Math.abs(values[i] - cur)) i = k
+  return values[((((i + d) % values.length) + values.length) % values.length)]
 }

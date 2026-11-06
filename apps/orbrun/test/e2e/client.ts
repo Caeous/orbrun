@@ -23,8 +23,8 @@ import { vi } from 'vitest'
 import { LocalWasmConnection } from '@orbrun/offline'
 import type { ClientMessage, CloseReason, Connection, GameState, ServerMessage } from '@orbrun/webtiles'
 import type { MapRenderer } from '@orbrun/scene'
-import type { Button, PadEvent } from '../../src/gamepad'
-import type { Context } from '../../src/context'
+import type { Button, PadEvent } from '@orbrun/client/pad'
+import type { Context } from '@orbrun/client/context'
 import type { InputDevice } from '../../src/game'
 import { DIST, channel, inProcessEngine, type InProcessEngine } from './engine'
 
@@ -237,7 +237,7 @@ interface Transport {
 
 async function startClient(t: Transport, device: InputDevice, before: (settle: () => Promise<void>) => Promise<void>, afterScreen: (g: E2e, settle: () => Promise<void>) => Promise<void>): Promise<E2e> {
   stubBrowser()
-  const [{ Session }, { GameScreen }, { getSettings }] = await Promise.all([import('../../src/session'), import('../../src/game'), import('../../src/servers')])
+  const [{ Session }, { GameScreen }, { getSettings }] = await Promise.all([import('@orbrun/client/session'), import('../../src/game'), import('@orbrun/client/servers')])
   const server = { id: 'e2e', name: 'e2e', host: 'e2e', ws: '', http: '', offline: true }
   const session = new Session(server, 'e2e', t.conn)
   const sent: ClientMessage[] = []

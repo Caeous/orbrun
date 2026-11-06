@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { GamepadHints, gamepadHints, padLesson, type PadHintEvidence } from '../src/gamepad-hints'
-import { bindingTable, type Action } from '../src/bindings'
-import type { Context, MenuContext } from '../src/context'
-import { defaultSettings, getSettings, saveSettings } from '../src/servers'
+import { bindingTable, type Action } from '@orbrun/client/bindings'
+import type { Context, MenuContext } from '@orbrun/client/context'
+import { defaultSettings, getSettings, saveSettings } from '@orbrun/client/servers'
 import { settingsPanel } from '../src/settings-panel'
-import { isPadActivity } from '../src/gamepad'
+import { isPadActivity } from '@orbrun/client/pad'
 
 const ctx = (over: Partial<Context> = {}): Context => ({
   mode: 'command', layer: 'micro', ahead: { kind: 'none', label: '' }, under: { kind: 'none', label: '' }, hostilesInView: 0, ...over,

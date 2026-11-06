@@ -1,13 +1,7 @@
-import { barLabels, bindingTable, choiceBrought, promptLabels, threatened, type Action, type BindingLabel } from './bindings'
-import type { Context } from './context'
+import { barLabels, bindingTable, choiceBrought, promptLabels, threatened, type Action, type BindingLabel } from '@orbrun/client/bindings'
+import type { Context } from '@orbrun/client/context'
+import type { HintMode } from '@orbrun/client/servers'
 
-/**
- * The Hints setting, for the pad: `adaptive` shows contextual prompts and
- * teaches pad controls until each is used, nothing standing. `contextual`
- * skips the teaching; `off` hides gameplay prompts (menu and targeting
- * controls remain). The keyboard gets no prompts.
- */
-export type HintMode = 'adaptive' | 'contextual' | 'off'
 const STORAGE_KEY = 'orbrun.gamepad-learning.v1'
 const LESSONS = ['move', 'look', 'commands', 'equipment', 'explore', 'examine', 'travel', 'wait', 'rest', 'navigate', 'target-cursor', 'map-cursor', 'fight'] as const
 export type PadLesson = (typeof LESSONS)[number]

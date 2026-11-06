@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { CHAMFER, defaultSettings, getSavedView, getSettings, leftRightTurns, saveSettings, saveView, VIEW_OPTIONS, WALL_INSET, type DirSource } from '../src/servers'
+import { CHAMFER, defaultSettings, getSavedView, getSettings, leftRightTurns, saveSettings, saveView, VIEW_OPTIONS, WALL_INSET, type DirSource } from '@orbrun/client/servers'
 import { REST_PITCH } from '@orbrun/scene'
-import { settingsPanel } from '../src/settings-panel'
-import { adjustSetting, ALL_SETTING_ROWS, groupAtDefaults, resetGroup, settingGroups, CAM_ANGLES, EYE_HEIGHTS, MESSAGE_LINES, MESSAGE_LINES_AUTO, MINIMAP_AUTO, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowOff, SETTING_ROWS, settingValue, FOV_AUTO, FOVS, fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap, exploreOptions, setExploreGame } from '../src/settings-rows'
+import { settingsPanel, adjustSetting, groupAtDefaults, resetGroup } from '../src/settings-panel'
+import { ALL_SETTING_ROWS, settingGroups, CAM_ANGLES, EYE_HEIGHTS, MESSAGE_LINES, MESSAGE_LINES_AUTO, MINIMAP_AUTO, MINIMAP_CELLS, MINIMAP_TILES, rowHint, rowOff, SETTING_ROWS, settingValue, FOV_AUTO, FOVS, fovOf, messageLinesOf, setAutoMessageLines, setAutoMinimap, exploreOptions, setExploreGame } from '@orbrun/client/settings-rows'
 
 // happy-dom's localStorage has no working methods; give servers.ts a plain one
 const store = new Map<string, string>()

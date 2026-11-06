@@ -34,9 +34,9 @@ import type { TermConfig } from './config'
 import { PALETTE, cut, lineLength, type Line, type RGB } from './text'
 import { terminalKeys } from './input'
 import type { Box } from './screens'
-import type { KeyLike } from '../../../apps/orbrun/src/keys'
-import type { Context } from '../../../apps/orbrun/src/context'
-import type { RelDir } from '../../../apps/orbrun/src/bindings'
+import type { KeyLike } from '@orbrun/client/keys'
+import type { Context } from '@orbrun/client/context'
+import type { RelDir } from '@orbrun/client/bindings'
 import { ANSI_BAND, ANSI_CELL, ansiInto } from '../glyph/render'
 import { OCTANTS, SEXTANTS, inked } from '../glyph/shapes'
 // @ts-expect-error: plain JS
@@ -122,25 +122,25 @@ export async function runGame(io: Io, o: ClientOptions) {
   const { TermView } = await import('./view')
   const { Screens } = await import('./screens')
   const { LocalWasmConnection } = await import('@orbrun/offline')
-  const { Session } = await import('../../../apps/orbrun/src/session')
-  const { CameraController } = await import('../../../apps/orbrun/src/camera')
-  const { Runner } = await import('../../../apps/orbrun/src/runner')
-  const { Pilot, serverCursor } = await import('../../../apps/orbrun/src/pilot')
-  const { directionKey, keydownMessage } = await import('../../../apps/orbrun/src/keys')
-  const { getSavedView, getSettings, leftRightTurns, saveSettings, saveView, OFFLINE_SERVER, WALL_INSET } = await import('../../../apps/orbrun/src/servers')
-  const { fovOf } = await import('../../../apps/orbrun/src/settings-rows')
+  const { Session } = await import('@orbrun/client/session')
+  const { CameraController } = await import('@orbrun/client/camera')
+  const { Runner } = await import('@orbrun/client/runner')
+  const { Pilot, serverCursor } = await import('@orbrun/client/pilot')
+  const { directionKey, keydownMessage } = await import('@orbrun/client/keys')
+  const { getSavedView, getSettings, leftRightTurns, saveSettings, saveView, OFFLINE_SERVER, WALL_INSET } = await import('@orbrun/client/servers')
+  const { fovOf } = await import('@orbrun/client/settings-rows')
   const { viewmodelFor } = await import('@orbrun/scene-webtiles')
   const { UiState } = await import('@orbrun/webtiles')
-  const { STATUS_BADGE_ROWS, minimapFit } = await import('../../../apps/orbrun/src/hud')
+  const { STATUS_BADGE_ROWS, minimapFit } = await import('@orbrun/client/hud-sizes')
   const { facingArrow, mapView } = await import('./minimap')
-  const { typedInLog } = await import('../../../apps/orbrun/src/bindings')
-  const { statsRows } = await import('../../../apps/orbrun/src/grid/stats')
-  const { STAT_WIDTH } = await import('../../../apps/orbrun/src/grid/console')
-  const { paneRows } = await import('../../../apps/orbrun/src/grid/messages')
+  const { typedInLog } = await import('@orbrun/client/bindings')
+  const { statsRows } = await import('@orbrun/client/grid/stats')
+  const { STAT_WIDTH } = await import('@orbrun/client/grid/console')
+  const { paneRows } = await import('@orbrun/client/grid/messages')
   const { bearingTo, cellKey, rotateDir } = await import('@orbrun/scene')
   const { monsterGroups } = await import('@orbrun/scene-webtiles')
   const { Home, loadRoom, loadLogo, loadTitle, fitLogo, fitTitle, lockup, logoCells, titleLockup, LOGO_SHARE, veilAt, veiled, barAt } = await import('./home')
-  const { exploreOptions } = await import('../../../apps/orbrun/src/settings-rows')
+  const { exploreOptions } = await import('@orbrun/client/settings-rows')
   trace('modules')
 
   const channels = builtChannels()

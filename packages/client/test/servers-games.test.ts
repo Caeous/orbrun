@@ -1,28 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import {
-  addAccount,
-  ensureDeviceAccount,
-  characterOf,
-  describeCharacter,
-  describePlace,
-  gameTitle,
-  getChosenAccount,
-  getGames,
-  getLast,
-  findServer,
-  getToken,
-  listAccounts,
-  listServers,
-  loginState,
-  removeAccount,
-  sameAccount,
-  setChosenAccount,
-  setGames,
-  setLast,
-  setToken,
-  type Account,
-} from '../src/servers'
+import { addAccount, ensureDeviceAccount, characterOf, describeCharacter, describePlace, gameTitle, getChosenAccount, getGames, getLast, findServer, getToken, listAccounts, listServers, loginState, removeAccount, sameAccount, setChosenAccount, setGames, setLast, setToken, type Account } from '../src/servers'
 import { gameLinkRows } from '@orbrun/webtiles'
 
 // happy-dom's localStorage has no working methods; give servers.ts a plain one

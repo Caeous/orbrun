@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
 import { Keys, initialState, reduce, type ClientMessage, type GameState, type MenuState } from '@orbrun/webtiles'
-import { isPack, neighbour, openPackKeys, packRows, packStrip, turnKeys } from '../src/pack-tabs'
-import { barLabels, bindingTable } from '../src/bindings'
-import { deriveContext } from '../src/context'
+import { isPack, neighbour, openPackKeys, packRows, packStrip, turnKeys } from '@orbrun/client/pack-tabs'
+import { barLabels, bindingTable } from '@orbrun/client/bindings'
+import { deriveContext } from '@orbrun/client/context'
 import { Overlays } from '../src/overlays'
 
 // the pack's flags and titles as crawl 0.34 sends them (invent.cc InvMenu::set_title), recorded from `i` and Right

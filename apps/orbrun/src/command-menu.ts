@@ -1,4 +1,4 @@
-import type { Action } from './bindings'
+import type { Action } from '@orbrun/client/bindings'
 
 export interface CommandEntry {
   label: string

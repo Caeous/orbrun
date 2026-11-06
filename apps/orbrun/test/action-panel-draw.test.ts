@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { initialState, reduce, MouseMode, type GameState } from '@orbrun/webtiles'
 import { Hud } from '../src/hud'
 import { GridHost } from '../src/grid/host'
-import { gameSplit } from '../src/grid/console'
+import { gameSplit } from '@orbrun/client/grid/console'
 import type { Gamedata } from '@orbrun/gamedata'
 import type { Camera, Scene } from '@orbrun/scene'
 

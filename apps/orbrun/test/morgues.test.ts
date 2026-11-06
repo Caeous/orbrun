@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { charOf, morgueDate, morgueStamp, parseMorgue, placeOf, serverMorgueHead, serverMorgues } from '../src/morgues'
-import { findServer, getMorgueDir, setMorgueDir } from '../src/servers'
+import { findServer, getMorgueDir, setMorgueDir } from '@orbrun/client/servers'
 
 // a plain localStorage for servers.ts and the heads kept
 const store = new Map<string, string>()

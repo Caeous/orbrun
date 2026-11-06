@@ -3,11 +3,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { initialState, type GameState, type LobbyEntry } from '@orbrun/webtiles'
 import { accountConn, FrontEnd, navDir, exitReasonMessage, type Intent } from '../src/menu'
 import { version } from '../package.json'
-import { engines } from '../src/engines'
+import { engines } from '@orbrun/client/engines'
 import { settingsPanel } from '../src/settings-panel'
-import type { Session } from '../src/session'
-import { XOM_SPLASHES } from '../src/splash'
-import { findServer, OFFLINE_SERVER, setGames, setToken, type Account, type ServerInfo } from '../src/servers'
+import type { Session } from '@orbrun/client/session'
+import { XOM_SPLASHES } from '@orbrun/client/splash'
+import { findServer, OFFLINE_SERVER, setGames, setToken, type Account, type ServerInfo } from '@orbrun/client/servers'
 
 // happy-dom's localStorage has no working methods; give servers.ts a plain one
 const store = new Map<string, string>()

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { GamepadInput, isPadActivity, standardView, type PadEvent } from '../src/gamepad'
+import { GamepadInput, standardView } from '../src/gamepad'
+import { isPadActivity, type PadEvent } from '@orbrun/client/pad'
 
 /** A standard-mapping pad with nothing pressed and the sticks at the given axes. */
 function fakePad(axes: number[]): Gamepad {

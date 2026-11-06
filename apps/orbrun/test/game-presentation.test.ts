@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cellKey, emptyScene, type Billboard } from '@orbrun/scene'
 import { initialState, MouseMode } from '@orbrun/webtiles'
 import { Render3d } from '@orbrun/render-3d'
-import { CameraController } from '../src/camera'
+import { CameraController } from '@orbrun/client/camera'
 import { GameScreen } from '../src/game'
 
 /** Real frame/camera/motion wiring, without a socket or WebGL drawing. */
