@@ -1,4 +1,5 @@
 import { cellKey, shadeOf, type Scene, type TileRect } from '@orbrun/scene'
+import { INK_LEVEL } from './peel.js'
 import { CLOUD_ALPHA, FIXTURE_H, PROJECTILE_LIFT, STAIR_H, crowd, doorBoard, fixtures } from '@orbrun/world'
 
 export { CLOUD_ALPHA, FIXTURE_H, PROJECTILE_LIFT, STAIR_H }
@@ -332,6 +333,52 @@ export function fixtureInstances(scene: Scene, tile: TileLookup, framed: Readonl
  */
 export type StairColumns = (r: TileRect) => { top: readonly number[]; side: readonly number[]; open: readonly number[] } | undefined
 
+/** Texel alpha at or above which a texel is opaque. */
+export const OPAQUE_ALPHA = 26
+
+/**
+ * A way up's art by column (`StairColumns`), from its texels (RGBA, `w` x
+ * `h`, a row at a time from `at`, `stride` texels a row): the first body row,
+ * ink and clear texels left out as the peel leaves them, the row under the
+ * biggest fall in brightness from one body texel to the next below it, where
+ * the lit step gives way to the stairs' shadowed side, and the first row
+ * under that the art leaves open (between the escape hatch's legs).
+ */
+export function stairColumnsOf(d: ArrayLike<number>, w: number, h: number, at = 0, stride = w): { top: number[]; side: number[]; open: number[] } {
+  const lum = (x: number, y: number) => {
+    const i = (at + y * stride + x) * 4
+    return 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]
+  }
+  const body = (x: number, y: number) => {
+    const i = (at + y * stride + x) * 4
+    return d[i + 3] >= OPAQUE_ALPHA && !(d[i] < INK_LEVEL && d[i + 1] < INK_LEVEL && d[i + 2] < INK_LEVEL)
+  }
+  const art = { top: [] as number[], side: [] as number[], open: [] as number[] }
+  for (let x = 0; x < w; x++) {
+    let top = -1
+    for (let y = 0; y < h && top < 0; y++) if (body(x, y)) top = y
+    // body to body: the clear row under the tile and the ink between are no edge
+    let side = h
+    let fall = 0
+    let last = top >= 0 ? lum(x, top) : 0
+    for (let y = top + 1; top >= 0 && y < h; y++) {
+      if (!body(x, y)) continue
+      const l = lum(x, y)
+      if (last - l > fall) {
+        fall = last - l
+        side = y
+      }
+      last = l
+    }
+    let open = side
+    while (open < h && body(x, open)) open++
+    art.top.push(top)
+    art.side.push(side)
+    art.open.push(open)
+  }
+  return art
+}
+
 /** How many columns wide a run of columns starting at the same row must be to be a step. */
 const STEP_MIN = 3
 /** The share of the camera's turn a folded way up follows, from facing the eye (0) to turning with the camera as a board does (1). */
@@ -345,8 +392,8 @@ const gap = ([s0, s1]: [number, number], c0: number, c1: number) => Math.max(0, 
  * (fewer is an arch, a gate or the Orcish Mines' palisade), and its escape
  * hatch up as a step-ladder of four.
  */
-const STAIRS_STEPS = 5
-const HATCH_STEPS = 4
+export const STAIRS_STEPS = 5
+export const HATCH_STEPS = 4
 
 /**
  * A way up folded where its steps meet its side: crawl draws the stairs side
@@ -361,7 +408,7 @@ const HATCH_STEPS = 4
  * `minSteps` steps or more (sealed and one-way stairs, the branch exits but
  * the hells'), which stands whole.
  */
-function foldedStairs(x: number, y: number, r: TileRect, art: { top: readonly number[]; side: readonly number[]; open: readonly number[] }, tint: Tint, height: number, minSteps: number, solid: boolean): SpriteInstance[] | null {
+export function foldedStairs(x: number, y: number, r: TileRect, art: { top: readonly number[]; side: readonly number[]; open: readonly number[] }, tint: Tint, height: number, minSteps: number, solid: boolean): SpriteInstance[] | null {
   const { top } = art
   const runs: [number, number][] = []
   for (let c0 = 0; c0 < top.length; ) {

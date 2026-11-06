@@ -10,12 +10,12 @@
  * 127.0.0.1 unless HOST says otherwise (PORT for the port). The host key is
  * made on the first run and kept in ~/.cache/orbrun.
  */
-import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
-import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ssh2 from 'ssh2'
+import { clientBundle, crawlNode } from './launch.mjs'
 import { stateDir } from './state.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -23,14 +23,16 @@ const HOST = process.env.HOST || '127.0.0.1'
 const PORT = Number(process.env.PORT || 2222)
 const STATE_DIR = stateDir()
 
-// a node that runs crawl: Node 24 or later, for WebAssembly JSPI (game/run.mjs picks the same way)
-const jspi = (bin) => spawnSync(bin, ['-e', 'process.exit(typeof WebAssembly.Suspending === "function" ? 0 : 1)']).status === 0
-const node = [process.execPath, process.env.ORBRUN_NODE, '/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node'].find((b) => b && fs.existsSync(b) && jspi(b))
-if (!node) {
+// a node that runs crawl, and the client bundled for it (launch.mjs), as game/run.mjs starts it
+const crawl = crawlNode()
+if (!crawl) {
   console.error(`Orbrun's engine needs Node 24 or later (WebAssembly JSPI); this is ${process.version}. Set ORBRUN_NODE to one.`)
   process.exit(1)
 }
-const viteNode = createRequire(import.meta.url).resolve('vite-node/vite-node.mjs')
+const node = crawl.bin
+// made now, so a client that will not build says so before the server listens; each game checks it again, so a
+// change made while the server runs is in the next game
+await clientBundle()
 
 const keyFile = path.join(STATE_DIR, 'host_ed25519')
 if (!fs.existsSync(keyFile)) {
@@ -69,13 +71,22 @@ const server = new ssh2.Server({ hostKeys: [fs.readFileSync(keyFile)] }, (client
       rows = info.rows
       game?.connected && game.send({ type: 'resize', cols, rows })
     })
-    session.on('shell', (ok) => {
+    session.on('shell', async (ok) => {
       const stream = ok()
-      game = spawn(node, [viteNode, path.join(here, 'game', 'main.ts'), '--name', name], {
+      let client
+      try {
+        client = await clientBundle()
+      } catch (e) {
+        stream.write(`\r\nThe game would not build.\r\n${String(e?.message ?? e).replace(/\n/g, '\r\n')}\r\n`)
+        stream.exit(1)
+        stream.end()
+        return
+      }
+      game = spawn(node, ['--enable-source-maps', client.main, '--name', name], {
         cwd: path.resolve(here, '../..'),
         stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
         // the player's terminal, not this one: what the server's own terminal is says nothing of theirs
-        env: { ...withoutTerminal(process.env), TERM: term, ORBRUN_TERM_COLS: String(cols), ORBRUN_TERM_ROWS: String(rows) },
+        env: { ...withoutTerminal(process.env), TERM: term, ORBRUN_TERM_WORKER: client.worker, ORBRUN_TERM_COLS: String(cols), ORBRUN_TERM_ROWS: String(rows) },
       })
       stream.pipe(game.stdin, { end: false })
       game.stdout.pipe(stream)

@@ -7,6 +7,7 @@
  * wanted and answered here, each once, in memory they all share. With no
  * threads (ORBRUN_TERM_THREADS=0), the same on this one.
  */
+import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -35,8 +36,10 @@ export function glyphThreads(): number {
 }
 
 let bundle: Promise<string> | null = null
-/** worker.ts and all it imports as one script a worker can run */
+/** worker.ts and all it imports as one script a worker can run: as the launcher made it (../launch.mjs), else made now */
 function workerCode(): Promise<string> {
+  const made = process.env.ORBRUN_TERM_WORKER
+  if (made) bundle ??= fs.promises.readFile(made, 'utf8')
   bundle ??= import('esbuild').then(async (esbuild) => {
     const r = await esbuild.build({ entryPoints: [path.join(here, 'worker.ts')], bundle: true, platform: 'node', format: 'cjs', write: false, logLevel: 'silent', external: ['sharp'] })
     return r.outputFiles[0].text

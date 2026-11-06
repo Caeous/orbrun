@@ -29,6 +29,7 @@ import {
   type HandPose,
 } from '@orbrun/world'
 import { cellKey, dirToYaw, yawDelta } from '@orbrun/scene'
+import { CLOUD_FORWARD, HATCH_STEPS, STAIRS_STEPS } from '@orbrun/render-3d/sprites'
 import type { Camera, CellKey, HandItem, Scene, SceneCursor, TileRect, TileSource, Viewmodel } from '@orbrun/scene'
 import { isRgbaBitmap } from './env'
 import { GlyphThreads, glyphThreads } from '../glyph/threads'
@@ -264,7 +265,8 @@ export class TermView {
    * monster, item, missile and cloud, its layers and badges as render-3d
    * stacks them, where it is this frame (its glide off its cell), washed with
    * its cell's flash, a cloud or what is translucent showing what is behind
-   * it, with crawl's glyph and colour for it from far off; what lies (a
+   * it, with crawl's glyph and colour for it from far off, a way up to be
+   * folded into its steps, a cloud over what stands in its cell; what lies (a
    * corpse) the glyph view lays on its floor. Then the hands, posed as
    * render-3d poses them, the weapon lifting for a swing, and the net or the
    * web round a trapped player.
@@ -287,7 +289,11 @@ export class TermView {
       if (f.stance !== 'upright') continue
       const art = this.artOf(f.layers[0].tile)
       if (!art) continue
-      out.push({ x: f.x, y: f.y, art: [art], glyph: f.glyph ?? '', colour: CRAWL[(f.colour ?? 7) & 15], size: f.height, flash: flashOf(f.x, f.y) })
+      // a way up folded into its steps, as render-3d folds it
+      const feat = sc.cells.get(cellKey(f.x, f.y))?.feature
+      const up = (feat?.type === 'stairs' || feat?.type === 'hatch') && feat.dir === 'up'
+      const fold = up ? { steps: feat.type === 'stairs' ? STAIRS_STEPS : HATCH_STEPS, solid: feat.type === 'stairs' } : undefined
+      out.push({ x: f.x, y: f.y, art: [art], glyph: f.glyph ?? '', colour: CRAWL[(f.colour ?? 7) & 15], size: f.height, flash: flashOf(f.x, f.y), fold })
     }
     // what moves this frame
     this.track(now)
@@ -325,6 +331,8 @@ export class TermView {
         alive,
         alpha: t.alpha,
         lift: t.lift,
+        // a cloud a texel nearer than its cell's middle, over whatever stands in its cell, as render-3d stands it
+        forward: t.kind === 'cloud' ? CLOUD_FORWARD : undefined,
         flash: flashOf(t.x, t.y),
       })
     }
