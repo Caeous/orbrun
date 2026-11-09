@@ -1,4 +1,4 @@
-import { MouseMode, UiState, floorItemsLabel, formattedStringToSpans, formattedStringToText, isStationaryItemName, topMenu, topPopup, type GameState, type InvItem, type MenuState, type Monster } from '@orbrun/webtiles'
+import { MouseMode, UiState, floorItemsLabel, formattedStringToSpans, formattedStringToText, isStationaryItemName, topMenu, topPopup, type GameState, type InvItem, type MenuState, type Monster, type PlayerState } from '@orbrun/webtiles'
 import { cellAhead, cellUnder, billboardsAt, getCell, isThreat, monstersInView, type Camera, type Feature, type Scene, type SceneCell } from '@orbrun/scene'
 import type { FocusInfo } from './focus'
 import { quiverLine } from './grid/stats'
@@ -165,6 +165,8 @@ export interface Context {
   hostilesInView: number
   /** HP or MP below its maximum: resting would do something, so the bar offers wait/rest when nothing is in view. */
   injured?: boolean
+  /** The primary attack (`v`) reaches past the cell ahead (`reaches`), so the bar offers RB's hold when a hostile is in view. */
+  reaches?: boolean
   /** Autofight would only say why not (`autofightRefused`), so the touch bar dims Fight. */
   fightRefused?: boolean
   /** Explore would only say again that there is nowhere left to go (warnings.ts `ExploreDone`), so the touch bar dims Explore. Filled by the app. */
@@ -197,6 +199,12 @@ export interface Context {
   monstersInView: number
   /** an aim that can change what it throws: crawl's hint names `Q - select action` (a fire, not a spell) */
   aimQuiver?: boolean
+  /**
+   * An aim the primary attack opened (`v`, quiver.cc `melee_action::trigger`):
+   * the verb of its top line, `Reach: a) +0 spear` (`melee_action::quiver_verb`:
+   * reach, cleave, hit, punch or a form's), so the bar says what A will do.
+   */
+  aimVerb?: string
   /** the level map's cursor stands where the player does: travelling there, or finding them, is nowhere to go */
   mapCursorHome?: boolean
   /** the level map's cursor stands on the centre of a travel exclusion: the map's Exclude takes it off */
@@ -738,6 +746,22 @@ export function readiedAction(quiverDesc: string | undefined): string | undefine
   return text && text !== 'Nothing quivered' ? text : undefined
 }
 
+/**
+ * Whether the primary attack (`v`) reaches past the cell ahead, as
+ * player.cc `reach_range` counts it: a polearm in either hand (item-prop.cc
+ * `weapon_reach`: the Polearms skill, the Lochaber axe, Rift), or the
+ * `Reach+` light (DUR_REACH). The server sends neither the reach nor the
+ * weapon's skill, and `sub_type` numbers move between versions, so the
+ * weapon goes by its name. A name this misses only costs the hint: RB's hold
+ * is there all the same, and autofight reaches on its own.
+ */
+const REACH_WEAPON = /\b(spears?|tridents?|trishulas?|halberds?|glaives?|bardiches?|scythes?|partisans?|lances?|Lochaber axe|Rift)\b/i
+
+export function reaches(p: Pick<PlayerState, 'inv' | 'weapon_index' | 'offhand_index' | 'status'>): boolean {
+  const named = (i: number) => i >= 0 && REACH_WEAPON.test(p.inv[i]?.name ?? '')
+  return named(p.weapon_index) || named(p.offhand_index) || p.status.some((s) => s.light === 'Reach+')
+}
+
 /** The new-game screen's own button back (`Context.newgameBack`): Backspace's, or a Space that changes the other choice. */
 function newgameBack(d: Record<string, unknown> | undefined): number | undefined {
   // a species or background button has one `label`; the weapon screen's rows have `labels`, a column each
@@ -776,6 +800,7 @@ export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer
   const quivered = p.quiver_item >= 0 ? p.inv[p.quiver_item]?.tile : undefined
   if (ctx.readiedAction && quivered !== undefined) ctx.readiedTile = quivered
   if (p.hp < p.hp_max || p.mp < p.mp_max) ctx.injured = true
+  if (reaches(p)) ctx.reaches = true
   if (autofightRefused(p)) ctx.fightRefused = true
   if (mode === 'yesno' || mode === 'prompt') ctx.prompt = parsePrompt(state)
   if (mode === 'more') ctx.moreText = state.messages.moreText || '--more--'
@@ -797,6 +822,10 @@ export function deriveContext(state: GameState, scene: Scene, cam: Camera, layer
       const t = formattedStringToText(state.messages.lines[i].text)
       if (t.startsWith('Press: ')) {
         ctx.aimQuiver = t.includes('select action')
+        // the primary attack's line comes just before (directn.cc `describe_cell`); a fire's is the quiver's, a spell's names no item
+        const top = i > 0 ? formattedStringToText(state.messages.lines[i - 1].text).trim() : ''
+        const verb = !ctx.aimQuiver && /^([A-Z][a-z]*(?: [a-z]+)*): [a-zA-Z-]\) /.exec(top)?.[1]
+        if (verb) ctx.aimVerb = verb
         break
       }
     }

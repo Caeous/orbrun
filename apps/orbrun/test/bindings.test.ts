@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Keys, MouseMode, initialState, reduce, type MenuState } from '@orbrun/webtiles'
-import { actionLabel, armsTapOrHold, barLabels, bindingTable, buttonAction, contextualLabel, controlSheet, holdAction, NO_ACTION, promptLabels, resolve, screenKey } from '../src/bindings'
+import { actionLabel, armsTapOrHold, barLabels, bindingTable, buttonAction, contextualLabel, controlSheet, HOLD_MS, holdAction, NO_ACTION, promptLabels, resolve, screenKey, touchLabels } from '../src/bindings'
 import { deriveMode, readiedAction, shopContext, type Context } from '../src/context'
 import commands from '../data/commands.json'
 
@@ -327,7 +327,7 @@ describe('direct command controls', () => {
     for (const layer of ['micro', 'macro', 'info'] as const) {
       const t = bindingTable(ctx({ layer }))
       expect(t.A).toEqual({ kind: 'contextual' })
-      expect(t.RB).toEqual({ kind: 'fire' })
+      expect(t.RB).toMatchObject({ kind: 'hold', tap: { kind: 'fire' }, hold: { seq: [{ text: 'v' }], label: 'Reach' } })
       expect(t.RT).toEqual({ kind: 'fight' })
       expect(t.LT).toMatchObject({ seq: [{ text: 'o' }] })
       expect(t.X).toEqual({ kind: 'ui', op: 'commands' })
@@ -356,7 +356,7 @@ describe('direct command controls', () => {
   it('shows the server-provided readied action on RB when there is something to shoot', () => {
     const c = ctx({ readiedAction: 'Stone Arrow', hostilesInView: 1 })
     expect(promptLabels(c)).toContainEqual(expect.objectContaining({ button: 'RB', label: 'Stone Arrow' }))
-    expect(bindingTable(c).RB).toEqual({ kind: 'fire' })
+    expect(buttonAction('RB', c)).toEqual({ kind: 'fire' })
     // a hostile ahead is a threat too, the same as autofight's
     expect(promptLabels(ctx({ readiedAction: 'Stone Arrow', ahead: ogre }))).toContainEqual(expect.objectContaining({ button: 'RB' }))
     // quivered but nothing in view: the corner stays quiet, as autofight's does
@@ -423,6 +423,30 @@ describe('direct command controls', () => {
     expect(sheet.find((r) => r.button === 'B')?.action).toEqual({ tap: 'Cancel' })
     expect(sheet.find((r) => r.button === 'LB')?.action).toEqual({ tap: 'Wait', hold: 'Rest' })
     expect(sheet.find((r) => r.button === 'R3')?.action).toEqual({ tap: 'Examine' })
+  })
+  it('RB held is the primary attack (`v`): Reach with reach, Attack without, as LB holds Rest', () => {
+    const c = ctx({ hostilesInView: 1, reaches: true })
+    expect(holdAction('RB', c)).toMatchObject({ seq: [{ text: 'v' }] })
+    expect(resolve({ type: 'release', button: 'RB', t: HOLD_MS + 50, held: HOLD_MS + 50 }, c)).toBeNull()
+    expect(barLabels(c).find((l) => l.button === 'RB')).toMatchObject({ label: 'Fire', hold: 'Reach' })
+    expect(barLabels(ctx({ hostilesInView: 1 })).find((l) => l.button === 'RB')).toMatchObject({ hold: 'Attack' })
+    expect(controlSheet().find((r) => r.button === 'RB')?.action).toEqual({ tap: 'Fire', hold: 'Reach' })
+    // the aim it opens is any aim: A and RB strike where the cursor is
+    expect(bindingTable(ctx({ mode: 'targeting' })).RB).toEqual({ kind: 'fire' })
+  })
+  it('the reach is the situation\'s own with a hostile in view, quivered or not, as rest is when hurt with none', () => {
+    expect(promptLabels(ctx({ reaches: true, hostilesInView: 1 })).find((l) => l.button === 'RB')).toMatchObject({ label: 'Fire', hold: 'Reach' })
+    expect(promptLabels(ctx({ reaches: true })).find((l) => l.button === 'RB')).toBeUndefined()
+    expect(promptLabels(ctx({ hostilesInView: 1 })).find((l) => l.button === 'RB')).toBeUndefined()
+  })
+  it('the touch bar keeps an empty quiver\'s Fire a button while it reaches, for its hold', () => {
+    const fireCell = (c: Context) => touchLabels(barLabels(c), c).find((l) => l.button === 'RB')
+    expect(fireCell(ctx({ hostilesInView: 1 }))).toMatchObject({ idle: true })
+    expect(fireCell(ctx({ hostilesInView: 1, reaches: true }))).not.toHaveProperty('idle')
+  })
+  it('the primary attack\'s aim says its verb rather than Fire', () => {
+    const aim = ctx({ mode: 'targeting', aimVerb: 'Reach', cursor: { kind: 'monster', label: 'goblin' } as Context['cursor'] })
+    expect(promptLabels(aim).map((l) => l.button + ' ' + l.label)).toEqual(['A Reach goblin', 'RB Reach goblin'])
   })
   it.each(['R3', 'L3'] as const)('%s examines once on press without repeating or acting on release', (button) => {
     const c = ctx({})
@@ -504,8 +528,10 @@ describe('look mode (x): A describes, named for what the cursor rests on', () =>
     expect(bindingTable(look({ readiedAction: 'Throw: 23 darts' })).Y).toMatchObject({ seq: [{ text: '?' }] })
   })
   it('RB is the same action before and inside the aim, so tapping it fires shot after shot as `f f f` does', () => {
-    // the second tap may land either side of the server reporting the aim; both send f (CMD_TARGET_SELECT inside the prompt)
-    expect(resolve({ type: 'press', button: 'RB', t: 0 }, ctx({}))).toEqual({ kind: 'fire' })
+    // the second tap may land either side of the server reporting the aim; both send f (CMD_TARGET_SELECT inside the prompt).
+    // On the map RB is a tap-or-hold, so its shot goes on release; inside the aim it goes on press
+    expect(resolve({ type: 'press', button: 'RB', t: 0 }, ctx({}))).toBeNull()
+    expect(resolve({ type: 'release', button: 'RB', t: 100, held: 100 }, ctx({}))).toEqual({ kind: 'fire' })
     expect(resolve({ type: 'press', button: 'RB', t: 0 }, ctx({ mode: 'targeting' }))).toEqual({ kind: 'fire' })
     // holding never repeats, as with every button
     expect(resolve({ type: 'repeat', button: 'RB', n: 1 }, ctx({ mode: 'targeting' }))).toBeNull()

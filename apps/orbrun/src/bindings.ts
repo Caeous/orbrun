@@ -110,8 +110,15 @@ const situational = (a: Action): Action => (a.kind === 'keys' ? { ...a, contextu
 /** Shared actions the game screen sends outside the binding tables, so the bar can label them. */
 export const AUTOFIGHT: Action = kc(Keys.TAB, 'Autofight')
 export const LEVEL_MAP: Action = k('X', 'Level map')
+/**
+ * Crawl's primary attack in a direction (`v`, CMD_PRIMARY_ATTACK; "evoke
+ * wielded" before 0.26): a polearm's reach. RB's hold, as Rest is LB's.
+ * Named "Reach" on the sheet and wherever it reaches; "Attack" where it would
+ * only hit the cell ahead (`actionLabel`).
+ */
+const PRIMARY_ATTACK: Action = k('v', 'Reach')
 
-/** Direct controls: no trigger layers, and only wait/rest uses a hold. */
+/** Direct controls: no trigger layers; wait/rest and fire/reach use a hold. */
 const COMMAND: Partial<Record<Button, Action>> = {
   A: { kind: 'contextual' },
   B: ESC,
@@ -123,8 +130,11 @@ const COMMAND: Partial<Record<Button, Action>> = {
   // that is not attacking. Explore and autofight, the tightest loop there is, stay on opposite
   // hands, so the pair you alternate constantly never shares a finger. Wait and rest are the
   // same verb at two lengths, so they share LB, beside autoexplore: the left hand passes the time.
+  // A shot and a reach are the same verb at two lengths too: held, RB is crawl's primary attack (PRIMARY_ATTACK),
+  // which is how a polearm reaches the monster it is aimed at; autofight reaches only the one it picks. The aim
+  // it opens is an aim like a shot's (targetingTable), so A or RB strikes where the cursor is
   LB: hold(k('.', 'Wait'), k('5', 'Rest')),
-  RB: { kind: 'fire' },
+  RB: hold({ kind: 'fire' }, PRIMARY_ATTACK),
   LT: k('o', 'Autoexplore'),
   RT: { kind: 'fight' },
   // either stick click examines: R3 for a right thumb already on the look stick, L3 for a left thumb resting on the move stick
@@ -879,8 +889,9 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
   for (const l of labels) if (!l.teaching && l.label !== NO_ACTION && !has.has(l.button as Button)) has.set(l.button as Button, l)
   if (panel || dpadMoves(ctx)) for (const [b, label] of TOUCH_ARROWS) has.set(b, { button: b, label, action: { kind: 'keys', label, seq: [] }, contextual: false })
   const out: TouchLabel[] = []
-  // the map's Fire with nothing quivered: crawl's `f` would only say "Nothing quivered!" (quiver.cc `action_cycler::target`)
-  const idle = (l: BindingLabel) => !panel && ctx.mode === 'command' && l.action.kind === 'fire' && !ctx.readiedAction
+  // the map's Fire with nothing quivered: crawl's `f` would only say "Nothing quivered!" (quiver.cc `action_cycler::target`).
+  // A reach on its hold keeps it a button
+  const idle = (l: BindingLabel) => !panel && ctx.mode === 'command' && l.action.kind === 'fire' && !ctx.readiedAction && !(l.hold && ctx.reaches)
   // the screen as it was before the player marked or listed anything: a button it lacks, or has doing something else, is the choice's
   const brought = panel ? () => false : choiceBrought(ctx)
   const refused = (l: BindingLabel) => !panel && ctx.mode === 'command' && ((l.action.kind === 'fight' && !!ctx.fightRefused) || (lastKey(l.action) === 'o' && !!ctx.exploreDone))
@@ -1439,6 +1450,8 @@ function isContextual(a: Action, ctx: Context): boolean {
     case 'keys':
       // wait/rest is the situation's own while hurt with nothing in view: resting is what the turn is for
       if (isRest(a) && restWorthwhile(ctx)) return true
+      // the reach is the situation's own while there is a hostile for it, as rest is while hurt with none
+      if (a === PRIMARY_ATTACK) return ctx.mode === 'command' && !!ctx.reaches && threatened(ctx)
       // the quiver cycle names the shot it would swap to, so it stands in the corner while there is one to swap
       if (isQuiverCycle(a)) return ctx.mode === 'targeting' && !ctx.examining && !!ctx.readiedAction
       return a.contextual === true
@@ -1570,6 +1583,8 @@ export function actionLabel(a: Action, ctx: Context, button?: Button): string {
     case 'keys':
       // on a --more-- the chip under A reads as the pane's more row does: its text, in the pane's white
       if (ctx.mode === 'more' && ctx.moreText && a.label === '--more--') return colouredText(ctx.moreText, LOG_DEFAULT_COLOUR, true)
+      // without reach, `v` only hits the cell it is aimed at
+      if (a === PRIMARY_ATTACK && !ctx.reaches) return 'Attack'
       return a.label
     case 'contextual':
       return a.alt === undefined && hasInteractionChoice(ctx) ? 'Interact' : contextualLabel(ctx, a.alt)
@@ -1578,6 +1593,8 @@ export function actionLabel(a: Action, ctx: Context, button?: Button): string {
     case 'examine':
       return ctx.mode === 'targeting' && ctx.examining ? 'Examine ' + (ctx.cursor?.label ?? 'here') : 'Examine'
     case 'fire':
+      // the primary attack's aim says its own verb (Reach, Hit), as its top line does
+      if (ctx.mode === 'targeting' && !ctx.examining && ctx.aimVerb) return ctx.cursor && ctx.cursor.kind !== 'none' ? ctx.aimVerb + ' ' + ctx.cursor.label : ctx.aimVerb
       if (ctx.mode === 'targeting' && !ctx.examining) return ctx.cursor && ctx.cursor.kind !== 'none' ? 'Fire at ' + ctx.cursor.label : 'Fire'
       return ctx.readiedAction ?? 'Fire'
     case 'hold':

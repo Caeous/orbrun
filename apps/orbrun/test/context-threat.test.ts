@@ -86,3 +86,32 @@ describe('plants are not hostiles worth fighting', () => {
     expect(promptLabels(ctx).find((l) => l.button === 'RT')).toBeUndefined()
   })
 })
+
+describe('the primary attack (`v`): what reaches, and what its aim says', () => {
+  const wielding = (name: string, status: { light: string }[] = []) => {
+    const st = playing()
+    st.player.inv[0] = { slot: 0, name }
+    st.player.weapon_index = 0
+    st.player.status = status
+    return deriveContext(st, room(), cam, 'micro')
+  }
+  it('a polearm in hand reaches; a sword does not, unless the Reach+ light is on', () => {
+    expect(wielding('a +0 spear').reaches).toBe(true)
+    expect(wielding('the +7 glaive "Wyrmbane"').reaches).toBe(true)
+    expect(wielding('a +2 Lochaber axe').reaches).toBe(true)
+    expect(wielding('a +0 long sword').reaches).toBeUndefined()
+    expect(wielding('a +0 long sword', [{ light: 'Reach+' }]).reaches).toBe(true)
+  })
+  it('the aim takes its verb from its top line; a fire\'s aim and a spell\'s have none', () => {
+    const aim = (top: string, press: string) => {
+      const st = playing()
+      st.inputMode = MouseMode.TARGET
+      st.messages.lines.push({ text: top, turn: 100, channel: 0 }, { text: press, turn: 100, channel: 0 })
+      return deriveContext(st, room(), cam, 'micro')
+    }
+    expect(aim('<lightgrey>Reach: a) +0 spear</lightgrey>', 'Press: ? - help, Shift-Dir - straight line').aimVerb).toBe('Reach')
+    expect(aim('Hit: a) +0 long sword', 'Press: ? - help').aimVerb).toBe('Hit')
+    expect(aim('Throw: b) 23 darts', 'Press: ? - help, Q - select action').aimVerb).toBeUndefined()
+    expect(aim('Casting: Magic Dart', 'Press: ? - help').aimVerb).toBeUndefined()
+  })
+})
