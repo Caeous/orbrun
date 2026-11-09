@@ -2,6 +2,10 @@
 
 Notable changes to Orbrun, newest first.
 
+## 0.3.5 — 2026-11-08
+
+- Add Hold RB key to gamepad to Reach with a primary attack.
+
 ## 0.3.4 — 2026-10-25
 
 - View your morgues and high scores, online or offline.
