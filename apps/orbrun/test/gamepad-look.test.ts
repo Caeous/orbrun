@@ -141,6 +141,12 @@ describe('an unmapped pad is read in the standard layout', () => {
     expect(standardView(raw(15, [0.1, 0.2, 0.3, 0.4, -1, -1, 0, 0], [])).axes).toEqual([0.1, 0.2, 0.3, 0.4])
   })
 
+  it('a pad Chrome on Android left unmapped (an AYN Thor): 17 buttons already in standard order, sticks only on the axes', () => {
+    const all = Array.from({ length: 17 }, (_, i) => i)
+    for (const i of all) expect(held(standardView(raw(17, [0, 0, 0, 0], [i])))).toEqual([i])
+    expect(standardView(raw(17, [0.1, 0.2, 0.3, 0.4], [])).axes).toEqual([0.1, 0.2, 0.3, 0.4])
+  })
+
   it('a resting raw pad presses nothing', () => {
     expect(held(standardView(raw(11, [0, 0, -1, 0, 0, -1, 0, 0], [])))).toEqual([])
     expect(held(standardView(raw(15, [0, 0, 0, 0, -1, -1, 0, 0], [])))).toEqual([])

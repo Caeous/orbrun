@@ -318,8 +318,12 @@ const BT_BUTTONS = [0, 1, -1, 2, 3, -1, 4, 5, -1, -1, 8, 9, 16, 10, 11]
 export function standardView(pad: Gamepad): { buttons: boolean[]; axes: number[] } {
   const raw = pad.buttons.map((b) => b.pressed || b.value > 0.5)
   if (pad.mapping === 'standard') return { buttons: raw, axes: pad.axes.slice(0, 4) }
-  const bt = pad.buttons.length >= BT_BUTTONS.length
-  const xpad = !bt && pad.buttons.length === XPAD_BUTTONS.length
+  // Both Linux layouts carry the triggers on axes past the sticks. A pad with only the
+  // sticks' four is not one of them: Chrome on Android hands over a pad it has no mapping
+  // for (an AYN Thor's) with its buttons already in standard order, 17 of them, unlabelled.
+  const linux = pad.axes.length >= 6
+  const bt = linux && pad.buttons.length >= BT_BUTTONS.length
+  const xpad = linux && !bt && pad.buttons.length === XPAD_BUTTONS.length
   if (!bt && !xpad) {
     // an unknown layout: its buttons as they come, the d-pad from a hat if it has one
     const buttons = raw.slice()
